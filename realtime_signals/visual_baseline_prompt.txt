@@ -1,0 +1,78 @@
+You are producing a compact hourly visual market-state baseline for four closed 15-minute charts.
+
+Important boundaries:
+- Four full-resolution PNGs are attached in the same order as the market
+  metadata below, one image per market.
+- Every image has an outer 36-hour panel and inner 9-hour panel.
+- Each tile ends at `through_bar_time`; no future bar is present.
+- Do not issue trading signals. Only classify market state.
+- Return only the JSON object required by the output schema.
+- Copy `generated_at`, vendor, symbol, timeframe and through_bar_time exactly from the metadata.
+
+Market metadata:
+{{MARKETS_JSON}}
+
+Mandatory horizontal-range inventory (perform this before state labels):
+- `chart_ranges` in market metadata contains the exact synchronized rectangle
+  coordinates. It is more precise than estimating their edges from pixels.
+- Scan the entire outer panel from its earliest bar to `through_bar_time`,
+  left to right. Inventory every defensible horizontal balance phase visible
+  anywhere in that 36-hour window: active, completed, or broken.
+- The current market being a trend, transition, or narrow/wide channel is
+  NEVER a reason to omit an earlier completed horizontal range.
+- `local_range_proposals` are exact-OHLC recall aids. For every proposal,
+  return exactly one `proposal_reviews` entry with the same `proposal_id`.
+  Accept it, merge it into a visually better whole-phase box, or reject it
+  with a concrete geometric reason. Never silently ignore a proposal.
+- A rejection must explain which required edge tests or alternating rotations
+  are absent. "Current market is trending" is not a valid rejection reason.
+- Set `range_scan_complete=true` only after reviewing the whole outer panel,
+  all synchronized chart ranges, and every local proposal. Summarize the
+  scanned phases in `range_scan_summary`.
+- Orange rectangles are the synchronized TradingView range layer. `USER RANGE`
+  is authoritative: copy its exact boundaries into `range_candidates` with
+  source=`manual_existing`; never resize, split, or replace it. `AUTO RANGE`
+  is only a proposal from an earlier pass and must be re-proved against the
+  complete visible phase. Do not retain an AUTO RANGE merely because candles
+  rotate inside it. First verify that its left edge starts when price enters the
+  balance area, its right edge ends when price leaves for another price area,
+  and its upper/lower boundaries follow the most defensible repeated wick-test
+  levels of that whole phase. Compare structural turning-point wick levels,
+  not every rolling high/low. Prefer the level with more separated wick
+  contacts while candle bodies and closes remain on the range side. Candle
+  body containment is a required boundary condition, not merely a bonus.
+  The initial ingress/transition candle may cross a candidate edge; after
+  price has entered the balance and before its genuine exit, do not accept an
+  edge that cuts through later candle bodies or closes.
+  Several adjacent wicks from one push are still only one contact cluster.
+  An isolated liquidity-sweep wick is not a reason to enlarge the whole
+  rectangle. If it is a partial
+  rolling-window box, omit the old geometry and return
+  one corrected source=`auto_candidate` box for the whole phase, or reject it.
+- Add source=`auto_candidate` only for an obvious unmarked balance phase.
+- Define one range as the complete phase from price entering a balance area,
+  through its repeated internal rotations, until price clearly leaves for a
+  different price area. Do not split internal swings into several small
+  ranges. A preceding small balance boundary may anchor the next larger
+  range's lower or upper boundary.
+- Before accepting any existing or proposed range, explicitly compare the bars
+  immediately before its left edge and immediately after its right edge. A box
+  that starts after the phase has already begun, ends while price is still
+  rotating in the same price area, or excludes a later independent edge test
+  is invalid even when its internal statistics look balanced.
+- `start_time` and `end_time` must be exact 15-minute Unix open timestamps
+  visible in the supplied metadata period. For `upper` and `lower`, compare
+  plausible horizontal levels and choose the one with the densest separated
+  structural wick contacts and best candle-body/close containment. A boundary
+  may sit inside
+  the absolute high/low when the outer extreme is only a sweep. Do not let one
+  rolling extreme stretch the box.
+- A horizontal range requires defensible upper and lower edges, at least two independent tests on each edge, separated in time, plus alternating rotations. Adjacent wick clusters are one test.
+- A short pause, rolling-window high/low, two adjacent lows/highs, or one V-shaped rebound is not a range.
+- Once price has accepted outside a range, mark it `broken`; do not invent a smaller new range without a new multi-rotation balance.
+
+State classification (only after the range inventory):
+- Judge the outer panel first, then the inner panel.
+- A wide channel requires repeated, alternating swings along two approximately parallel directional boundaries. A one-sided decline/rally or a single V reversal is not a wide channel.
+- Use range_upper/range_lower only for an active or clearly broken proven range; otherwise set both to 0.
+- If geometry is ambiguous, use `unclear` or `not_proven`, not a forced label.

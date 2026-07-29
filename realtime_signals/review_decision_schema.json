@@ -1,0 +1,87 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "verdict",
+    "direction",
+    "setup_type",
+    "grade",
+    "reasons",
+    "location_summary",
+    "structure_summary",
+    "confirmation_price",
+    "invalidation_price",
+    "context"
+  ],
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": ["NO_SIGNAL", "SIGNAL"]
+    },
+    "direction": {
+      "type": "string",
+      "enum": ["none", "long", "short"]
+    },
+    "setup_type": {
+      "type": "string",
+      "enum": [
+        "none",
+        "震荡内部：边缘反向",
+        "震荡突破：位移突破",
+        "宽通道边缘：反向波段",
+        "宽通道突破：更大级别反转",
+        "宽通道顺势：在有利边缘跟随主方向",
+        "窄通道：等待回踩顺势参与"
+      ]
+    },
+    "grade": {
+      "type": "string",
+      "enum": ["none", "A", "B"]
+    },
+    "reasons": {
+      "type": "array",
+      "items": {"type": "string"},
+      "maxItems": 8
+    },
+    "location_summary": {
+      "type": "string",
+      "maxLength": 60
+    },
+    "structure_summary": {
+      "type": "string",
+      "maxLength": 80
+    },
+    "confirmation_price": {
+      "type": "number"
+    },
+    "invalidation_price": {
+      "type": "number"
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "market_state",
+        "levels_reason",
+        "range_or_channel_anchors",
+        "previous_signal_id",
+        "previous_signal_status",
+        "state_transition",
+        "transition_evidence"
+      ],
+      "properties": {
+        "market_state": {"type": "string"},
+        "levels_reason": {"type": "string"},
+        "range_or_channel_anchors": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "previous_signal_id": {"type": "integer"},
+        "previous_signal_status": {"type": "string"},
+        "state_transition": {"type": "string"},
+        "transition_evidence": {"type": "string"}
+      }
+    }
+  }
+}

@@ -1,0 +1,126 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["generated_at", "markets"],
+  "properties": {
+    "generated_at": {"type": "integer"},
+    "markets": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "vendor",
+          "symbol",
+          "timeframe",
+          "through_bar_time",
+          "outer_state",
+          "inner_state",
+          "horizontal_range_status",
+          "range_upper",
+          "range_lower",
+          "range_candidates",
+          "range_scan_complete",
+          "range_scan_summary",
+          "proposal_reviews",
+          "wide_channel_status",
+          "direction",
+          "confidence",
+          "evidence",
+          "transition_condition"
+        ],
+        "properties": {
+          "vendor": {"type": "string"},
+          "symbol": {"type": "string"},
+          "timeframe": {"type": "string", "enum": ["15"]},
+          "through_bar_time": {"type": "integer"},
+          "outer_state": {
+            "type": "string",
+            "enum": ["range", "wide_channel", "narrow_channel", "trend", "transition", "unclear"]
+          },
+          "inner_state": {
+            "type": "string",
+            "enum": ["range", "wide_channel", "narrow_channel", "trend", "transition", "unclear"]
+          },
+          "horizontal_range_status": {
+            "type": "string",
+            "enum": ["active", "broken", "not_proven"]
+          },
+          "range_upper": {"type": "number"},
+          "range_lower": {"type": "number"},
+          "range_candidates": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "start_time",
+                "end_time",
+                "upper",
+                "lower",
+                "status",
+                "source",
+                "confidence",
+                "evidence"
+              ],
+              "properties": {
+                "start_time": {"type": "integer"},
+                "end_time": {"type": "integer"},
+                "upper": {"type": "number"},
+                "lower": {"type": "number"},
+                "status": {
+                  "type": "string",
+                  "enum": ["active", "completed", "broken"]
+                },
+                "source": {
+                  "type": "string",
+                  "enum": ["manual_existing", "auto_existing", "auto_candidate"]
+                },
+                "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                "evidence": {"type": "string", "maxLength": 320}
+              }
+            }
+          },
+          "range_scan_complete": {"type": "boolean"},
+          "range_scan_summary": {"type": "string", "maxLength": 500},
+          "proposal_reviews": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["proposal_id", "decision", "reason"],
+              "properties": {
+                "proposal_id": {"type": "string"},
+                "decision": {
+                  "type": "string",
+                  "enum": ["accepted", "merged", "rejected"]
+                },
+                "reason": {"type": "string", "maxLength": 320}
+              }
+            }
+          },
+          "wide_channel_status": {
+            "type": "string",
+            "enum": ["proven", "not_proven"]
+          },
+          "direction": {
+            "type": "string",
+            "enum": ["up", "down", "neutral", "unclear"]
+          },
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+          "evidence": {
+            "type": "array",
+            "items": {"type": "string"},
+            "maxItems": 5
+          },
+          "transition_condition": {"type": "string", "maxLength": 240}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "version": 3,
+  "mode": "user_confirmed_strict_causal_range_revisions",
+  "range_rules": {
+    "visual_definition": "user_confirmed_wick_envelope",
+    "causal_activation": "range becomes eligible only after sufficient two-sided rotation",
+    "boundary_revision": "later boundary expansion is unavailable before its observation time",
+    "terminal_breakout_bar_excluded": true,
+    "manual_locked_ranges_have_priority": true
+  },
+  "window_beijing": [
+    "2026-07-24 00:15",
+    "2026-07-29 00:15"
+  ],
+  "markets": [
+    {
+      "vendor": "OANDA",
+      "symbol": "XAGUSD",
+      "observations": 2,
+      "ranges": [
+        {
+          "range_id": "USER-XAGUSD-20260728-0900-R1",
+          "vendor": "OANDA",
+          "symbol": "XAGUSD",
+          "timeframe": "15",
+          "start_time": 1785200400,
+          "end_time": 1785255300,
+          "upper": 57.7954,
+          "lower": 56.7135,
+          "first_detected_at": 1785226500,
+          "last_detected_at": 1785247200,
+          "observation_count": 30,
+          "median_atr14": 0.2,
+          "breakout": null,
+          "source": "user_confirmed_chart_range_causal_revision_1",
+          "user_editable": true,
+          "manual_locked": true,
+          "start_beijing": "2026-07-28 09:00",
+          "end_beijing": "2026-07-29 00:15",
+          "detected_beijing": "2026-07-28 16:15",
+          "note": "初版下沿仅使用截至16:15已经出现的56.7135，禁止提前使用22:15的新低。"
+        },
+        {
+          "range_id": "USER-XAGUSD-20260728-0900-R2",
+          "vendor": "OANDA",
+          "symbol": "XAGUSD",
+          "timeframe": "15",
+          "start_time": 1785200400,
+          "end_time": 1785255300,
+          "upper": 57.7954,
+          "lower": 56.6405,
+          "first_detected_at": 1785248100,
+          "last_detected_at": 1785255300,
+          "observation_count": 33,
+          "median_atr14": 0.2,
+          "breakout": null,
+          "source": "user_confirmed_chart_range_causal_revision_2",
+          "user_editable": true,
+          "manual_locked": true,
+          "start_beijing": "2026-07-28 09:00",
+          "end_beijing": "2026-07-29 00:15",
+          "detected_beijing": "2026-07-28 22:15",
+          "note": "22:15观察到56.6405后才向下修订；图表最终框使用本版本。"
+        }
+      ]
+    }
+  ]
+}
