@@ -1,10 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { Client } from 'file:///C:/Users/zbx00/tools/tradingview-mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js';
-import { StdioClientTransport } from 'file:///C:/Users/zbx00/tools/tradingview-mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js';
+import {
+  loadTradingViewMcpSdk,
+  resolveTradingViewMcpRoot,
+} from './tradingview_mcp_runtime.mjs';
 
-const serverRoot = 'C:/Users/zbx00/tools/tradingview-mcp';
+const serverRoot = resolveTradingViewMcpRoot();
+const { Client, StdioClientTransport } = await loadTradingViewMcpSdk(serverRoot);
 const replayRoot = path.join(
   process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'),
   'TVFloat',

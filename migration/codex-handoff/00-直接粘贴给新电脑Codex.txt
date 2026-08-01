@@ -1,0 +1,44 @@
+我正在把 TVFloat TradingView 实时监控从旧电脑迁移到这台 Windows 电脑。
+
+我已附上“TVFloat-Codex-Context”上下文包。请按以下顺序接管：
+
+1. 完整读取包内的：
+   - 01-TVFloat项目上下文.md
+   - 02-接管验证清单.md
+   - Get-TVFloatHandoffStatus.ps1
+2. 先运行只读状态脚本，不要一开始就修改交易规则、数据库、警报或 TradingView 图表：
+
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\Get-TVFloatHandoffStatus.ps1"
+
+3. 从 `%LOCALAPPDATA%\TVFloat\migration_install_receipt.json` 取得实际 `target_root`，不要假定用户名或固定安装路径。
+4. 完整读取实际项目中的关键文件，至少包括：
+   - realtime_signals\README.md
+   - realtime_signals\run_lightweight.ps1
+   - realtime_signals\review_decision_prompt.txt
+   - realtime_signals\visual_baseline_prompt.txt
+   - realtime_signals\review_decision_schema.json
+   - realtime_signals\visual_baseline_schema.json
+   - realtime_signals\candidate_filter_v2.py
+   - realtime_signals\collect_tv.mjs
+   - realtime_signals\review_candidates.ps1
+   - realtime_signals\execute_signal.mjs
+   - realtime_signals\range_edge_watch.py
+   - realtime_signals\reconcile_range_edge_alerts.mjs
+   - migration\Test-TVFloatMigration.ps1
+5. 检查 Codex、Python、Node.js、数据库、计划任务、TradingView CDP 9222 和最右侧专用标签。只报告实际证据，不猜测。
+6. 若安装已经完成，运行：
+
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File "<target_root>\migration\Test-TVFloatMigration.ps1" -RunCollectorSmokeTest
+
+7. 只有全部 PASS 后才确认新电脑已接管。旧电脑的计划任务不得重新启用，避免双机重复处理。
+
+工作原则：
+- 使用中文和我沟通。
+- 对当前程序、提示词、数据库或 TradingView 做任何实质修改前，先说明证据和影响。
+- 不得自行发明 Louie 规则、百分比阈值或市场结构定义。
+- 用户手工移动、缩放或新增的橙色震荡区间优先级最高。
+- 只操作 TradingView 最右侧专用标签；不得切换、缩放、改布局或污染其他标签。
+- 任何信号判断只能使用信号 K 收盘及之前的数据，严禁偷看后续 K 线。
+- 这套系统只做机会识别和训练，不自动下单。
+
+现在请先给出只读诊断结果、迁移是否完成，以及仍需处理的明确步骤。

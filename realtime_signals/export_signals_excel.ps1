@@ -10,7 +10,11 @@ $workingPath = Join-Path $runtimeDir 'TVFloat_signal_records_working.xlsx'
 $statePath = Join-Path $env:LOCALAPPDATA 'TVFloat\signal_excel_export_state.json'
 $logPath = Join-Path $env:LOCALAPPDATA 'TVFloat\signal_excel_export.log'
 $builderPath = Join-Path $runtimeDir 'build_signal_workbook.mjs'
-$nodePath = 'C:\Users\zbx00\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe'
+$nodeCommand = Get-Command node -ErrorAction SilentlyContinue
+if (-not $nodeCommand) {
+  throw 'Node.js was not found in PATH. Install Node.js 20 or newer before exporting Excel records.'
+}
+$nodePath = $nodeCommand.Source
 $dataScript = Join-Path $PSScriptRoot 'export_signal_records.py'
 $mutex = [Threading.Mutex]::new($false, 'Local\TVFloatSignalExcelExport')
 

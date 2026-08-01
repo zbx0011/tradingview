@@ -79,7 +79,8 @@ class SignalAlert:
     signal_price: float
 
 def config_path() -> Path:
-    base = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "TVFloat"
+    folder_name = os.environ.get("TVFLOAT_CONFIG_DIR", "TVFloat")
+    base = Path(os.environ.get("LOCALAPPDATA", Path.home())) / folder_name
     base.mkdir(parents=True, exist_ok=True)
     return base / "config.json"
 
@@ -217,6 +218,51 @@ def save_config(value: dict) -> None:
     temporary.replace(path)
 
 
+def clamp_window_position(x: int, y: int, width: int, height: int) -> tuple[int, int]:
+    user32 = ctypes.windll.user32
+    virtual_x = int(user32.GetSystemMetrics(76))
+    virtual_y = int(user32.GetSystemMetrics(77))
+    virtual_width = max(800, int(user32.GetSystemMetrics(78)))
+    virtual_height = max(600, int(user32.GetSystemMetrics(79)))
+    virtual_right = virtual_x + virtual_width
+    virtual_bottom = virtual_y + virtual_height
+    visible_width = max(80, min(width, 220))
+    visible_height = max(80, min(height, 160))
+    if (
+        x + visible_width < virtual_x
+        or y + visible_height < virtual_y
+        or x > virtual_right - 80
+        or y > virtual_bottom - 80
+    ):
+        return 80, 80
+    return x, y
+
+
+def tk_window_rect(window: tk.Misc) -> tuple[int, int, int, int]:
+    class Rect(ctypes.Structure):
+        _fields_ = [
+            ("left", ctypes.c_long),
+            ("top", ctypes.c_long),
+            ("right", ctypes.c_long),
+            ("bottom", ctypes.c_long),
+        ]
+
+    rect = Rect()
+    if ctypes.windll.user32.GetWindowRect(window.winfo_id(), ctypes.byref(rect)):
+        return (
+            int(rect.left),
+            int(rect.top),
+            int(rect.right - rect.left),
+            int(rect.bottom - rect.top),
+        )
+    return (
+        int(window.winfo_x()),
+        int(window.winfo_y()),
+        int(window.winfo_width()),
+        int(window.winfo_height()),
+    )
+
+
 def read_pending_signal_alerts() -> dict[str, SignalAlert]:
     path = signal_db_path()
     if not path.exists():
@@ -235,7 +281,7 @@ def read_pending_signal_alerts() -> dict[str, SignalAlert]:
             FROM signals
             WHERE acknowledged_at IS NULL
               AND direction IN ('long', 'short')
-              AND grade IN ('A', 'B')
+              AND grade IN ('A', 'B', '边缘预警')
             ORDER BY bar_time DESC, id DESC
             """
         ).fetchall()
@@ -262,20 +308,43 @@ def read_pending_signal_alerts() -> dict[str, SignalAlert]:
     return alerts
 
 
-def acknowledge_symbol_alerts(symbol: str) -> int:
+def acknowledge_symbol_alerts(symbol: str, through_id: int | None = None) -> int:
     path = signal_db_path()
     if not path.exists():
         return 0
     try:
         connection = sqlite3.connect(path, timeout=1.0)
-        cursor = connection.execute(
-            """
-            UPDATE signals
-            SET acknowledged_at=?
-            WHERE symbol=? AND acknowledged_at IS NULL
-            """,
-            (int(time.time()), symbol.upper()),
-        )
+        if through_id is None:
+            cursor = connection.execute(
+                """
+                UPDATE signals
+                SET acknowledged_at=?
+                WHERE symbol=? AND acknowledged_at IS NULL
+                """,
+                (int(time.time()), symbol.upper()),
+            )
+        else:
+            cursor = connection.execute(
+                """
+                UPDATE signals
+                SET acknowledged_at=?
+                WHERE symbol=? AND acknowledged_at IS NULL AND id<=?
+                  AND EXISTS (
+                      SELECT 1
+                      FROM signals AS selected
+                      WHERE selected.id=?
+                        AND selected.symbol=?
+                        AND selected.acknowledged_at IS NULL
+                  )
+                """,
+                (
+                    int(time.time()),
+                    symbol.upper(),
+                    int(through_id),
+                    int(through_id),
+                    symbol.upper(),
+                ),
+            )
         connection.commit()
         count = cursor.rowcount
         connection.close()
@@ -561,6 +630,7 @@ class QuoteOverlay:
         size = config.get("size", {})
         width = max(360, int(size.get("width", 440)))
         height = max(120, int(size.get("height", 160)))
+        x, y = clamp_window_position(x, y, width, height)
         self.root.geometry(f"{width}x{height}+{x}+{y}")
 
         stored = config.get("selected_symbols", None)
@@ -687,6 +757,7 @@ class QuoteOverlay:
             widget.bind("<Button-3>", self.show_menu)
 
         self.root.protocol("WM_DELETE_WINDOW", lambda: None)
+        self.root.after(300, self.persist)
         self.root.after(150, self.consume_results)
         self.root.after(250, self.poll_signal_alerts)
         threading.Thread(target=self.reader_loop, daemon=True).start()
@@ -908,7 +979,10 @@ class QuoteOverlay:
     def on_symbol_click(self, symbol: str) -> None:
         alert = self.active_alerts.get(symbol.upper())
         if alert is not None:
-            acknowledged = acknowledge_symbol_alerts(alert.symbol)
+            acknowledged = acknowledge_symbol_alerts(
+                alert.symbol,
+                through_id=alert.id,
+            )
             if acknowledged:
                 self.active_alerts.pop(symbol.upper(), None)
                 self.alert_flash_on = False
@@ -1041,6 +1115,7 @@ class QuoteOverlay:
             if self.settings_position is not None
             else self.root.winfo_y() + 30
         )
+        settings_x, settings_y = clamp_window_position(settings_x, settings_y, 460, 800)
         window.geometry(f"460x800+{settings_x}+{settings_y}")
         window.configure(bg="#151a20")
         window.attributes("-topmost", True)
@@ -1407,12 +1482,14 @@ class QuoteOverlay:
         menu.tk_popup(event.x_root, event.y_root)
 
     def persist(self) -> None:
-        save_config(
+        window_x, window_y, window_width, window_height = self.ensure_root_visible()
+        config = load_config()
+        config.update(
             {
-                "position": {"x": self.root.winfo_x(), "y": self.root.winfo_y()},
+                "position": {"x": window_x, "y": window_y},
                 "size": {
-                    "width": self.root.winfo_width(),
-                    "height": self.root.winfo_height(),
+                    "width": window_width,
+                    "height": window_height,
                 },
                 "selected_symbols": (
                     None if self.selected_symbols is None else sorted(self.selected_symbols)
@@ -1426,6 +1503,19 @@ class QuoteOverlay:
                 "settings_position": self.settings_position,
             }
         )
+        save_config(config)
+
+    def ensure_root_visible(self) -> tuple[int, int, int, int]:
+        self.root.update_idletasks()
+        window_x, window_y, window_width, window_height = tk_window_rect(self.root)
+        clamped_x, clamped_y = clamp_window_position(
+            window_x, window_y, window_width, window_height
+        )
+        if (clamped_x, clamped_y) != (window_x, window_y):
+            self.root.geometry(f"{window_width}x{window_height}+{clamped_x}+{clamped_y}")
+            self.root.update_idletasks()
+            return tk_window_rect(self.root)
+        return window_x, window_y, window_width, window_height
 
     def close(self) -> None:
         self.persist()

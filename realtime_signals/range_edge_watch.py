@@ -1,4 +1,4 @@
-"""Plan and persist deterministic 15-minute range-edge warnings.
+"""Plan and persist deterministic 5-minute range-edge warnings.
 
 An active orange TradingView rectangle defines a horizontal range.  Its lower
 and upper eighths are warning zones.  Every newly closed candle that intersects
@@ -23,8 +23,8 @@ WATCHLIST = (
     ("OANDA", "XAUUSD"),
     ("ICMARKETS", "US500"),
 )
-TIMEFRAME = "15"
-BAR_SECONDS = 15 * 60
+TIMEFRAME = "5"
+BAR_SECONDS = 5 * 60
 RULES_VERSION = "louie-codex-v5"
 MODEL_VERSION = "deterministic-range-edge"
 
@@ -124,7 +124,7 @@ def save_touch(
         "grade": "边缘预警",
         "reasons": [
             (
-                f"上一根15分钟K线触及震荡区间"
+                f"上一根5分钟K线触及震荡区间"
                 f"{'下' if edge['side'] == 'lower' else '上'}八分之一区域"
                 f" {edge['zone_low']:.8g}–{edge['zone_high']:.8g}"
             )

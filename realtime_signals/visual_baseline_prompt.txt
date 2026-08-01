@@ -1,4 +1,4 @@
-You are producing a compact hourly visual market-state baseline for four closed 15-minute charts.
+You are producing a compact hourly visual market-state baseline for four closed 5-minute charts.
 
 Important boundaries:
 - Four full-resolution PNGs are attached in the same order as the market
@@ -60,14 +60,19 @@ Mandatory horizontal-range inventory (perform this before state labels):
   that starts after the phase has already begun, ends while price is still
   rotating in the same price area, or excludes a later independent edge test
   is invalid even when its internal statistics look balanced.
-- `start_time` and `end_time` must be exact 15-minute Unix open timestamps
+- `start_time` and `end_time` must be exact 5-minute Unix open timestamps
   visible in the supplied metadata period. For `upper` and `lower`, compare
   plausible horizontal levels and choose the one with the densest separated
   structural wick contacts and best candle-body/close containment. A boundary
   may sit inside
   the absolute high/low when the outer extreme is only a sweep. Do not let one
   rolling extreme stretch the box.
-- A horizontal range requires defensible upper and lower edges, at least two independent tests on each edge, separated in time, plus alternating rotations. Adjacent wick clusters are one test.
+- HARD VETO: a horizontal range requires defensible upper and lower edges,
+  at least two independent test clusters on EACH edge, separated in time,
+  plus alternating rotations. Adjacent wick clusters are one test. If either
+  edge has fewer than two independent clusters, reject the rectangle even
+  when price spent several candles inside it; do not retain it as
+  `auto_existing` and do not return it as `auto_candidate`.
 - A short pause, rolling-window high/low, two adjacent lows/highs, or one V-shaped rebound is not a range.
 - Once price has accepted outside a range, mark it `broken`; do not invent a smaller new range without a new multi-rotation balance.
 

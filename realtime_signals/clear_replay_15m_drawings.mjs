@@ -1,7 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { Client } from 'file:///C:/Users/zbx00/tools/tradingview-mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js';
-import { StdioClientTransport } from 'file:///C:/Users/zbx00/tools/tradingview-mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js';
+import {
+  loadTradingViewMcpSdk,
+  resolveTradingViewMcpRoot,
+} from './tradingview_mcp_runtime.mjs';
 
 const manifestPath = process.argv[2];
 const targetSymbols = new Set(
@@ -16,7 +18,8 @@ if (!manifestPath || !fs.existsSync(manifestPath)) {
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8').replace(/^\uFEFF/, ''));
 const parse = (result) => JSON.parse(result.content[0].text);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const serverRoot = 'C:/Users/zbx00/tools/tradingview-mcp';
+const serverRoot = resolveTradingViewMcpRoot();
+const { Client, StdioClientTransport } = await loadTradingViewMcpSdk(serverRoot);
 const transport = new StdioClientTransport({
   command: process.execPath,
   args: ['src/server.js'],

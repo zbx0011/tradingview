@@ -1,4 +1,4 @@
-"""High-recall deterministic candidate gate for the 15-minute monitor.
+"""High-recall deterministic candidate gate for the 5-minute monitor.
 
 The gate never creates a formal signal. It deliberately emits a wider set of
 well-described candidates for AI review while preserving the strict A/B
@@ -25,8 +25,8 @@ WATCHLIST = (
     ("OANDA", "XAUUSD"),
     ("ICMARKETS", "US500"),
 )
-TIMEFRAME = "15"
-BAR_SECONDS = 15 * 60
+TIMEFRAME = "5"
+BAR_SECONDS = 5 * 60
 MEMORY_VERSION = 6
 MEMORY_BARS = 6
 
@@ -1309,6 +1309,40 @@ def remove_unproven_range_hints(
         }
 
 
+def remove_opposite_edge_reversal_after_range_exit(
+    triggers: list[dict[str, Any]],
+    current: sqlite3.Row | dict[str, Any],
+    validation: dict[str, Any],
+) -> None:
+    """Do not call an accepted close outside a marked range an edge reversal.
+
+    A lower-edge long (or upper-edge short) requires a close back inside the
+    authoritative rectangle.  Until that reclaim happens, the outside close
+    remains a breakout candidate and must not be packaged as a direction
+    conflict merely because its wick also tested the edge.
+    """
+    if not validation.get("valid"):
+        return
+    close = float(current["close"])
+    lower = float(validation["lower"])
+    upper = float(validation["upper"])
+    blocked_direction: str | None = None
+    if close < lower:
+        blocked_direction = "long"
+    elif close > upper:
+        blocked_direction = "short"
+    if blocked_direction is None:
+        return
+    triggers[:] = [
+        trigger
+        for trigger in triggers
+        if not (
+            trigger.get("direction") == blocked_direction
+            and reason_family(str(trigger.get("code") or "")) == "edge_reversal"
+        )
+    ]
+
+
 def range_reversal_position_validation(
     current: sqlite3.Row | dict[str, Any],
     validation: dict[str, Any],
@@ -1782,9 +1816,13 @@ def direct_triggers(rows: list[sqlite3.Row], atr14: float, ema20: float, ema50: 
     high_tests = clustered_tests(pivot_highs, high, 0.35 * atr14)
     low_tests = clustered_tests(pivot_lows, low, 0.35 * atr14)
 
-    # Displacement threshold is intentionally permissive. The reviewer must
-    # still prove a real range/channel break rather than a rolling-window break.
-    if body >= 0.60 * atr14 and location >= 0.68 and close > top8:
+    # A genuine close through the boundary is enough to enter review when the
+    # body proves displacement.  Close location remains diagnostic metadata;
+    # it must not be a hard 68%/32% gate because Louie's rules describe
+    # "closing near the extreme" qualitatively rather than with that threshold.
+    # The reviewer still has to prove a real range/channel break instead of a
+    # mere rolling-window break.
+    if body >= 0.60 * atr14 and close > top8:
         add_trigger(
             triggers,
             "bull_displacement_breakout",
@@ -1793,7 +1831,7 @@ def direct_triggers(rows: list[sqlite3.Row], atr14: float, ema20: float, ema50: 
             8,
             {"body_atr": body / atr14, "close": close, "broken_level": top8, "close_location": location},
         )
-    if body >= 0.60 * atr14 and location <= 0.32 and close < bottom8:
+    if body >= 0.60 * atr14 and close < bottom8:
         add_trigger(
             triggers,
             "bear_displacement_breakout",
@@ -2270,8 +2308,22 @@ def candidate_for(
         list(chart_ranges or []), current, atr14
     )
     if horizontal_range_validation is None:
-        horizontal_range_validation = range_validation(rows[:-1], atr14)
+        inferred_range = range_validation(rows[:-1], atr14)
+        horizontal_range_validation = {
+            "valid": False,
+            "reason": "no_authoritative_visible_chart_range",
+            "chart_override": False,
+            "source": "ohlc_inference_only",
+            # Keep the local detector's proposal only as input for the visual
+            # range-mapping pass.  It is never authoritative signal evidence.
+            "inferred_candidate": (
+                inferred_range if inferred_range.get("valid") else None
+            ),
+        }
     remove_unproven_range_hints(triggers, horizontal_range_validation)
+    remove_opposite_edge_reversal_after_range_exit(
+        triggers, current, horizontal_range_validation
+    )
     range_reversal_validation = range_reversal_position_validation(
         current, horizontal_range_validation, atr14
     )

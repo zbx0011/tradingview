@@ -1,12 +1,14 @@
 // Keep TradingView price alerts aligned with active orange range rectangles.
 // Price alerts are on_first_fire, so an alert that fired during the previous
-// bar is re-armed after that 15-minute close while the range remains valid.
+// bar is re-armed after that 5-minute close while the range remains valid.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { Client } from 'file:///C:/Users/zbx00/tools/tradingview-mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js';
-import { StdioClientTransport } from 'file:///C:/Users/zbx00/tools/tradingview-mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js';
+import {
+  loadTradingViewMcpSdk,
+  resolveTradingViewMcpRoot,
+} from './tradingview_mcp_runtime.mjs';
 
 if (process.platform === 'win32' && !('type' in process)) {
   process.type = 'tvfloat-background';
@@ -14,8 +16,9 @@ if (process.platform === 'win32' && !('type' in process)) {
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const root = path.dirname(scriptDir);
-const serverRoot = 'C:/Users/zbx00/tools/tradingview-mcp';
-const timeframe = '15';
+const serverRoot = resolveTradingViewMcpRoot();
+const { Client, StdioClientTransport } = await loadTradingViewMcpSdk(serverRoot);
+const timeframe = '5';
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const parse = (result) => JSON.parse(result.content[0].text);
 const args = Object.fromEntries(

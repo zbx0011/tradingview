@@ -1,0 +1,59 @@
+{
+  "package_type": "TVFloat authoritative Codex handoff",
+  "format_version": 2,
+  "created_date": "2026-08-01",
+  "language": "zh-CN",
+  "contains_credentials": false,
+  "authority_order": [
+    "current explicit user instruction",
+    "03-TVFloat完整权威上下文-20260801.md",
+    "current production source and prompts",
+    "01-TVFloat项目上下文.md",
+    "02-接管验证清单.md",
+    "legacy README and replay scripts"
+  ],
+  "entry_prompt": "migration/codex-handoff/00-新电脑AI直接粘贴-20260801.txt",
+  "authoritative_context": "migration/codex-handoff/03-TVFloat完整权威上下文-20260801.md",
+  "runtime": {
+    "timeframe_minutes": 5,
+    "schedule": "Monday-Friday, 24 hours, every 5 minutes",
+    "database": "%LOCALAPPDATA%\\TVFloat\\market.db",
+    "scheduled_task": "TVFloat-LowToken-Collector",
+    "watchlist": [
+      "BYBIT:BTCUSDT.P",
+      "OANDA:XAGUSD",
+      "OANDA:XAUUSD",
+      "ICMARKETS:US500"
+    ]
+  },
+  "known_legacy_conflicts": [
+    "CAPITALCOM:SPX500 is legacy only and must not replace ICMARKETS:US500",
+    "replay_backfill_15m.mjs and other 15m replay files are historical tools, not the current 5m production monitor",
+    "candidate_filter.py is legacy; candidate_filter_v2.py is the current production candidate filter",
+    "the canceled 32-percent breakout-close rule must not be restored"
+  ],
+  "files": [
+    {"path":"migration/codex-handoff/03-TVFloat完整权威上下文-20260801.md","bytes":27334,"sha256":"BE21610E25C9F300A30B27A319D8112E77298F8D34C9C7EFF4B74608284E6626"},
+    {"path":"migration/codex-handoff/00-新电脑AI直接粘贴-20260801.txt","bytes":2438,"sha256":"40B9B38FBDA8F587BE95322193AF38920AE438AE69FFE135360146CE8951689B"},
+    {"path":"migration/codex-handoff/01-TVFloat项目上下文.md","bytes":13767,"sha256":"F3560F12E3340DC50AF114EFE11A17ED6A6DF45DCBD2A8BB1D13CBF1EFD23A78"},
+    {"path":"migration/codex-handoff/02-接管验证清单.md","bytes":3244,"sha256":"9BBC79A6883C358518D68C98294512711BD14F0D8BC9D27236D304616E26426E"},
+    {"path":"realtime_signals/review_decision_prompt.txt","bytes":9510,"sha256":"4360BBA4CDE4DFDFD035C59B33F10B2BCA9C4F02117782FAF4CBD8C39764185F"},
+    {"path":"realtime_signals/review_decision_schema.json","bytes":2103,"sha256":"11D39B39C04CCF13BEC19600C04F003DF85747DAD0546B2A02EE8BBBB1FE4F18"},
+    {"path":"realtime_signals/visual_baseline_prompt.txt","bytes":5635,"sha256":"0E450BEFECE416C8FDD8AECB08AB5D44A33108EF7EFE9608FE9297AF10E43B6D"},
+    {"path":"realtime_signals/visual_baseline_schema.json","bytes":4105,"sha256":"FD307B2C4995D5F46AD124412CB55A25F9D44713E20156F8A076A86E83962D98"},
+    {"path":"realtime_signals/candidate_filter_v2.py","bytes":99887,"sha256":"18895999356A030C046D79F22A563FE2E6E3D62DED1D44D4A20E4F9FF85E0D20"},
+    {"path":"realtime_signals/collect_tv.mjs","bytes":8812,"sha256":"6360CECEC23043B3DC9CDF319889A7565511FFE91B4E331C84C27403C00917D7"},
+    {"path":"realtime_signals/run_lightweight.ps1","bytes":5021,"sha256":"9C08C62C44EC744236C4735AB86FFEC68DB7815859D0547D384A538131D8B9CA"},
+    {"path":"realtime_signals/review_candidates.ps1","bytes":18975,"sha256":"0D26723B2605458D6554A56E00B426155DF7CF21AF96A175751308953A486B74"},
+    {"path":"realtime_signals/execute_signal.mjs","bytes":13591,"sha256":"D5405B1E9A6092AC13009F699D911ABB771D087C58AF148A156EF186F1EF7236"},
+    {"path":"realtime_signals/apply_range_baseline.mjs","bytes":9934,"sha256":"2351F7957B45FA303101E44B09E71F0AC3CE99DB4D04F1DE4F0148BA128F6300"},
+    {"path":"realtime_signals/range_edge_watch.py","bytes":8578,"sha256":"1A7B0E61B10E989111DA4E76B3342F694A3877878F5CE707F96B7A16586AA2A9"},
+    {"path":"realtime_signals/reconcile_range_edge_alerts.mjs","bytes":9007,"sha256":"C4F1AC10940AF7617B5EC3A37B4767ED97BBC84897675D9D19853150F8E5ABA1"},
+    {"path":"realtime_signals/kline_store.py","bytes":37561,"sha256":"83A51EC0EB2C689608E50334EE19E2665D7616597A9ADDAA937130F9406C858F"},
+    {"path":"tv_float.py","bytes":56322,"sha256":"9BC20102E41034C345CAB302160DF87F0E8DAAF4C7C21247D28BDF2CF6D94AF0"},
+    {"path":"tv_sync_host.py","bytes":15634,"sha256":"986FE9BC56B0AE6DE16E571A90AB743E15E04FB1852040EC029EF7281DCDB290"},
+    {"path":"tv_sync_client.py","bytes":22231,"sha256":"8B2F0F4BB9F43DA59CCA3D26CB6B50216DA33DF3D8AF5BF800128B80DD580BA6"},
+    {"path":"tv_sync_protocol.py","bytes":3557,"sha256":"136A07D1BDBFF0A25F9490761E722AC2CAD100D85D33F5A9FB2AB09C9911355B"},
+    {"path":"migration/Test-TVFloatMigration.ps1","bytes":3416,"sha256":"992E3F9DD91F66559A89606E6827AE793A944D0EA56011A4C1E856624CE66E2E"}
+  ]
+}

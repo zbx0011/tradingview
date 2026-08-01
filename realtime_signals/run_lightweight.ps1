@@ -4,36 +4,37 @@ param(
 $ErrorActionPreference = 'Stop'
 $now = Get-Date
 if (
-  -not $BypassScheduleGate -and (
-    $now.DayOfWeek -in @('Saturday', 'Sunday') -or
-    $now.TimeOfDay -lt [TimeSpan]'08:30' -or
-    $now.TimeOfDay -gt [TimeSpan]'23:00'
-  )
+  -not $BypassScheduleGate -and
+  $now.DayOfWeek -in @('Saturday', 'Sunday')
 ) { exit 0 }
 
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $root
-node .\realtime_signals\collect_tv.mjs
-
-# Refresh active replay rectangles without calling a model. Unbroken ranges
-# follow the newest closed 15-minute candle and project eight bars into the
-# future; once a confirmed exit occurs, the right edge is frozen before the
-# breakout candle. User-moved/resized rectangles are detected and locked.
-$replayRoot = Join-Path $env:LOCALAPPDATA 'TVFloat\replay-15m-5d-20260728'
-$replayRanges = Join-Path $replayRoot 'replay_ranges.json'
-$replayRangeDrawings = Join-Path $replayRoot 'replay_range_drawings.json'
-if (
-  (Test-Path -LiteralPath $replayRanges) -and
-  (Test-Path -LiteralPath $replayRangeDrawings)
-) {
-  node .\realtime_signals\draw_replay_15m_ranges.mjs `
-    $replayRanges $replayRangeDrawings
+$runnerLogPath = Join-Path $env:LOCALAPPDATA 'TVFloat\lightweight_runner.log'
+function Invoke-VisualBaselineSafely {
+  param(
+    [switch]$Force,
+    [int]$MaxSeconds
+  )
+  try {
+    if ($Force) {
+      & .\realtime_signals\update_visual_baseline.ps1 -Force -MaxSeconds $MaxSeconds
+    } else {
+      & .\realtime_signals\update_visual_baseline.ps1 -MaxSeconds $MaxSeconds
+    }
+    return $true
+  } catch {
+    $message = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff') VISUAL_BASELINE_WARN $($_.Exception.Message)"
+    Add-Content -LiteralPath $runnerLogPath -Encoding UTF8 -Value $message
+    return $false
+  }
 }
+node .\realtime_signals\collect_tv.mjs
 
 python .\realtime_signals\candidate_filter_v2.py
 
 # Range-edge warnings are deterministic and token-free.  Orange rectangle
-# geometry is already synchronized by collect_tv.mjs.  Every closed 15-minute
+# geometry is already synchronized by collect_tv.mjs.  Every closed 5-minute
 # candle touching an upper/lower eighth creates a pending TVFloat warning, and
 # TradingView price alerts are re-armed once per bar until a confirmed breakout.
 $rangeEdgePlan = Join-Path $env:LOCALAPPDATA 'TVFloat\range_edge_alert_plan.json'
@@ -41,9 +42,9 @@ python .\realtime_signals\range_edge_watch.py --output $rangeEdgePlan
 node .\realtime_signals\reconcile_range_edge_alerts.mjs --input $rangeEdgePlan
 
 # Start AI review immediately instead of waiting for a second scheduled task.
-# The whole run must finish 15 seconds before the next fifteen-minute boundary.
+# The whole run must finish 15 seconds before the next five-minute boundary.
 $nowEpoch = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-$nextBoundary = ([long]([math]::Floor($nowEpoch / 900) + 1) * 900)
+$nextBoundary = ([long]([math]::Floor($nowEpoch / 300) + 1) * 300)
 $deadlineEpoch = $nextBoundary - 15
 $queuePath = Join-Path $env:LOCALAPPDATA 'TVFloat\candidate_queue.json'
 $baselinePath = Join-Path $env:LOCALAPPDATA 'TVFloat\visual_baseline.json'
@@ -85,23 +86,28 @@ if ($candidateCount -gt 0) {
     (@($_.reason_families) -contains 'breakout' -or
      @($_.reason_families) -contains 'edge_reversal')
   }).Count -gt 0
-  $forceRangeMap = $needsRangeMap -and $baselineAge -ge 1800
+  # A range-class candidate may not wait for the hourly baseline.  Force a
+  # visual pass immediately so a visible authoritative orange rectangle is
+  # either synchronized or the range setup is rejected by the final gates.
+  $forceRangeMap = $needsRangeMap
   $regularRangeMap = $baselineAge -ge 3600
   $rangeBudget = [int]($deadlineEpoch - [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - 120)
   if (($forceRangeMap -or $regularRangeMap) -and $rangeBudget -ge 60) {
     if ($forceRangeMap) {
-      & .\realtime_signals\update_visual_baseline.ps1 -Force -MaxSeconds ([math]::Min(150, $rangeBudget))
+      $baselineUpdated = Invoke-VisualBaselineSafely -Force -MaxSeconds ([math]::Min(150, $rangeBudget))
     } else {
-      & .\realtime_signals\update_visual_baseline.ps1 -MaxSeconds ([math]::Min(150, $rangeBudget))
+      $baselineUpdated = Invoke-VisualBaselineSafely -MaxSeconds ([math]::Min(150, $rangeBudget))
     }
-    # The visual pass may have drawn a missing range. Rebuild the candidate
-    # package so the final reviewer receives the authoritative rectangle.
-    python .\realtime_signals\candidate_filter_v2.py
-    try {
-      $queue = Get-Content -Raw -Encoding UTF8 -LiteralPath $queuePath | ConvertFrom-Json
-      $candidateCount = @($queue.candidates).Count
-    } catch {
-      $candidateCount = 0
+    if ($baselineUpdated) {
+      # The visual pass may have drawn a missing range. Rebuild the candidate
+      # package so the final reviewer receives the authoritative rectangle.
+      python .\realtime_signals\candidate_filter_v2.py
+      try {
+        $queue = Get-Content -Raw -Encoding UTF8 -LiteralPath $queuePath | ConvertFrom-Json
+        $candidateCount = @($queue.candidates).Count
+      } catch {
+        $candidateCount = 0
+      }
     }
   }
 }
@@ -112,6 +118,6 @@ if ($candidateCount -gt 0 -and $deadlineEpoch - [DateTimeOffset]::UtcNow.ToUnixT
   # a candidate decision or its TradingView annotation.
   $baselineBudget = [int]($deadlineEpoch - [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - 10)
   if ($baselineBudget -ge 45) {
-    & .\realtime_signals\update_visual_baseline.ps1 -MaxSeconds ([math]::Min(150, $baselineBudget))
+    $null = Invoke-VisualBaselineSafely -MaxSeconds ([math]::Min(150, $baselineBudget))
   }
 }

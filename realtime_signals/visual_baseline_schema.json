@@ -35,7 +35,7 @@
         "properties": {
           "vendor": {"type": "string"},
           "symbol": {"type": "string"},
-          "timeframe": {"type": "string", "enum": ["15"]},
+          "timeframe": {"type": "string", "enum": ["5"]},
           "through_bar_time": {"type": "integer"},
           "outer_state": {
             "type": "string",

@@ -1,0 +1,21 @@
+{
+  "package_type": "TVFloat Codex handoff context",
+  "format_version": 1,
+  "created_date": "2026-07-31",
+  "language": "zh-CN",
+  "contains_credentials": false,
+  "monitor_timeframe": "5",
+  "monitor_schedule": "Monday-Friday, 24 hours, every 5 minutes",
+  "watchlist": [
+    "BYBIT:BTCUSDT.P",
+    "OANDA:XAGUSD",
+    "OANDA:XAUUSD",
+    "ICMARKETS:US500"
+  ],
+  "scheduled_task": "TVFloat-LowToken-Collector",
+  "runtime_database": "%LOCALAPPDATA%\\TVFloat\\market.db",
+  "entry_prompt": "00-直接粘贴给新电脑Codex.txt",
+  "context": "01-TVFloat项目上下文.md",
+  "checklist": "02-接管验证清单.md",
+  "diagnostics": "Get-TVFloatHandoffStatus.ps1"
+}

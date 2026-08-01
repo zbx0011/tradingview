@@ -106,7 +106,7 @@ if (-not $queue.candidates -or $queue.candidates.Count -eq 0) { exit 0 }
 
 if ($DeadlineEpoch -le 0) {
   $now = Get-NowEpoch
-  $DeadlineEpoch = ([long]([math]::Floor($now / 900) + 1) * 900) - 15
+  $DeadlineEpoch = ([long]([math]::Floor($now / 300) + 1) * 300) - 15
 }
 $decisionDeadline = [math]::Min(
   $DeadlineEpoch - $decisionReserveSeconds,
@@ -227,16 +227,19 @@ foreach ($candidate in $queue.candidates) {
       effort = $effort
       deadline_epoch = $DeadlineEpoch
       mode = 'decision_only_parallel'
+      delivery_mode = 'as_completed'
+      speed_mode = 'fast_1_5x'
     }
   }
   $jobRunId = [int]$jobRun.job_run_id
-  Write-ReviewLog "START key=$key model=$model effort=$effort deadline=$DeadlineEpoch"
+  Write-ReviewLog "START key=$key model=$model effort=$effort speed=fast_1_5x delivery=as_completed deadline=$DeadlineEpoch"
   $arguments = @(
     'exec',
     '--ephemeral',
     '--skip-git-repo-check',
     '--ignore-user-config',
     '--ignore-rules',
+    '--enable', 'fast_mode',
     '--sandbox', 'read-only',
     '-C', "`"$root`"",
     '-m', $model,
@@ -268,26 +271,11 @@ foreach ($candidate in $queue.candidates) {
 }
 
 if ($running.Count -eq 0) { exit 0 }
-Write-ReviewStatus 'running' $running[0].Candidate "$($running.Count) AI decision review(s) running in parallel" $running[0].Model $running[0].JobRunId
+Write-ReviewStatus 'running' $running[0].Candidate "$($running.Count) AI review(s) running; each completed result is applied immediately" $running[0].Model $running[0].JobRunId
 
-while (@($running | Where-Object { -not $_.Handled -and -not $_.Process.HasExited }).Count -gt 0 -and (Get-NowEpoch) -lt $decisionDeadline) {
-  Start-Sleep -Milliseconds 250
-}
-
-$signalItems = [System.Collections.Generic.List[object]]::new()
-foreach ($item in $running) {
+function Complete-ReviewItem([object]$item) {
+  $stage = 'decision'
   try {
-    if (-not $item.Process.HasExited) {
-      Stop-ReviewProcess $item
-      $message = "AI decision missed hard cutoff $decisionDeadline"
-      Write-ReviewLog "DEADLINE key=$($item.Key) cutoff=$decisionDeadline"
-      Write-ReviewStatus 'deadline_timeout' $item.Candidate $message $item.Model $item.JobRunId
-      Finish-Run $item.JobRunId 'deadline_timeout' @{
-        key = $item.Key; message = $message; model = $item.Model; deadline_epoch = $DeadlineEpoch
-      }
-      $seen.Add($item.Key)
-      continue
-    }
     $item.Process.WaitForExit()
     $item.Process.Refresh()
     if (-not (Test-Path $item.OutFile)) {
@@ -309,9 +297,12 @@ foreach ($item in $running) {
           '6ZyH6I2h5YaF6YOo77ya6L6557yY5Y+N5ZCR',
           '6ZyH6I2h56qB56C077ya5L2N56e756qB56C0'
         ) -and
-        -not [bool]$item.Candidate.range_validation.valid
+        (
+          -not [bool]$item.Candidate.range_validation.valid -or
+          -not [bool]$item.Candidate.range_validation.chart_override
+        )
       ) {
-        $hardReject = "range hard gate rejected setup=$($decision.setup_type)"
+        $hardReject = "visible-range hard gate rejected setup=$($decision.setup_type)"
       }
       if (
         $setupTypeBase64 -in @(
@@ -339,34 +330,19 @@ foreach ($item in $running) {
         duration_seconds=$duration; tokens_used=$tokensUsed; hard_gate_rejected=$true
       }
       $seen.Add($item.Key)
-      continue
+      return
     }
-    if ($decision.verdict -eq 'SIGNAL') {
-      $signalItems.Add([pscustomobject]@{ Item = $item; Decision = $decision })
-    } else {
+    if ($decision.verdict -ne 'SIGNAL') {
       Write-ReviewStatus 'completed' $item.Candidate 'Review completed: no A/B signal' $item.Model $item.JobRunId
       Finish-Run $item.JobRunId 'completed' @{
         key = $item.Key; message = 'Review completed: no A/B signal'; model = $item.Model
         duration_seconds = $duration; tokens_used = $tokensUsed; mode = 'decision_only_parallel'
       }
       $seen.Add($item.Key)
+      return
     }
-  } catch {
-    $message = $_.Exception.Message
-    Write-ReviewLog "ERROR key=$($item.Key) $message"
-    Write-ReviewStatus 'failed' $item.Candidate $message $item.Model $item.JobRunId
-    Finish-Run $item.JobRunId 'failed' @{
-      key = $item.Key; message = $message; model = $item.Model
-    }
-    $seen.Add($item.Key)
-  } finally {
-    Remove-ReviewFiles $item
-  }
-}
 
-foreach ($signal in $signalItems) {
-  $item = $signal.Item
-  try {
+    $stage = 'execution'
     $remaining = $DeadlineEpoch - (Get-NowEpoch)
     if ($remaining -lt $minimumExecutionSeconds) {
       throw "Signal accepted but only ${remaining}s remain before hard deadline"
@@ -376,15 +352,15 @@ foreach ($signal in $signalItems) {
       Write-ReviewStatus 'dry_run_signal' $item.Candidate 'A/B decision found; execution skipped by DryRun' $item.Model $item.JobRunId
       Finish-Run $item.JobRunId 'dry_run_signal' @{
         key = $item.Key; model = $item.Model; tokens_used = $item.TokensUsed
-        decision = $signal.Decision
+        decision = $decision
       }
       $seen.Add($item.Key)
-      continue
+      return
     }
     $executionFile = Join-Path $env:TEMP "tvfloat-execute-$($item.Candidate.symbol)-$($item.Candidate.bar_time)-$([guid]::NewGuid().ToString('N')).json"
     $executionPayload = @{
       candidate = $item.Candidate
-      decision = $signal.Decision
+      decision = $decision
     } | ConvertTo-Json -Compress -Depth 14
     [System.IO.File]::WriteAllText($executionFile, $executionPayload, [System.Text.UTF8Encoding]::new($false))
     try {
@@ -408,13 +384,59 @@ foreach ($signal in $signalItems) {
     $seen.Add($item.Key)
   } catch {
     $message = $_.Exception.Message
-    Write-ReviewLog "EXECUTION_ERROR key=$($item.Key) $message"
-    Write-ReviewStatus 'execution_failed' $item.Candidate $message $item.Model $item.JobRunId
-    Finish-Run $item.JobRunId 'execution_failed' @{
-      key = $item.Key; message = $message; model = $item.Model; deadline_epoch = $DeadlineEpoch
+    if ($stage -eq 'execution') {
+      Write-ReviewLog "EXECUTION_ERROR key=$($item.Key) $message"
+      Write-ReviewStatus 'execution_failed' $item.Candidate $message $item.Model $item.JobRunId
+      Finish-Run $item.JobRunId 'execution_failed' @{
+        key = $item.Key; message = $message; model = $item.Model; deadline_epoch = $DeadlineEpoch
+      }
+    } else {
+      Write-ReviewLog "ERROR key=$($item.Key) $message"
+      Write-ReviewStatus 'failed' $item.Candidate $message $item.Model $item.JobRunId
+      Finish-Run $item.JobRunId 'failed' @{
+        key = $item.Key; message = $message; model = $item.Model; deadline_epoch = $DeadlineEpoch
+      }
     }
     $seen.Add($item.Key)
+  } finally {
+    $item.Handled = $true
+    Remove-ReviewFiles $item
   }
+}
+
+while (@($running | Where-Object { -not $_.Handled }).Count -gt 0 -and (Get-NowEpoch) -lt $decisionDeadline) {
+  $completed = @($running | Where-Object { -not $_.Handled -and $_.Process.HasExited })
+  if ($completed.Count -eq 0) {
+    Start-Sleep -Milliseconds 100
+    continue
+  }
+  foreach ($item in $completed) {
+    Complete-ReviewItem $item
+  }
+  Save-Seen $seen
+  $remainingItems = @($running | Where-Object { -not $_.Handled })
+  if ($remainingItems.Count -gt 0) {
+    Write-ReviewStatus 'running' $remainingItems[0].Candidate "$($remainingItems.Count) AI review(s) still running; completed results already applied" $remainingItems[0].Model $remainingItems[0].JobRunId
+  }
+}
+
+# A review may finish exactly as the decision cutoff is reached. Apply every
+# completed result before terminating only the processes that are still running.
+foreach ($item in @($running | Where-Object { -not $_.Handled -and $_.Process.HasExited })) {
+  Complete-ReviewItem $item
+}
+
+foreach ($item in @($running | Where-Object { -not $_.Handled })) {
+  Stop-ReviewProcess $item
+  $message = "AI decision missed hard cutoff $decisionDeadline"
+  Write-ReviewLog "DEADLINE key=$($item.Key) cutoff=$decisionDeadline"
+  Write-ReviewStatus 'deadline_timeout' $item.Candidate $message $item.Model $item.JobRunId
+  Finish-Run $item.JobRunId 'deadline_timeout' @{
+    key = $item.Key; message = $message; model = $item.Model; deadline_epoch = $DeadlineEpoch
+  }
+  $seen.Add($item.Key)
+  $item.Handled = $true
+  Remove-ReviewFiles $item
 }
 
 Save-Seen $seen

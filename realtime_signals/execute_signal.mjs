@@ -1,14 +1,20 @@
 import fs from 'node:fs';
 import { execFileSync, spawn } from 'node:child_process';
-import { Client } from 'file:///C:/Users/zbx00/tools/tradingview-mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js';
-import { StdioClientTransport } from 'file:///C:/Users/zbx00/tools/tradingview-mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  loadTradingViewMcpSdk,
+  resolveTradingViewMcpRoot,
+} from './tradingview_mcp_runtime.mjs';
 
 if (process.platform === 'win32' && !('type' in process)) {
   process.type = 'tvfloat-background';
 }
 
-const root = 'C:/Users/zbx00/OneDrive/private/文档/1111';
-const serverRoot = 'C:/Users/zbx00/tools/tradingview-mcp';
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const root = path.dirname(scriptDir);
+const serverRoot = resolveTradingViewMcpRoot();
+const { Client, StdioClientTransport } = await loadTradingViewMcpSdk(serverRoot);
 const queueExcelExport = () => {
   try {
     const child = spawn(
@@ -40,8 +46,8 @@ const deadlineEpoch = Number(args['deadline-epoch'] || 0);
 const payload = JSON.parse(fs.readFileSync(args.input, 'utf8').replace(/^\uFEFF/, ''));
 const { candidate, decision } = payload;
 const fullSymbol = `${candidate.vendor}:${candidate.symbol}`;
-const timeframe = '15';
-const barSeconds = 15 * 60;
+const timeframe = '5';
+const barSeconds = 5 * 60;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const parse = (result) => JSON.parse(result.content[0].text);
 const checkDeadline = (reserve = 0) => {
@@ -69,7 +75,13 @@ const validateDecision = () => {
     '宽通道突破：更大级别反转',
     '宽通道顺势：在有利边缘跟随主方向',
   ]);
-  if (rangeSetups.has(decision.setup_type) && candidate.range_validation?.valid !== true) {
+  if (
+    rangeSetups.has(decision.setup_type)
+    && (
+      candidate.range_validation?.valid !== true
+      || candidate.range_validation?.chart_override !== true
+    )
+  ) {
     throw new Error('range hard gate rejected signal before execution');
   }
   if (decision.setup_type === '震荡内部：边缘反向') {
@@ -164,6 +176,14 @@ const transport = new StdioClientTransport({
 });
 const client = new Client({ name: 'tvfloat-signal-executor', version: '2.0.0' }, { capabilities: {} });
 await client.connect(transport);
+const closeWatchlist = async () => {
+  try {
+    await client.callTool({
+      name: 'ui_open_panel',
+      arguments: { panel: 'watchlist', action: 'close' },
+    });
+  } catch {}
+};
 const cleanup = [];
 const alertResults = [];
 let drawingId = null;
@@ -171,6 +191,7 @@ try {
   checkDeadline(20);
   const rightmost = parse(await client.callTool({ name: 'tab_switch_rightmost', arguments: {} }));
   if (!rightmost.success) throw new Error(`rightmost tab switch failed: ${rightmost.error || 'unknown'}`);
+  await closeWatchlist();
   await client.callTool({ name: 'chart_set_symbol', arguments: { symbol: fullSymbol } });
   await client.callTool({ name: 'chart_set_timeframe', arguments: { timeframe } });
   await waitForSymbol(client, fullSymbol);
@@ -210,7 +231,7 @@ try {
   const atr = Math.max(Number(candidate.atr14 || 0), Math.abs(Number(candidate.close)) * 0.0005);
   const secondPrice = Number(candidate.close) + (decision.direction === 'long' ? -0.8 : 0.8) * atr;
   const labelText = [
-    `${decision.grade}级 ${directionText}｜${decision.setup_type}｜15分钟`,
+    `${decision.grade}级 ${directionText}｜${decision.setup_type}｜5分钟`,
     `北京时间 ${beijingLabel(Number(candidate.bar_time))}｜收盘 ${candidate.close}`,
     `位置：${shortText(decision.location_summary, 24)}`,
     `结构：${shortText(decision.structure_summary, 30)}`,
@@ -291,6 +312,7 @@ try {
     await client.callTool({ name: 'chart_set_symbol', arguments: { symbol: 'BYBIT:BTCUSDT.P' } });
     await client.callTool({ name: 'chart_set_timeframe', arguments: { timeframe } });
   } catch {}
+  await closeWatchlist();
   await client.close();
 }
 const success = drawingId !== null && alertResults.every((item) => item.status === 'created');

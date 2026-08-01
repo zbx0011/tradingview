@@ -1,15 +1,18 @@
 // One-shot, token-free TradingView backfill for a historical 15-minute replay.
 // It does not sync drawings/ranges and does not run the live signal monitor.
 import { execFileSync } from 'node:child_process';
-import { Client } from 'file:///C:/Users/zbx00/tools/tradingview-mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js';
-import { StdioClientTransport } from 'file:///C:/Users/zbx00/tools/tradingview-mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js';
+import {
+  loadTradingViewMcpSdk,
+  resolveTradingViewMcpRoot,
+} from './tradingview_mcp_runtime.mjs';
 
 if (process.platform === 'win32' && !('type' in process)) {
   process.type = 'tvfloat-background';
 }
 
 const root = process.cwd();
-const serverRoot = 'C:/Users/zbx00/tools/tradingview-mcp';
+const serverRoot = resolveTradingViewMcpRoot();
+const { Client, StdioClientTransport } = await loadTradingViewMcpSdk(serverRoot);
 const timeframe = '15';
 const barSeconds = 15 * 60;
 const watchlist = [

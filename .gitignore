@@ -21,3 +21,5 @@ settings-check*.png
 watchlist-*.png
 tradingview-printwindow*.png
 realtime_signals/data/
+migration/packages/
+migration/disabled-startup-backups/

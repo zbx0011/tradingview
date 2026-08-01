@@ -3,8 +3,10 @@
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Client } from 'file:///C:/Users/zbx00/tools/tradingview-mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js';
-import { StdioClientTransport } from 'file:///C:/Users/zbx00/tools/tradingview-mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js';
+import {
+  loadTradingViewMcpSdk,
+  resolveTradingViewMcpRoot,
+} from './tradingview_mcp_runtime.mjs';
 
 // The MCP SDK hides Windows child processes only when it detects an Electron
 // host. Mark this dedicated background collector as such so its Node server
@@ -15,15 +17,16 @@ if (process.platform === 'win32' && !('type' in process)) {
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const root = path.dirname(scriptDir);
-const serverRoot = 'C:/Users/zbx00/tools/tradingview-mcp';
+const serverRoot = resolveTradingViewMcpRoot();
+const { Client, StdioClientTransport } = await loadTradingViewMcpSdk(serverRoot);
 const watchlist = [
   ['BYBIT', 'BTCUSDT.P', 'BYBIT:BTCUSDT.P'],
   ['OANDA', 'XAGUSD', 'OANDA:XAGUSD'],
   ['OANDA', 'XAUUSD', 'OANDA:XAUUSD'],
   ['ICMARKETS', 'US500', 'ICMARKETS:US500'],
 ];
-const timeframe = '15';
-const barSeconds = 15 * 60;
+const timeframe = '5';
+const barSeconds = 5 * 60;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const parse = (result) => JSON.parse(result.content[0].text);
 const waitForClosedBarSafetyWindow = async () => {
@@ -44,10 +47,11 @@ const waitForSymbol = async (client, full) => {
   throw new Error(`chart switch failed: expected ${full} ${timeframe}m, got ${state.symbol} ${state.resolution}m`);
 };
 const plausible = (symbol, close) => {
-  if (symbol === 'BTCUSDT.P') return close > 1_000;
+  if (symbol === 'BTCUSDT.P') return close > 10_000 && close < 500_000;
   if (symbol === 'XAGUSD') return close > 10 && close < 200;
-  if (symbol === 'US500') return close > 1_000 && close < 20_000;
-  return close > 1_000 && close < 10_000;
+  if (symbol === 'XAUUSD') return close > 500 && close < 5_000;
+  if (symbol === 'US500') return close > 5_000 && close < 20_000;
+  return false;
 };
 const latestStored = (vendor, symbol) => JSON.parse(execFileSync(
   'python',
@@ -95,14 +99,26 @@ const syncChartRanges = async (client, vendor, symbol) => {
       || points.length < 2
       || !isOrangeRangeColor(properties.color || properties.linecolor)
     ) continue;
-    ranges.push({
+    const range = {
       entity_id: String(shape.id),
       start_time: Math.min(Number(points[0].time), Number(points[1].time)),
       end_time: Math.max(Number(points[0].time), Number(points[1].time)),
       upper: Math.max(Number(points[0].price), Number(points[1].price)),
       lower: Math.min(Number(points[0].price), Number(points[1].price)),
       color: String(properties.color || properties.linecolor || ''),
-    });
+    };
+    // Only horizontal, two-dimensional rectangles can define a trading range.
+    // Ignore vertical/zero-size orange objects instead of aborting the whole
+    // market collection when the database validates their geometry.
+    if (
+      !Number.isFinite(range.start_time)
+      || !Number.isFinite(range.end_time)
+      || !Number.isFinite(range.upper)
+      || !Number.isFinite(range.lower)
+      || range.end_time <= range.start_time
+      || range.upper <= range.lower
+    ) continue;
+    ranges.push(range);
   }
   return storePayload('sync-chart-ranges', {
     vendor,
@@ -115,9 +131,18 @@ const syncChartRanges = async (client, vendor, symbol) => {
 const transport = new StdioClientTransport({ command: process.execPath, args: ['src/server.js'], cwd: serverRoot, stderr: 'inherit' });
 const client = new Client({ name: 'tvfloat-collector', version: '1.0.0' }, { capabilities: {} });
 await client.connect(transport);
+const closeWatchlist = async () => {
+  try {
+    await client.callTool({
+      name: 'ui_open_panel',
+      arguments: { panel: 'watchlist', action: 'close' },
+    });
+  } catch {}
+};
 try {
   const rightmost = parse(await client.callTool({ name: 'tab_switch_rightmost', arguments: {} }));
   if (!rightmost.success) throw new Error(`rightmost tab switch failed: ${rightmost.error || 'unknown error'}`);
+  await closeWatchlist();
   await sleep(800);
   await client.callTool({ name: 'chart_set_timeframe', arguments: { timeframe } });
   await waitForClosedBarSafetyWindow();
@@ -126,8 +151,8 @@ try {
   const results = [];
   for (const [vendor, symbol, full] of watchlist) {
     const latest = latestStored(vendor, symbol);
-    const needsBackfill = !latest.open_time || Number(latest.bar_count || 0) < 120;
-    const requestedCount = needsBackfill ? 500 : 40;
+    const needsBackfill = !latest.open_time || Number(latest.bar_count || 0) < 360;
+    const requestedCount = needsBackfill ? 900 : 40;
     await client.callTool({ name: 'chart_set_symbol', arguments: { symbol: full } });
     const state = await waitForSymbol(client, full);
     const rangeSync = await syncChartRanges(client, vendor, symbol);
@@ -141,11 +166,17 @@ try {
     let payload;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       payload = parse(await client.callTool({ name: 'data_get_ohlcv', arguments: { count: requestedCount, summary: false } }));
-      const last = payload.bars?.at(-1);
-      if (last && plausible(symbol, last.close)) break;
+      const receivedBars = payload.bars || [];
+      if (
+        receivedBars.length > 0
+        && receivedBars.every((bar) => plausible(symbol, Number(bar.close)))
+      ) break;
       await sleep(1200);
     }
-    if (!payload?.bars?.length || !plausible(symbol, payload.bars.at(-1).close)) throw new Error(`stale OHLCV returned for ${full}`);
+    if (
+      !payload?.bars?.length
+      || !payload.bars.every((bar) => plausible(symbol, Number(bar.close)))
+    ) throw new Error(`cross-symbol or stale OHLCV returned for ${full}`);
     const bars = payload.bars.filter((bar) => bar.time + barSeconds <= cutoff);
     const ingestResults = [];
     for (let index = 0; index < bars.length; index += 40) {
@@ -172,5 +203,6 @@ try {
   }
   process.stdout.write(`${JSON.stringify({ success: true, results })}\n`);
 } finally {
+  await closeWatchlist();
   await client.close();
 }

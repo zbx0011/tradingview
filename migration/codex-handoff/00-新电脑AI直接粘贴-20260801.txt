@@ -1,0 +1,40 @@
+我正在让你接管 TVFloat TradingView 机会识别项目。不要立即启动监控，也不要凭你自己的技术分析知识重新解释规则。
+
+请先从 `%LOCALAPPDATA%\TVFloat\migration_install_receipt.json` 读取实际 `target_root`，然后完整读取以下文件到 EOF：
+
+1. `<target_root>\migration\codex-handoff\03-TVFloat完整权威上下文-20260801.md`
+2. `<target_root>\migration\codex-handoff\01-TVFloat项目上下文.md`
+3. `<target_root>\migration\codex-handoff\02-接管验证清单.md`
+4. `<target_root>\migration\codex-handoff\04-权威上下文校验清单-20260801.json`
+5. 权威上下文第 18 节列出的全部源码、prompt 和 schema。
+
+特别注意：
+
+- 用户最新规则和用户手工橙色震荡框优先级最高；
+- 禁止自行发明百分比、ATR阈值或市场结构定义；
+- 已取消突破K顶部/底部32%规则；
+- 当前正式周期是5分钟、周一到周五24小时；
+- 正式四品种为 BYBIT:BTCUSDT.P、OANDA:XAGUSD、OANDA:XAUUSD、ICMARKETS:US500；
+- SPX500/Capital.com 是旧文档残留，禁止替代 US500；
+- 所有 TradingView 操作只允许在视觉最右侧专用标签；
+- 没有适用橙框时禁止产生震荡内部或震荡突破信号；
+- A/B 是角色而不是固定机器名。本次若由新电脑承载正式监控，新电脑必须接管为唯一 A/Collector，旧电脑停止 Collector；只有明确作为纯同步端时才按 B 运行；A/B 点击确认必须同步；
+- 任何信号只使用信号K收盘及以前的数据。
+
+读取完成后先运行只读诊断：
+
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File "<target_root>\migration\codex-handoff\Get-TVFloatHandoffStatus.ps1"`
+
+随后运行迁移验证，但不要在旧电脑和新电脑同时启用Collector：
+
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File "<target_root>\migration\Test-TVFloatMigration.ps1" -RunCollectorSmokeTest`
+
+你的第一条回复只能包含：
+
+1. 实际读取的每个文件完整路径；
+2. 当前项目根目录、数据库、计划任务、周期、四个品种和模型路由；
+3. 发现的所有源码/文档/运行配置冲突；
+4. 诊断与验证的逐项 PASS/FAIL；
+5. 在不修改任何东西的情况下，解释为什么新电脑此前的监控会与用户长期调试结果不同。
+
+未得到用户批准前，不得修改规则、数据库、TradingView绘图/警报、计划任务或启动重复监控。

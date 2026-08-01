@@ -315,13 +315,13 @@ def draw_panel(
         )
 
     count = len(rows)
-    step = max(3.0, (plot_right - plot_left) / max(count, 1))
-    candle_width = max(2, int(step * 0.62))
+    step = max(1.0, (plot_right - plot_left) / max(count, 1))
+    candle_width = max(1, int(step * 0.62))
     first_time = int(rows[0]["open_time"])
     bar_times = [int(row["open_time"]) for row in rows]
     bar_seconds = max(
         1,
-        int(rows[1]["open_time"]) - first_time if len(rows) > 1 else 900,
+        int(rows[1]["open_time"]) - first_time if len(rows) > 1 else 300,
     )
 
     for item in ranges:
@@ -453,8 +453,18 @@ def render(
     ranges_json: Path | None = None,
 ) -> dict[str, Any]:
     global CURRENT_RANGES
-    rows = load_rows(db, vendor, symbol, timeframe, bar_time, 144)
-    if len(rows) < 36:
+    timeframe_minutes = max(1, int(timeframe))
+    outer_bar_count = max(144, round(36 * 60 / timeframe_minutes))
+    inner_bar_count = max(36, round(9 * 60 / timeframe_minutes))
+    rows = load_rows(
+        db,
+        vendor,
+        symbol,
+        timeframe,
+        bar_time,
+        outer_bar_count,
+    )
+    if len(rows) < inner_bar_count:
         raise RuntimeError(f"not enough bars to render: {len(rows)}")
     if ranges_json is not None:
         CURRENT_RANGES = load_replay_ranges(
@@ -501,12 +511,15 @@ def render(
         rows,
         f"OUTER VIEW · last {len(rows)} bars (up to {len(rows) * int(timeframe) / 60:g} hours)",
     )
-    inner_rows = rows[-36:]
+    inner_rows = rows[-inner_bar_count:]
     inner = draw_panel(
         image,
         (20, 478, 1160, 800),
         inner_rows,
-        f"INNER VIEW · last 36 bars ({36 * int(timeframe) / 60:g} hours)",
+        (
+            f"INNER VIEW · last {len(inner_rows)} bars "
+            f"({len(inner_rows) * int(timeframe) / 60:g} hours)"
+        ),
     )
     image.save(output, format="PNG", optimize=True)
     digest = hashlib.sha256(output.read_bytes()).hexdigest()
@@ -534,7 +547,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--db", type=Path, default=DEFAULT_DB)
     parser.add_argument("--vendor", required=True)
     parser.add_argument("--symbol", required=True)
-    parser.add_argument("--timeframe", default="15")
+    parser.add_argument("--timeframe", default="5")
     parser.add_argument("--bar-time", type=int, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(

@@ -2,19 +2,26 @@
 // tab. User-created/edited/deleted orange rectangles always win.
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { Client } from 'file:///C:/Users/zbx00/tools/tradingview-mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js';
-import { StdioClientTransport } from 'file:///C:/Users/zbx00/tools/tradingview-mcp/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  loadTradingViewMcpSdk,
+  resolveTradingViewMcpRoot,
+} from './tradingview_mcp_runtime.mjs';
 
 if (process.platform === 'win32' && !('type' in process)) {
   process.type = 'tvfloat-background';
 }
 
-const root = 'C:/Users/zbx00/OneDrive/private/文档/1111';
-const serverRoot = 'C:/Users/zbx00/tools/tradingview-mcp';
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const root = path.dirname(scriptDir);
+const serverRoot = resolveTradingViewMcpRoot();
+const { Client, StdioClientTransport } = await loadTradingViewMcpSdk(serverRoot);
 const baselinePath = process.argv[2]
   || `${process.env.LOCALAPPDATA}/TVFloat/visual_baseline.json`;
 const baseline = JSON.parse(readFileSync(baselinePath, 'utf8'));
-const timeframe = '15';
+const timeframe = '5';
+const barSeconds = 5 * 60;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const parse = (result) => JSON.parse(result.content[0].text);
 const fullSymbol = (vendor, symbol) => `${vendor}:${symbol}`;
@@ -62,8 +69,8 @@ const geometryClose = (candidate, record) => {
     Number(record.upper) - Number(record.lower),
   );
   const priceTolerance = 0.12 * Math.max(candidateWidth, recordWidth);
-  return Math.abs(Number(candidate.start_time) - Number(record.start_time)) <= 900
-    && Math.abs(Number(candidate.end_time) - Number(record.end_time)) <= 900
+  return Math.abs(Number(candidate.start_time) - Number(record.start_time)) <= barSeconds
+    && Math.abs(Number(candidate.end_time) - Number(record.end_time)) <= barSeconds
     && Math.abs(Number(candidate.upper) - Number(record.upper)) <= priceTolerance
     && Math.abs(Number(candidate.lower) - Number(record.lower)) <= priceTolerance;
 };
@@ -104,13 +111,15 @@ try {
   await client.callTool({ name: 'chart_set_timeframe', arguments: { timeframe } });
 
   for (const market of baseline.markets || []) {
-    const candidates = (market.range_candidates || []).filter(
-      (item) => item.source === 'auto_candidate'
+    const affirmedAutoRanges = (market.range_candidates || []).filter(
+      (item) => ['auto_existing', 'auto_candidate'].includes(item.source)
         && Number(item.confidence) >= 0.75
         && Number(item.end_time) > Number(item.start_time)
         && Number(item.upper) > Number(item.lower),
     );
-    if (!candidates.length) continue;
+    const candidates = affirmedAutoRanges.filter(
+      (item) => item.source === 'auto_candidate'
+    );
     const records = storePayload('range-records', {
       vendor: market.vendor,
       symbol: market.symbol,
@@ -120,6 +129,36 @@ try {
     const full = fullSymbol(market.vendor, market.symbol);
     await client.callTool({ name: 'chart_set_symbol', arguments: { symbol: full } });
     await waitForSymbol(client, full);
+
+    // An AUTO range inside the reviewed 36-hour panel survives only when the
+    // exact-OHLC gate and visual review both affirm it.  Missing drawings are
+    // harmless: the database record is still tombstoned so it cannot reappear.
+    const panelStart = Number(market.through_bar_time) - (36 * 60 * 60);
+    const staleUnprovenAutos = records.filter(
+      (record) => record.status === 'active'
+        && record.source === 'auto'
+        && Number(record.end_time) >= panelStart
+        && !affirmedAutoRanges.some((candidate) => sameRange(candidate, record)),
+    );
+    for (const record of staleUnprovenAutos) {
+      const removed = parse(await client.callTool({
+        name: 'draw_remove_one',
+        arguments: { entity_id: record.entity_id },
+      }));
+      if (!removed.success && !String(removed.error || '').includes('no such shape')) {
+        throw new Error(`unable to remove unproven auto range ${record.entity_id}`);
+      }
+      record.status = 'deleted';
+      results.push({
+        vendor: market.vendor,
+        symbol: market.symbol,
+        action: 'removed_unproven_auto',
+        entity_id: record.entity_id,
+      });
+    }
+    if (staleUnprovenAutos.length) {
+      syncActiveRecords(market, records);
+    }
 
     for (const candidate of candidates) {
       // A deleted overlap is a user veto. Manual/locked ranges always win.
