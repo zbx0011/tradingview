@@ -107,7 +107,7 @@ try {
   $prompt = $template.Replace('{{MARKETS_JSON}}', $request)
   [System.IO.File]::WriteAllText($promptFile, $prompt, [System.Text.UTF8Encoding]::new($false))
 
-  $codexPath = (Get-Command codex -ErrorAction Stop).Source
+  $codexPath = (Get-Command codex.exe -ErrorAction Stop).Source
   $arguments = [System.Collections.Generic.List[string]]::new()
   foreach ($value in @(
     'exec','--ephemeral','--skip-git-repo-check','--ignore-user-config',

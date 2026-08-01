@@ -129,7 +129,7 @@ if (Test-Path -LiteralPath $SeenPath) {
   }
 }
 $promptTemplate = Get-Content -Raw -Encoding UTF8 -LiteralPath $promptPath
-$codexPath = (Get-Command codex -ErrorAction Stop).Source
+$codexPath = (Get-Command codex.exe -ErrorAction Stop).Source
 $running = [System.Collections.Generic.List[object]]::new()
 
 foreach ($candidate in $queue.candidates) {
