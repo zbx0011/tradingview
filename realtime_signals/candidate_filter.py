@@ -179,4 +179,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # Historical helpers remain importable for offline replay only.  Direct
+    # execution must follow the unique production policy.
+    from candidate_filter_production import main as production_main
+
+    raise SystemExit(production_main())
