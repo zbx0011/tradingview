@@ -383,7 +383,6 @@ function Complete-ReviewItem([object]$item) {
         key = $item.Key; message = $message; model = $item.Model; deadline_epoch = $DeadlineEpoch
       }
     }
-    $seen.Add($item.Key)
   } finally {
     $item.Handled = $true
     Remove-ReviewFiles $item
@@ -420,7 +419,6 @@ foreach ($item in @($running | Where-Object { -not $_.Handled })) {
   Finish-Run $item.JobRunId 'deadline_timeout' @{
     key = $item.Key; message = $message; model = $item.Model; deadline_epoch = $DeadlineEpoch
   }
-  $seen.Add($item.Key)
   $item.Handled = $true
   Remove-ReviewFiles $item
 }

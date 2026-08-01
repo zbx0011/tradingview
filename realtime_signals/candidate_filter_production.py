@@ -81,7 +81,7 @@ def main() -> int:
         rows=list(reversed(conn.execute("""SELECT open_time,open,high,low,close,volume FROM candles WHERE vendor=? AND symbol=? AND timeframe='5' AND is_final=1 ORDER BY open_time DESC LIMIT 120""",(vendor,symbol)).fetchall()))
         if not rows: continue
         key=f"{vendor}:{symbol}:5"; candidate=build_candidate(rows,vendor,symbol,load_ranges(conn,vendor,symbol,int(rows[-1]["open_time"])))
-        if candidate is None or int((memory["emissions"].get(key) or {}).get("bar_time",0))==int(candidate["bar_time"]): continue
+        if candidate is None: continue
         candidate["recent_signals"]=recent_signals(conn,vendor,symbol,int(candidate["bar_time"])); candidates.append(candidate); memory["emissions"][key]={"bar_time":candidate["bar_time"]}
     conn.close(); payload={"version":5,"policy":"every_closed_bar_original_rules_no_unapproved_hard_gate","markets":[f"{v}:{s}:5" for v,s in WATCHLIST],"candidates":candidates}; atomic_json(args.output,payload); atomic_json(args.memory,memory); print(json.dumps(payload,ensure_ascii=False,separators=(",",":"))); return 0
 
