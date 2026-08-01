@@ -29,6 +29,12 @@ if (-not $BypassPauseGate -and (Test-Path -LiteralPath $pausePath)) {
 
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $root
+$runtimeScripts = Join-Path $root '.venv\Scripts'
+$runtimePython = Join-Path $runtimeScripts 'python.exe'
+if (-not (Test-Path -LiteralPath $runtimePython)) {
+  throw "Unique production Python runtime missing: $runtimePython"
+}
+$env:PATH = "$runtimeScripts;$env:PATH"
 $runnerLogPath = Join-Path $env:LOCALAPPDATA 'TVFloat\lightweight_runner.log'
 function Invoke-VisualBaselineSafely {
   param(
