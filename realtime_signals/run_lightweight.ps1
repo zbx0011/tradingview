@@ -1,5 +1,6 @@
 param(
-  [switch]$BypassScheduleGate
+  [switch]$BypassScheduleGate,
+  [switch]$BypassPauseGate
 )
 $ErrorActionPreference = 'Stop'
 $now = Get-Date
@@ -7,6 +8,24 @@ if (
   -not $BypassScheduleGate -and
   $now.DayOfWeek -in @('Saturday', 'Sunday')
 ) { exit 0 }
+
+$pausePath = Join-Path $env:LOCALAPPDATA 'TVFloat\monitor_paused.json'
+if (-not $BypassPauseGate -and (Test-Path -LiteralPath $pausePath)) {
+  try {
+    $pauseState = Get-Content -Raw -Encoding UTF8 -LiteralPath $pausePath |
+      ConvertFrom-Json
+    if ([bool]$pauseState.paused) {
+      $pauseLog = Join-Path $env:LOCALAPPDATA 'TVFloat\lightweight_runner.log'
+      $reason = [string]$pauseState.reason
+      Add-Content -LiteralPath $pauseLog -Encoding UTF8 -Value (
+        "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff') PAUSED $reason"
+      )
+      exit 0
+    }
+  } catch {
+    throw "Invalid monitor pause state '$pausePath': $($_.Exception.Message)"
+  }
+}
 
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $root
@@ -31,7 +50,7 @@ function Invoke-VisualBaselineSafely {
 }
 node .\realtime_signals\collect_tv.mjs
 
-python .\realtime_signals\candidate_filter_v2.py
+python .\realtime_signals\candidate_filter_production.py
 
 # Range-edge warnings are deterministic and token-free.  Orange rectangle
 # geometry is already synchronized by collect_tv.mjs.  Every closed 5-minute
@@ -101,7 +120,7 @@ if ($candidateCount -gt 0) {
     if ($baselineUpdated) {
       # The visual pass may have drawn a missing range. Rebuild the candidate
       # package so the final reviewer receives the authoritative rectangle.
-      python .\realtime_signals\candidate_filter_v2.py
+      python .\realtime_signals\candidate_filter_production.py
       try {
         $queue = Get-Content -Raw -Encoding UTF8 -LiteralPath $queuePath | ConvertFrom-Json
         $candidateCount = @($queue.candidates).Count

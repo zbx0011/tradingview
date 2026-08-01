@@ -98,12 +98,14 @@ def parse_remote_alerts(payload: dict[str, Any]) -> dict[str, SignalAlert]:
                 or not display_symbol
                 or direction not in {"long", "short"}
                 or grade not in {"A", "B", "边缘预警"}
+                or str(item.get("timeframe", "")) != "5"
             ):
                 continue
             alerts[display_symbol] = SignalAlert(
                 id=int(item["id"]),
                 vendor=str(item.get("vendor", "")),
                 symbol=symbol,
+                timeframe="5",
                 direction=direction,
                 setup_type=str(item.get("setup_type", "")),
                 grade=grade,

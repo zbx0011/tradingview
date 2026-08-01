@@ -304,23 +304,6 @@ function Complete-ReviewItem([object]$item) {
       ) {
         $hardReject = "visible-range hard gate rejected setup=$($decision.setup_type)"
       }
-      if (
-        $setupTypeBase64 -in @(
-          '5a696YCa6YGT6L6557yY77ya5Y+N5ZCR5rOi5q61',
-          '5a696YCa6YGT56qB56C077ya5pu05aSn57qn5Yir5Y+N6L2s',
-          '5a696YCa6YGT6aG65Yq/77ya5Zyo5pyJ5Yip6L6557yY6Lef6ZqP5Li75pa55ZCR'
-        ) -and -not [bool]$item.Candidate.wide_channel_validation.valid
-      ) {
-        $hardReject = "wide-channel hard gate rejected setup=$($decision.setup_type)"
-      }
-      $narrowSetupBase64 = '56qE6YCa6YGT77ya562J5b6F5Zue6Lip6aG65Yq/5Y+C5LiO'
-      if ($setupTypeBase64 -eq $narrowSetupBase64) {
-        $expectedNarrowDirection = if ($decision.direction -eq 'long') { 'up' } else { 'down' }
-        $validNarrowDirections = @($item.Candidate.narrow_channel_validation.valid_directions)
-        if (-not ($validNarrowDirections -contains $expectedNarrowDirection)) {
-          $hardReject = "narrow-channel hard gate rejected setup=$($decision.setup_type) direction=$($decision.direction)"
-        }
-      }
     }
     if ($hardReject) {
       Write-ReviewLog "HARD_REJECT key=$($item.Key) $hardReject"

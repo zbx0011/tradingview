@@ -143,6 +143,7 @@ class QuoteState:
                         "id": alert.id,
                         "vendor": alert.vendor,
                         "symbol": alert.symbol,
+                        "timeframe": alert.timeframe,
                         "direction": alert.direction,
                         "setup_type": alert.setup_type,
                         "grade": alert.grade,

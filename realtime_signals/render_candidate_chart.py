@@ -14,7 +14,6 @@ from typing import Any
 from PIL import Image, ImageDraw, ImageFont
 
 from kline_store import DEFAULT_DB, ema
-from candidate_filter_v2 import _prove_horizontal_range
 
 
 BEIJING = timezone(timedelta(hours=8))
@@ -33,113 +32,11 @@ RANGE_FILL = "#4a3517"
 CURRENT_RANGES: list[dict[str, Any]] = []
 
 
-def _overlap_ratio(a1: float, a2: float, b1: float, b2: float) -> float:
-    overlap = max(0.0, min(a2, b2) - max(a1, b1))
-    return overlap / max(1e-9, min(a2 - a1, b2 - b1))
-
-
 def scan_local_range_proposals(
-    rows: list[sqlite3.Row],
+    _rows: list[sqlite3.Row],
 ) -> list[dict[str, Any]]:
-    """Scan the complete visible window for exact-OHLC range proposals.
-
-    These are recall aids for the visual model, not final classifications.
-    Overlapping rolling proofs are merged into one complete balance phase so
-    the model sees the same whole-phase convention the user applies manually.
-    """
-    if len(rows) < 12:
-        return []
-    true_ranges: list[float] = []
-    for index, row in enumerate(rows):
-        previous_close = (
-            float(rows[index - 1]["close"])
-            if index
-            else float(row["close"])
-        )
-        high = float(row["high"])
-        low = float(row["low"])
-        true_ranges.append(
-            max(high - low, abs(high - previous_close), abs(low - previous_close))
-        )
-    atr14 = sum(true_ranges[-14:]) / min(14, len(true_ranges))
-    if atr14 <= 0:
-        return []
-
-    proofs: list[dict[str, Any]] = []
-    lengths = (72, 60, 48, 42, 36, 30, 24, 18, 12)
-    for end in range(12, len(rows) + 1):
-        for length in lengths:
-            start = end - length
-            if start < 0:
-                continue
-            proof = _prove_horizontal_range(rows[start:end], atr14, start)
-            if proof:
-                proofs.append(proof)
-
-    clusters: list[list[dict[str, Any]]] = []
-    for proof in sorted(proofs, key=lambda item: int(item["start_time"])):
-        matched: list[dict[str, Any]] | None = None
-        for cluster in clusters:
-            representative = max(
-                cluster,
-                key=lambda item: int(item["end_time"]) - int(item["start_time"]),
-            )
-            if (
-                _overlap_ratio(
-                    float(proof["start_time"]),
-                    float(proof["end_time"]),
-                    float(representative["start_time"]),
-                    float(representative["end_time"]),
-                )
-                >= 0.50
-                and _overlap_ratio(
-                    float(proof["lower"]),
-                    float(proof["upper"]),
-                    float(representative["lower"]),
-                    float(representative["upper"]),
-                )
-                >= 0.50
-            ):
-                matched = cluster
-                break
-        if matched is None:
-            clusters.append([proof])
-        else:
-            matched.append(proof)
-
-    proposals: list[dict[str, Any]] = []
-    for cluster in clusters:
-        longest = max(
-            cluster,
-            key=lambda item: int(item["end_time"]) - int(item["start_time"]),
-        )
-        proposals.append(
-            {
-                "proposal_id": "",
-                "start_time": min(int(item["start_time"]) for item in cluster),
-                "end_time": max(int(item["end_time"]) for item in cluster),
-                "upper": round(
-                    sum(float(item["upper"]) for item in cluster) / len(cluster),
-                    8,
-                ),
-                "lower": round(
-                    sum(float(item["lower"]) for item in cluster) / len(cluster),
-                    8,
-                ),
-                "proof_count": len(cluster),
-                "rotation_count": max(
-                    int(item["rotation_count"]) for item in cluster
-                ),
-                "inside_close_fraction": round(
-                    float(longest["inside_close_fraction"]), 4
-                ),
-                "role": "recall_aid_not_final",
-            }
-        )
-    proposals.sort(key=lambda item: int(item["start_time"]))
-    for index, proposal in enumerate(proposals[:10], start=1):
-        proposal["proposal_id"] = f"local_{index}"
-    return proposals[:10]
+    """Numeric automatic range proposals are forbidden in production."""
+    return []
 
 
 def font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:

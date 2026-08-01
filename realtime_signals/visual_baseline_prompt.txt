@@ -20,7 +20,7 @@ Mandatory horizontal-range inventory (perform this before state labels):
   anywhere in that 36-hour window: active, completed, or broken.
 - The current market being a trend, transition, or narrow/wide channel is
   NEVER a reason to omit an earlier completed horizontal range.
-- `local_range_proposals` are exact-OHLC recall aids. For every proposal,
+- `local_range_proposals` are optional recall aids and are normally empty because numeric automatic range inference is disabled. For every supplied proposal,
   return exactly one `proposal_reviews` entry with the same `proposal_id`.
   Accept it, merge it into a visually better whole-phase box, or reject it
   with a concrete geometric reason. Never silently ignore a proposal.

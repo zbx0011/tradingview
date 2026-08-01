@@ -1,4 +1,4 @@
-// Apply high-confidence visual range candidates to the rightmost TradingView
+// Apply source-rule visual range candidates to the rightmost TradingView
 // tab. User-created/edited/deleted orange rectangles always win.
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -21,7 +21,6 @@ const baselinePath = process.argv[2]
   || `${process.env.LOCALAPPDATA}/TVFloat/visual_baseline.json`;
 const baseline = JSON.parse(readFileSync(baselinePath, 'utf8'));
 const timeframe = '5';
-const barSeconds = 5 * 60;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const parse = (result) => JSON.parse(result.content[0].text);
 const fullSymbol = (vendor, symbol) => `${vendor}:${symbol}`;
@@ -41,39 +40,18 @@ const waitForSymbol = async (client, full) => {
   }
   throw new Error(`range drawing chart switch failed for ${full} ${timeframe}m`);
 };
-const overlapRatio = (a1, a2, b1, b2) => {
-  const overlap = Math.max(0, Math.min(a2, b2) - Math.max(a1, b1));
-  return overlap / Math.max(1e-9, Math.min(a2 - a1, b2 - b1));
-};
-const sameRange = (candidate, record) => (
-  overlapRatio(
-    Number(candidate.start_time),
-    Number(candidate.end_time),
-    Number(record.start_time),
-    Number(record.end_time),
-  ) >= 0.55
-  && overlapRatio(
-    Number(candidate.lower),
-    Number(candidate.upper),
-    Number(record.lower),
-    Number(record.upper),
-  ) >= 0.55
+const rangesOverlap = (candidate, record) => (
+  Number(candidate.start_time) <= Number(record.end_time)
+  && Number(candidate.end_time) >= Number(record.start_time)
+  && Number(candidate.lower) <= Number(record.upper)
+  && Number(candidate.upper) >= Number(record.lower)
 );
-const geometryClose = (candidate, record) => {
-  const candidateWidth = Math.max(
-    1e-9,
-    Number(candidate.upper) - Number(candidate.lower),
-  );
-  const recordWidth = Math.max(
-    1e-9,
-    Number(record.upper) - Number(record.lower),
-  );
-  const priceTolerance = 0.12 * Math.max(candidateWidth, recordWidth);
-  return Math.abs(Number(candidate.start_time) - Number(record.start_time)) <= barSeconds
-    && Math.abs(Number(candidate.end_time) - Number(record.end_time)) <= barSeconds
-    && Math.abs(Number(candidate.upper) - Number(record.upper)) <= priceTolerance
-    && Math.abs(Number(candidate.lower) - Number(record.lower)) <= priceTolerance;
-};
+const geometryExact = (candidate, record) => (
+  Number(candidate.start_time) === Number(record.start_time)
+  && Number(candidate.end_time) === Number(record.end_time)
+  && Number(candidate.upper) === Number(record.upper)
+  && Number(candidate.lower) === Number(record.lower)
+);
 const syncActiveRecords = (market, records) => storePayload('sync-chart-ranges', {
   vendor: market.vendor,
   symbol: market.symbol,
@@ -113,7 +91,6 @@ try {
   for (const market of baseline.markets || []) {
     const affirmedAutoRanges = (market.range_candidates || []).filter(
       (item) => ['auto_existing', 'auto_candidate'].includes(item.source)
-        && Number(item.confidence) >= 0.75
         && Number(item.end_time) > Number(item.start_time)
         && Number(item.upper) > Number(item.lower),
     );
@@ -129,6 +106,10 @@ try {
     const full = fullSymbol(market.vendor, market.symbol);
     await client.callTool({ name: 'chart_set_symbol', arguments: { symbol: full } });
     await waitForSymbol(client, full);
+    const visible = parse(await client.callTool({
+      name: 'chart_get_visible_range', arguments: {},
+    }));
+    const visibleRight = Number(visible.visible_range?.to);
 
     // An AUTO range inside the reviewed 36-hour panel survives only when the
     // exact-OHLC gate and visual review both affirm it.  Missing drawings are
@@ -138,7 +119,7 @@ try {
       (record) => record.status === 'active'
         && record.source === 'auto'
         && Number(record.end_time) >= panelStart
-        && !affirmedAutoRanges.some((candidate) => sameRange(candidate, record)),
+        && !affirmedAutoRanges.some((candidate) => geometryExact(candidate, record)),
     );
     for (const record of staleUnprovenAutos) {
       const removed = parse(await client.callTool({
@@ -161,10 +142,12 @@ try {
     }
 
     for (const candidate of candidates) {
-      // A deleted overlap is a user veto. Manual/locked ranges always win.
-      const overlapping = records.filter((record) => sameRange(candidate, record));
-      if (overlapping.some((record) => record.status === 'active'
-        && (record.source === 'manual' || Number(record.locked) === 1))) {
+      const drawnEndTime = candidate.status === 'active' && Number.isFinite(visibleRight)
+        ? visibleRight
+        : Number(candidate.end_time);
+      const userOverlaps = records.filter((record) => rangesOverlap(candidate, record)
+        && (record.source === 'manual' || Number(record.locked) === 1));
+      if (userOverlaps.some((record) => record.status === 'active')) {
         results.push({
           vendor: market.vendor,
           symbol: market.symbol,
@@ -173,10 +156,10 @@ try {
         });
         continue;
       }
-      const matchingAuto = overlapping.find(
+      const matchingAuto = records.find(
         (record) => record.status === 'active'
           && record.source === 'auto'
-          && geometryClose(candidate, record),
+          && geometryExact(candidate, record),
       );
       if (matchingAuto) {
         results.push({
@@ -187,7 +170,7 @@ try {
         });
         continue;
       }
-      if (overlapping.some((record) => record.status === 'deleted')) {
+      if (userOverlaps.some((record) => record.status === 'deleted')) {
         results.push({
           vendor: market.vendor,
           symbol: market.symbol,
@@ -195,21 +178,6 @@ try {
           range: candidate,
         });
         continue;
-      }
-      const replaceableAutos = overlapping.filter(
-        (record) => record.status === 'active'
-          && record.source === 'auto'
-          && !geometryClose(candidate, record),
-      );
-      for (const record of replaceableAutos) {
-        const removed = parse(await client.callTool({
-          name: 'draw_remove_one',
-          arguments: { entity_id: record.entity_id },
-        }));
-        if (!removed.success) {
-          throw new Error(`unable to replace stale auto range ${record.entity_id}`);
-        }
-        record.status = 'deleted';
       }
       const drawn = parse(await client.callTool({
         name: 'draw_shape',
@@ -220,7 +188,7 @@ try {
             price: Number(candidate.upper),
           },
           point2: {
-            time: Number(candidate.end_time),
+            time: drawnEndTime,
             price: Number(candidate.lower),
           },
           overrides: JSON.stringify({
@@ -241,7 +209,7 @@ try {
         timeframe,
         entity_id: drawn.entity_id,
         start_time: Number(candidate.start_time),
-        end_time: Number(candidate.end_time),
+        end_time: drawnEndTime,
         upper: Number(candidate.upper),
         lower: Number(candidate.lower),
         color: '#f59e0b',
@@ -253,15 +221,11 @@ try {
         status: 'active',
         color: '#f59e0b',
       });
-      if (replaceableAutos.length) {
-        syncActiveRecords(market, records);
-      }
       results.push({
         vendor: market.vendor,
         symbol: market.symbol,
-        action: replaceableAutos.length ? 'replaced_stale_auto' : 'drawn',
+        action: 'drawn',
         entity_id: drawn.entity_id,
-        replaced_entity_ids: replaceableAutos.map((record) => record.entity_id),
         saved,
       });
     }

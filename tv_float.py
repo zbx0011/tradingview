@@ -44,11 +44,13 @@ SYMBOL_LINKS = {
     "BTCUSDT.P": "BYBIT:BTCUSDT.P",
     "XAGUSD": "OANDA:XAGUSD",
     "XAUUSD": "OANDA:XAUUSD",
-    "US500": "CAPITALCOM:SPX500",
-    "SPX500": "CAPITALCOM:SPX500",
+    "US500": "ICMARKETS:US500",
 }
-SIGNAL_DISPLAY_SYMBOLS = {
-    "SPX500": "US500",
+PRODUCTION_MARKETS = {
+    "BTCUSDT.P": "BYBIT",
+    "XAGUSD": "OANDA",
+    "XAUUSD": "OANDA",
+    "US500": "ICMARKETS",
 }
 
 PRICE_RE = re.compile(r"^[+\-−]?\d[\d,.]*$")
@@ -72,6 +74,7 @@ class SignalAlert:
     id: int
     vendor: str
     symbol: str
+    timeframe: str
     direction: str
     setup_type: str
     grade: str
@@ -282,6 +285,13 @@ def read_pending_signal_alerts() -> dict[str, SignalAlert]:
             WHERE acknowledged_at IS NULL
               AND direction IN ('long', 'short')
               AND grade IN ('A', 'B', '边缘预警')
+              AND timeframe='5'
+              AND (
+                (vendor='BYBIT' AND symbol='BTCUSDT.P') OR
+                (vendor='OANDA' AND symbol='XAGUSD') OR
+                (vendor='OANDA' AND symbol='XAUUSD') OR
+                (vendor='ICMARKETS' AND symbol='US500')
+              )
             ORDER BY bar_time DESC, id DESC
             """
         ).fetchall()
@@ -292,13 +302,14 @@ def read_pending_signal_alerts() -> dict[str, SignalAlert]:
     alerts: dict[str, SignalAlert] = {}
     for row in rows:
         signal_symbol = str(row["symbol"]).upper()
-        display_symbol = SIGNAL_DISPLAY_SYMBOLS.get(signal_symbol, signal_symbol)
+        display_symbol = signal_symbol
         if display_symbol in alerts:
             continue
         alerts[display_symbol] = SignalAlert(
             id=int(row["id"]),
             vendor=str(row["vendor"]),
             symbol=signal_symbol,
+            timeframe="5",
             direction=str(row["direction"]),
             setup_type=str(row["setup_type"]),
             grade=str(row["grade"]),
@@ -312,6 +323,10 @@ def acknowledge_symbol_alerts(symbol: str, through_id: int | None = None) -> int
     path = signal_db_path()
     if not path.exists():
         return 0
+    symbol = symbol.upper()
+    vendor = PRODUCTION_MARKETS.get(symbol)
+    if vendor is None:
+        return 0
     try:
         connection = sqlite3.connect(path, timeout=1.0)
         if through_id is None:
@@ -319,30 +334,36 @@ def acknowledge_symbol_alerts(symbol: str, through_id: int | None = None) -> int
                 """
                 UPDATE signals
                 SET acknowledged_at=?
-                WHERE symbol=? AND acknowledged_at IS NULL
+                WHERE vendor=? AND symbol=? AND timeframe='5'
+                  AND acknowledged_at IS NULL
                 """,
-                (int(time.time()), symbol.upper()),
+                (int(time.time()), vendor, symbol),
             )
         else:
             cursor = connection.execute(
                 """
                 UPDATE signals
                 SET acknowledged_at=?
-                WHERE symbol=? AND acknowledged_at IS NULL AND id<=?
+                WHERE vendor=? AND symbol=? AND timeframe='5'
+                  AND acknowledged_at IS NULL AND id<=?
                   AND EXISTS (
                       SELECT 1
                       FROM signals AS selected
                       WHERE selected.id=?
+                        AND selected.vendor=?
                         AND selected.symbol=?
+                        AND selected.timeframe='5'
                         AND selected.acknowledged_at IS NULL
                   )
                 """,
                 (
                     int(time.time()),
-                    symbol.upper(),
+                    vendor,
+                    symbol,
                     int(through_id),
                     int(through_id),
-                    symbol.upper(),
+                    vendor,
+                    symbol,
                 ),
             )
         connection.commit()

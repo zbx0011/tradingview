@@ -20,30 +20,14 @@ function Write-BaselineLog([string]$message) {
   Add-Content -LiteralPath $logPath -Encoding UTF8 -Value "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff') $message"
 }
 
-function Get-OverlapRatio(
-  [double]$a1,
-  [double]$a2,
-  [double]$b1,
-  [double]$b2
-) {
-  $overlap = [math]::Max(0.0, [math]::Min($a2, $b2) - [math]::Max($a1, $b1))
-  $denominator = [math]::Max(0.000000001, [math]::Min($a2 - $a1, $b2 - $b1))
-  return $overlap / $denominator
-}
-
-function Test-RangeHasDeterministicProof($candidate, $proposals) {
-  foreach ($proposal in @($proposals)) {
-    $timeOverlap = Get-OverlapRatio `
-      ([double]$candidate.start_time) ([double]$candidate.end_time) `
-      ([double]$proposal.start_time) ([double]$proposal.end_time)
-    $priceOverlap = Get-OverlapRatio `
-      ([double]$candidate.lower) ([double]$candidate.upper) `
-      ([double]$proposal.lower) ([double]$proposal.upper)
-    if ($timeOverlap -ge 0.45 -and $priceOverlap -ge 0.55) {
-      return $true
-    }
-  }
-  return $false
+function Test-AutoRangeHasSourceRuleReview($candidate) {
+  return (
+    [string]$candidate.source -in @('auto_existing','auto_candidate') -and
+    [string]$candidate.status -in @('active','broken','completed') -and
+    [long]$candidate.end_time -gt [long]$candidate.start_time -and
+    [double]$candidate.upper -gt [double]$candidate.lower -and
+    -not [string]::IsNullOrWhiteSpace([string]$candidate.evidence)
+  )
 }
 
   if (-not $Force -and (Test-Path -LiteralPath $cachePath)) {
@@ -175,20 +159,19 @@ try {
       }
     }
 
-    # Image review may not relax the exact-OHLC range proof.  Only manual
-    # rectangles bypass this gate.  Every automatic range must overlap a
-    # deterministic proposal whose detector already proved two independent
-    # upper tests, two independent lower tests, and alternating rotations.
+    # USER RANGE is unconditional and keeps its exact geometry. Automatic
+    # ranges use only the visual source-rule review; numeric overlap and
+    # confidence thresholds are forbidden.
     $keptRanges = [System.Collections.Generic.List[object]]::new()
     foreach ($candidate in @($outputMarket.range_candidates)) {
       if (
         [string]$candidate.source -eq 'manual_existing' -or
-        (Test-RangeHasDeterministicProof $candidate @($inputMarket.local_range_proposals))
+        (Test-AutoRangeHasSourceRuleReview $candidate)
       ) {
         $keptRanges.Add($candidate)
       } else {
         Write-BaselineLog (
-          "REJECTED_UNPROVEN_AUTO_RANGE " +
+          "REJECTED_AUTO_RANGE_WITHOUT_SOURCE_RULE_PROOF " +
           "$($market.vendor):$($market.symbol) " +
           "$($candidate.start_time)-$($candidate.end_time) " +
           "$($candidate.lower)-$($candidate.upper)"

@@ -32,13 +32,12 @@ High-recall lifecycle rules:
 - If the current setup still requires a future bar, it is not A/B.
 
 Wide-channel requirements:
-- `wide_channel_validation.valid=true` is mandatory but not sufficient for every wide-channel label. If it is false or absent, you are forbidden to use 宽通道边缘、宽通道突破、or 宽通道顺势. Select another valid setup or return NO_SIGNAL.
+- Local wide-channel validation fields are advisory only. Independently apply the source-document visual definition; do not use an unapproved numeric local veto.
 - Independently verify the validator from `recent_ohlc`; never override a failed gate by manually choosing convenient minor highs/lows.
 - A wide channel needs the latest structure—not a stale or cherry-picked subsection—to contain at least three upper and three lower structural anchors in an alternating sequence.
 - Consecutive anchors on the same side must be at least four 5-minute bars apart. Equal/adjacent wick clusters are one anchor.
-- Both boundaries must trend in the same direction and be approximately parallel; their absolute slope ratio must remain between 0.5 and 2.0 and projected width must remain reasonably stable.
-- At least two countertrend rotations must each last at least three bars, contain at least two countertrend close advances, and progress at least 0.60 ATR. A one/two-bar wick bounce is not a wide-channel swing.
-- Projected channel width must be at least 1.50 ATR. A falling/rising zigzag, rolling highs/lows, or a single directional leg with small pauses is not a wide channel.
+- Both boundaries must trend in the same direction and be visually approximately parallel, with repeated alternating swings. Do not impose an ATR, percentage, slope-ratio, anchor-count, or fixed bar-spacing threshold absent from the source rules.
+- A one-sided trend leg, one V reversal, rolling highs/lows, or an EMA touch is not a wide channel.
 - Every accepted anchor must include Beijing time and price, channel slope/direction, the tested edge, and the validator metrics in `context_json`.
 - If the geometry would not be visually obvious without selectively connecting minor pivots, reject the wide-channel interpretation.
 

@@ -70,11 +70,6 @@ const validateDecision = () => {
   if (!['A', 'B'].includes(decision.grade)) throw new Error('invalid grade');
   if (!Array.isArray(decision.reasons) || decision.reasons.length === 0) throw new Error('missing reasons');
   const rangeSetups = new Set(['震荡内部：边缘反向', '震荡突破：位移突破']);
-  const wideChannelSetups = new Set([
-    '宽通道边缘：反向波段',
-    '宽通道突破：更大级别反转',
-    '宽通道顺势：在有利边缘跟随主方向',
-  ]);
   if (
     rangeSetups.has(decision.setup_type)
     && (
@@ -88,21 +83,6 @@ const validateDecision = () => {
     const validDirections = candidate.range_reversal_validation?.valid_directions || [];
     if (!validDirections.includes(decision.direction)) {
       throw new Error('range-reversal outer-third gate rejected signal before execution');
-    }
-  }
-  if (wideChannelSetups.has(decision.setup_type) && candidate.wide_channel_validation?.valid !== true) {
-    throw new Error('wide-channel hard gate rejected signal before execution');
-  }
-  if (decision.setup_type === '窄通道：等待回踩顺势参与') {
-    const expectedDirection = decision.direction === 'long' ? 'up' : 'down';
-    const validDirections = candidate.narrow_channel_validation?.valid_directions || [];
-    if (!validDirections.includes(expectedDirection)) {
-      throw new Error('narrow-channel hard gate rejected signal before execution');
-    }
-    const validPullbackDirections =
-      candidate.narrow_pullback_validation?.valid_directions || [];
-    if (!validPullbackDirections.includes(decision.direction)) {
-      throw new Error('narrow-channel pullback-quality gate rejected signal before execution');
     }
   }
   const close = Number(candidate.close);

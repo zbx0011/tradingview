@@ -64,7 +64,7 @@ Horizontal-range hard gate:
   different price area. A preceding small balance boundary may anchor the
   next larger balance boundary.
 - The visual composite must also show an obvious horizontal balance with defensible upper and lower boundaries. If the hard gate and image disagree, return NO_SIGNAL for every range setup.
-- A valid range requires at least two independent upper tests and two independent lower tests, with at least four bars between same-side tests and at least four alternating edge visits.
+- A valid range requires at least two independent upper test clusters and two independent lower test clusters, separated in time, with alternating visits between the two edges. Do not impose a fixed bar-count spacing or visit-count threshold that is absent from the source rules.
 - Adjacent bars in the same V-shaped or inverted-V-shaped turn are one test, never a new range.
 - If `range_validation.reason=proven_range_already_broken`, that range cannot be reused as the basis of a later breakout. A later continuation bar is not a new range breakout.
 - A 4/8/12-bar rolling extreme, two nearby wick lows, a short pause, or one rebound cannot independently create a new range.
@@ -79,32 +79,27 @@ Horizontal-range hard gate:
   when the boundary and outer/inner structure are clear. The small body is not
   a reason to downgrade; the early reclaim preserves the useful location.
 
-Wide-channel hard gate:
-- `wide_channel_validation.valid=true` is mandatory for every wide-channel setup type.
-- Independently verify it from `recent_ohlc`; never rescue a failed gate with convenient minor pivots.
-- Require at least three alternating upper and three alternating lower structural anchors.
-- Same-side anchors must be at least four bars apart.
-- Both boundaries must point in the same direction, be approximately parallel, and have slope ratio 0.5–2.0.
-- Require two countertrend rotations, each at least three bars, at least two countertrend close advances, and at least 0.60 ATR progress.
-- Projected width must be at least 1.50 ATR and reasonably stable.
-- If the geometry is not visually obvious without cherry-picking, reject the wide-channel interpretation.
-- Wide-channel trend-following is automatically downgraded one grade.
+Wide-channel source-rule review:
+- Local wide-channel validation fields are advisory only and may not veto a signal.
+- Independently verify from the composite and `recent_ohlc` that repeated alternating swings form two obvious approximately parallel directional boundaries without cherry-picking pivots.
+- A one-sided trend leg, a single V reversal, or an EMA touch is not a wide channel.
+- Do not introduce ATR, percentage, slope-ratio, anchor-count, or fixed bar-spacing thresholds that are absent from the source rules.
+- Wide-channel trend-following is downgraded one grade as required by the source rules.
 
-Narrow-channel hard gate:
-- `narrow_channel_validation.valid_directions` must contain `up` for a long narrow-channel setup or `down` for a short narrow-channel setup.
+Narrow-channel source-rule review:
+- Local narrow-channel and pullback validation fields are advisory only and may not veto a signal.
 - The composite image must independently show an obvious compressed one-direction channel: persistent directional closes, shallow countertrend pullbacks, limited overlap, and price staying mostly on the trend side of EMA20.
 - A single displacement leg followed by a pause is not a narrow channel.
 - Deep countertrend rotation, repeated EMA20/EMA50 crossing, substantial two-sided overlap, or a retracement that erases most of the prior leg invalidates the narrow-channel interpretation.
 - A failed wide-channel gate must never be converted into a narrow-channel setup by default.
-- `narrow_pullback_validation.valid_directions` must also contain the proposed
-  trade direction. The pullback must reach a meaningful level already known
+- The pullback must reach a meaningful level already known
   at that close: EMA20, a separated prior support/resistance pivot, or the
   marked range breakout edge.
 - Prefer the first or second shallow/moderate pullback. Reject a third-or-later
   pullback, a mature extended channel, a deep retracement, or a setup after
   repeated rotations; those conditions are more consistent with transition
   into a wide channel or reversal.
-- If range, wide-channel, and direction-matched narrow-channel gates are all false, trend direction alone is insufficient for an A/B signal; return NO_SIGNAL.
+- Trend direction alone is insufficient for an A/B signal; return NO_SIGNAL unless the complete source-rule setup is visually proven.
 
 Previous-signal safeguards:
 - Read `recent_signals`.
