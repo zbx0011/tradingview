@@ -450,8 +450,10 @@ def sync_chart_ranges(
 
     New chart rectangles are treated as manual. If an auto-created rectangle is
     moved or resized on the chart, it is promoted to a locked manual range.
-    Missing rectangles are retained as deleted tombstones so an hourly auto
-    pass cannot recreate a range the user intentionally removed.
+    Missing unlocked auto rectangles are retained as deleted tombstones so an
+    hourly auto pass cannot recreate them.  Manual or locked rectangles are
+    authoritative user records and must never be deleted by an incomplete
+    TradingView drawing listing.
     """
     vendor = str(payload["vendor"])
     symbol = str(payload["symbol"])
@@ -466,7 +468,7 @@ def sync_chart_ranges(
     ).fetchall()
     existing = {str(row["entity_id"]): row for row in existing_rows}
     seen: set[str] = set()
-    inserted = updated = promoted = deleted = 0
+    inserted = updated = promoted = deleted = retained_manual_missing = 0
 
     for raw in payload.get("ranges", []):
         item = _normalize_range(raw)
@@ -547,6 +549,9 @@ def sync_chart_ranges(
     for entity_id, previous in existing.items():
         if entity_id in seen or str(previous["status"]) != "active":
             continue
+        if str(previous["source"]) == "manual" or int(previous["locked"]) == 1:
+            retained_manual_missing += 1
+            continue
         conn.execute(
             """
             UPDATE chart_ranges
@@ -564,6 +569,7 @@ def sync_chart_ranges(
         "updated": updated,
         "promoted_to_manual": promoted,
         "marked_deleted": deleted,
+        "retained_manual_missing": retained_manual_missing,
     }
 
 
