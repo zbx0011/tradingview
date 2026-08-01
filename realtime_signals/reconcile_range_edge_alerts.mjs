@@ -44,10 +44,6 @@ const store = (command, body = null) => {
   ));
 };
 const keyOf = (item) => `${item.range_id}:${item.side}`;
-const near = (left, right) => {
-  const scale = Math.max(Math.abs(Number(left)), Math.abs(Number(right)), 1);
-  return Math.abs(Number(left) - Number(right)) <= scale * 1e-8;
-};
 const waitForSymbol = async (client, symbol) => {
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const state = parse(await client.callTool({ name: 'chart_get_state', arguments: {} }));
@@ -109,6 +105,7 @@ try {
   // must not leave a live edge alert behind.
   for (const [key, tracked] of trackedByKey) {
     if (desiredByKey.has(key)) continue;
+    if (tracked.status === 'cancelled' && tracked.tradingview_alert_id == null) continue;
     const oldId = tracked.tradingview_alert_id == null
       ? null
       : String(tracked.tradingview_alert_id);
@@ -141,7 +138,7 @@ try {
     const sameGeometry = tracked
       && Number(tracked.range_updated_at) === Number(desired.range_updated_at)
       && tracked.condition === desired.condition
-      && near(tracked.threshold, desired.threshold);
+      && Number(tracked.threshold) === Number(desired.threshold);
     if (sameGeometry && oldId && activeById.get(oldId) === true) {
       results.push({ key, action: 'kept', alert_id: oldId });
       continue;
