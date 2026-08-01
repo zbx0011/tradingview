@@ -25,3 +25,4 @@ migration/packages/
 migration/disabled-startup-backups/
 /migration/codex-handoff/04-tradingview-MCP完整聊天记录-20260801.md
 /migration/codex-handoff/04-tradingview-MCP完整聊天记录-20260801.jsonl
+/migration/codex-handoff/04-原始会话上下文-无截图-20260801.jsonl

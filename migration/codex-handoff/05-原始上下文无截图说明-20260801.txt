@@ -1,0 +1,31 @@
+任务：tradingview MCP
+Thread ID：019f8d7b-c4e7-7313-9115-f7c8b5ea8da2
+导出日期：2026-08-01（Asia/Shanghai）
+
+本包是 Codex 原始 rollout 会话的“无截图版”，不是仅包含用户与助手消息的聊天摘要。
+
+保留内容：
+- 27,225 条原始 JSONL 事件。
+- 用户和 Codex 消息。
+- 系统、开发者和运行上下文。
+- 工具调用、工具文字输出、上下文压缩快照和其他文字运行轨迹。
+- 本地图片/附件路径等文字引用。
+
+移除内容：
+- 3,412 个 data:image/* 嵌入图片字段，共移除 2,249,665,531 个图片数据字符。
+- 每个被移除字段均替换为 EMBEDDED_IMAGE_REMOVED 占位，记录原始 MIME 头、字符数和 SHA-256。
+- 未删除普通文本，也未删除图片的本地路径引用。
+
+完整性：
+- 读取行数：27,225
+- 写入行数：27,225
+- JSON 解析错误：0
+- 无截图 JSONL 大小：93,921,828 字节
+- 无截图 JSONL SHA-256：1F102FE2DA3D2EE6DA1180CCCA1FE091FAED6568B67FCA60B2CA77B467A2528E
+
+安全说明：
+- 此文件保留了原始文字运行上下文，因此可能包含对话中曾出现的本地路径、网络地址和连接密钥。
+- GitHub 仓库必须保持私有；不要公开转发。
+
+生成脚本：
+migration\codex-handoff\export_raw_context_without_images.py
