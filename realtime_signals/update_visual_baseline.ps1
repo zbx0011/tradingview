@@ -107,8 +107,11 @@ try {
   $prompt = $template.Replace('{{MARKETS_JSON}}', $request)
   [System.IO.File]::WriteAllText($promptFile, $prompt, [System.Text.UTF8Encoding]::new($false))
 
-  $codexPath = (Get-Command codex.exe -ErrorAction Stop).Source
+  $codexPath = (Get-Command node.exe -ErrorAction Stop).Source
+  $codexScript = Join-Path (Split-Path (Get-Command codex.cmd -ErrorAction Stop).Source) `
+    'node_modules\@openai\codex\bin\codex.js'
   $arguments = [System.Collections.Generic.List[string]]::new()
+  $arguments.Add("`"$codexScript`"")
   foreach ($value in @(
     'exec','--ephemeral','--skip-git-repo-check','--ignore-user-config',
     '--ignore-rules','--sandbox','read-only','-C',"`"$root`"",

@@ -129,7 +129,9 @@ if (Test-Path -LiteralPath $SeenPath) {
   }
 }
 $promptTemplate = Get-Content -Raw -Encoding UTF8 -LiteralPath $promptPath
-$codexPath = (Get-Command codex.exe -ErrorAction Stop).Source
+$codexPath = (Get-Command node.exe -ErrorAction Stop).Source
+$codexScript = Join-Path (Split-Path (Get-Command codex.cmd -ErrorAction Stop).Source) `
+  'node_modules\@openai\codex\bin\codex.js'
 $running = [System.Collections.Generic.List[object]]::new()
 
 foreach ($candidate in $queue.candidates) {
@@ -234,6 +236,7 @@ foreach ($candidate in $queue.candidates) {
   $jobRunId = [int]$jobRun.job_run_id
   Write-ReviewLog "START key=$key model=$model effort=$effort speed=fast_1_5x delivery=as_completed deadline=$DeadlineEpoch"
   $arguments = @(
+    "`"$codexScript`"",
     'exec',
     '--ephemeral',
     '--skip-git-repo-check',
