@@ -1,16 +1,26 @@
 我正在让你接管 TVFloat TradingView 机会识别项目。不要立即启动监控，也不要凭你自己的技术分析知识重新解释规则。
 
-请先从 `%LOCALAPPDATA%\TVFloat\migration_install_receipt.json` 读取实际 `target_root`，然后完整读取以下文件到 EOF：
+先定位仓库根目录：优先从 `%LOCALAPPDATA%\TVFloat\migration_install_receipt.json` 读取实际 `target_root`；若该回执不存在，则以当前 `git rev-parse --show-toplevel` 返回值作为 `<target_root>`。然后完整读取以下文件到 EOF：
 
 1. `<target_root>\migration\codex-handoff\03-TVFloat完整权威上下文-20260801.md`
 2. `<target_root>\migration\codex-handoff\01-TVFloat项目上下文.md`
 3. `<target_root>\migration\codex-handoff\02-接管验证清单.md`
 4. `<target_root>\migration\codex-handoff\04-权威上下文校验清单-20260801.json`
-5. 权威上下文第 18 节列出的全部源码、prompt 和 schema。
+5. `<target_root>\migration\codex-handoff\source-rules\Louie交易规则完整整理_案例扩展版.md`
+6. `<target_root>\migration\codex-handoff\source-rules\louie-case-expanded.md`
+7. `<target_root>\migration\codex-handoff\user-screenshots-except-keys\README.md`
+8. `<target_root>\migration\codex-handoff\user-screenshots-except-keys\screenshots-message-map.jsonl`
+9. `<target_root>\migration\codex-handoff\runtime-state-no-secrets\README.md`
+10. 权威上下文第 18 节列出的全部源码、prompt 和 schema。
+
+`04-tradingview-MCP完整聊天记录-20260801.jsonl` 和 `04-原始会话上下文-无截图-20260801.jsonl` 是冲突溯源资料。不要尝试一次性塞进一条回复；应按消息编号、关键词和文件路径检索原始用户纠正，并把结论追溯到对应记录。截图文件名中的 `Uxxxx` 与映射表的 `user_message_number` 对应。
+
+仓库中的 `runtime-state-no-secrets` 是旧电脑状态快照，只用于比对和获批后的恢复。`config.json` 与连接密钥没有上传，禁止从聊天文本或截图猜测、复用或打印密钥。
 
 特别注意：
 
 - 用户最新规则和用户手工橙色震荡框优先级最高；
+- 两份 Louie 原文、用户逐条纠正及对应截图是规则来源；没有依据的阈值必须询问用户，不能自行补充；
 - 禁止自行发明百分比、ATR阈值或市场结构定义；
 - 已取消突破K顶部/底部32%规则；
 - 当前正式周期是5分钟、周一到周五24小时；
