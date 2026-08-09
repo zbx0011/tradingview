@@ -1,0 +1,952 @@
+{
+  "version": 1,
+  "symbol": "OANDA:XAUUSD",
+  "timeframe_minutes": 5,
+  "timezone": "Asia/Shanghai",
+  "model": "Sol XHIGH",
+  "input_mode": "image",
+  "structural_dedup": {
+    "reviewer_model": "GPT-5.6 Luna Max",
+    "fixed_time_cooldown": false,
+    "source_signal_count": 91,
+    "kept_count": 45,
+    "removed_count": 46,
+    "relation_counts": {
+      "distinct_structure": 20,
+      "structure_invalidated": 25,
+      "not_accepted": 14,
+      "same_structure_continuation": 30,
+      "microstructure_duplicate": 2
+    },
+    "review_artifact": "dedup_reviews.jsonl",
+    "summary_artifact": "dedup_summary.json"
+  },
+  "annotation_semantics": {
+    "horizontal_anchor": "signal candle identified by bar open timestamp",
+    "vertical_anchor": "frozen signal candle close price",
+    "displayed_time": "Beijing close time",
+    "direction_legend": {
+      "L": "long / 做多",
+      "S": "short / 做空"
+    },
+    "label_fields": [
+      "direction",
+      "Beijing close time",
+      "close price",
+      "signal reason",
+      "dedup relation"
+    ]
+  },
+  "replacement": {
+    "removed_prior_manifest": "../xauusd_replay_5m_20260809_sol_image_last500/tradingview_drawings_sol_image_raw91.json",
+    "removed_prior_callouts": 91,
+    "preserved_non_target_drawings": true
+  },
+  "counts": {
+    "total": 45,
+    "long": 21,
+    "short": 24
+  },
+  "drawings": [
+    {
+      "entity_id": "4VrNhe",
+      "idx": 1002,
+      "candidate_position": 0,
+      "side": "S",
+      "bar_open_time": 1785925800,
+      "close_time": "2026-08-05 18:35",
+      "price": 4155.26,
+      "setup": "均线回测续空",
+      "dedup_relation": "distinct_structure",
+      "text": "S 做空｜结构去重｜收盘价 4155.260\n北京时间收盘 2026-08-05 18:35\n理由：均线回测续空；局部处在高位回落的下降通道，价格连续运行于双EMA下方\n结构：独立新结构",
+      "anchor": {
+        "time": 1785925800,
+        "price": 4155.26
+      },
+      "point2": {
+        "time": 1785926400,
+        "price": 4157.46
+      }
+    },
+    {
+      "entity_id": "gcGkLu",
+      "idx": 1008,
+      "candidate_position": 1,
+      "side": "L",
+      "bar_open_time": 1785927600,
+      "close_time": "2026-08-05 19:05",
+      "price": 4164.13,
+      "setup": "底部突破跟随",
+      "dedup_relation": "structure_invalidated",
+      "text": "L 做多｜结构去重｜收盘价 4164.130\n北京时间收盘 2026-08-05 19:05\n理由：底部突破跟随；此前回落在4150附近扫低后形成底部整理，空头结构已停止扩展\n结构：原结构失效后反向成立",
+      "anchor": {
+        "time": 1785927600,
+        "price": 4164.13
+      },
+      "point2": {
+        "time": 1785928800,
+        "price": 4161.13
+      }
+    },
+    {
+      "entity_id": "2Jzh56",
+      "idx": 1028,
+      "candidate_position": 3,
+      "side": "S",
+      "bar_open_time": 1785933600,
+      "close_time": "2026-08-05 20:45",
+      "price": 4194.64,
+      "setup": "反转二次下攻",
+      "dedup_relation": "structure_invalidated",
+      "text": "S 做空｜结构去重｜收盘价 4194.640\n北京时间收盘 2026-08-05 20:45\n理由：反转二次下攻；吹升高潮已转入反转回撤，首轮空头下跌已经获得跟随\n结构：原结构失效后反向成立",
+      "anchor": {
+        "time": 1785933600,
+        "price": 4194.64
+      },
+      "point2": {
+        "time": 1785935400,
+        "price": 4198.4400000000005
+      }
+    },
+    {
+      "entity_id": "VUqNpW",
+      "idx": 1032,
+      "candidate_position": 5,
+      "side": "L",
+      "bar_open_time": 1785934800,
+      "close_time": "2026-08-05 21:05",
+      "price": 4194.07,
+      "setup": "深回调失败反转",
+      "dedup_relation": "structure_invalidated",
+      "text": "L 做多｜结构去重｜收盘价 4194.070\n北京时间收盘 2026-08-05 21:05\n理由：深回调失败反转；更大背景仍是强多头，回调落到前突破区与上升均线附近\n结构：原结构失效后反向成立",
+      "anchor": {
+        "time": 1785934800,
+        "price": 4194.07
+      },
+      "point2": {
+        "time": 1785937200,
+        "price": 4189.469999999999
+      }
+    },
+    {
+      "entity_id": "94OGJJ",
+      "idx": 1038,
+      "candidate_position": 6,
+      "side": "L",
+      "bar_open_time": 1785936600,
+      "close_time": "2026-08-05 21:35",
+      "price": 4202.285,
+      "setup": "二次进攻突破",
+      "dedup_relation": "distinct_structure",
+      "text": "L 做多｜结构去重｜收盘价 4202.285\n北京时间收盘 2026-08-05 21:35\n理由：二次进攻突破；更大背景维持多头，深回调后已在EMA20上方重新建立抬高低点\n结构：独立新结构",
+      "anchor": {
+        "time": 1785936600,
+        "price": 4202.285
+      },
+      "point2": {
+        "time": 1785937200,
+        "price": 4200.085
+      }
+    },
+    {
+      "entity_id": "NfufXE",
+      "idx": 1043,
+      "candidate_position": 7,
+      "side": "L",
+      "bar_open_time": 1785938100,
+      "close_time": "2026-08-05 22:00",
+      "price": 4206.17,
+      "setup": "回测后二次突破",
+      "dedup_relation": "distinct_structure",
+      "text": "L 做多｜结构去重｜收盘价 4206.170\n北京时间收盘 2026-08-05 22:00\n理由：回测后二次突破；整体仍是多头趋势，宽幅整理期间低点持续抬高\n结构：独立新结构",
+      "anchor": {
+        "time": 1785938100,
+        "price": 4206.17
+      },
+      "point2": {
+        "time": 1785939300,
+        "price": 4203.17
+      }
+    },
+    {
+      "entity_id": "72QwLz",
+      "idx": 1052,
+      "candidate_position": 10,
+      "side": "L",
+      "bar_open_time": 1785940800,
+      "close_time": "2026-08-05 22:45",
+      "price": 4243.34,
+      "setup": "高位整理突破",
+      "dedup_relation": "distinct_structure",
+      "text": "L 做多｜结构去重｜收盘价 4243.340\n北京时间收盘 2026-08-05 22:45\n理由：高位整理突破；多头强突破背景仍然有效，高位回吐仅形成窄幅整理并守住原突破区\n结构：独立新结构",
+      "anchor": {
+        "time": 1785940800,
+        "price": 4243.34
+      },
+      "point2": {
+        "time": 1785942600,
+        "price": 4239.54
+      }
+    },
+    {
+      "entity_id": "bNMPjm",
+      "idx": 1067,
+      "candidate_position": 13,
+      "side": "S",
+      "bar_open_time": 1785945300,
+      "close_time": "2026-08-06 00:00",
+      "price": 4233.025,
+      "setup": "空头结构破位",
+      "dedup_relation": "structure_invalidated",
+      "text": "S 做空｜结构去重｜收盘价 4233.025\n北京时间收盘 2026-08-06 00:00\n理由：空头结构破位；背景已由高位假突破转为连续空头推进，大级别多头开始退化\n结构：原结构失效后反向成立",
+      "anchor": {
+        "time": 1785945300,
+        "price": 4233.025
+      },
+      "point2": {
+        "time": 1785947700,
+        "price": 4237.625
+      }
+    },
+    {
+      "entity_id": "GKsYox",
+      "idx": 1073,
+      "candidate_position": 15,
+      "side": "L",
+      "bar_open_time": 1785947100,
+      "close_time": "2026-08-06 00:30",
+      "price": 4241.34,
+      "setup": "回调后均线收复",
+      "dedup_relation": "structure_invalidated",
+      "text": "L 做多｜结构去重｜收盘价 4241.340\n北京时间收盘 2026-08-06 00:30\n理由：回调后均线收复；更大背景仍是上升趋势，急跌在EMA50附近被强力拒绝后形成反弹\n结构：原结构失效后反向成立",
+      "anchor": {
+        "time": 1785947100,
+        "price": 4241.34
+      },
+      "point2": {
+        "time": 1785947700,
+        "price": 4239.14
+      }
+    },
+    {
+      "entity_id": "4BP1JE",
+      "idx": 1085,
+      "candidate_position": 16,
+      "side": "L",
+      "bar_open_time": 1785950700,
+      "close_time": "2026-08-06 01:30",
+      "price": 4244.915,
+      "setup": "区间下沿假破反转",
+      "dedup_relation": "distinct_structure",
+      "text": "L 做多｜结构去重｜收盘价 4244.915\n北京时间收盘 2026-08-06 01:30\n理由：区间下沿假破反转；背景是大级别多头中的局部横盘，区间下沿与EMA50上方仍有承接\n结构：独立新结构",
+      "anchor": {
+        "time": 1785950700,
+        "price": 4244.915
+      },
+      "point2": {
+        "time": 1785951900,
+        "price": 4241.915
+      }
+    },
+    {
+      "entity_id": "RbDCKl",
+      "idx": 1107,
+      "candidate_position": 21,
+      "side": "S",
+      "bar_open_time": 1785957300,
+      "close_time": "2026-08-06 03:20",
+      "price": 4251.925,
+      "setup": "高位区间下破",
+      "dedup_relation": "structure_invalidated",
+      "text": "S 做空｜结构去重｜收盘价 4251.925\n北京时间收盘 2026-08-06 03:20\n理由：高位区间下破；文字与PNG显示1096高潮后形成高位整理，1103反弹未能重返前高，结构已出现较低高点\n结构：原结构失效后反向成立",
+      "anchor": {
+        "time": 1785957300,
+        "price": 4251.925
+      },
+      "point2": {
+        "time": 1785959100,
+        "price": 4255.725
+      }
+    },
+    {
+      "entity_id": "YO4ICq",
+      "idx": 1125,
+      "candidate_position": 24,
+      "side": "S",
+      "bar_open_time": 1785962700,
+      "close_time": "2026-08-06 04:50",
+      "price": 4244.265,
+      "setup": "区间下破",
+      "dedup_relation": "distinct_structure",
+      "text": "S 做空｜结构去重｜收盘价 4244.265\n北京时间收盘 2026-08-06 04:50\n理由：区间下破；此前强势上行已在高位退化为连续降低的回调与小区间\n结构：独立新结构",
+      "anchor": {
+        "time": 1785962700,
+        "price": 4244.265
+      },
+      "point2": {
+        "time": 1785965100,
+        "price": 4248.865000000001
+      }
+    },
+    {
+      "entity_id": "J9QQ9F",
+      "idx": 1127,
+      "candidate_position": 25,
+      "side": "L",
+      "bar_open_time": 1785963300,
+      "close_time": "2026-08-06 05:00",
+      "price": 4247.275,
+      "setup": "下破失败",
+      "dedup_relation": "structure_invalidated",
+      "text": "L 做多｜结构去重｜收盘价 4247.275\n北京时间收盘 2026-08-06 05:00\n理由：下破失败；更大背景仍是强势上行后的高位整理，近端空头刚尝试脱离小区间\n结构：原结构失效后反向成立",
+      "anchor": {
+        "time": 1785963300,
+        "price": 4247.275
+      },
+      "point2": {
+        "time": 1785963900,
+        "price": 4245.075
+      }
+    },
+    {
+      "entity_id": "liUcRQ",
+      "idx": 1129,
+      "candidate_position": 26,
+      "side": "S",
+      "bar_open_time": 1785967500,
+      "close_time": "2026-08-06 06:10",
+      "price": 4246.775,
+      "setup": "缺口失败",
+      "dedup_relation": "structure_invalidated",
+      "text": "S 做空｜结构去重｜收盘价 4246.775\n北京时间收盘 2026-08-06 06:10\n理由：缺口失败；高位背景仍是双向整理，向上缺口直接落在1119至1122前高压力带\n结构：原结构失效后反向成立",
+      "anchor": {
+        "time": 1785967500,
+        "price": 4246.775
+      },
+      "point2": {
+        "time": 1785968700,
+        "price": 4249.775
+      }
+    },
+    {
+      "entity_id": "JQkjkQ",
+      "idx": 1140,
+      "candidate_position": 27,
+      "side": "L",
+      "bar_open_time": 1785970800,
+      "close_time": "2026-08-06 07:05",
+      "price": 4252.75,
+      "setup": "区间上破",
+      "dedup_relation": "structure_invalidated",
+      "text": "L 做多｜结构去重｜收盘价 4252.750\n北京时间收盘 2026-08-06 07:05\n理由：区间上破；更大背景保持上行，高位整理经过多次压缩后仍守在上扬的EMA上方\n结构：原结构失效后反向成立",
+      "anchor": {
+        "time": 1785970800,
+        "price": 4252.75
+      },
+      "point2": {
+        "time": 1785972600,
+        "price": 4248.95
+      }
+    },
+    {
+      "entity_id": "dFglCC",
+      "idx": 1155,
+      "candidate_position": 30,
+      "side": "L",
+      "bar_open_time": 1785975300,
+      "close_time": "2026-08-06 08:20",
+      "price": 4274.54,
+      "setup": "双底回收",
+      "dedup_relation": "distinct_structure",
+      "text": "L 做多｜结构去重｜收盘价 4274.540\n北京时间收盘 2026-08-06 08:20\n理由：双底回收；整体仍是多头趋势后的高位宽通道，EMA与突破起点形成下方支撑\n结构：独立新结构",
+      "anchor": {
+        "time": 1785975300,
+        "price": 4274.54
+      },
+      "point2": {
+        "time": 1785977700,
+        "price": 4269.94
+      }
+    },
+    {
+      "entity_id": "IpSNbW",
+      "idx": 1178,
+      "candidate_position": 39,
+      "side": "S",
+      "bar_open_time": 1785982200,
+      "close_time": "2026-08-06 10:15",
+      "price": 4295.205,
+      "setup": "上沿假突破",
+      "dedup_relation": "structure_invalidated",
+      "text": "S 做空｜结构去重｜收盘价 4295.205\n北京时间收盘 2026-08-06 10:15\n理由：上沿假突破；市场仍处高位宽幅区间，上升背景尚存，但最高压力附近多次出现扫荡\n结构：原结构失效后反向成立",
+      "anchor": {
+        "time": 1785982200,
+        "price": 4295.205
+      },
+      "point2": {
+        "time": 1785982800,
+        "price": 4297.405
+      }
+    },
+    {
+      "entity_id": "5QzuHp",
+      "idx": 1191,
+      "candidate_position": 40,
+      "side": "S",
+      "bar_open_time": 1785986100,
+      "close_time": "2026-08-06 11:20",
+      "price": 4267.345,
+      "setup": "区间下破",
+      "dedup_relation": "distinct_structure",
+      "text": "S 做空｜结构去重｜收盘价 4267.345\n北京时间收盘 2026-08-06 11:20\n理由：区间下破；文字与图像显示高位宽通道已转成EMA下方的空头推进\n结构：独立新结构",
+      "anchor": {
+        "time": 1785986100,
+        "price": 4267.345
+      },
+      "point2": {
+        "time": 1785987300,
+        "price": 4270.345
+      }
+    },
+    {
+      "entity_id": "q2DI5r",
+      "idx": 1205,
+      "candidate_position": 41,
+      "side": "S",
+      "bar_open_time": 1785990300,
+      "close_time": "2026-08-06 12:30",
+      "price": 4255.51,
+      "setup": "空头旗形下破",
+      "dedup_relation": "distinct_structure",
+      "text": "S 做空｜结构去重｜收盘价 4255.510\n北京时间收盘 2026-08-06 12:30\n理由：空头旗形下破；文字与图像显示市场已处于EMA下方的空头趋势，首次下破后形成低位窄旗形\n结构：独立新结构",
+      "anchor": {
+        "time": 1785990300,
+        "price": 4255.51
+      },
+      "point2": {
+        "time": 1785992100,
+        "price": 4259.31
+      }
+    },
+    {
+      "entity_id": "I1zJuu",
+      "idx": 1218,
+      "candidate_position": 43,
+      "side": "L",
+      "bar_open_time": 1785994200,
+      "close_time": "2026-08-06 13:35",
+      "price": 4257.645,
+      "setup": "假跌破反转",
+      "dedup_relation": "structure_invalidated",
+      "text": "L 做多｜结构去重｜收盘价 4257.645\n北京时间收盘 2026-08-06 13:35\n理由：假跌破反转；图文显示大背景仍是EMA下方的下降段，但空头已连续在4253前低附近受阻\n结构：原结构失效后反向成立",
+      "anchor": {
+        "time": 1785994200,
+        "price": 4257.645
+      },
+      "point2": {
+        "time": 1785996600,
+        "price": 4253.045
+      }
+    },
+    {
+      "entity_id": "7uaZ7C",
+      "idx": 1225,
+      "candidate_position": 46,
+      "side": "S",
+      "bar_open_time": 1785996300,
+      "close_time": "2026-08-06 14:10",
+      "price": 4262.785,
+      "setup": "双顶失败",
+      "dedup_relation": "structure_invalidated",
+      "text": "S 做空｜结构去重｜收盘价 4262.785\n北京时间收盘 2026-08-06 14:10\n理由：双顶失败；图文显示整体仍是下弯EMA50下的回落背景，扫低反弹在均线附近转为横向测试\n结构：原结构失效后反向成立",
+      "anchor": {
+        "time": 1785996300,
+        "price": 4262.785
+      },
+      "point2": {
+        "time": 1785996900,
+        "price": 4264.985
+      }
+    },
+    {
+      "entity_id": "wp7zMf",
+      "idx": 1231,
+      "candidate_position": 47,
+      "side": "S",
+      "bar_open_time": 1785998100,
+      "close_time": "2026-08-06 14:40",
+      "price": 4253.59,
+      "setup": "二次下探",
+      "dedup_relation": "distinct_structure",
+      "text": "S 做空｜结构去重｜收盘价 4253.590\n北京时间收盘 2026-08-06 14:40\n理由：二次下探；图文显示双顶失败后价格持续运行在下降双均线下，空头控制重新建立\n结构：独立新结构",
+      "anchor": {
+        "time": 1785998100,
+        "price": 4253.59
+      },
+      "point2": {
+        "time": 1785999300,
+        "price": 4256.59
+      }
+    },
+    {
+      "entity_id": "DU1hja",
+      "idx": 1232,
+      "candidate_position": 48,
+      "side": "L",
+      "bar_open_time": 1785998400,
+      "close_time": "2026-08-06 14:45",
+      "price": 4256.85,
+      "setup": "二次扫低反转",
+      "dedup_relation": "structure_invalidated",
+      "text": "L 做多｜结构去重｜收盘价 4256.850\n北京时间收盘 2026-08-06 14:45\n理由：二次扫低反转；图文显示价格在下降均线下方回落，但1218形成的4247低点已把短线结构转为宽幅双边测试\n结构：原结构失效后反向成立",
+      "anchor": {
+        "time": 1785998400,
+        "price": 4256.85
+      },
+      "point2": {
+        "time": 1786000200,
+        "price": 4253.05
+      }
+    },
+    {
+      "entity_id": "LeE8LK",
+      "idx": 1234,
+      "candidate_position": 49,
+      "side": "S",
+      "bar_open_time": 1785999000,
+      "close_time": "2026-08-06 14:55",
+      "price": 4252.51,
+      "setup": "扫低反转失败",
+      "dedup_relation": "structure_invalidated",
+      "text": "S 做空｜结构去重｜收盘价 4252.510\n北京时间收盘 2026-08-06 14:55\n理由：扫低反转失败；图文显示价格仍在下降双均线下方，宽幅低位反弹没有扭转空头控制\n结构：原结构失效后反向成立",
+      "anchor": {
+        "time": 1785999000,
+        "price": 4252.51
+      },
+      "point2": {
+        "time": 1786001400,
+        "price": 4257.110000000001
+      }
+    },
+    {
+      "entity_id": "wZ4CH6",
+      "idx": 1237,
+      "candidate_position": 50,
+      "side": "L",
+      "bar_open_time": 1785999900,
+      "close_time": "2026-08-06 15:10",
+      "price": 4259.58,
+      "setup": "双底二次进攻",
+      "dedup_relation": "structure_invalidated",
+      "text": "L 做多｜结构去重｜收盘价 4259.580\n北京时间收盘 2026-08-06 15:10\n理由：双底二次进攻；图文显示市场虽仍处于下降EMA50下方，但4247—4251区域已多次拒绝空头，低位形成双底…\n结构：原结构失效后反向成立",
+      "anchor": {
+        "time": 1785999900,
+        "price": 4259.58
+      },
+      "point2": {
+        "time": 1786000500,
+        "price": 4257.38
+      }
+    },
+    {
+      "entity_id": "xR3LbI",
+      "idx": 1250,
+      "candidate_position": 53,
+      "side": "L",
+      "bar_open_time": 1786003800,
+      "close_time": "2026-08-06 16:15",
+      "price": 4269.025,
+      "setup": "区间上破",
+      "dedup_relation": "distinct_structure",
+      "text": "L 做多｜结构去重｜收盘价 4269.025\n北京时间收盘 2026-08-06 16:15\n理由：区间上破；背景是低位扫荡反转后连续抬高，图像显示价格正从近期横向整理向上脱离\n结构：独立新结构",
+      "anchor": {
+        "time": 1786003800,
+        "price": 4269.025
+      },
+      "point2": {
+        "time": 1786005000,
+        "price": 4266.025
+      }
+    },
+    {
+      "entity_id": "aszbF5",
+      "idx": 1252,
+      "candidate_position": 54,
+      "side": "S",
+      "bar_open_time": 1786004400,
+      "close_time": "2026-08-06 16:25",
+      "price": 4265.79,
+      "setup": "上破失败",
+      "dedup_relation": "structure_invalidated",
+      "text": "S 做空｜结构去重｜收盘价 4265.790\n北京时间收盘 2026-08-06 16:25\n理由：上破失败；背景仍是下降后的宽幅整理，4268.6至4270.6构成区间上沿压力\n结构：原结构失效后反向成立",
+      "anchor": {
+        "time": 1786004400,
+        "price": 4265.79
+      },
+      "point2": {
+        "time": 1786006200,
+        "price": 4269.59
+      }
+    },
+    {
+      "entity_id": "UyObPd",
+      "idx": 1254,
+      "candidate_position": 55,
+      "side": "L",
+      "bar_open_time": 1786005000,
+      "close_time": "2026-08-06 16:35",
+      "price": 4273.69,
+      "setup": "二次上破",
+      "dedup_relation": "structure_invalidated",
+      "text": "L 做多｜结构去重｜收盘价 4273.690\n北京时间收盘 2026-08-06 16:35\n理由：二次上破；背景由区间转向上行，图像显示低点不断抬高且EMA20已上穿EMA50\n结构：原结构失效后反向成立",
+      "anchor": {
+        "time": 1786005000,
+        "price": 4273.69
+      },
+      "point2": {
+        "time": 1786007400,
+        "price": 4269.089999999999
+      }
+    },
+    {
+      "entity_id": "2cpjya",
+      "idx": 1268,
+      "candidate_position": 56,
+      "side": "S",
+      "bar_open_time": 1786009200,
+      "close_time": "2026-08-06 17:45",
+      "price": 4271.935,
+      "setup": "终结楔形破位",
+      "dedup_relation": "structure_invalidated",
+      "text": "S 做空｜结构去重｜收盘价 4271.935\n北京时间收盘 2026-08-06 17:45\n理由：终结楔形破位；背景是多头上升末端的多次推进，图像与文字均显示4284附近反复破高不受、动能衰减\n结构：原结构失效后反向成立",
+      "anchor": {
+        "time": 1786009200,
+        "price": 4271.935
+      },
+      "point2": {
+        "time": 1786009800,
+        "price": 4274.135
+      }
+    },
+    {
+      "entity_id": "heXofd",
+      "idx": 1274,
+      "candidate_position": 57,
+      "side": "S",
+      "bar_open_time": 1786011000,
+      "close_time": "2026-08-06 18:15",
+      "price": 4269.655,
+      "setup": "支撑破位",
+      "dedup_relation": "distinct_structure",
+      "text": "S 做空｜结构去重｜收盘价 4269.655\n北京时间收盘 2026-08-06 18:15\n理由：支撑破位；近端从4284一带形成持续回落，反弹始终受EMA20压制\n结构：独立新结构",
+      "anchor": {
+        "time": 1786011000,
+        "price": 4269.655
+      },
+      "point2": {
+        "time": 1786012200,
+        "price": 4272.655
+      }
+    },
+    {
+      "entity_id": "LubKjt",
+      "idx": 1284,
+      "candidate_position": 58,
+      "side": "S",
+      "bar_open_time": 1786014000,
+      "close_time": "2026-08-06 19:05",
+      "price": 4268.7,
+      "setup": "上破失败",
+      "dedup_relation": "distinct_structure",
+      "text": "S 做空｜结构去重｜收盘价 4268.700\n北京时间收盘 2026-08-06 19:05\n理由：上破失败；文字与图像显示4284后的下降摆动仍未修复，反弹只是回到双均线与4273.7前高压力区\n结构：独立新结构",
+      "anchor": {
+        "time": 1786014000,
+        "price": 4268.7
+      },
+      "point2": {
+        "time": 1786015800,
+        "price": 4272.5
+      }
+    },
+    {
+      "entity_id": "tHVnYW",
+      "idx": 1288,
+      "candidate_position": 59,
+      "side": "S",
+      "bar_open_time": 1786015200,
+      "close_time": "2026-08-06 19:25",
+      "price": 4261.55,
+      "setup": "区间下破",
+      "dedup_relation": "distinct_structure",
+      "text": "S 做空｜结构去重｜收盘价 4261.550\n北京时间收盘 2026-08-06 19:25\n理由：区间下破；文字与图像确认近端围绕双均线的扩张整理已经向下离开，且1284的上破失败维持空头背景\n结构：独立新结构",
+      "anchor": {
+        "time": 1786015200,
+        "price": 4261.55
+      },
+      "point2": {
+        "time": 1786017600,
+        "price": 4266.150000000001
+      }
+    },
+    {
+      "entity_id": "uNQ7IW",
+      "idx": 1302,
+      "candidate_position": 62,
+      "side": "L",
+      "bar_open_time": 1786019400,
+      "close_time": "2026-08-06 20:35",
+      "price": 4267.835,
+      "setup": "低点假突破反转",
+      "dedup_relation": "structure_invalidated",
+      "text": "L 做多｜结构去重｜收盘价 4267.835\n北京时间收盘 2026-08-06 20:35\n理由：低点假突破反转；此前虽处下降段，但1299低点扫荡后已转入反弹修复\n结构：原结构失效后反向成立",
+      "anchor": {
+        "time": 1786019400,
+        "price": 4267.835
+      },
+      "point2": {
+        "time": 1786020000,
+        "price": 4265.635
+      }
+    },
+    {
+      "entity_id": "UtZfrO",
+      "idx": 1306,
+      "candidate_position": 63,
+      "side": "S",
+      "bar_open_time": 1786020600,
+      "close_time": "2026-08-06 20:55",
+      "price": 4251.23,
+      "setup": "上破失败破位",
+      "dedup_relation": "structure_invalidated",
+      "text": "S 做空｜结构去重｜收盘价 4251.230\n北京时间收盘 2026-08-06 20:55\n理由：上破失败破位；大背景为下降宽通道，4271压力处的上破已失败\n结构：原结构失效后反向成立",
+      "anchor": {
+        "time": 1786020600,
+        "price": 4251.23
+      },
+      "point2": {
+        "time": 1786021800,
+        "price": 4254.23
+      }
+    },
+    {
+      "entity_id": "EmoCee",
+      "idx": 1329,
+      "candidate_position": 65,
+      "side": "S",
+      "bar_open_time": 1786027500,
+      "close_time": "2026-08-06 22:50",
+      "price": 4265.29,
+      "setup": "区间上沿空头反转",
+      "dedup_relation": "distinct_structure",
+      "text": "S 做空｜结构去重｜收盘价 4265.290\n北京时间收盘 2026-08-06 22:50\n理由：区间上沿空头反转；背景是急跌急拉后的宽幅震荡，近端多次上探4275附近但尚未形成向上接受\n结构：独立新结构",
+      "anchor": {
+        "time": 1786027500,
+        "price": 4265.29
+      },
+      "point2": {
+        "time": 1786029300,
+        "price": 4269.09
+      }
+    },
+    {
+      "entity_id": "eZOgwO",
+      "idx": 1335,
+      "candidate_position": 66,
+      "side": "S",
+      "bar_open_time": 1786029300,
+      "close_time": "2026-08-06 23:20",
+      "price": 4256.71,
+      "setup": "区间下破",
+      "dedup_relation": "distinct_structure",
+      "text": "S 做空｜结构去重｜收盘价 4256.710\n北京时间收盘 2026-08-06 23:20\n理由：区间下破；背景是4275上沿多次失败后形成的震荡转弱，空头回落已逐步获得跟随\n结构：独立新结构",
+      "anchor": {
+        "time": 1786029300,
+        "price": 4256.71
+      },
+      "point2": {
+        "time": 1786031700,
+        "price": 4261.31
+      }
+    },
+    {
+      "entity_id": "gfY59P",
+      "idx": 1375,
+      "candidate_position": 73,
+      "side": "S",
+      "bar_open_time": 1786041300,
+      "close_time": "2026-08-07 02:40",
+      "price": 4243.405,
+      "setup": "假突破续空",
+      "dedup_relation": "distinct_structure",
+      "text": "S 做空｜结构去重｜收盘价 4243.405\n北京时间收盘 2026-08-07 02:40\n理由：假突破续空；背景仍是下降EMA50压制的宽通道，前一轮反弹在旧破位区连续扫高却未被接受\n结构：独立新结构",
+      "anchor": {
+        "time": 1786041300,
+        "price": 4243.405
+      },
+      "point2": {
+        "time": 1786041900,
+        "price": 4245.605
+      }
+    },
+    {
+      "entity_id": "wS45R7",
+      "idx": 1396,
+      "candidate_position": 75,
+      "side": "S",
+      "bar_open_time": 1786047600,
+      "close_time": "2026-08-07 04:25",
+      "price": 4242.425,
+      "setup": "反弹失败续空",
+      "dedup_relation": "distinct_structure",
+      "text": "S 做空｜结构去重｜收盘价 4242.425\n北京时间收盘 2026-08-07 04:25\n理由：反弹失败续空；背景仍是EMA20位于EMA50下方的下降宽通道\n结构：独立新结构",
+      "anchor": {
+        "time": 1786047600,
+        "price": 4242.425
+      },
+      "point2": {
+        "time": 1786048800,
+        "price": 4245.425
+      }
+    },
+    {
+      "entity_id": "i2RSvu",
+      "idx": 1417,
+      "candidate_position": 77,
+      "side": "L",
+      "bar_open_time": 1786057500,
+      "close_time": "2026-08-07 07:10",
+      "price": 4244.035,
+      "setup": "假跌破反转突破",
+      "dedup_relation": "structure_invalidated",
+      "text": "L 做多｜结构去重｜收盘价 4244.035\n北京时间收盘 2026-08-07 07:10\n理由：假跌破反转突破；近端空头延续在4235—4239支撑反复失败，时段跳空也已完全回补，下降宽通道进入反转修复\n结构：原结构失效后反向成立",
+      "anchor": {
+        "time": 1786057500,
+        "price": 4244.035
+      },
+      "point2": {
+        "time": 1786059300,
+        "price": 4240.235
+      }
+    },
+    {
+      "entity_id": "zs2GR9",
+      "idx": 1426,
+      "candidate_position": 79,
+      "side": "L",
+      "bar_open_time": 1786060200,
+      "close_time": "2026-08-07 07:55",
+      "price": 4251.905,
+      "setup": "阻力突破",
+      "dedup_relation": "distinct_structure",
+      "text": "L 做多｜结构去重｜收盘价 4251.905\n北京时间收盘 2026-08-07 07:55\n理由：阻力突破；短线多头通道持续抬高低点，前一轮突破后的整理保持在上沿之上\n结构：独立新结构",
+      "anchor": {
+        "time": 1786060200,
+        "price": 4251.905
+      },
+      "point2": {
+        "time": 1786062600,
+        "price": 4247.304999999999
+      }
+    },
+    {
+      "entity_id": "QbvPrj",
+      "idx": 1430,
+      "candidate_position": 80,
+      "side": "S",
+      "bar_open_time": 1786061400,
+      "close_time": "2026-08-07 08:15",
+      "price": 4245,
+      "setup": "上破失败反转",
+      "dedup_relation": "structure_invalidated",
+      "text": "S 做空｜结构去重｜收盘价 4245.000\n北京时间收盘 2026-08-07 08:15\n理由：上破失败反转；更大背景仍是下跌后的整理，短线多头上破在旧高阻力区失速\n结构：原结构失效后反向成立",
+      "anchor": {
+        "time": 1786061400,
+        "price": 4245
+      },
+      "point2": {
+        "time": 1786062000,
+        "price": 4247.2
+      }
+    },
+    {
+      "entity_id": "JfyAfs",
+      "idx": 1448,
+      "candidate_position": 83,
+      "side": "L",
+      "bar_open_time": 1786066800,
+      "close_time": "2026-08-07 09:45",
+      "price": 4256.905,
+      "setup": "二次进攻突破",
+      "dedup_relation": "structure_invalidated",
+      "text": "L 做多｜结构去重｜收盘价 4256.905\n北京时间收盘 2026-08-07 09:45\n理由：二次进攻突破；低点扫荡后的反转已形成较高低点，短线由修复转为多头推进\n结构：原结构失效后反向成立",
+      "anchor": {
+        "time": 1786066800,
+        "price": 4256.905
+      },
+      "point2": {
+        "time": 1786068000,
+        "price": 4253.905
+      }
+    },
+    {
+      "entity_id": "coM2ZY",
+      "idx": 1460,
+      "candidate_position": 85,
+      "side": "S",
+      "bar_open_time": 1786070400,
+      "close_time": "2026-08-07 10:45",
+      "price": 4249.805,
+      "setup": "高位假突破反转",
+      "dedup_relation": "structure_invalidated",
+      "text": "S 做空｜结构去重｜收盘价 4249.805\n北京时间收盘 2026-08-07 10:45\n理由：高位假突破反转；高位突破在反复测试新高后失去跟随，背景已从多头延续转为突破失败\n结构：原结构失效后反向成立",
+      "anchor": {
+        "time": 1786070400,
+        "price": 4249.805
+      },
+      "point2": {
+        "time": 1786072200,
+        "price": 4253.6050000000005
+      }
+    },
+    {
+      "entity_id": "VL4AuB",
+      "idx": 1475,
+      "candidate_position": 86,
+      "side": "L",
+      "bar_open_time": 1786074900,
+      "close_time": "2026-08-07 12:00",
+      "price": 4266.265,
+      "setup": "区间压缩突破",
+      "dedup_relation": "structure_invalidated",
+      "text": "L 做多｜结构去重｜收盘价 4266.265\n北京时间收盘 2026-08-07 12:00\n理由：区间压缩突破；高位宽幅区间经过下沿承接后重新回到上沿，多头连续压缩而未被打回\n结构：原结构失效后反向成立",
+      "anchor": {
+        "time": 1786074900,
+        "price": 4266.265
+      },
+      "point2": {
+        "time": 1786077300,
+        "price": 4261.665
+      }
+    },
+    {
+      "entity_id": "34mtH6",
+      "idx": 1494,
+      "candidate_position": 89,
+      "side": "L",
+      "bar_open_time": 1786080600,
+      "close_time": "2026-08-07 13:35",
+      "price": 4275.2,
+      "setup": "区间突破",
+      "dedup_relation": "distinct_structure",
+      "text": "L 做多｜结构去重｜收盘价 4275.200\n北京时间收盘 2026-08-07 13:35\n理由：区间突破；背景重新服从上行均线与此前多头通道，高位区间的向下回归没有获得跟随\n结构：独立新结构",
+      "anchor": {
+        "time": 1786080600,
+        "price": 4275.2
+      },
+      "point2": {
+        "time": 1786081200,
+        "price": 4273
+      }
+    }
+  ]
+}

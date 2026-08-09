@@ -1,0 +1,270 @@
+{
+  "status": "complete",
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "xhigh",
+  "start_idx": 999,
+  "end_idx_exclusive": 1499,
+  "bar_count": 500,
+  "data_sha256": "7cea21394893b7b2bc13a4be2cc756bb22cf3db30f5171d5cb1f087c6927bb01",
+  "turns": [
+    {
+      "turn": 0,
+      "before_idx": 999,
+      "after_idx": 1029,
+      "commits": 30,
+      "status_calls": 1,
+      "snapshots": 25,
+      "forbidden_count": 0,
+      "codex_returncode": 0,
+      "duration_seconds": 554
+    },
+    {
+      "turn": 1,
+      "before_idx": 1029,
+      "after_idx": 1059,
+      "commits": 30,
+      "status_calls": 2,
+      "snapshots": 24,
+      "forbidden_count": 0,
+      "codex_returncode": 0,
+      "duration_seconds": 406
+    },
+    {
+      "turn": 2,
+      "before_idx": 1059,
+      "after_idx": 1089,
+      "commits": 30,
+      "status_calls": 1,
+      "snapshots": 19,
+      "forbidden_count": 0,
+      "codex_returncode": 0,
+      "duration_seconds": 363
+    },
+    {
+      "turn": 3,
+      "before_idx": 1089,
+      "after_idx": 1119,
+      "commits": 30,
+      "status_calls": 1,
+      "snapshots": 16,
+      "forbidden_count": 0,
+      "codex_returncode": 0,
+      "duration_seconds": 356
+    },
+    {
+      "turn": 4,
+      "before_idx": 1119,
+      "after_idx": 1149,
+      "commits": 30,
+      "status_calls": 1,
+      "snapshots": 20,
+      "forbidden_count": 0,
+      "codex_returncode": 0,
+      "duration_seconds": 404
+    },
+    {
+      "turn": 5,
+      "before_idx": 1149,
+      "after_idx": 1179,
+      "commits": 30,
+      "status_calls": 1,
+      "snapshots": 26,
+      "forbidden_count": 0,
+      "codex_returncode": 0,
+      "duration_seconds": 387
+    },
+    {
+      "turn": 6,
+      "before_idx": 1179,
+      "after_idx": 1209,
+      "commits": 30,
+      "status_calls": 1,
+      "snapshots": 20,
+      "forbidden_count": 0,
+      "codex_returncode": 0,
+      "duration_seconds": 355
+    },
+    {
+      "turn": 7,
+      "before_idx": 1209,
+      "after_idx": 1239,
+      "commits": 30,
+      "status_calls": 2,
+      "snapshots": 17,
+      "forbidden_count": 0,
+      "codex_returncode": 0,
+      "duration_seconds": 342
+    },
+    {
+      "turn": 8,
+      "before_idx": 1239,
+      "after_idx": 1269,
+      "commits": 30,
+      "status_calls": 1,
+      "snapshots": 16,
+      "forbidden_count": 0,
+      "codex_returncode": 0,
+      "duration_seconds": 323
+    },
+    {
+      "turn": 9,
+      "before_idx": 1269,
+      "after_idx": 1299,
+      "commits": 30,
+      "status_calls": 1,
+      "snapshots": 14,
+      "forbidden_count": 0,
+      "codex_returncode": 0,
+      "duration_seconds": 330
+    },
+    {
+      "turn": 10,
+      "before_idx": 1299,
+      "after_idx": 1329,
+      "commits": 30,
+      "status_calls": 1,
+      "snapshots": 17,
+      "forbidden_count": 0,
+      "codex_returncode": 0,
+      "duration_seconds": 412
+    },
+    {
+      "turn": 11,
+      "before_idx": 1329,
+      "after_idx": 1359,
+      "commits": 30,
+      "status_calls": 1,
+      "snapshots": 18,
+      "forbidden_count": 0,
+      "codex_returncode": 0,
+      "duration_seconds": 410
+    },
+    {
+      "turn": 12,
+      "before_idx": 1359,
+      "after_idx": 1389,
+      "commits": 30,
+      "status_calls": 1,
+      "snapshots": 15,
+      "forbidden_count": 0,
+      "codex_returncode": 0,
+      "duration_seconds": 353
+    },
+    {
+      "turn": 13,
+      "before_idx": 1389,
+      "after_idx": 1419,
+      "commits": 30,
+      "status_calls": 1,
+      "snapshots": 15,
+      "forbidden_count": 0,
+      "codex_returncode": 0,
+      "duration_seconds": 369
+    },
+    {
+      "turn": 14,
+      "before_idx": 1419,
+      "after_idx": 1449,
+      "commits": 30,
+      "status_calls": 1,
+      "snapshots": 20,
+      "forbidden_count": 0,
+      "codex_returncode": 0,
+      "duration_seconds": 338
+    },
+    {
+      "turn": 15,
+      "before_idx": 1449,
+      "after_idx": 1479,
+      "commits": 30,
+      "status_calls": 1,
+      "snapshots": 13,
+      "forbidden_count": 0,
+      "codex_returncode": 0,
+      "duration_seconds": 349
+    },
+    {
+      "turn": 16,
+      "before_idx": 1479,
+      "after_idx": 1499,
+      "commits": 20,
+      "status_calls": 1,
+      "snapshots": 11,
+      "forbidden_count": 0,
+      "codex_returncode": 0,
+      "duration_seconds": 248
+    }
+  ],
+  "next_idx": 1499,
+  "snapshots_per_turn": 12,
+  "snapshots_total": 800,
+  "total_snapshots": 306,
+  "chain_sha256": "4732a594fdc8f97809ce0080b214e8c662701f10e27663a895fb6228d4558882",
+  "warnings": [
+    {
+      "turn": 0,
+      "snapshots": 25
+    },
+    {
+      "turn": 1,
+      "snapshots": 24
+    },
+    {
+      "turn": 2,
+      "snapshots": 19
+    },
+    {
+      "turn": 3,
+      "snapshots": 16
+    },
+    {
+      "turn": 4,
+      "snapshots": 20
+    },
+    {
+      "turn": 5,
+      "snapshots": 26
+    },
+    {
+      "turn": 6,
+      "snapshots": 20
+    },
+    {
+      "turn": 7,
+      "snapshots": 17
+    },
+    {
+      "turn": 8,
+      "snapshots": 16
+    },
+    {
+      "turn": 9,
+      "snapshots": 14
+    },
+    {
+      "turn": 10,
+      "snapshots": 17
+    },
+    {
+      "turn": 11,
+      "snapshots": 18
+    },
+    {
+      "turn": 12,
+      "snapshots": 15
+    },
+    {
+      "turn": 13,
+      "snapshots": 15
+    },
+    {
+      "turn": 14,
+      "snapshots": 20
+    },
+    {
+      "turn": 15,
+      "snapshots": 13
+    }
+  ],
+  "finished_at_epoch": 1786216316
+}

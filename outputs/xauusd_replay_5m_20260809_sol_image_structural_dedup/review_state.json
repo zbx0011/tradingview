@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "model": "gpt-5.6-luna",
+  "reasoning_effort": "max",
+  "source_ledger": "C:\\Users\\zbx00\\OneDrive\\private\\文档\\1111\\outputs\\xauusd_replay_5m_20260809_sol_image_last500\\decisions.jsonl",
+  "source_ledger_sha256": "fdf3ae2f6f18435912b27a538eb791121f0379a7411923099f620c581d68e519",
+  "data_sha256": "7cea21394893b7b2bc13a4be2cc756bb22cf3db30f5171d5cb1f087c6927bb01",
+  "source_signal_count": 91,
+  "next_candidate_position": 91,
+  "chain_sha256": "7a3c8190e9debf73db8090f21b794d367329627456f4e88b037d933d03fdeddc",
+  "structural_dedup": true,
+  "fixed_time_cooldown": false
+}

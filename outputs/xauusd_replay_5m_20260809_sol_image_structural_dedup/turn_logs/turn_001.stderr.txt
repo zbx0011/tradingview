@@ -1,0 +1,23 @@
+WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir "C:\\Users\\zbx00\\AppData\\Local\\Temp\\" (codex_home: AbsolutePathBuf("C:\\Users\\zbx00\\AppData\\Local\\Temp\\codex-xau-sol-image-structural-dedup-20260809-home"))
+2026-08-09T04:40:26.622179Z  WARN codex_core::shell_snapshot: Failed to create shell snapshot for powershell: Shell snapshot not supported yet for PowerShell
+2026-08-09T04:40:31.606667Z ERROR codex_models_manager::manager: failed to refresh available models: timeout waiting for child process to exit
+2026-08-09T04:40:31.692335Z  WARN codex_analytics::client: failed to send events request: error sending request for url (https://chatgpt.com/backend-api/codex/analytics-events/events)
+2026-08-09T04:40:31.921707Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: IO error: tls handshake eof, url: wss://chatgpt.com/backend-api/codex/responses
+2026-08-09T04:40:31.923003Z  WARN codex_core::session_startup_prewarm: startup websocket prewarm setup failed: stream disconnected before completion: tls handshake eof
+2026-08-09T04:40:37.026389Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: IO error: tls handshake eof, url: wss://chatgpt.com/backend-api/codex/responses
+2026-08-09T04:40:37.026537Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (1/5 in 198ms)...
+2026-08-09T04:40:42.246754Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: IO error: tls handshake eof, url: wss://chatgpt.com/backend-api/codex/responses
+2026-08-09T04:40:42.246894Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (2/5 in 364ms)...
+2026-08-09T04:40:47.634236Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: IO error: tls handshake eof, url: wss://chatgpt.com/backend-api/codex/responses
+2026-08-09T04:40:47.634330Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (3/5 in 740ms)...
+2026-08-09T04:40:53.394444Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: IO error: tls handshake eof, url: wss://chatgpt.com/backend-api/codex/responses
+2026-08-09T04:40:53.394559Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (4/5 in 1.592s)...
+2026-08-09T04:41:00.030903Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: IO error: tls handshake eof, url: wss://chatgpt.com/backend-api/codex/responses
+2026-08-09T04:41:00.031071Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (5/5 in 3.186s)...
+2026-08-09T04:41:08.260965Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: IO error: tls handshake eof, url: wss://chatgpt.com/backend-api/codex/responses
+2026-08-09T04:41:08.261153Z  WARN codex_core::client: falling back to HTTP
+2026-08-09T04:41:36.289810Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (1/5 in 198ms)...
+2026-08-09T04:42:04.803048Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (2/5 in 423ms)...
+2026-08-09T04:54:55.006652Z  WARN codex_core::responses_retry: remote compaction v2 stream failed; retrying request after delay turn_id=019fe4d2-7939-7f13-8b76-2077f4e5f6ff retries=1 max_retries=2 compact_error=stream disconnected before completion: Transport error: network error: error decoding response body
+
+[review turn timeout after 1800s]

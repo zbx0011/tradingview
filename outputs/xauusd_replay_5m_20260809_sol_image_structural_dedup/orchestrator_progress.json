@@ -1,0 +1,45 @@
+{
+  "status": "complete",
+  "model": "gpt-5.6-luna",
+  "reasoning_effort": "max",
+  "source_signal_count": 91,
+  "next_candidate_position": 91,
+  "turns": [
+    {
+      "turn": 0,
+      "before_candidate_position": 0,
+      "after_candidate_position": 35,
+      "commits": 35,
+      "status_calls": 36,
+      "snapshots": 30,
+      "forbidden_count": 0,
+      "codex_returncode": 1,
+      "duration_seconds": 838
+    },
+    {
+      "turn": 1,
+      "before_candidate_position": 35,
+      "after_candidate_position": 90,
+      "commits": 55,
+      "status_calls": 58,
+      "snapshots": 56,
+      "forbidden_count": 0,
+      "codex_returncode": 124,
+      "duration_seconds": 1800
+    },
+    {
+      "turn": 2,
+      "before_candidate_position": 90,
+      "after_candidate_position": 91,
+      "commits": 1,
+      "status_calls": 1,
+      "snapshots": 1,
+      "forbidden_count": 0,
+      "codex_returncode": 0,
+      "duration_seconds": 41
+    }
+  ],
+  "total_snapshots": 87,
+  "fixed_time_cooldown": false,
+  "finished_at_epoch": 1786252267
+}
