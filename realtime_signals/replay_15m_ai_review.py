@@ -1,3 +1,4 @@
+# louie规则回放（20260806版本）
 """Strict causal AI review for replay_15m_candidates.py output.
 
 Markets run in parallel, while candidates inside each market are reviewed in
@@ -219,8 +220,8 @@ def run_model(
     log_path: Path,
     range_aware: bool = False,
 ) -> tuple[dict[str, Any], str, str, int, float]:
-    model = "gpt-5.6-sol" if candidate.get("needs_sol") else "gpt-5.6-terra"
-    effort = "high" if candidate.get("needs_sol") else "medium"
+    model = "gpt-5.6-sol"
+    effort = "xhigh"
     payload = copy.deepcopy(candidate)
     payload["visual_context"] = {
         "type": "strict_causal_replay_composite",
@@ -242,6 +243,8 @@ STRICT HISTORICAL REPLAY OVERRIDE:
   candidate close. No orange rectangle is authoritative in this replay.
 - Use only the automatic causal validations in Candidate JSON and the raw image.
 - Never infer a state using knowledge of any later bar.
+- All output text fields (reasons, location_summary, structure_summary,
+  audit summaries) must be written in Simplified Chinese.
 """
     if range_aware:
         override = """
@@ -256,6 +259,8 @@ STRICT RANGE-AWARE HISTORICAL REPLAY OVERRIDE:
 - The rectangle may be nested inside a larger balance area; distinguish outer
   state from the local inner state before choosing a setup.
 - Never infer a state using knowledge of any later bar.
+- All output text fields (reasons, location_summary, structure_summary,
+  audit summaries) must be written in Simplified Chinese.
 """
     prompt = template.replace(
         "{{CANDIDATE_JSON}}",

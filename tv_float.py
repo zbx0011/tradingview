@@ -1,7 +1,9 @@
+# louie规则监控（20260806版本）
 from __future__ import annotations
 
 import ctypes
 import json
+import math
 import multiprocessing as mp
 import msvcrt
 import os
@@ -78,6 +80,85 @@ class SignalAlert:
     bar_time: int
     signal_price: float
 
+
+def _quote_price_precision(quote_price: object) -> int | None:
+    """Return the number of decimal places shown by a quote price."""
+    if quote_price is None:
+        return None
+    text = str(quote_price).strip()
+    if not text:
+        return None
+    # TradingView normally uses commas as thousands separators and a dot for
+    # the decimal part (for example, ``4,064.750``).  A dot is therefore
+    # unambiguous here; only accept a comma as a decimal separator when no dot
+    # is present and the trailing group is not a three-digit thousands group.
+    match = re.search(r"\.(\d+)$", text)
+    if match:
+        return len(match.group(1))
+    if "." not in text:
+        match = re.search(r",(\d+)$", text)
+        if match and len(match.group(1)) != 3:
+            return len(match.group(1))
+    return None
+
+
+def format_alert_price(signal_price: object, quote_price: object = "") -> str:
+    """Format an alert price using the visible quote's decimal precision."""
+    try:
+        value = float(signal_price)
+    except (TypeError, ValueError):
+        value = math.nan
+    if not math.isfinite(value):
+        # Keep the normal quote as a safe fallback when an older/malformed
+        # payload has no usable signal price.
+        fallback = str(quote_price).strip() if quote_price is not None else ""
+        return fallback or "—"
+    precision = _quote_price_precision(quote_price)
+    if precision is not None:
+        return f"{value:,.{precision}f}"
+    # No quote precision is available (for example while TradingView is still
+    # loading).  Avoid trailing noise while retaining a readable thousands
+    # separator.
+    return f"{value:,.6f}".rstrip("0").rstrip(".")
+
+
+def format_alert_time(bar_time: object) -> str:
+    """Format second/millisecond epoch values without letting bad data escape."""
+    try:
+        timestamp = float(bar_time)
+    except (TypeError, ValueError):
+        return "未知时间"
+    if not math.isfinite(timestamp) or timestamp <= 0:
+        return "未知时间"
+    # Current epoch seconds are ten digits; millisecond payloads are thirteen.
+    if abs(timestamp) >= 100_000_000_000:
+        timestamp /= 1000.0
+    try:
+        return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M")
+    except (OverflowError, OSError, ValueError):
+        return "未知时间"
+
+
+def format_alert_grade(grade: object) -> str:
+    """Render A/B grades with a suffix while keeping edge warnings intact."""
+    text = str(grade).strip() if grade is not None else ""
+    if not text:
+        return "未知等级"
+    if text.casefold() in {"a", "b"}:
+        return f"{text.upper()}级"
+    if text == "边缘预警":
+        return text
+    return text
+
+
+def format_alert_details(alert: SignalAlert) -> str:
+    """Build the compact replay-style alert detail shown in an active row."""
+    direction = "多头" if getattr(alert, "direction", "") == "long" else "空头"
+    signal_time = format_alert_time(getattr(alert, "bar_time", 0))
+    if signal_time != "未知时间" and len(signal_time) >= 16:
+        signal_time = signal_time[5:]
+    return f"{direction}｜{signal_time}"
+
 def config_path() -> Path:
     folder_name = os.environ.get("TVFLOAT_CONFIG_DIR", "TVFloat")
     base = Path(os.environ.get("LOCALAPPDATA", Path.home())) / folder_name
@@ -93,112 +174,102 @@ def signal_db_path() -> Path:
 
 
 def latest_processing_status_text() -> str:
-    """Return the latest collector completion time and its review outcome."""
-    path = config_path().parent / "candidate_queue.json"
+    """Return status from the AI-direct monitor database only.
+
+    The former collector used ``candidate_queue.json`` and related files.  Those
+    files can remain on disk after that collector has been retired, so using
+    them as a fallback makes the overlay display a stale processing time.  The
+    current monitor records every completed decision in ``ai_direct_reviews``;
+    this function deliberately has no legacy-file fallback.
+    """
+    db_path = signal_db_path()
+    if not db_path.exists():
+        return "最近检查：等待监控首次完成  ·  结果：无信号"
+
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        processed_at = datetime.fromtimestamp(path.stat().st_mtime)
-    except (OSError, ValueError):
-        return "最近处理：等待首次完成"
-    candidates = payload.get("candidates", []) if isinstance(payload, dict) else []
-    candidates = candidates if isinstance(candidates, list) else []
-    result = "无候选"
-    if candidates:
-        current_keys = {
-            (
-                f"{candidate.get('vendor', '')}:{candidate.get('symbol', '')}:"
-                f"{candidate.get('bar_time', '')}:{candidate.get('reason', '')}"
-            )
-            for candidate in candidates
-            if isinstance(candidate, dict)
-        }
-        review_status_path = config_path().parent / "candidate_review_status.json"
-        try:
-            review_status = json.loads(
-                review_status_path.read_text(encoding="utf-8-sig")
-            )
-        except (OSError, ValueError, TypeError):
-            review_status = {}
-        if (
-            isinstance(review_status, dict)
-            and review_status.get("key") in current_keys
-            and review_status.get("status") in {"running", "failed", "timeout"}
-        ):
-            status = review_status.get("status")
-            symbol = str(review_status.get("symbol", ""))
-            model = str(review_status.get("model", ""))
-            message = str(review_status.get("message", "")).strip()
-            if status == "running":
-                result = f"AI复核中：{symbol} · {model}"
-            elif status == "timeout":
-                result = f"复核超时：{symbol} · {message}"
-            else:
-                result = f"复核失败：{symbol} · {message}"
-            if processed_at.date() == datetime.now().date():
-                time_text = f"{processed_at:%H:%M:%S}"
-            else:
-                time_text = f"{processed_at:%m-%d %H:%M:%S}"
-            return f"最近处理：{time_text}  ·  结果：{result}"
-        signal_count = 0
-        db_path = signal_db_path()
-        if db_path.exists():
+        with sqlite3.connect(
+            f"file:{db_path.as_posix()}?mode=ro",
+            uri=True,
+            timeout=0.2,
+        ) as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(
+                """
+                SELECT vendor, symbol, verdict, reviewed_at
+                FROM ai_direct_reviews AS r
+                WHERE r.timeframe = '5'
+                  AND (vendor, symbol) IN
+                      (('BYBIT','BTCUSDT.P'),('OANDA','XAGUSD'),('OANDA','XAUUSD'))
+                  AND r.reviewed_at = (
+                      SELECT MAX(r2.reviewed_at)
+                      FROM ai_direct_reviews AS r2
+                      WHERE r2.vendor = r.vendor
+                        AND r2.symbol = r.symbol
+                        AND r2.timeframe = r.timeframe
+                  )
+                """
+            ).fetchall()
             try:
-                connection = sqlite3.connect(
-                    f"file:{db_path.as_posix()}?mode=ro",
-                    uri=True,
-                    timeout=0.2,
-                )
-                for candidate in candidates:
-                    if not isinstance(candidate, dict):
-                        continue
-                    found = connection.execute(
-                        """
-                        SELECT 1 FROM signals
-                        WHERE vendor=? AND symbol=? AND timeframe=? AND bar_time=?
-                          AND grade IN ('A', 'B')
-                        LIMIT 1
-                        """,
-                        (
-                            str(candidate.get("vendor", "")),
-                            str(candidate.get("symbol", "")),
-                            str(candidate.get("timeframe", "5")),
-                            int(candidate.get("bar_time", 0)),
-                        ),
-                    ).fetchone()
-                    signal_count += int(found is not None)
-                connection.close()
-            except (OSError, sqlite3.Error, TypeError, ValueError):
-                signal_count = 0
-        if signal_count:
-            result = f"{signal_count}个A/B级信号"
-        else:
-            reviewed_path = config_path().parent / "candidate_reviewed.json"
+                cycle_log = connection.execute(
+                    """
+                    SELECT MAX(completed_at) AS completed_at
+                    FROM ai_direct_cycle_log
+                    """
+                ).fetchone()
+            except sqlite3.OperationalError as exc:
+                if "no such table" in str(exc).lower():
+                    cycle_log = None
+                else:
+                    raise
             try:
-                reviewed = set(
-                    json.loads(reviewed_path.read_text(encoding="utf-8-sig"))
-                )
-            except (OSError, ValueError, TypeError):
-                reviewed = set()
-            pending = 0
-            for candidate in candidates:
-                if not isinstance(candidate, dict):
-                    continue
-                key = (
-                    f"{candidate.get('vendor', '')}:{candidate.get('symbol', '')}:"
-                    f"{candidate.get('timeframe', '5')}:"
-                    f"{candidate.get('bar_time', '')}:{candidate.get('reason', '')}"
-                )
-                pending += int(key not in reviewed)
-            result = (
-                f"{pending}个候选待复核"
-                if pending
-                else "复核完成，无A/B信号"
-            )
+                monitor_row = connection.execute(
+                    """
+                    SELECT symbol, checked_at
+                    FROM ai_direct_monitor_status
+                    WHERE timeframe = '5'
+                    ORDER BY checked_at DESC
+                    LIMIT 1
+                    """
+                ).fetchone()
+            except sqlite3.OperationalError as exc:
+                if "no such table" in str(exc).lower():
+                    monitor_row = None
+                else:
+                    raise
+    except (OSError, sqlite3.Error, TypeError, ValueError):
+        return "最近检查：监控状态不可用  ·  结果：无信号"
+
+    verdicts = {str(r["symbol"]): str(r["verdict"]) for r in rows}
+    monitor_symbols = ("BTCUSDT.P", "XAGUSD", "XAUUSD")
+
+    # “最近检查”优先显示监控流程完成时间（cycle-end 写入的完成日志），
+    # 其次显示最后一条 AI 判断落库时间，最后退回检查时间。
+    processed_ts: int | None = None
+    if cycle_log is not None and cycle_log["completed_at"] is not None:
+        processed_ts = int(cycle_log["completed_at"])
+    elif rows:
+        processed_ts = max(int(r["reviewed_at"]) for r in rows)
+    elif monitor_row is not None and monitor_row["checked_at"] is not None:
+        processed_ts = int(monitor_row["checked_at"])
+
+    if not rows:
+        return "最近检查：等待监控首次完成  ·  结果：三个品种均无信号"
+
+    if len(verdicts) == 3 and all(v != "SIGNAL" for v in verdicts.values()):
+        result = "三个品种均无信号"
+    else:
+        result = "，".join(
+            f"{symbol} {'有信号' if verdicts.get(symbol) == 'SIGNAL' else '无信号'}"
+            for symbol in monitor_symbols
+        )
+    if processed_ts is None:
+        return f"最近检查：等待监控首次完成  ·  结果：{result}"
+    processed_at = datetime.fromtimestamp(processed_ts)
     if processed_at.date() == datetime.now().date():
         time_text = f"{processed_at:%H:%M:%S}"
     else:
         time_text = f"{processed_at:%m-%d %H:%M:%S}"
-    return f"最近处理：{time_text}  ·  结果：{result}"
+    return f"最近检查：{time_text}  ·  结果：{result}"
 
 
 def load_config() -> dict:
@@ -281,7 +352,7 @@ def read_pending_signal_alerts() -> dict[str, SignalAlert]:
             FROM signals
             WHERE acknowledged_at IS NULL
               AND direction IN ('long', 'short')
-              AND grade IN ('A', 'B', '边缘预警')
+              AND grade IN ('A', 'B', '边缘预警', '信号')
             ORDER BY bar_time DESC, id DESC
             """
         ).fetchall()
@@ -684,7 +755,6 @@ class QuoteOverlay:
         self.header_bar = tk.Frame(self.container, bg="#101317")
         self.header_bar.pack(fill="x")
         self.header_text_area = tk.Frame(self.header_bar, bg="#101317")
-        self.header_text_area.pack(side="left", fill="x", expand=True)
         self.header = tk.Label(
             self.header_text_area,
             text="TRADINGVIEW  ·  正在连接…",
@@ -720,6 +790,10 @@ class QuoteOverlay:
             pady=0,
         )
         self.settings_button.pack(side="right", anchor="n")
+        # Reserve the settings button's space first.  If the status text is
+        # packed first, long remote-status text or Windows DPI scaling can
+        # squeeze the button outside the visible header.
+        self.header_text_area.pack(side="left", fill="x", expand=True)
 
         self.rows = tk.Frame(self.container, bg="#101317")
         self.rows.pack(fill="both", expand=True, pady=(5, 0))
@@ -843,6 +917,11 @@ class QuoteOverlay:
 
     def render(self) -> None:
         now = time.monotonic()
+        # Re-assert always-on-top on every render pass. Some window-manager or
+        # layered-window interactions can clear WS_EX_TOPMOST, which makes the
+        # overlay silently hide behind other windows while remaining "visible".
+        if not self.root.attributes("-topmost"):
+            self.root.attributes("-topmost", True)
         symbols = self.visible_symbols()
         if symbols != self.rendered_symbols:
             for child in self.rows.winfo_children():
@@ -911,7 +990,13 @@ class QuoteOverlay:
             if quote is None:
                 symbol_label.configure(text=symbol, fg="#a9b3bd")
                 price_label.configure(text="", fg="#68727d")
-                change_label.configure(text="等待…", fg="#68727d")
+                change_label.configure(
+                    text="等待…",
+                    fg="#68727d",
+                    anchor="e",
+                )
+                change_label.grid_configure(sticky="e")
+                quote_price = ""
                 stale = True
             else:
                 stale = now - quote.seen_at > STALE_SECONDS
@@ -933,7 +1018,10 @@ class QuoteOverlay:
                 change_label.configure(
                     text="暂停" if stale else quote.change,
                     fg=color,
+                    anchor="e",
                 )
+                change_label.grid_configure(sticky="e")
+                quote_price = quote.price
 
             background = "#101317"
             if alert is not None and self.alert_flash_on:
@@ -949,11 +1037,19 @@ class QuoteOverlay:
                     text=f"{marker} {symbol}",
                     fg=alert_color,
                 )
-                price_label.configure(fg=alert_color)
-                change_label.configure(
-                    text=f"{alert.grade}级信号",
+                price_label.configure(
+                    text=format_alert_price(
+                        getattr(alert, "signal_price", None),
+                        quote_price,
+                    ),
                     fg=alert_color,
                 )
+                change_label.configure(
+                    text=format_alert_details(alert),
+                    fg=alert_color,
+                    anchor="w",
+                )
+                change_label.grid_configure(sticky="w")
             row.configure(bg=background)
             for label in (symbol_label, price_label, change_label):
                 label.configure(bg=background)
@@ -987,12 +1083,6 @@ class QuoteOverlay:
                 self.active_alerts.pop(symbol.upper(), None)
                 self.alert_flash_on = False
                 self.render()
-        threading.Thread(
-            target=navigate_to_tradingview_symbol,
-            args=(symbol,),
-            daemon=True,
-            name=f"TradingViewNavigate-{symbol}",
-        ).start()
 
     def start_drag(self, event: tk.Event) -> None:
         self.drag_origin = (event.x_root, event.y_root, self.root.winfo_x(), self.root.winfo_y())

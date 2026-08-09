@@ -158,8 +158,12 @@ def utc_now() -> int:
 
 def connect(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
+    # The collector and the three AI workers use separate processes/connections.
+    # Give short WAL writer collisions time to clear instead of failing a cycle
+    # immediately with ``database is locked``.
+    conn = sqlite3.connect(db_path, timeout=30.0)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=30000")
     conn.executescript(SCHEMA)
     signal_columns = {
         row["name"] for row in conn.execute("PRAGMA table_info(signals)").fetchall()

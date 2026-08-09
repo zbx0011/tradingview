@@ -1,3 +1,4 @@
+// louie规则监控（20260806版本）
 import fs from 'node:fs';
 import { execFileSync, spawn } from 'node:child_process';
 import path from 'node:path';
@@ -15,6 +16,22 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const root = path.dirname(scriptDir);
 const serverRoot = resolveTradingViewMcpRoot();
 const { Client, StdioClientTransport } = await loadTradingViewMcpSdk(serverRoot);
+const focusPython = fs.existsSync(path.join(root, '.venv', 'Scripts', 'python.exe'))
+  ? path.join(root, '.venv', 'Scripts', 'python.exe')
+  : 'python';
+const focusGuard = (args) => {
+  try {
+    const output = execFileSync(
+      focusPython,
+      [path.join(scriptDir, 'focus_guard.py'), ...args],
+      { encoding: 'utf8', windowsHide: true, timeout: 10000 },
+    );
+    const lines = output.trim().split('\n').filter(Boolean);
+    return JSON.parse(lines[lines.length - 1]);
+  } catch {
+    return null;
+  }
+};
 const queueExcelExport = () => {
   try {
     const child = spawn(
@@ -41,9 +58,13 @@ const args = Object.fromEntries(
     return pairs;
   }, []),
 );
-if (!args.input) throw new Error('execute_signal requires --input');
+if (!args.input && !args['payload-base64']) {
+  throw new Error('execute_signal requires --input or --payload-base64');
+}
 const deadlineEpoch = Number(args['deadline-epoch'] || 0);
-const payload = JSON.parse(fs.readFileSync(args.input, 'utf8').replace(/^\uFEFF/, ''));
+const payload = args['payload-base64']
+  ? JSON.parse(Buffer.from(args['payload-base64'], 'base64').toString('utf8'))
+  : JSON.parse(fs.readFileSync(args.input, 'utf8').replace(/^\uFEFF/, ''));
 const { candidate, decision } = payload;
 const fullSymbol = `${candidate.vendor}:${candidate.symbol}`;
 const timeframe = '5';
@@ -67,44 +88,17 @@ const store = (command, body) => {
 const validateDecision = () => {
   if (decision.verdict !== 'SIGNAL') throw new Error('executor received non-signal decision');
   if (!['long', 'short'].includes(decision.direction)) throw new Error('invalid direction');
-  if (!['A', 'B'].includes(decision.grade)) throw new Error('invalid grade');
+  if ((decision.grade ?? 'none') !== 'none') throw new Error('XAU replay rules do not use grades');
   if (!Array.isArray(decision.reasons) || decision.reasons.length === 0) throw new Error('missing reasons');
-  const rangeSetups = new Set(['震荡内部：边缘反向', '震荡突破：位移突破']);
-  const wideChannelSetups = new Set([
+  const allowedSetups = new Set([
+    '震荡内部：边缘反向',
+    '震荡突破：位移突破',
     '宽通道边缘：反向波段',
     '宽通道突破：更大级别反转',
     '宽通道顺势：在有利边缘跟随主方向',
+    '窄通道：等待回踩顺势参与',
   ]);
-  if (
-    rangeSetups.has(decision.setup_type)
-    && (
-      candidate.range_validation?.valid !== true
-      || candidate.range_validation?.chart_override !== true
-    )
-  ) {
-    throw new Error('range hard gate rejected signal before execution');
-  }
-  if (decision.setup_type === '震荡内部：边缘反向') {
-    const validDirections = candidate.range_reversal_validation?.valid_directions || [];
-    if (!validDirections.includes(decision.direction)) {
-      throw new Error('range-reversal outer-third gate rejected signal before execution');
-    }
-  }
-  if (wideChannelSetups.has(decision.setup_type) && candidate.wide_channel_validation?.valid !== true) {
-    throw new Error('wide-channel hard gate rejected signal before execution');
-  }
-  if (decision.setup_type === '窄通道：等待回踩顺势参与') {
-    const expectedDirection = decision.direction === 'long' ? 'up' : 'down';
-    const validDirections = candidate.narrow_channel_validation?.valid_directions || [];
-    if (!validDirections.includes(expectedDirection)) {
-      throw new Error('narrow-channel hard gate rejected signal before execution');
-    }
-    const validPullbackDirections =
-      candidate.narrow_pullback_validation?.valid_directions || [];
-    if (!validPullbackDirections.includes(decision.direction)) {
-      throw new Error('narrow-channel pullback-quality gate rejected signal before execution');
-    }
-  }
+  if (!allowedSetups.has(decision.setup_type)) throw new Error('invalid setup type');
   const close = Number(candidate.close);
   const confirmation = Number(decision.confirmation_price);
   const invalidation = Number(decision.invalidation_price);
@@ -126,6 +120,42 @@ const waitForSymbol = async (client, symbol) => {
 const shortText = (value, maximum) => {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
   return text.length <= maximum ? text : `${text.slice(0, maximum - 1)}…`;
+};
+const nearlyEqual = (left, right) => {
+  const expected = Number(right);
+  const actual = Number(left);
+  const tolerance = Math.max(1e-8, Math.abs(expected) * 1e-10);
+  return Number.isFinite(actual) && Math.abs(actual - expected) <= tolerance;
+};
+const calloutVerificationIssues = (detail, expected) => {
+  const issues = [];
+  const properties = detail?.properties || {};
+  const points = Array.isArray(detail?.points) ? detail.points : [];
+  const hasPoint = (point) => points.some(
+    (actual) => Number(actual.time) === Number(point.time)
+      && nearlyEqual(actual.price, point.price),
+  );
+  // TradingView can normalize a callout's second timestamp when it is placed
+  // into future whitespace.  The anchor timestamp and both prices are stable,
+  // so verify the second point by its unique price instead of its normalized
+  // time coordinate.
+  const hasCalloutPoint = points.some(
+    (actual) => Number.isFinite(Number(actual.time))
+      && nearlyEqual(actual.price, expected.point2.price)
+      && !nearlyEqual(actual.price, expected.point.price),
+  );
+  if (detail?.success !== true) issues.push('properties_read_failed');
+  if (!hasPoint(expected.point)) issues.push('anchor_point');
+  if (!hasCalloutPoint) issues.push('callout_point');
+  if (properties.text !== expected.text) issues.push('text');
+  if (String(properties.text || '').split('\n').length !== 5) issues.push('text_lines');
+  if (properties.wordWrap !== true) issues.push('word_wrap');
+  if (Number(properties.wordWrapWidth) !== 280) issues.push('word_wrap_width');
+  if (Number(properties.fontsize) !== 12) issues.push('font_size');
+  if (properties.color !== expected.color) issues.push('text_color');
+  if (properties.bordercolor !== expected.color) issues.push('border_color');
+  if (properties.backgroundColor !== 'rgba(15,23,42,0.90)') issues.push('background_color');
+  return issues;
 };
 const beijingLabel = (epoch) => new Intl.DateTimeFormat('zh-CN', {
   timeZone: 'Asia/Shanghai',
@@ -156,11 +186,11 @@ const saved = store('save-signal', {
   signal_price: Number(candidate.close),
   direction: decision.direction,
   setup_type: decision.setup_type,
-  grade: decision.grade,
+  grade: '信号',
   reasons: decision.reasons,
   context,
-  rules_version: 'louie-codex-v3-range-third-early-pullback',
-  model_version: 'codex-decision-local-executor-v2',
+  rules_version: 'louie-xau-replay-v1',
+  model_version: 'codex-deepseek-v4-flash-max-monitor',
 });
 if (!saved.inserted) {
   process.stdout.write(`${JSON.stringify({ success: true, duplicate: true, signal_id: saved.signal_id })}\n`);
@@ -184,17 +214,37 @@ const closeWatchlist = async () => {
     });
   } catch {}
 };
+const focusExecutionChart = async () => {
+  const rightmost = parse(await client.callTool({
+    name: 'tab_switch_rightmost',
+    arguments: {},
+  }));
+  if (!rightmost.success) {
+    throw new Error(`rightmost tab switch failed: ${rightmost.error || 'unknown'}`);
+  }
+  const symbolSet = parse(await client.callTool({
+    name: 'chart_set_symbol',
+    arguments: { symbol: fullSymbol },
+  }));
+  if (!symbolSet.success) throw new Error(`chart_set_symbol failed: ${symbolSet.error || 'unknown'}`);
+  const timeframeSet = parse(await client.callTool({
+    name: 'chart_set_timeframe',
+    arguments: { timeframe },
+  }));
+  if (!timeframeSet.success) {
+    throw new Error(`chart_set_timeframe failed: ${timeframeSet.error || 'unknown'}`);
+  }
+  await waitForSymbol(client, fullSymbol);
+};
 const cleanup = [];
 const alertResults = [];
 let drawingId = null;
+const savedFocus = focusGuard(['save']);
+focusGuard(['unminimize']);
 try {
   checkDeadline(20);
-  const rightmost = parse(await client.callTool({ name: 'tab_switch_rightmost', arguments: {} }));
-  if (!rightmost.success) throw new Error(`rightmost tab switch failed: ${rightmost.error || 'unknown'}`);
+  await focusExecutionChart();
   await closeWatchlist();
-  await client.callTool({ name: 'chart_set_symbol', arguments: { symbol: fullSymbol } });
-  await client.callTool({ name: 'chart_set_timeframe', arguments: { timeframe } });
-  await waitForSymbol(client, fullSymbol);
 
   const oldRows = store('replaceable-tv-alerts', {
     vendor: candidate.vendor,
@@ -225,49 +275,68 @@ try {
   }
 
   checkDeadline(12);
+  await focusExecutionChart();
   const directionColor = decision.direction === 'long' ? '#22c55e' : '#ef4444';
   const directionText = decision.direction === 'long' ? '多头' : '空头';
-  const drawingTitle = `TVF #${signalId}｜${candidate.symbol}｜${timeframe}m｜${directionText}${decision.grade}｜${beijingLabel(Number(candidate.bar_time))}`;
+  const drawingTitle = `TVF #${signalId}｜${candidate.symbol}｜${timeframe}m｜${directionText}｜${beijingLabel(Number(candidate.bar_time))}`;
   const atr = Math.max(Number(candidate.atr14 || 0), Math.abs(Number(candidate.close)) * 0.0005);
   const secondPrice = Number(candidate.close) + (decision.direction === 'long' ? -0.8 : 0.8) * atr;
   const labelText = [
-    `${decision.grade}级 ${directionText}｜${decision.setup_type}｜5分钟`,
+    `${directionText}信号｜${decision.setup_type}｜5分钟`,
     `北京时间 ${beijingLabel(Number(candidate.bar_time))}｜收盘 ${candidate.close}`,
     `位置：${shortText(decision.location_summary, 24)}`,
     `结构：${shortText(decision.structure_summary, 30)}`,
     `确认 ${decision.confirmation_price}｜失效 ${decision.invalidation_price}`,
   ].join('\n');
-  const drawing = parse(await client.callTool({
-    name: 'draw_shape',
-    arguments: {
-      shape: 'callout',
-      point: { time: Number(candidate.bar_time), price: Number(candidate.close) },
-      point2: { time: Number(candidate.bar_time) + 4 * barSeconds, price: secondPrice },
-      text: labelText,
-      overrides: JSON.stringify({
-        title: drawingTitle,
+  const calloutArguments = {
+    shape: 'callout',
+    point: { time: Number(candidate.bar_time), price: Number(candidate.close) },
+    point2: { time: Number(candidate.bar_time) + 4 * barSeconds, price: secondPrice },
+    text: labelText,
+    overrides: JSON.stringify({
+      title: drawingTitle,
+      color: directionColor,
+      backgroundColor: 'rgba(15,23,42,0.90)',
+      bordercolor: directionColor,
+      linewidth: 1,
+      fontsize: 12,
+      wordWrap: true,
+      wordWrapWidth: 280,
+    }),
+  };
+  let verificationIssues = ['not_attempted'];
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    const drawing = parse(await client.callTool({
+      name: 'draw_shape',
+      arguments: calloutArguments,
+    }));
+    if (!drawing.success || !drawing.entity_id) {
+      throw new Error(`draw_shape failed: ${drawing.error || 'unknown'}`);
+    }
+    drawingId = drawing.entity_id;
+    await sleep(150);
+    let detail;
+    try {
+      detail = parse(await client.callTool({
+        name: 'draw_get_properties',
+        arguments: { entity_id: drawingId },
+      }));
+      verificationIssues = calloutVerificationIssues(detail, {
+        point: calloutArguments.point,
+        point2: calloutArguments.point2,
+        text: labelText,
         color: directionColor,
-        backgroundColor: 'rgba(15,23,42,0.90)',
-        bordercolor: directionColor,
-        linewidth: 1,
-        fontsize: 12,
-        wordWrap: true,
-        wordWrapWidth: 280,
-      }),
-    },
-  }));
-  if (!drawing.success || !drawing.entity_id) throw new Error(`draw_shape failed: ${drawing.error || 'unknown'}`);
-  drawingId = drawing.entity_id;
-  const properties = parse(await client.callTool({ name: 'draw_get_properties', arguments: { entity_id: drawingId } }));
-  if (
-    !properties.success
-    || properties.properties?.title !== drawingTitle
-    || properties.properties?.wordWrap !== true
-    || properties.properties?.wordWrapWidth !== 280
-  ) {
+      });
+    } catch (error) {
+      verificationIssues = [`properties_error:${String(error.message || error)}`];
+    }
+    if (verificationIssues.length === 0) break;
     await client.callTool({ name: 'draw_remove_one', arguments: { entity_id: drawingId } });
     drawingId = null;
-    throw new Error('callout verification failed');
+    if (attempt < 2) await sleep(200);
+  }
+  if (verificationIssues.length !== 0) {
+    throw new Error(`callout verification failed: ${verificationIssues.join(',')}`);
   }
 
   const alertSpecs = decision.direction === 'long'
@@ -281,11 +350,18 @@ try {
       ];
   for (const [kind, price, condition, kindText] of alertSpecs) {
     checkDeadline(3);
-    const message = `${candidate.symbol}｜${directionText}${kindText}｜${price}\n${decision.grade}级｜${decision.setup_type}`;
+    const message = `${candidate.symbol}｜${directionText}${kindText}｜${price}\n${beijingLabel(Number(candidate.bar_time))}｜${decision.setup_type}`;
     try {
+      await focusExecutionChart();
       const created = parse(await client.callTool({ name: 'alert_create', arguments: { price, condition, message } }));
       if (!created.success) throw new Error(created.error || 'alert_create failed');
       const tvId = created.alert_id ?? created.id ?? created.alertId;
+      if (created.symbol && created.symbol !== fullSymbol) {
+        if (tvId != null) {
+          await client.callTool({ name: 'alert_delete', arguments: { alert_id: Number(tvId) } });
+        }
+        throw new Error(`alert created on wrong symbol: ${created.symbol}`);
+      }
       store('save-tv-alert', {
         signal_id: signalId,
         alert_kind: kind,
@@ -314,6 +390,7 @@ try {
   } catch {}
   await closeWatchlist();
   await client.close();
+  if (savedFocus?.hwnd) focusGuard(['restore', String(savedFocus.hwnd)]);
 }
 const success = drawingId !== null && alertResults.every((item) => item.status === 'created');
 process.stdout.write(`${JSON.stringify({ success, signal_id: signalId, drawing_id: drawingId, cleanup, alerts: alertResults })}\n`);

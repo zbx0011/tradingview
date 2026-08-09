@@ -84,6 +84,8 @@ Drawing rules:
 - Anchor `point` exactly at the signal bar time and closing price, never at open/high/low.
 - Put `point2` four 5-minute bars right and about 0.8 ATR below a long or above a short, staggered farther if needed.
 - The chart Callout is a compact summary, not the full database record. Keep the complete detailed reasons in `reasons_json` and `context_json`.
+- All output text fields (`reasons`, `location_summary`, `structure_summary`,
+  `outer_state`, `inner_state`, audit summaries) must be written in Simplified Chinese.
 - Use exactly five manually separated lines and no paragraph-length line:
   1. `<grade>级 <多头/空头>｜<complete setup type>`
   2. `北京时间 <MM-DD HH:mm>｜收盘 <close>`

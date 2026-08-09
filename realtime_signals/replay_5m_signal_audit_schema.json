@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "pass": { "type": "boolean" },
+    "idx": { "type": "integer" },
+    "max_used_idx": { "type": "integer" },
+    "evidence_indices": {
+      "type": "array",
+      "items": { "type": "integer" }
+    },
+    "summary": { "type": "string" }
+  },
+  "required": ["pass", "idx", "max_used_idx", "evidence_indices", "summary"]
+}

@@ -1,6 +1,8 @@
+// louie规则回放（20260806版本）
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { execFileSync } from 'node:child_process';
 import {
   loadTradingViewMcpSdk,
   resolveTradingViewMcpRoot,
@@ -20,6 +22,22 @@ const timeframe = '15';
 const barSeconds = 15 * 60;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const parse = (result) => JSON.parse(result.content[0].text);
+const focusPython = fs.existsSync(path.join(process.cwd(), '.venv', 'Scripts', 'python.exe'))
+  ? path.join(process.cwd(), '.venv', 'Scripts', 'python.exe')
+  : 'python';
+const focusGuard = (args) => {
+  try {
+    const output = execFileSync(
+      focusPython,
+      ['realtime_signals/focus_guard.py', ...args],
+      { encoding: 'utf8', windowsHide: true, timeout: 10000 },
+    );
+    const lines = output.trim().split('\n').filter(Boolean);
+    return JSON.parse(lines[lines.length - 1]);
+  } catch {
+    return null;
+  }
+};
 
 const review = JSON.parse(fs.readFileSync(inputPath, 'utf8').replace(/^\uFEFF/, ''));
 const prior = fs.existsSync(manifestPath)
@@ -94,6 +112,8 @@ const client = new Client(
 );
 await client.connect(transport);
 
+const savedFocus = focusGuard(['save']);
+focusGuard(['unminimize']);
 const results = [];
 try {
   const rightmost = parse(
@@ -162,9 +182,9 @@ try {
     const text = [
       `${decision.grade}级 ${directionText}｜${decision.setup_type}`,
       `北京时间 ${signal.beijing}｜收盘 ${signalPrice}`,
-      `位置：${shortText(decision.location_summary, 54)}`,
-      `结构：${shortText(decision.structure_summary, 68)}`,
-      `理由：${shortText((decision.reasons || [])[0], 100)}`,
+      `位置：${String(decision.location_summary || '').replace(/\s+/g, ' ').trim()}`,
+      `结构：${String(decision.structure_summary || '').replace(/\s+/g, ' ').trim()}`,
+      `理由：${String((decision.reasons || [])[0] || '').replace(/\s+/g, ' ').trim()}`,
       `确认 ${decision.confirmation_price}｜失效 ${decision.invalidation_price}`,
     ].join('\n');
     const drawing = parse(
@@ -232,6 +252,7 @@ try {
   }
 } finally {
   await client.close();
+  if (savedFocus?.hwnd) focusGuard(['restore', String(savedFocus.hwnd)]);
 }
 
 saveManifest();

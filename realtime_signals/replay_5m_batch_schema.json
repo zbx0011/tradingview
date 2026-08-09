@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "model": { "type": "string" },
+    "reasoning_effort": { "type": "string" },
+    "overrides": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "idx": { "type": "integer" },
+          "v": { "type": "string", "enum": ["O", "S"] },
+          "d": { "type": "string", "enum": ["none", "long", "short"] },
+          "p": { "type": "number" },
+          "s": { "type": "string" },
+          "g": { "type": "string", "enum": ["none", "A", "B"] },
+          "r": { "type": "string" },
+          "a": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "max_used_idx": { "type": "integer" },
+              "evidence_indices": {
+                "type": "array",
+                "items": { "type": "integer" }
+              },
+              "no_future_data": { "type": "boolean" },
+              "audit_summary": { "type": "string" }
+            },
+            "required": ["max_used_idx", "evidence_indices", "no_future_data", "audit_summary"]
+          }
+        },
+        "required": ["idx", "v", "d", "p", "s", "g", "r", "a"]
+      }
+    }
+  },
+  "required": ["model", "reasoning_effort", "overrides"]
+}

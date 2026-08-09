@@ -122,4 +122,6 @@ Output rules:
 - For a short: confirmation_price must be <= candidate close and invalidation_price must be > candidate close.
 - `reasons` must contain complete evidence using exact prices/times when available.
 - `location_summary` and `structure_summary` are compact chart-label summaries, not full reasoning.
+- All output text fields (`reasons`, `location_summary`, `structure_summary`,
+  `outer_state`, `inner_state`, audit summaries) must be written in Simplified Chinese.
 - `context` must fill every schema field. Use `previous_signal_id=0` when absent. Put exact anchor descriptions in `range_or_channel_anchors`.

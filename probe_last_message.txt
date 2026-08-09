@@ -1,0 +1,24 @@
+当前无法开始严格因果回放；我没有提交任何决策。
+
+- `gate_state.json`：`next_idx=0`
+- `decisions.jsonl`：空
+- 当前已提交数量：0
+- 下一步应处理：idx 0
+- `cli_probe.json` 的 idx 0 `NO_SIGNAL` 只是探针，未进入哈希链，不能算已提交。
+
+你的 idx 理解正确：若 `next_idx=3`，表示 idx 0、1、2 已提交，下一次 `step` 必须提交 idx 3；`committed=3` 表示已提交三根，而不是已经提交 idx 3。
+
+本次有三个硬阻塞：
+
+1. 会话是只读沙箱且 `approval=never`，执行 `xau_causal_gate.py status` 已被策略拒绝，`step` 更无法写入账本。
+2. 当前工具列表没有 TradingView MCP，无法执行规定的 `chart_get_state` 或读取 OANDA 图表。
+3. 盘点时已经打开了 `baseline_a01_a15.json`。它包含事后 A01–A15 时间和方向，因此当前上下文已受到未来基线污染，不能再诚实地声称是严格无前视回放。
+
+请在一个全新会话中提供：
+
+- 当前输出目录的写权限；
+- 脚本和冻结数据的读取/执行权限；
+- TradingView MCP；
+- 回放结束前隐藏或移走 `baseline_a01_a15.json`。
+
+Luna 仅完成了只读文件盘点，我已复核其核心证据；没有文件被修改。

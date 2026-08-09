@@ -1,0 +1,1 @@
+{"vendor":"OANDA","symbol":"XAGUSD","timeframe":"5","cutoff":1785875605,"bootstrap_latest_only":false,"last_reviewed_bar_time":1785872400,"live_only":true,"execution_reserve_seconds":90,"expired_unreviewed_count":7,"pending_count":0,"pending_bars":[],"columns":["time","open","high","low","close","volume"]}

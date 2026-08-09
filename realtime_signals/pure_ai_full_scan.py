@@ -1,3 +1,4 @@
+# louie规则回放（20260806版本）
 from __future__ import annotations
 
 import argparse
@@ -16,8 +17,8 @@ from kline_store import DEFAULT_DB, connect
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = Path(__file__).resolve().with_name("pure_ai_schema.json")
 WORK_DIR = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "TVFloat" / "pure_ai_full_scan"
-MODEL = "gpt-5.6-terra"
-EFFORT = "medium"
+MODEL = "gpt-5.6-sol"
+EFFORT = "xhigh"
 TIMEOUT_SECONDS = 240
 BEIJING = timezone(timedelta(hours=8))
 

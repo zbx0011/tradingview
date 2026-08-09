@@ -1,5 +1,7 @@
+// louie规则监控（20260806版本）
 // Token-free TradingView collection. It spawns the existing local MCP server
 // directly, so scheduled collection does not create a model turn.
+import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,12 +25,27 @@ const watchlist = [
   ['BYBIT', 'BTCUSDT.P', 'BYBIT:BTCUSDT.P'],
   ['OANDA', 'XAGUSD', 'OANDA:XAGUSD'],
   ['OANDA', 'XAUUSD', 'OANDA:XAUUSD'],
-  ['ICMARKETS', 'US500', 'ICMARKETS:US500'],
 ];
 const timeframe = '5';
 const barSeconds = 5 * 60;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const parse = (result) => JSON.parse(result.content[0].text);
+const focusPython = fs.existsSync(path.join(root, '.venv', 'Scripts', 'python.exe'))
+  ? path.join(root, '.venv', 'Scripts', 'python.exe')
+  : 'python';
+const focusGuard = (args) => {
+  try {
+    const output = execFileSync(
+      focusPython,
+      [path.join(scriptDir, 'focus_guard.py'), ...args],
+      { encoding: 'utf8', windowsHide: true, timeout: 10000 },
+    );
+    const lines = output.trim().split('\n').filter(Boolean);
+    return JSON.parse(lines[lines.length - 1]);
+  } catch {
+    return null;
+  }
+};
 const waitForClosedBarSafetyWindow = async () => {
   const nowMilliseconds = Date.now();
   const secondsIntoWindow = (nowMilliseconds / 1000) % barSeconds;
@@ -50,7 +67,6 @@ const plausible = (symbol, close) => {
   if (symbol === 'BTCUSDT.P') return close > 10_000 && close < 500_000;
   if (symbol === 'XAGUSD') return close > 10 && close < 200;
   if (symbol === 'XAUUSD') return close > 500 && close < 5_000;
-  if (symbol === 'US500') return close > 5_000 && close < 20_000;
   return false;
 };
 const latestStored = (vendor, symbol) => JSON.parse(execFileSync(
@@ -139,6 +155,8 @@ const closeWatchlist = async () => {
     });
   } catch {}
 };
+const savedFocus = focusGuard(['save']);
+focusGuard(['unminimize']);
 try {
   const rightmost = parse(await client.callTool({ name: 'tab_switch_rightmost', arguments: {} }));
   if (!rightmost.success) throw new Error(`rightmost tab switch failed: ${rightmost.error || 'unknown error'}`);
@@ -205,4 +223,5 @@ try {
 } finally {
   await closeWatchlist();
   await client.close();
+  if (savedFocus?.hwnd) focusGuard(['restore', String(savedFocus.hwnd)]);
 }

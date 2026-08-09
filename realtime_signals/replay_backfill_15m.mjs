@@ -1,5 +1,7 @@
+// louie规则回放（20260806版本）
 // One-shot, token-free TradingView backfill for a historical 15-minute replay.
 // It does not sync drawings/ranges and does not run the live signal monitor.
+import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import {
   loadTradingViewMcpSdk,
@@ -23,6 +25,22 @@ const watchlist = [
 ];
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const parse = (result) => JSON.parse(result.content[0].text);
+const focusPython = fs.existsSync(path.join(root, '.venv', 'Scripts', 'python.exe'))
+  ? path.join(root, '.venv', 'Scripts', 'python.exe')
+  : 'python';
+const focusGuard = (args) => {
+  try {
+    const output = execFileSync(
+      focusPython,
+      ['realtime_signals/focus_guard.py', ...args],
+      { encoding: 'utf8', windowsHide: true, timeout: 10000 },
+    );
+    const lines = output.trim().split('\n').filter(Boolean);
+    return JSON.parse(lines[lines.length - 1]);
+  } catch {
+    return null;
+  }
+};
 
 const ingestBatch = (vendor, symbol, bars) => {
   const encoded = Buffer.from(JSON.stringify({ bars }), 'utf8').toString('base64');
@@ -65,6 +83,8 @@ const client = new Client(
 );
 
 await client.connect(transport);
+const savedFocus = focusGuard(['save']);
+focusGuard(['unminimize']);
 try {
   const rightmost = parse(await client.callTool({ name: 'tab_switch_rightmost', arguments: {} }));
   if (!rightmost.success) throw new Error(rightmost.error || 'rightmost tab switch failed');
@@ -148,4 +168,5 @@ try {
   process.stdout.write(`${JSON.stringify({ success: true, cutoff, results })}\n`);
 } finally {
   await client.close();
+  if (savedFocus?.hwnd) focusGuard(['restore', String(savedFocus.hwnd)]);
 }
