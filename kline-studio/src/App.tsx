@@ -23,7 +23,7 @@ import { isEditableShortcutTarget, parseIntervalShortcut, TRADINGVIEW_SHORTCUTS 
 import { aggregateCandles, formatPrice, generateCandles, INTERVALS, SYMBOLS, type Candle, type IntervalId, type SymbolId } from './lib/market'
 import {
   fetchBybitMinuteCandles, fetchBybitMonthCandles, fetchXauMonthCandles, getSnapshotCandles, getSnapshotStatus,
-  hasMarketSnapshot, MARKET_HISTORY_SECONDS, mergeCandleHistory, readCandleCache, writeCandleCache,
+  MARKET_HISTORY_SECONDS, mergeCandleHistory, readCandleCache, writeCandleCache,
   type MarketDataStatus,
 } from './lib/liveMarket'
 import {
@@ -45,6 +45,7 @@ const DEFAULT_INDICATORS: IndicatorSettings = {
   ma: false, ema: true, boll: false, volume: true,
   maPeriod: 20, emaPeriod: 20, bollPeriod: 20, bollDeviation: 2,
 }
+const DEFAULT_INTERVAL: IntervalId = '5m'
 
 const CHART_TYPES: { id: ChartType; label: string; icon: typeof ChartCandlestick }[] = [
   { id: 'candles', label: 'K 线', icon: ChartCandlestick },
@@ -91,7 +92,8 @@ async function copyTextToClipboard(text: string) {
 function App() {
   const saved = useMemo(() => loadWorkspace(), [])
   const initialSymbol = saved?.symbol ?? 'XAUUSD'
-  const initialInterval: IntervalId = saved?.interval ?? (hasMarketSnapshot(initialSymbol) ? '1m' : '5m')
+  // 1 分钟是旧版本的默认值；迁移到 5 分钟，同时继续保留用户明确保存的其它周期。
+  const initialInterval: IntervalId = saved?.interval && saved.interval !== '1m' ? saved.interval : DEFAULT_INTERVAL
   const [symbol, setSymbol] = useState<SymbolId>(initialSymbol)
   const [interval, setIntervalId] = useState<IntervalId>(initialInterval)
   const [chartType, setChartType] = useState<ChartType>(saved?.chartType ?? 'candles')
@@ -556,14 +558,14 @@ function App() {
 
   const resetWorkspace = () => {
     clearWorkspace()
-    setSymbol('XAUUSD'); setIntervalId('1m'); setChartType('candles'); setTheme('dark'); setIndicators(DEFAULT_INDICATORS)
+    setSymbol('XAUUSD'); setIntervalId(DEFAULT_INTERVAL); setChartType('candles'); setTheme('dark'); setIndicators(DEFAULT_INDICATORS)
     setCollapsedReplayRangeLayerIds([])
     setPriceScaleAuto(true); setPriceScaleLog(false); setPriceScalePercent(false); setPriceScaleInverted(false)
     dispatchDrawing({ type: 'clear' }); setActiveTool('cursor'); setMagnetMode('off'); setKeepDrawing(false); setDrawingsLocked(false)
     setQuickMeasurement(null)
     setDrawingsHidden(false); setIndicatorsHidden(false); setSyncDrawings(false); notify('已恢复默认工作区')
     setReplayPanelOpen(false); setReplaySelecting(false); setReplayCursor(null); setReplayPlaying(false); setReplayPointer(null)
-    setReplaySpeedValue(10); setReplayResolutionSeconds(INTERVALS['1m'].seconds); setReplayAutoResolution(true); saveReplaySession(null)
+    setReplaySpeedValue(10); setReplayResolutionSeconds(INTERVALS[DEFAULT_INTERVAL].seconds); setReplayAutoResolution(true); saveReplaySession(null)
   }
 
   const saveCurrentLayout = useCallback(() => {
@@ -782,7 +784,7 @@ function App() {
           const index = SYMBOLS.findIndex((item) => item.id === symbol)
           const direction = event.key === 'ArrowDown' ? 1 : -1
           const next = SYMBOLS[(index + direction + SYMBOLS.length) % SYMBOLS.length]
-          setQuickMeasurement(null); setSymbol(next.id); if (hasMarketSnapshot(next.id)) setIntervalId('1m')
+          setQuickMeasurement(null); setSymbol(next.id); setIntervalId(DEFAULT_INTERVAL)
         } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
           chartRef.current?.moveVisibleRange(event.key === 'ArrowLeft' ? -1 : 1)
         }
@@ -829,7 +831,7 @@ function App() {
               <label className="search-field"><Search size={15} /><input autoFocus value={symbolQuery} onChange={(event) => setSymbolQuery(event.target.value)} placeholder="输入代码或名称" /></label>
               <div className="symbol-list">
                 {SYMBOLS.filter((item) => `${item.id}${item.name}`.toLowerCase().includes(symbolQuery.toLowerCase())).map((item) => (
-                  <button key={item.id} className={item.id === symbol ? 'selected' : ''} onClick={() => { setQuickMeasurement(null); setSymbol(item.id); if (hasMarketSnapshot(item.id)) setIntervalId('1m'); setSymbolPickerOpen(false); setLiveTick(0) }}>
+                  <button key={item.id} className={item.id === symbol ? 'selected' : ''} onClick={() => { setQuickMeasurement(null); setSymbol(item.id); setIntervalId(DEFAULT_INTERVAL); setSymbolPickerOpen(false); setLiveTick(0) }}>
                     <span className="asset-dot" style={{ background: item.accent }}>{item.id.slice(0, 1)}</span>
                     <span><b>{item.id}</b><small>{item.name} · {item.exchange}</small></span>
                     {item.id === symbol && <span className="selected-check">✓</span>}
@@ -1057,7 +1059,7 @@ function App() {
               <button onClick={() => { setActiveTool('cursor'); dispatchDrawing({ type: 'select', id: null }) }} title="退出绘图"><X size={15} /></button>
             </div>}
             <div className="chart-watermark"><span>TV</span><div><b>K线工坊</b><small>专业模拟行情工作台</small></div></div>
-            {watchlistOpen && <Watchlist active={symbol} onSelect={(id) => { setQuickMeasurement(null); setSymbol(id); if (hasMarketSnapshot(id)) setIntervalId('1m'); setLiveTick(0) }} onClose={() => setWatchlistOpen(false)} />}
+            {watchlistOpen && <Watchlist active={symbol} onSelect={(id) => { setQuickMeasurement(null); setSymbol(id); setIntervalId(DEFAULT_INTERVAL); setLiveTick(0) }} onClose={() => setWatchlistOpen(false)} />}
           </div>
 
           {replayPanelOpen && <ReplayToolbar
