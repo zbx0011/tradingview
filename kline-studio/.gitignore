@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.vite/
+*.local
+*.log
+coverage/
+_replay-layer-backup-*/
+.replay-layer-backups/

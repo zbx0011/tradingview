@@ -1,5 +1,13 @@
 # TradingView 悬浮行情
 
+## K 线工坊（当前主网站）
+
+本仓库同时提供新的 TradingView 风格 K 线网站，源码和静态 K 线/回放数据位于 [`kline-studio/`](./kline-studio)。Windows 下载 ZIP 后可直接双击 [`start-kline-studio.cmd`](./start-kline-studio.cmd)；首次启动会自动安装依赖并打开本地开发服务器。
+
+GitHub Pages 会通过 [`deploy-kline-studio-pages.yml`](./.github/workflows/deploy-kline-studio-pages.yml) 自动构建并发布网站。第一次发布时，在仓库 Settings → Pages 将 Source 设为 **GitHub Actions**。
+
+当前浏览器里的绘图、回放进度、模拟订单、对象树状态、指标参数和面板偏好不属于 Git 文件。请在网站「图表设置」中导出完整工作区 JSON，换电脑后在同一位置导入；静态数据则随仓库版本一起发布。
+
 一个 Windows 置顶悬浮窗，从正在运行的 TradingView Desktop 图表标签读取标的、现价和涨跌幅。
 
 ## 使用方法
