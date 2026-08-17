@@ -1,4 +1,4 @@
-# TradingView 悬浮行情
+# TradingView 工具箱
 
 ## K 线工坊（当前主网站）
 
@@ -10,7 +10,7 @@ GitHub Pages 会通过 [`deploy-kline-studio-pages.yml`](./.github/workflows/dep
 
 一个 Windows 置顶悬浮窗，从正在运行的 TradingView Desktop 图表标签读取标的、现价和涨跌幅。
 
-## 使用方法
+## 旧版悬浮行情
 
 1. 启动 TradingView Desktop。
 2. 为每个希望显示的标的打开一个图表标签。标签标题需要类似 `XAUUSD ▼ 4,115.030 −0.36%`。
