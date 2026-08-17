@@ -315,6 +315,13 @@ function App() {
 
     const initialize = async () => {
       try {
+        // BTC 更新已暂时暂停：优先使用随站点发布的完整 KuCoin 月度快照，
+        // 避免页面打开时再次请求受地区限制的 Bybit 接口或改变当前视图。
+        if (snapshot.length) {
+          applyHistory(snapshot)
+          setMarketLoading(null)
+          return
+        }
         const cached = await readCandleCache(cacheKey).catch(() => null)
         if (!active) return
         if (cached?.bars.length) applyHistory(mergeRecentHistory(cached.bars))
