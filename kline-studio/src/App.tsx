@@ -296,8 +296,8 @@ function App() {
       if (!active || bars.length === 0) return
       history = bars
       setRemoteMarket({ symbol, bars, status: {
-        kind: 'snapshot', label: 'BYBIT 已暂停', vendor: 'BYBIT', fetchedAt: bars.at(-1)!.time,
-        detail: `BYBIT:BTCUSDT.P · 近30天 · ${bars.length.toLocaleString('zh-CN')} 根 1 分钟 K 线 · 自动刷新已暂停`,
+        kind: 'snapshot', label: 'KUCOIN 已加载', vendor: 'KUCOIN', fetchedAt: bars.at(-1)!.time,
+        detail: `KUCOIN:XBTUSDTM · BTCUSDT.P 近30天 · ${bars.length.toLocaleString('zh-CN')} 根 1 分钟 K 线 · 自动刷新已暂停`,
       } })
       if (initialViewPending) {
         initialViewPending = false
@@ -829,7 +829,7 @@ function App() {
                   </button>
                 ))}
               </div>
-              <div className="data-disclaimer">XAUUSD/XAGUSD/US500：TradingView 最新快照；BTCUSDT.P：BYBIT 近30天实时；ETHUSD：本地模拟</div>
+              <div className="data-disclaimer">XAUUSD/XAGUSD/US500：TradingView 最新快照；BTCUSDT.P：KUCOIN XBTUSDTM 近30天快照；ETHUSD：本地模拟</div>
             </div>
           )}
         </div>
