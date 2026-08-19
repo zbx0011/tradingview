@@ -1,0 +1,600 @@
+{
+  "schemaVersion": 1,
+  "symbol": "XAUUSD",
+  "interval": "5m",
+  "timeframeSeconds": 300,
+  "layer": {
+    "sourceId": "xauusd-5m-custom-v2-ranges-19d25005acfd2a9c",
+    "name": "XAUUSD 自定义V2震荡区间 · 2026-07-27"
+  },
+  "provenance": {
+    "recognizedRangesFile": "recognized_ranges_rebuilt_20260811.json",
+    "recognizedRangesSha256": "af8b72508881c1b9c5ef4553db1f264e055c17b75fbcb9ddea74b78683d661dc",
+    "sourceDecisionsSha256": "19d25005acfd2a9ccb375dcfb97024ec8889bba0751cb8febb2b38b9eaf53537",
+    "sourceDataSha256": "d2349b661f6c0c4dc1caec9801d1accbb8aa0319807fc108cff91ba449aae6b9",
+    "ruleSetId": "tvfloat_user_custom_v2_range30_unanchored_pullback_20260810",
+    "ruleSetSha256": "d9fed7bf97f8514c1a3b8c9f6010d2143899c927328df3aeadf54f67ae7cfc28",
+    "generatedBy": "scripts/import-replay-ranges.mjs",
+    "displayPolicy": "one_sided_non_overlapping_post_confirmation_body_clear_v10_five_close_touch_extend",
+    "displayRuleSetId": "tvfloat_user_custom_v2_post_confirmation_body_clear_display_20260811"
+  },
+  "window": {
+    "startTime": 1785103200,
+    "endTime": 1785513300
+  },
+  "summary": {
+    "ranges": 18,
+    "twoSided": 0,
+    "oneSided": 18,
+    "userConfirmedSupplements": 1
+  },
+  "ranges": [
+    {
+      "rangeId": "range-bd036285884207506bde",
+      "kind": "one_sided_edge",
+      "startIdx": 3376,
+      "formationEndIdx": 3408,
+      "firstDetectedIdx": 3412,
+      "lastObservedIdx": 3428,
+      "startTime": 1785122100,
+      "formationEndTime": 1785131700,
+      "firstDetectedTime": 1785132900,
+      "lastObservedTime": 1785137700,
+      "displayEndTime": 1785135600,
+      "status": "broken",
+      "brokenAtTime": 1785136800,
+      "activeEdge": "upper",
+      "edgeZoneLow": 4093.673,
+      "edgeZoneHigh": 4096.307,
+      "touchIndices": [
+        3376,
+        3398,
+        3408
+      ],
+      "confirmedBreakAtIdx": 3425,
+      "breakConfirmationIndices": [
+        3421,
+        3422,
+        3423,
+        3424,
+        3425
+      ]
+    },
+    {
+      "rangeId": "range-8f2b08b7989dcfc87403",
+      "kind": "one_sided_edge",
+      "startIdx": 3388,
+      "formationEndIdx": 3483,
+      "firstDetectedIdx": 3483,
+      "lastObservedIdx": 3501,
+      "startTime": 1785125700,
+      "formationEndTime": 1785154200,
+      "firstDetectedTime": 1785154200,
+      "lastObservedTime": 1785159600,
+      "displayEndTime": 1785157500,
+      "status": "broken",
+      "brokenAtTime": 1785157500,
+      "activeEdge": "lower",
+      "edgeZoneLow": 4085.0870857142854,
+      "edgeZoneHigh": 4087.435,
+      "touchIndices": [
+        3388,
+        3404,
+        3434,
+        3459,
+        3483
+      ],
+      "confirmedBreakAtIdx": 3494,
+      "breakConfirmationIndices": [
+        3490,
+        3491,
+        3492,
+        3493,
+        3494
+      ]
+    },
+    {
+      "rangeId": "range-5650b2350a25165e00e8",
+      "kind": "one_sided_edge",
+      "startIdx": 3316,
+      "formationEndIdx": 3484,
+      "firstDetectedIdx": 3496,
+      "lastObservedIdx": 3512,
+      "startTime": 1785104100,
+      "formationEndTime": 1785154500,
+      "firstDetectedTime": 1785158100,
+      "lastObservedTime": 1785162900,
+      "displayEndTime": 1785160500,
+      "status": "broken",
+      "brokenAtTime": 1785161700,
+      "activeEdge": "lower",
+      "edgeZoneLow": 4079.3217142857143,
+      "edgeZoneHigh": 4084.1382857142858,
+      "touchIndices": [
+        3316,
+        3329,
+        3484
+      ],
+      "confirmedBreakAtIdx": 3508,
+      "breakConfirmationIndices": [
+        3504,
+        3505,
+        3506,
+        3507,
+        3508
+      ]
+    },
+    {
+      "rangeId": "range-77a399b3120534b41d0c",
+      "kind": "one_sided_edge",
+      "startIdx": 3486,
+      "formationEndIdx": 3534,
+      "firstDetectedIdx": 3534,
+      "lastObservedIdx": 3552,
+      "startTime": 1785155100,
+      "formationEndTime": 1785169500,
+      "firstDetectedTime": 1785169500,
+      "lastObservedTime": 1785174900,
+      "displayEndTime": 1785350700,
+      "status": "broken",
+      "brokenAtTime": 1785351900,
+      "activeEdge": "upper",
+      "edgeZoneLow": 4087.980142857143,
+      "edgeZoneHigh": 4091.199857142857,
+      "touchIndices": [
+        3486,
+        3501,
+        3534
+      ],
+      "confirmedBreakAtIdx": 4118,
+      "breakConfirmationIndices": [
+        4114,
+        4115,
+        4116,
+        4117,
+        4118
+      ]
+    },
+    {
+      "rangeId": "range-440106073bfb28813563",
+      "kind": "one_sided_edge",
+      "startIdx": 3515,
+      "formationEndIdx": 3594,
+      "firstDetectedIdx": 3594,
+      "lastObservedIdx": 3630,
+      "startTime": 1785163800,
+      "formationEndTime": 1785191100,
+      "firstDetectedTime": 1785191100,
+      "lastObservedTime": 1785201900,
+      "displayEndTime": 1785196800,
+      "status": "broken",
+      "brokenAtTime": 1785198000,
+      "activeEdge": "lower",
+      "edgeZoneLow": 4071.16,
+      "edgeZoneHigh": 4071.41,
+      "touchIndices": [
+        3515,
+        3543,
+        3594
+      ],
+      "confirmedBreakAtIdx": 3617,
+      "breakConfirmationIndices": [
+        3613,
+        3614,
+        3615,
+        3616,
+        3617
+      ],
+      "geometryOverride": {
+        "reason": "user_confirmed_body_clear_lower_wick_band_20260811",
+        "zone_low": 4071.16,
+        "zone_high": 4071.41,
+        "formation_start_idx": 3515,
+        "formation_end_idx": 3594
+      }
+    },
+    {
+      "rangeId": "range-0a8e8ca8800f2a6bc786",
+      "kind": "one_sided_edge",
+      "startIdx": 3631,
+      "formationEndIdx": 3691,
+      "firstDetectedIdx": 3691,
+      "lastObservedIdx": 3692,
+      "startTime": 1785202200,
+      "formationEndTime": 1785220200,
+      "firstDetectedTime": 1785220200,
+      "lastObservedTime": 1785220500,
+      "displayEndTime": 1785348000,
+      "status": "broken",
+      "brokenAtTime": 1785349200,
+      "activeEdge": "upper",
+      "edgeZoneLow": 4049.7681428571427,
+      "edgeZoneHigh": 4052.711857142857,
+      "touchIndices": [
+        3631,
+        3660,
+        3691
+      ],
+      "confirmedBreakAtIdx": 4109,
+      "breakConfirmationIndices": [
+        4105,
+        4106,
+        4107,
+        4108,
+        4109
+      ]
+    },
+    {
+      "rangeId": "range-beade40aae81d81037c7",
+      "kind": "one_sided_edge",
+      "startIdx": 3766,
+      "formationEndIdx": 3795,
+      "firstDetectedIdx": 3795,
+      "lastObservedIdx": 3798,
+      "startTime": 1785242700,
+      "formationEndTime": 1785251400,
+      "firstDetectedTime": 1785251400,
+      "lastObservedTime": 1785252300,
+      "displayEndTime": 1785253200,
+      "status": "broken",
+      "brokenAtTime": 1785254400,
+      "activeEdge": "upper",
+      "edgeZoneLow": 4035.924,
+      "edgeZoneHigh": 4040.5159999999996,
+      "touchIndices": [
+        3766,
+        3773,
+        3795
+      ],
+      "confirmedBreakAtIdx": 3805,
+      "breakConfirmationIndices": [
+        3801,
+        3802,
+        3803,
+        3804,
+        3805
+      ]
+    },
+    {
+      "rangeId": "range-0806512b24688c238bfd",
+      "kind": "one_sided_edge",
+      "startIdx": 3717,
+      "formationEndIdx": 3802,
+      "firstDetectedIdx": 3802,
+      "lastObservedIdx": 3912,
+      "startTime": 1785228000,
+      "formationEndTime": 1785253500,
+      "firstDetectedTime": 1785253500,
+      "lastObservedTime": 1785290100,
+      "displayEndTime": 1785348000,
+      "status": "broken",
+      "brokenAtTime": 1785349200,
+      "activeEdge": "upper",
+      "edgeZoneLow": 4044.0128571428572,
+      "edgeZoneHigh": 4047.997142857143,
+      "touchIndices": [
+        3717,
+        3725,
+        3802
+      ],
+      "confirmedBreakAtIdx": 4109,
+      "breakConfirmationIndices": [
+        4105,
+        4106,
+        4107,
+        4108,
+        4109
+      ]
+    },
+    {
+      "rangeId": "range-0a71a4d45f027969664c",
+      "kind": "one_sided_edge",
+      "startIdx": 3794,
+      "formationEndIdx": 3868,
+      "firstDetectedIdx": 3868,
+      "lastObservedIdx": 3886,
+      "startTime": 1785251100,
+      "formationEndTime": 1785276900,
+      "firstDetectedTime": 1785276900,
+      "lastObservedTime": 1785282300,
+      "displayEndTime": 1785277800,
+      "status": "broken",
+      "brokenAtTime": 1785279000,
+      "activeEdge": "lower",
+      "edgeZoneLow": 4020.8232000000003,
+      "edgeZoneHigh": 4022.46,
+      "touchIndices": [
+        3794,
+        3840,
+        3846,
+        3868
+      ],
+      "confirmedBreakAtIdx": 3875,
+      "breakConfirmationIndices": [
+        3871,
+        3872,
+        3873,
+        3874,
+        3875
+      ]
+    },
+    {
+      "rangeId": "range-1d430e9e462013a868d2",
+      "kind": "one_sided_edge",
+      "startIdx": 3830,
+      "formationEndIdx": 3908,
+      "firstDetectedIdx": 3908,
+      "lastObservedIdx": 3934,
+      "startTime": 1785261900,
+      "formationEndTime": 1785288900,
+      "firstDetectedTime": 1785288900,
+      "lastObservedTime": 1785296700,
+      "displayEndTime": 1785304500,
+      "status": "broken",
+      "brokenAtTime": 1785304800,
+      "activeEdge": "upper",
+      "edgeZoneLow": 4030.375571428571,
+      "edgeZoneHigh": 4032.9944285714287,
+      "touchIndices": [
+        3830,
+        3862,
+        3908
+      ],
+      "confirmedBreakAtIdx": 3961,
+      "breakConfirmationIndices": [
+        3957,
+        3958,
+        3959,
+        3960,
+        3961
+      ]
+    },
+    {
+      "rangeId": "range-17424981a27b92d4c021",
+      "kind": "one_sided_edge",
+      "startIdx": 3901,
+      "formationEndIdx": 4051,
+      "firstDetectedIdx": 4051,
+      "lastObservedIdx": 4073,
+      "startTime": 1785286800,
+      "formationEndTime": 1785331800,
+      "firstDetectedTime": 1785331800,
+      "lastObservedTime": 1785338400,
+      "displayEndTime": 1785335700,
+      "status": "broken",
+      "brokenAtTime": 1785336900,
+      "activeEdge": "lower",
+      "edgeZoneLow": 4007.700171428571,
+      "edgeZoneHigh": 4011.0798285714286,
+      "touchIndices": [
+        3901,
+        4039,
+        4051
+      ],
+      "confirmedBreakAtIdx": 4068,
+      "breakConfirmationIndices": [
+        4064,
+        4065,
+        4066,
+        4067,
+        4068
+      ]
+    },
+    {
+      "rangeId": "range-0b654abe8dd456955d99",
+      "kind": "one_sided_edge",
+      "startIdx": 4222,
+      "formationEndIdx": 4262,
+      "firstDetectedIdx": 4262,
+      "lastObservedIdx": 4279,
+      "startTime": 1785386700,
+      "formationEndTime": 1785398700,
+      "firstDetectedTime": 1785398700,
+      "lastObservedTime": 1785403800,
+      "displayEndTime": 1785399600,
+      "status": "broken",
+      "brokenAtTime": 1785400500,
+      "activeEdge": "upper",
+      "edgeZoneLow": 4051.237142857143,
+      "edgeZoneHigh": 4056.112857142857,
+      "touchIndices": [
+        4222,
+        4231,
+        4252,
+        4262
+      ],
+      "confirmedBreakAtIdx": 4268,
+      "breakConfirmationIndices": [
+        4264,
+        4265,
+        4266,
+        4267,
+        4268
+      ]
+    },
+    {
+      "rangeId": "range-cba7f3632f8fc4595360",
+      "kind": "one_sided_edge",
+      "startIdx": 4200,
+      "formationEndIdx": 4277,
+      "firstDetectedIdx": 4285,
+      "lastObservedIdx": 4301,
+      "startTime": 1785380100,
+      "formationEndTime": 1785403200,
+      "firstDetectedTime": 1785405600,
+      "lastObservedTime": 1785410400,
+      "displayEndTime": 1785406800,
+      "status": "broken",
+      "brokenAtTime": 1785407700,
+      "activeEdge": "upper",
+      "edgeZoneLow": 4071.4448571428575,
+      "edgeZoneHigh": 4074.865142857143,
+      "touchIndices": [
+        4200,
+        4267,
+        4277
+      ],
+      "confirmedBreakAtIdx": 4292,
+      "breakConfirmationIndices": [
+        4288,
+        4289,
+        4290,
+        4291,
+        4292
+      ]
+    },
+    {
+      "rangeId": "range-cc1ea2af69eda18a0013",
+      "kind": "one_sided_edge",
+      "startIdx": 4293,
+      "formationEndIdx": 4325,
+      "firstDetectedIdx": 4328,
+      "lastObservedIdx": 4345,
+      "startTime": 1785408000,
+      "formationEndTime": 1785417600,
+      "firstDetectedTime": 1785418500,
+      "lastObservedTime": 1785423600,
+      "displayEndTime": 1785419100,
+      "status": "broken",
+      "brokenAtTime": 1785420300,
+      "activeEdge": "upper",
+      "edgeZoneLow": 4082.652857142857,
+      "edgeZoneHigh": 4090.9171428571426,
+      "touchIndices": [
+        4293,
+        4315,
+        4325
+      ],
+      "confirmedBreakAtIdx": 4334,
+      "breakConfirmationIndices": [
+        4330,
+        4331,
+        4332,
+        4333,
+        4334
+      ]
+    },
+    {
+      "rangeId": "range-user-confirmed-upper-4115-20260727",
+      "kind": "one_sided_edge",
+      "startIdx": 3339,
+      "formationEndIdx": 4333,
+      "firstDetectedIdx": 4333,
+      "lastObservedIdx": 4632,
+      "startTime": 1785111000,
+      "formationEndTime": 1785420000,
+      "firstDetectedTime": 1785420000,
+      "lastObservedTime": 1785513300,
+      "displayEndTime": 1785442200,
+      "status": "active",
+      "brokenAtTime": null,
+      "userConfirmedDisplaySupplement": true,
+      "evidenceSource": "frozen_ohlc_user_confirmation",
+      "supplementReason": "user_confirmed_long_horizon_upper_edge_20260811",
+      "activeEdge": "upper",
+      "edgeZoneLow": 4115.58,
+      "edgeZoneHigh": 4116.185,
+      "touchIndices": [
+        3339,
+        4117,
+        4333
+      ],
+      "confirmedBreakAtIdx": null,
+      "breakConfirmationIndices": []
+    },
+    {
+      "rangeId": "range-b5ee2020694a2325b954",
+      "kind": "one_sided_edge",
+      "startIdx": 4374,
+      "formationEndIdx": 4445,
+      "firstDetectedIdx": 4445,
+      "lastObservedIdx": 4463,
+      "startTime": 1785432300,
+      "formationEndTime": 1785457200,
+      "firstDetectedTime": 1785457200,
+      "lastObservedTime": 1785462600,
+      "displayEndTime": 1785457800,
+      "status": "broken",
+      "brokenAtTime": 1785458700,
+      "activeEdge": "lower",
+      "edgeZoneLow": 4097.066857142857,
+      "edgeZoneHigh": 4099.943142857143,
+      "touchIndices": [
+        4374,
+        4415,
+        4445
+      ],
+      "confirmedBreakAtIdx": 4450,
+      "breakConfirmationIndices": [
+        4446,
+        4447,
+        4448,
+        4449,
+        4450
+      ]
+    },
+    {
+      "rangeId": "range-86f08601185e1a32df96",
+      "kind": "one_sided_edge",
+      "startIdx": 4325,
+      "formationEndIdx": 4530,
+      "firstDetectedIdx": 4530,
+      "lastObservedIdx": 4548,
+      "startTime": 1785417600,
+      "formationEndTime": 1785482700,
+      "firstDetectedTime": 1785482700,
+      "lastObservedTime": 1785488100,
+      "displayEndTime": 1785484500,
+      "status": "broken",
+      "brokenAtTime": 1785485700,
+      "activeEdge": "lower",
+      "edgeZoneLow": 4070.45275,
+      "edgeZoneHigh": 4072.725,
+      "touchIndices": [
+        4325,
+        4479,
+        4530
+      ],
+      "confirmedBreakAtIdx": 4540,
+      "breakConfirmationIndices": [
+        4536,
+        4537,
+        4538,
+        4539,
+        4540
+      ]
+    },
+    {
+      "rangeId": "range-fd460a1e8a25a12c8cbc",
+      "kind": "one_sided_edge",
+      "startIdx": 4553,
+      "formationEndIdx": 4585,
+      "firstDetectedIdx": 4589,
+      "lastObservedIdx": 4607,
+      "startTime": 1785489600,
+      "formationEndTime": 1785499200,
+      "firstDetectedTime": 1785500400,
+      "lastObservedTime": 1785505800,
+      "displayEndTime": 1785501300,
+      "status": "broken",
+      "brokenAtTime": 1785502500,
+      "activeEdge": "lower",
+      "edgeZoneLow": 4047.548142857143,
+      "edgeZoneHigh": 4052.5918571428574,
+      "touchIndices": [
+        4553,
+        4564,
+        4573,
+        4585
+      ],
+      "confirmedBreakAtIdx": 4596,
+      "breakConfirmationIndices": [
+        4592,
+        4593,
+        4594,
+        4595,
+        4596
+      ]
+    }
+  ]
+}

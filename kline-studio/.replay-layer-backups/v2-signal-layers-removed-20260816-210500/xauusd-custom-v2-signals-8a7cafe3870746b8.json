@@ -1,0 +1,1368 @@
+{
+  "schemaVersion": 2,
+  "symbol": "XAUUSD",
+  "interval": "5m",
+  "timeframeSeconds": 300,
+  "layer": {
+    "sourceId": "xauusd-custom-v2-signals-8a7cafe3870746b8",
+    "name": "XAUUSD Custom V2 原始信号"
+  },
+  "provenance": {
+    "rawSignalsFile": "C:\\Users\\diffzhou\\Documents\\custom-v2-week-luna-max-default-20260812T232424963-output\\raw_signals_without_support_resistance_reversal.json",
+    "rawSignalsSha256": "8a7cafe3870746b824ef7e06d77f8be01b5fabbb6e1dae697a4ef2f70fb175ff",
+    "ruleSetId": "tvfloat_user_custom_v2_range_lifecycle_bound_20260812",
+    "ruleSetSha256": "8a5a2f20d355c2165999fb0183db4324ab8cc454f4f7c66deb50f7539e218246",
+    "sourceDataSha256": "d2349b661f6c0c4dc1caec9801d1accbb8aa0319807fc108cff91ba449aae6b9",
+    "frozenDataFile": "C:\\Users\\diffzhou\\Documents\\tradingview-replay-archives\\20260809T150252Z_oanda-xauusd_5m_d2349b661f6c_66b1adbd\\inputs\\xauusd_5m_frozen_20260809-week-full-sol-image-154911.json",
+    "frozenDataSha256": "d2349b661f6c0c4dc1caec9801d1accbb8aa0319807fc108cff91ba449aae6b9",
+    "inputMode": "image/png",
+    "signalMode": "raw_non_deduplicated",
+    "generatedBy": "scripts/import-replay-signals.mjs"
+  },
+  "window": {
+    "startTime": 1785717000,
+    "endTime": 1786063800,
+    "firstBeijingTime": "2026-08-03 08:30",
+    "lastBeijingTime": "2026-08-07 08:50"
+  },
+  "summary": {
+    "signals": 7,
+    "long": 4,
+    "short": 3,
+    "setupCounts": {
+      "震荡真突破": 1,
+      "震荡反转": 1,
+      "窄通道首次回调顺势": 0,
+      "窄通道回调顺势": 5,
+      "支撑压力反转": 0,
+      "两天以上支撑压力反转": 0
+    }
+  },
+  "signals": [
+    {
+      "signalNumber": 1,
+      "idx": 4723,
+      "time": 1785717000,
+      "beijingTime": "2026-08-03 08:30",
+      "side": "short",
+      "setup": "窄通道回调顺势",
+      "reason": "背景上，扫高后的连续下行由冻结OHLC与PNG确认形成4720–4722严格下跌窄通道。位置上，当前回调K实体守住方向腿50%价位4067.2475，上影同时接触该50%锚点与当根EMA20=4068.504。接受与跟随上，因果证明记录4721、4722连续收盘低于各自EMA20，当前回调未破坏方向并收在有效侧。触发上，4723为完整回调的首根合格信号K，下一根严格跌破其低点4063.2入场，初始止损取信号K高点4070.125。",
+      "displayReason": "背景上，扫高后的连续下行由冻结OHLC与PNG确认形成2026-08-03 08:15（北京时间）–2026-08-03 08:25（北京时间）严格下跌窄通道。位置上，当前回调K实体守住方向腿50%价位4067.2475，上影同时接触该50%锚点与当根EMA20=4068.504。接受与跟随上，因果证明记录2026-08-03 08:20（北京时间）、2026-08-03 08:25（北京时间）连续收盘低于各自EMA20，当前回调未破坏方向并收在有效侧。触发上，2026-08-03 08:30（北京时间）为完整回调的首根合格信号K，下一根严格跌破其低点4063.2入场，初始止损取信号K高点4070.125。",
+      "evidenceIndices": [
+        4717,
+        4720,
+        4721,
+        4722,
+        4723
+      ],
+      "referenceCandles": [
+        {
+          "internalIndex": 4717,
+          "time": 1785715200,
+          "beijingTime": "2026-08-03 08:00"
+        },
+        {
+          "internalIndex": 4720,
+          "time": 1785716100,
+          "beijingTime": "2026-08-03 08:15"
+        },
+        {
+          "internalIndex": 4721,
+          "time": 1785716400,
+          "beijingTime": "2026-08-03 08:20"
+        },
+        {
+          "internalIndex": 4722,
+          "time": 1785716700,
+          "beijingTime": "2026-08-03 08:25"
+        },
+        {
+          "internalIndex": 4723,
+          "time": 1785717000,
+          "beijingTime": "2026-08-03 08:30"
+        }
+      ],
+      "recordSha256": "dfb00661a1ea0b633e03ed671eb1aa9b34517187fd4b531f2b6b89ce746ae0ef",
+      "chainSha256": "abb2793b3c8cb91350a00f5c06d38fc0843570e9cd18a7ebaee04d019a0803a7",
+      "signalContext": {
+        "rule_version": "custom_v2_range_lifecycle_bound_effective_swing_sr",
+        "family": "narrow_channel_pullback",
+        "variant": "anchor_touch_pullback",
+        "signal_bar_idx": 4723,
+        "structure_indices": [
+          4720,
+          4721,
+          4722,
+          4723
+        ],
+        "entry_trigger_price": 4063.2,
+        "initial_stop_price": 4070.125,
+        "initial_stop_reference_idx": 4723,
+        "trend_leg_start_idx": 4720,
+        "trend_leg_end_idx": 4722,
+        "trend_leg_indices": [
+          4720,
+          4721,
+          4722
+        ],
+        "pullback_start_idx": 4723,
+        "pullback_indices": [
+          4723
+        ],
+        "fifty_percent_price": 4067.2475,
+        "first_pullback_required": false,
+        "touch_anchors": [
+          "trend_leg_50_percent",
+          "ema20"
+        ],
+        "prior_breakout_edge_zone": null,
+        "strict_narrow_channel": {
+          "event_type": "strict_narrow_channel",
+          "event_id": "strict-narrow-channel-down-4720-4722",
+          "direction": "down",
+          "start_idx": 4720,
+          "start_time": 1785716100,
+          "start_beijing_open_time": "2026-08-03 08:15",
+          "candidate_registered_at": 1785716400,
+          "first_detected_idx": 4722,
+          "first_detected_at": 1785717000,
+          "last_updated_idx": 4722,
+          "last_updated_at": 1785717000,
+          "bars_at_first_detection": 3,
+          "first_detection_metrics": {
+            "directional_move": 11.534999999999854,
+            "directional_move_atr": 2.956695884810264,
+            "net_move": 8.579999999999927,
+            "net_move_atr": 2.1992588375962003,
+            "max_close_pullback": 0,
+            "max_close_pullback_atr": 0,
+            "max_intrabar_pullback": 1.455000000000382,
+            "max_intrabar_pullback_atr": 0.37295123644561057,
+            "max_close_pullback_ratio": 0,
+            "max_intrabar_pullback_ratio": 0.22523219814247272,
+            "path_efficiency": 1,
+            "close_position": 0.2561768530559137,
+            "directional_bar_ratio": 1,
+            "average_overlap_ratio": 0.2667932709275397,
+            "regression_r_squared": 0.992178957584939,
+            "average_directional_move_atr_per_bar": 0.9855652949367547
+          },
+          "ema20_streak_at_first_detection": 2,
+          "ema20_streak_indices_at_first_detection": [
+            4721,
+            4722
+          ],
+          "current_bars": 3,
+          "is_active": true,
+          "atr_base": 3.9013143215911343,
+          "start_price": 4073.015,
+          "directional_extreme_idx": 4722,
+          "directional_extreme_price": 4061.48,
+          "directional_move": 11.534999999999854,
+          "directional_move_atr": 2.956695884810264,
+          "net_move": 8.579999999999927,
+          "net_move_atr": 2.1992588375962003,
+          "max_close_pullback": 0,
+          "max_close_pullback_atr": 0,
+          "max_intrabar_pullback": 1.455000000000382,
+          "max_intrabar_pullback_atr": 0.37295123644561057,
+          "max_close_pullback_ratio": 0,
+          "max_intrabar_pullback_ratio": 0.22523219814247272,
+          "path_efficiency": 1,
+          "close_position": 0.2561768530559137,
+          "directional_bar_ratio": 1,
+          "average_overlap_ratio": 0.2667932709275397,
+          "regression_r_squared": 0.992178957584939,
+          "average_directional_move_atr_per_bar": 0.9855652949367547,
+          "doji_count": 0,
+          "opposite_bar_count": 0,
+          "max_consecutive_opposite_bars": 0,
+          "directional_ema20_close_count": 2,
+          "current_consecutive_directional_ema20_closes": 2,
+          "max_consecutive_directional_ema20_closes": 2,
+          "max_directional_ema20_close_streak_indices": [
+            4721,
+            4722
+          ],
+          "ratio_eligible_pullbacks": 1,
+          "max_close_pullback_ratio_idx": null,
+          "max_close_pullback_ratio_pullback": 0,
+          "max_close_pullback_ratio_denominator": null,
+          "max_intrabar_pullback_ratio_idx": 4722,
+          "max_intrabar_pullback_ratio_pullback": 1.455000000000382,
+          "max_intrabar_pullback_ratio_denominator": 6.460000000000036,
+          "narrow_channel_score": 98,
+          "score_components": {
+            "directional_move": 39.13391769620528,
+            "pullback_control": 40,
+            "path_efficiency": 10,
+            "last_close_position": 3.7191157347204316,
+            "candle_combination_quality": 5
+          },
+          "classification": "极强下跌窄通道",
+          "human_summary": "3根K线已经形成极强下跌窄通道（依据：方向移动2.957倍ATR；当前仍保留2.199倍ATR净下跌；最大收盘回调占回调前推进距离的0.0%；最大盘中回调占22.5%；EMA20方向侧最大连续收盘2根（下方））。",
+          "duration_stage": "early",
+          "hard_conditions_passed": true,
+          "current_formation_conditions_passed": true,
+          "configuration": {
+            "min_channel_bars": 3,
+            "min_consecutive_directional_ema20_closes": 2,
+            "enforce_directional_ema20_close_streak": true,
+            "strict_directional_move_atr": 2,
+            "strict_net_move_atr": 1.5,
+            "strict_max_close_pullback_atr": 0.45,
+            "strict_max_intrabar_pullback_atr": 0.65,
+            "strict_max_close_pullback_ratio": 0.25,
+            "strict_max_intrabar_pullback_ratio": 0.35,
+            "pullback_ratio_activation_move_atr": 1,
+            "end_max_close_pullback_atr": 0.6,
+            "end_max_intrabar_pullback_atr": 0.85,
+            "end_max_close_pullback_ratio": 0.35,
+            "end_max_intrabar_pullback_ratio": 0.45
+          },
+          "not_a_forecast": true
+        }
+      }
+    },
+    {
+      "signalNumber": 2,
+      "idx": 4804,
+      "time": 1785741300,
+      "beijingTime": "2026-08-03 15:15",
+      "side": "long",
+      "setup": "震荡反转",
+      "reason": "背景上，因果证明与当前 PNG 共同确认了下边单边活动边沿，三组独立触碰横跨 58 根K线。位置上，当前K低点进入 4050.594–4054.326 的原始下沿价格带，收盘重新站到带上方，形成边沿拒绝而非外侧接受。当前边沿拒绝已排除近期浅回调快速重测的突破偏向；本根形成多头震荡反转，下一根以本K高点等待严格突破入场。",
+      "displayReason": "背景上，因果证明与当前 PNG 共同确认了下边单边活动边沿，三组独立触碰横跨 58 根K线。位置上，当前K低点进入 4050.594–4054.326 的原始下沿价格带，收盘重新站到带上方，形成边沿拒绝而非外侧接受。当前边沿拒绝已排除近期浅回调快速重测的突破偏向；本根形成多头震荡反转，下一根以本K高点等待严格突破入场。",
+      "evidenceIndices": [
+        4747,
+        4780,
+        4793,
+        4801,
+        4802,
+        4803,
+        4804
+      ],
+      "referenceCandles": [
+        {
+          "internalIndex": 4747,
+          "time": 1785724200,
+          "beijingTime": "2026-08-03 10:30"
+        },
+        {
+          "internalIndex": 4780,
+          "time": 1785734100,
+          "beijingTime": "2026-08-03 13:15"
+        },
+        {
+          "internalIndex": 4793,
+          "time": 1785738000,
+          "beijingTime": "2026-08-03 14:20"
+        },
+        {
+          "internalIndex": 4801,
+          "time": 1785740400,
+          "beijingTime": "2026-08-03 15:00"
+        },
+        {
+          "internalIndex": 4802,
+          "time": 1785740700,
+          "beijingTime": "2026-08-03 15:05"
+        },
+        {
+          "internalIndex": 4803,
+          "time": 1785741000,
+          "beijingTime": "2026-08-03 15:10"
+        },
+        {
+          "internalIndex": 4804,
+          "time": 1785741300,
+          "beijingTime": "2026-08-03 15:15"
+        }
+      ],
+      "recordSha256": "e11a01769f41abc000921c629f37ade85138bca76b2c960608ed0de95ab43120",
+      "chainSha256": "4480f9df0db6cc81df93c05d1fc8f5f26644bf388e57899cd67748a7322eb997",
+      "signalContext": {
+        "rule_version": "custom_v2_range_lifecycle_bound_effective_swing_sr",
+        "family": "range_reversal",
+        "variant": "edge_rejection",
+        "signal_bar_idx": 4804,
+        "structure_indices": [
+          4747,
+          4780,
+          4804
+        ],
+        "entry_trigger_price": 4062.305,
+        "initial_stop_price": 4053.375,
+        "initial_stop_reference_idx": 4804,
+        "range_reversal_rr_mode": "not_applicable_one_sided_edge",
+        "recent_shallow_retest_exclusion": true,
+        "recent_shallow_retest_breakout_bias": false,
+        "recent_shallow_retest_breakout_bias_ruled_out": true,
+        "recent_shallow_retest_breakout_bias_excluded": true,
+        "recent_shallow_retest_breakout_bias_status": "ruled_out",
+        "recent_shallow_retest_indices": [],
+        "reversal_context": {
+          "recent_shallow_retest_exclusion": true,
+          "recent_shallow_retest_breakout_bias": "ruled_out",
+          "recent_shallow_retest_breakout_bias_ruled_out": true
+        },
+        "range": {
+          "kind": "one_sided_edge",
+          "active_edge": "lower",
+          "start_idx": 4747,
+          "end_idx": 4804,
+          "lower_zone_low": 4050.5944285714286,
+          "lower_zone_high": 4054.3255714285715,
+          "lower_touch_indices": [
+            4747,
+            4780,
+            4804
+          ],
+          "range_lifecycle_id": "range-lifecycle-339aef3869c9f0e82743",
+          "range_reversal_rr_mode": "not_applicable_one_sided_edge",
+          "recent_shallow_retest_exclusion": true,
+          "recent_shallow_retest_breakout_bias_ruled_out": true
+        }
+      }
+    },
+    {
+      "signalNumber": 3,
+      "idx": 4945,
+      "time": 1785783600,
+      "beijingTime": "2026-08-04 03:00",
+      "side": "long",
+      "setup": "震荡真突破",
+      "reason": "价格此前在上侧单边震荡边沿运行，生命周期 range-lifecycle-063185044db7d915a982 由三组独立触碰形成。当前位于上沿外侧，4941至4945连续五根收盘严格收在4038.536485714286至4040.133514285714价格带之外，图文快照一致显示上破被接受并有跟随。第5根确认K形成震荡真突破，按当前K高点触发多头，当前K低点设固定初始止损。",
+      "displayReason": "价格此前在上侧单边震荡边沿运行，生命周期 range-lifecycle-063185044db7d2026-07-14 13:10（北京时间）a2026-07-14 18:45（北京时间） 由三组独立触碰形成。当前位于上沿外侧，2026-08-04 02:40（北京时间）至2026-08-04 03:00（北京时间）连续五根收盘严格收在4038.536485714286至4040.133514285714价格带之外，图文快照一致显示上破被接受并有跟随。第5根确认K形成震荡真突破，按当前K高点触发多头，当前K低点设固定初始止损。",
+      "evidenceIndices": [
+        4905,
+        4914,
+        4935,
+        4941,
+        4942,
+        4943,
+        4944,
+        4945
+      ],
+      "referenceCandles": [
+        {
+          "internalIndex": 915,
+          "time": 1784005800,
+          "beijingTime": "2026-07-14 13:10"
+        },
+        {
+          "internalIndex": 982,
+          "time": 1784025900,
+          "beijingTime": "2026-07-14 18:45"
+        },
+        {
+          "internalIndex": 4905,
+          "time": 1785771600,
+          "beijingTime": "2026-08-03 23:40"
+        },
+        {
+          "internalIndex": 4914,
+          "time": 1785774300,
+          "beijingTime": "2026-08-04 00:25"
+        },
+        {
+          "internalIndex": 4935,
+          "time": 1785780600,
+          "beijingTime": "2026-08-04 02:10"
+        },
+        {
+          "internalIndex": 4941,
+          "time": 1785782400,
+          "beijingTime": "2026-08-04 02:40"
+        },
+        {
+          "internalIndex": 4942,
+          "time": 1785782700,
+          "beijingTime": "2026-08-04 02:45"
+        },
+        {
+          "internalIndex": 4943,
+          "time": 1785783000,
+          "beijingTime": "2026-08-04 02:50"
+        },
+        {
+          "internalIndex": 4944,
+          "time": 1785783300,
+          "beijingTime": "2026-08-04 02:55"
+        },
+        {
+          "internalIndex": 4945,
+          "time": 1785783600,
+          "beijingTime": "2026-08-04 03:00"
+        }
+      ],
+      "recordSha256": "7ed9ee82bad6b2999c744a707e9c6c0e61d8205a7de3c66c00a7c0403dabac9e",
+      "chainSha256": "4cc012ce36b5190cdabddb08fdad8e3efefd7bddbb8e7976b7d8fce9e16d579f",
+      "signalContext": {
+        "rule_version": "custom_v2_range_lifecycle_bound_effective_swing_sr",
+        "family": "range_true_breakout",
+        "variant": "fifth_consecutive_close_outside_edge",
+        "signal_bar_idx": 4945,
+        "structure_indices": [
+          4905,
+          4914,
+          4935,
+          4941,
+          4942,
+          4943,
+          4944,
+          4945
+        ],
+        "entry_trigger_price": 4048.565,
+        "initial_stop_price": 4043.485,
+        "initial_stop_reference_idx": 4945,
+        "break_confirmation_closes": 5,
+        "confirmation_indices": [
+          4941,
+          4942,
+          4943,
+          4944,
+          4945
+        ],
+        "break_confirmation_indices": [
+          4941,
+          4942,
+          4943,
+          4944,
+          4945
+        ],
+        "range": {
+          "range_lifecycle_id": "range-lifecycle-063185044db7d915a982",
+          "kind": "one_sided_edge",
+          "active_edge": "upper",
+          "start_idx": 4905,
+          "end_idx": 4935,
+          "upper_zone_low": 4038.536485714286,
+          "upper_zone_high": 4040.133514285714,
+          "upper_touch_indices": [
+            4905,
+            4914,
+            4935
+          ],
+          "independent_touch_indices": [
+            4905,
+            4914,
+            4935
+          ]
+        }
+      }
+    },
+    {
+      "signalNumber": 4,
+      "idx": 5133,
+      "time": 1785843600,
+      "beijingTime": "2026-08-04 19:40",
+      "side": "long",
+      "setup": "窄通道回调顺势",
+      "reason": "背景由反弹转为因果证明的上涨窄通道，方向腿事件在idx=5131已满足严格定量与EMA20连续收盘条件。方向腿起点idx=5129、截止idx=5131，起点价4055.565、方向极值4065.10，50%为4060.3325；回调从idx=5132开始，当前K低点4059.92触及并穿过该位。回调idx=5132至5133逐根连续，两个回调实体均守住50%，当前收盘在方向有效侧，实际锚点仅为trend_leg_50_percent。故当前K形成窄通道回调顺势多头信号，下一根以当前K高点触发，初始止损取完整交互序列风险侧极值。",
+      "displayReason": "背景由反弹转为因果证明的上涨窄通道，方向腿事件在idx=2026-08-04 19:30（北京时间）已满足严格定量与EMA20连续收盘条件。方向腿起点idx=2026-08-04 19:20（北京时间）、截止idx=2026-08-04 19:30（北京时间），起点价4055.565、方向极值4065.10，50%为4060.3325；回调从idx=2026-08-04 19:35（北京时间）开始，当前K低点4059.92触及并穿过该位。回调idx=2026-08-04 19:35（北京时间）至2026-08-04 19:40（北京时间）逐根连续，两个回调实体均守住50%，当前收盘在方向有效侧，实际锚点仅为trend_leg_50_percent。故当前K形成窄通道回调顺势多头信号，下一根以当前K高点触发，初始止损取完整交互序列风险侧极值。",
+      "evidenceIndices": [
+        5129,
+        5130,
+        5131,
+        5132,
+        5133
+      ],
+      "referenceCandles": [
+        {
+          "internalIndex": 5129,
+          "time": 1785842400,
+          "beijingTime": "2026-08-04 19:20"
+        },
+        {
+          "internalIndex": 5130,
+          "time": 1785842700,
+          "beijingTime": "2026-08-04 19:25"
+        },
+        {
+          "internalIndex": 5131,
+          "time": 1785843000,
+          "beijingTime": "2026-08-04 19:30"
+        },
+        {
+          "internalIndex": 5132,
+          "time": 1785843300,
+          "beijingTime": "2026-08-04 19:35"
+        },
+        {
+          "internalIndex": 5133,
+          "time": 1785843600,
+          "beijingTime": "2026-08-04 19:40"
+        }
+      ],
+      "recordSha256": "f33283bfcaea9c674bb6f3794cfa1286f0d4c5cc49de7bda684ae933648160db",
+      "chainSha256": "9369e18dd84d815e79ff20ac46c0ec973274feaaf51924c967b8bfc814ef5cad",
+      "signalContext": {
+        "rule_version": "custom_v2_range_lifecycle_bound_effective_swing_sr",
+        "family": "narrow_channel_pullback",
+        "variant": "anchor_touch_pullback",
+        "signal_bar_idx": 5133,
+        "structure_indices": [
+          5129,
+          5130,
+          5131,
+          5132,
+          5133
+        ],
+        "entry_trigger_price": 4070.405,
+        "initial_stop_price": 4055.565,
+        "initial_stop_reference_idx": 5129,
+        "trend_leg_start_idx": 5129,
+        "trend_leg_end_idx": 5131,
+        "trend_leg_indices": [
+          5129,
+          5130,
+          5131
+        ],
+        "pullback_start_idx": 5132,
+        "pullback_indices": [
+          5132,
+          5133
+        ],
+        "fifty_percent_price": 4060.3325,
+        "first_pullback_required": false,
+        "touch_anchors": [
+          "trend_leg_50_percent"
+        ],
+        "prior_breakout_edge_zone": null,
+        "strict_narrow_channel": {
+          "event_type": "strict_narrow_channel",
+          "event_id": "strict-narrow-channel-up-5129-5131",
+          "direction": "up",
+          "start_idx": 5129,
+          "start_time": 1785842400,
+          "start_beijing_open_time": "2026-08-04 19:20",
+          "candidate_registered_at": 1785842700,
+          "first_detected_idx": 5131,
+          "first_detected_at": 1785843300,
+          "last_updated_idx": 5131,
+          "last_updated_at": 1785843300,
+          "bars_at_first_detection": 3,
+          "first_detection_metrics": {
+            "directional_move": 9.534999999999854,
+            "directional_move_atr": 2.7334619529829944,
+            "net_move": 6.820000000000164,
+            "net_move_atr": 1.9551348211163873,
+            "max_close_pullback": 0,
+            "max_close_pullback_atr": 0,
+            "max_intrabar_pullback": 1.0599999999999454,
+            "max_intrabar_pullback_atr": 0.30387725958698153,
+            "max_close_pullback_ratio": 0,
+            "max_intrabar_pullback_ratio": 0.283044058744987,
+            "path_efficiency": 1,
+            "close_position": 0.715259570005272,
+            "directional_bar_ratio": 1,
+            "average_overlap_ratio": 0.35815602836877036,
+            "regression_r_squared": 0.9806477547297333,
+            "average_directional_move_atr_per_bar": 0.9111539843276648
+          },
+          "ema20_streak_at_first_detection": 3,
+          "ema20_streak_indices_at_first_detection": [
+            5129,
+            5130,
+            5131
+          ],
+          "current_bars": 3,
+          "is_active": true,
+          "atr_base": 3.488250491137959,
+          "start_price": 4055.565,
+          "directional_extreme_idx": 5131,
+          "directional_extreme_price": 4065.1,
+          "directional_move": 9.534999999999854,
+          "directional_move_atr": 2.7334619529829944,
+          "net_move": 6.820000000000164,
+          "net_move_atr": 1.9551348211163873,
+          "max_close_pullback": 0,
+          "max_close_pullback_atr": 0,
+          "max_intrabar_pullback": 1.0599999999999454,
+          "max_intrabar_pullback_atr": 0.30387725958698153,
+          "max_close_pullback_ratio": 0,
+          "max_intrabar_pullback_ratio": 0.283044058744987,
+          "path_efficiency": 1,
+          "close_position": 0.715259570005272,
+          "directional_bar_ratio": 1,
+          "average_overlap_ratio": 0.35815602836877036,
+          "regression_r_squared": 0.9806477547297333,
+          "average_directional_move_atr_per_bar": 0.9111539843276648,
+          "doji_count": 0,
+          "opposite_bar_count": 0,
+          "max_consecutive_opposite_bars": 0,
+          "directional_ema20_close_count": 3,
+          "current_consecutive_directional_ema20_closes": 3,
+          "max_consecutive_directional_ema20_closes": 3,
+          "max_directional_ema20_close_streak_indices": [
+            5129,
+            5130,
+            5131
+          ],
+          "ratio_eligible_pullbacks": 2,
+          "max_close_pullback_ratio_idx": null,
+          "max_close_pullback_ratio_pullback": 0,
+          "max_close_pullback_ratio_denominator": null,
+          "max_intrabar_pullback_ratio_idx": 5130,
+          "max_intrabar_pullback_ratio_pullback": 1.0599999999999454,
+          "max_intrabar_pullback_ratio_denominator": 3.744999999999891,
+          "narrow_channel_score": 83,
+          "score_components": {
+            "directional_move": 34.66923905965989,
+            "pullback_control": 30,
+            "path_efficiency": 10,
+            "last_close_position": 3.57629785002636,
+            "candle_combination_quality": 5
+          },
+          "classification": "高强度上涨窄通道",
+          "human_summary": "3根K线已经形成高强度上涨窄通道（依据：方向移动2.733倍ATR；当前仍保留1.955倍ATR净上涨；最大收盘回调占回调前推进距离的0.0%；最大盘中回调占28.3%；EMA20方向侧最大连续收盘3根（上方））。",
+          "duration_stage": "early",
+          "hard_conditions_passed": true,
+          "current_formation_conditions_passed": true,
+          "configuration": {
+            "min_channel_bars": 3,
+            "min_consecutive_directional_ema20_closes": 2,
+            "enforce_directional_ema20_close_streak": true,
+            "strict_directional_move_atr": 2,
+            "strict_net_move_atr": 1.5,
+            "strict_max_close_pullback_atr": 0.45,
+            "strict_max_intrabar_pullback_atr": 0.65,
+            "strict_max_close_pullback_ratio": 0.25,
+            "strict_max_intrabar_pullback_ratio": 0.35,
+            "pullback_ratio_activation_move_atr": 1,
+            "end_max_close_pullback_atr": 0.6,
+            "end_max_intrabar_pullback_atr": 0.85,
+            "end_max_close_pullback_ratio": 0.35,
+            "end_max_intrabar_pullback_ratio": 0.45
+          },
+          "not_a_forecast": true
+        }
+      }
+    },
+    {
+      "signalNumber": 5,
+      "idx": 5324,
+      "time": 1785904500,
+      "beijingTime": "2026-08-05 12:35",
+      "side": "long",
+      "setup": "窄通道回调顺势",
+      "reason": "背景：idx5313至5322的严格窄通道在idx5322仍是因果登记的活动事件，EMA20上方连续10根收盘；回调从其后的idx5323开始。位置：方向腿起点4127.51与极值4141.505的50%为4134.5075，idx5323实体守住该位，当前idx5324下影触及该位且实体下沿4134.625仍守住。接受与跟随：PNG显示两根连续回调K未破坏50%实体门槛，当前快照没有与此价格带匹配的可引用区间边沿。触发：形成多头窄通道回调顺势，下一根仅在突破当前高点4137.655时触发，初始止损置于完整交互序列风险侧idx5313低点4127.51。",
+      "displayReason": "背景：idx2026-08-05 11:40（北京时间）至2026-08-05 12:25（北京时间）的严格窄通道在idx2026-08-05 12:25（北京时间）仍是因果登记的活动事件，EMA20上方连续10根收盘；回调从其后的idx2026-08-05 12:30（北京时间）开始。位置：方向腿起点4127.51与极值4141.505的50%为4134.5075，idx2026-08-05 12:30（北京时间）实体守住该位，当前idx2026-08-05 12:35（北京时间）下影触及该位且实体下沿4134.625仍守住。接受与跟随：PNG显示两根连续回调K未破坏50%实体门槛，当前快照没有与此价格带匹配的可引用区间边沿。触发：形成多头窄通道回调顺势，下一根仅在突破当前高点4137.655时触发，初始止损置于完整交互序列风险侧idx2026-08-05 11:40（北京时间）低点4127.51。",
+      "evidenceIndices": [
+        5313,
+        5314,
+        5315,
+        5316,
+        5317,
+        5318,
+        5319,
+        5320,
+        5321,
+        5322,
+        5323,
+        5324
+      ],
+      "referenceCandles": [
+        {
+          "internalIndex": 5313,
+          "time": 1785901200,
+          "beijingTime": "2026-08-05 11:40"
+        },
+        {
+          "internalIndex": 5314,
+          "time": 1785901500,
+          "beijingTime": "2026-08-05 11:45"
+        },
+        {
+          "internalIndex": 5315,
+          "time": 1785901800,
+          "beijingTime": "2026-08-05 11:50"
+        },
+        {
+          "internalIndex": 5316,
+          "time": 1785902100,
+          "beijingTime": "2026-08-05 11:55"
+        },
+        {
+          "internalIndex": 5317,
+          "time": 1785902400,
+          "beijingTime": "2026-08-05 12:00"
+        },
+        {
+          "internalIndex": 5318,
+          "time": 1785902700,
+          "beijingTime": "2026-08-05 12:05"
+        },
+        {
+          "internalIndex": 5319,
+          "time": 1785903000,
+          "beijingTime": "2026-08-05 12:10"
+        },
+        {
+          "internalIndex": 5320,
+          "time": 1785903300,
+          "beijingTime": "2026-08-05 12:15"
+        },
+        {
+          "internalIndex": 5321,
+          "time": 1785903600,
+          "beijingTime": "2026-08-05 12:20"
+        },
+        {
+          "internalIndex": 5322,
+          "time": 1785903900,
+          "beijingTime": "2026-08-05 12:25"
+        },
+        {
+          "internalIndex": 5323,
+          "time": 1785904200,
+          "beijingTime": "2026-08-05 12:30"
+        },
+        {
+          "internalIndex": 5324,
+          "time": 1785904500,
+          "beijingTime": "2026-08-05 12:35"
+        }
+      ],
+      "recordSha256": "40f8887938940b1319a0a0489a57589fc0319d900be6227e5aaa47912776ffb5",
+      "chainSha256": "ab2f7f227d8b3a34cea24f3ebd01438a0b7957bbc9078c25fd0444512fa1d5bf",
+      "signalContext": {
+        "rule_version": "custom_v2_range_lifecycle_bound_effective_swing_sr",
+        "family": "narrow_channel_pullback",
+        "variant": "anchor_touch_pullback",
+        "signal_bar_idx": 5324,
+        "structure_indices": [
+          5313,
+          5314,
+          5315,
+          5316,
+          5317,
+          5318,
+          5319,
+          5320,
+          5321,
+          5322,
+          5323,
+          5324
+        ],
+        "entry_trigger_price": 4137.655,
+        "initial_stop_price": 4127.51,
+        "initial_stop_reference_idx": 5313,
+        "trend_leg_start_idx": 5313,
+        "trend_leg_end_idx": 5322,
+        "trend_leg_indices": [
+          5313,
+          5314,
+          5315,
+          5316,
+          5317,
+          5318,
+          5319,
+          5320,
+          5321,
+          5322
+        ],
+        "pullback_start_idx": 5323,
+        "pullback_indices": [
+          5323,
+          5324
+        ],
+        "fifty_percent_price": 4134.5075,
+        "first_pullback_required": false,
+        "touch_anchors": [
+          "trend_leg_50_percent"
+        ],
+        "prior_breakout_edge_zone": null,
+        "strict_narrow_channel": {
+          "event_type": "strict_narrow_channel",
+          "event_id": "strict-narrow-channel-up-5313-5318",
+          "direction": "up",
+          "start_idx": 5313,
+          "start_time": 1785901200,
+          "start_beijing_open_time": "2026-08-05 11:40",
+          "candidate_registered_at": 1785901500,
+          "first_detected_idx": 5318,
+          "first_detected_at": 1785903000,
+          "last_updated_idx": 5322,
+          "last_updated_at": 1785904200,
+          "bars_at_first_detection": 6,
+          "first_detection_metrics": {
+            "directional_move": 12.5649999999996,
+            "directional_move_atr": 2.800626941128564,
+            "net_move": 11.93499999999949,
+            "net_move_atr": 2.660205534609554,
+            "max_close_pullback": 1.194999999999709,
+            "max_close_pullback_atr": 0.26635489014308994,
+            "max_intrabar_pullback": 2.819999999999709,
+            "max_intrabar_pullback_atr": 0.6285529625134888,
+            "max_close_pullback_ratio": 0,
+            "max_intrabar_pullback_ratio": 0.2911534154534865,
+            "path_efficiency": 0.9069148936170552,
+            "close_position": 0.949860724233973,
+            "directional_bar_ratio": 0.6666666666666666,
+            "average_overlap_ratio": 0.802121004636047,
+            "regression_r_squared": 0.6948404190936167,
+            "average_directional_move_atr_per_bar": 0.4667711568547606
+          },
+          "ema20_streak_at_first_detection": 6,
+          "ema20_streak_indices_at_first_detection": [
+            5313,
+            5314,
+            5315,
+            5316,
+            5317,
+            5318
+          ],
+          "current_bars": 10,
+          "is_active": true,
+          "atr_base": 4.486495439816166,
+          "start_price": 4127.51,
+          "directional_extreme_idx": 5319,
+          "directional_extreme_price": 4141.505,
+          "directional_move": 13.99499999999989,
+          "directional_move_atr": 3.1193612448145793,
+          "net_move": 11.074999999999818,
+          "net_move_atr": 2.468519170155139,
+          "max_close_pullback": 2.2049999999999272,
+          "max_close_pullback_atr": 0.4914749228164326,
+          "max_intrabar_pullback": 3.6099999999996726,
+          "max_intrabar_pullback_atr": 0.8046369484658591,
+          "max_close_pullback_ratio": 0.15755627009645906,
+          "max_intrabar_pullback_ratio": 0.2911534154534865,
+          "path_efficiency": 0.5951101558302286,
+          "close_position": 0.7913540550196431,
+          "directional_bar_ratio": 0.5,
+          "average_overlap_ratio": 0.8154985724026607,
+          "regression_r_squared": 0.7810969107419349,
+          "average_directional_move_atr_per_bar": 0.3119361244814579,
+          "doji_count": 2,
+          "opposite_bar_count": 5,
+          "max_consecutive_opposite_bars": 2,
+          "directional_ema20_close_count": 10,
+          "current_consecutive_directional_ema20_closes": 10,
+          "max_consecutive_directional_ema20_closes": 10,
+          "max_directional_ema20_close_streak_indices": [
+            5313,
+            5314,
+            5315,
+            5316,
+            5317,
+            5318,
+            5319,
+            5320,
+            5321,
+            5322
+          ],
+          "ratio_eligible_pullbacks": 5,
+          "max_close_pullback_ratio_idx": 5322,
+          "max_close_pullback_ratio_pullback": 2.2049999999999272,
+          "max_close_pullback_ratio_denominator": 13.99499999999989,
+          "max_intrabar_pullback_ratio_idx": 5318,
+          "max_intrabar_pullback_ratio_pullback": 2.5999999999994543,
+          "max_intrabar_pullback_ratio_denominator": 8.929999999999382,
+          "narrow_channel_score": 82,
+          "score_components": {
+            "directional_move": 40,
+            "pullback_control": 30,
+            "path_efficiency": 5.951101558302287,
+            "last_close_position": 3.9567702750982154,
+            "candle_combination_quality": 2.5
+          },
+          "classification": "高强度上涨窄通道",
+          "human_summary": "10根K线已经形成高强度上涨窄通道（依据：方向移动3.119倍ATR；当前仍保留2.469倍ATR净上涨；最大收盘回调占回调前推进距离的15.8%；最大盘中回调占29.1%；EMA20方向侧最大连续收盘10根（上方））。组合中虽然存在2根十字星和5根反方向K线，但没有形成较大幅度回撤。",
+          "duration_stage": "mature",
+          "hard_conditions_passed": true,
+          "current_formation_conditions_passed": false,
+          "configuration": {
+            "min_channel_bars": 3,
+            "min_consecutive_directional_ema20_closes": 2,
+            "enforce_directional_ema20_close_streak": true,
+            "strict_directional_move_atr": 2,
+            "strict_net_move_atr": 1.5,
+            "strict_max_close_pullback_atr": 0.45,
+            "strict_max_intrabar_pullback_atr": 0.65,
+            "strict_max_close_pullback_ratio": 0.25,
+            "strict_max_intrabar_pullback_ratio": 0.35,
+            "pullback_ratio_activation_move_atr": 1,
+            "end_max_close_pullback_atr": 0.6,
+            "end_max_intrabar_pullback_atr": 0.85,
+            "end_max_close_pullback_ratio": 0.35,
+            "end_max_intrabar_pullback_ratio": 0.45
+          },
+          "not_a_forecast": true
+        }
+      }
+    },
+    {
+      "signalNumber": 6,
+      "idx": 5465,
+      "time": 1785946800,
+      "beijingTime": "2026-08-06 00:20",
+      "side": "short",
+      "setup": "窄通道回调顺势",
+      "reason": "背景是严格下跌窄通道在 5461 收盘时仍因果有效，方向移动与净移动分别超过 4 ATR 与 3 ATR，EMA20 下方连续收盘为 5459–5461；其后完整回调从 5462 延续至 5465，实体均守住方向腿 50%。当前位置回到当根 EMA20 附近，5465 上影触及 EMA20 后收在其下，PNG显示反弹受阻并恢复空方接受与跟随。当前K以 EMA20 锚点完成空头顺势触发，提交 SIGNAL。",
+      "displayReason": "背景是严格下跌窄通道在 2026-08-06 00:00（北京时间） 收盘时仍因果有效，方向移动与净移动分别超过 4 ATR 与 3 ATR，EMA20 下方连续收盘为 2026-08-05 23:50（北京时间）–2026-08-06 00:00（北京时间）；其后完整回调从 2026-08-06 00:05（北京时间） 延续至 2026-08-06 00:20（北京时间），实体均守住方向腿 50%。当前位置回到当根 EMA20 附近，2026-08-06 00:20（北京时间） 上影触及 EMA20 后收在其下，PNG显示反弹受阻并恢复空方接受与跟随。当前K以 EMA20 锚点完成空头顺势触发，提交 SIGNAL。",
+      "evidenceIndices": [
+        5456,
+        5457,
+        5458,
+        5459,
+        5460,
+        5461,
+        5462,
+        5463,
+        5464,
+        5465
+      ],
+      "referenceCandles": [
+        {
+          "internalIndex": 5456,
+          "time": 1785944100,
+          "beijingTime": "2026-08-05 23:35"
+        },
+        {
+          "internalIndex": 5457,
+          "time": 1785944400,
+          "beijingTime": "2026-08-05 23:40"
+        },
+        {
+          "internalIndex": 5458,
+          "time": 1785944700,
+          "beijingTime": "2026-08-05 23:45"
+        },
+        {
+          "internalIndex": 5459,
+          "time": 1785945000,
+          "beijingTime": "2026-08-05 23:50"
+        },
+        {
+          "internalIndex": 5460,
+          "time": 1785945300,
+          "beijingTime": "2026-08-05 23:55"
+        },
+        {
+          "internalIndex": 5461,
+          "time": 1785945600,
+          "beijingTime": "2026-08-06 00:00"
+        },
+        {
+          "internalIndex": 5462,
+          "time": 1785945900,
+          "beijingTime": "2026-08-06 00:05"
+        },
+        {
+          "internalIndex": 5463,
+          "time": 1785946200,
+          "beijingTime": "2026-08-06 00:10"
+        },
+        {
+          "internalIndex": 5464,
+          "time": 1785946500,
+          "beijingTime": "2026-08-06 00:15"
+        },
+        {
+          "internalIndex": 5465,
+          "time": 1785946800,
+          "beijingTime": "2026-08-06 00:20"
+        }
+      ],
+      "recordSha256": "f825c9e65ffdf5e78916762cfec6a42efe74892b3283da3b1f1ee4198e882f79",
+      "chainSha256": "e1cbccb62cf04ed46ad8e8d719f7edfeb271fc4780f4cedc76be8ecedf8e0741",
+      "signalContext": {
+        "rule_version": "custom_v2_range_lifecycle_bound_effective_swing_sr",
+        "family": "narrow_channel_pullback",
+        "variant": "anchor_touch_pullback",
+        "signal_bar_idx": 5465,
+        "structure_indices": [
+          5456,
+          5457,
+          5458,
+          5459,
+          5460,
+          5461,
+          5462,
+          5463,
+          5464,
+          5465
+        ],
+        "entry_trigger_price": 4233.735,
+        "initial_stop_price": 4259.835,
+        "initial_stop_reference_idx": 5456,
+        "trend_leg_start_idx": 5456,
+        "trend_leg_end_idx": 5461,
+        "trend_leg_indices": [
+          5456,
+          5457,
+          5458,
+          5459,
+          5460,
+          5461
+        ],
+        "pullback_start_idx": 5462,
+        "pullback_indices": [
+          5462,
+          5463,
+          5464,
+          5465
+        ],
+        "fifty_percent_price": 4242.685,
+        "first_pullback_required": false,
+        "touch_anchors": [
+          "ema20"
+        ],
+        "prior_breakout_edge_zone": null,
+        "strict_narrow_channel": {
+          "event_type": "strict_narrow_channel",
+          "event_id": "strict-narrow-channel-down-5456-5460",
+          "direction": "down",
+          "start_idx": 5456,
+          "start_time": 1785944100,
+          "start_beijing_open_time": "2026-08-05 23:35",
+          "candidate_registered_at": 1785944400,
+          "first_detected_idx": 5460,
+          "first_detected_at": 1785945600,
+          "last_updated_idx": 5461,
+          "last_updated_at": 1785945900,
+          "bars_at_first_detection": 5,
+          "first_detection_metrics": {
+            "directional_move": 27.460000000000036,
+            "directional_move_atr": 3.283605973543161,
+            "net_move": 26.8100000000004,
+            "net_move_atr": 3.205880413353727,
+            "max_close_pullback": 0,
+            "max_close_pullback_atr": 0,
+            "max_intrabar_pullback": 3.485000000000582,
+            "max_intrabar_pullback_atr": 0.4167285804005758,
+            "max_close_pullback_ratio": 0,
+            "max_intrabar_pullback_ratio": 0.13210075026796167,
+            "path_efficiency": 1,
+            "close_position": 0.023670793881996915,
+            "directional_bar_ratio": 0.8,
+            "average_overlap_ratio": 0.4328845852865228,
+            "regression_r_squared": 0.9417214391738638,
+            "average_directional_move_atr_per_bar": 0.6567211947086322
+          },
+          "ema20_streak_at_first_detection": 2,
+          "ema20_streak_indices_at_first_detection": [
+            5459,
+            5460
+          ],
+          "current_bars": 6,
+          "is_active": true,
+          "atr_base": 8.362757353120978,
+          "start_price": 4259.835,
+          "directional_extreme_idx": 5461,
+          "directional_extreme_price": 4225.535,
+          "directional_move": 34.30000000000018,
+          "directional_move_atr": 4.101518022306295,
+          "net_move": 33.875,
+          "net_move_atr": 4.050697463720846,
+          "max_close_pullback": 0,
+          "max_close_pullback_atr": 0,
+          "max_intrabar_pullback": 3.485000000000582,
+          "max_intrabar_pullback_atr": 0.4167285804005758,
+          "max_close_pullback_ratio": 0,
+          "max_intrabar_pullback_ratio": 0.13210075026796167,
+          "path_efficiency": 1,
+          "close_position": 0.012390670553941097,
+          "directional_bar_ratio": 0.8333333333333334,
+          "average_overlap_ratio": 0.3946446970540561,
+          "regression_r_squared": 0.9636036690685111,
+          "average_directional_move_atr_per_bar": 0.6835863370510492,
+          "doji_count": 0,
+          "opposite_bar_count": 1,
+          "max_consecutive_opposite_bars": 1,
+          "directional_ema20_close_count": 3,
+          "current_consecutive_directional_ema20_closes": 3,
+          "max_consecutive_directional_ema20_closes": 3,
+          "max_directional_ema20_close_streak_indices": [
+            5459,
+            5460,
+            5461
+          ],
+          "ratio_eligible_pullbacks": 3,
+          "max_close_pullback_ratio_idx": null,
+          "max_close_pullback_ratio_pullback": 0,
+          "max_close_pullback_ratio_denominator": null,
+          "max_intrabar_pullback_ratio_idx": 5460,
+          "max_intrabar_pullback_ratio_pullback": 2.4650000000001455,
+          "max_intrabar_pullback_ratio_denominator": 18.659999999999854,
+          "narrow_channel_score": 99,
+          "score_components": {
+            "directional_move": 40,
+            "pullback_control": 40,
+            "path_efficiency": 10,
+            "last_close_position": 4.938046647230295,
+            "candle_combination_quality": 4.166666666666667
+          },
+          "classification": "极强下跌窄通道",
+          "human_summary": "6根K线已经形成极强下跌窄通道（依据：方向移动4.102倍ATR；当前仍保留4.051倍ATR净下跌；最大收盘回调占回调前推进距离的0.0%；最大盘中回调占13.2%；EMA20方向侧最大连续收盘3根（下方））。组合中虽然存在1根反方向K线，但没有形成较大幅度回撤。",
+          "duration_stage": "developing",
+          "hard_conditions_passed": true,
+          "current_formation_conditions_passed": true,
+          "configuration": {
+            "min_channel_bars": 3,
+            "min_consecutive_directional_ema20_closes": 2,
+            "enforce_directional_ema20_close_streak": true,
+            "strict_directional_move_atr": 2,
+            "strict_net_move_atr": 1.5,
+            "strict_max_close_pullback_atr": 0.45,
+            "strict_max_intrabar_pullback_atr": 0.65,
+            "strict_max_close_pullback_ratio": 0.25,
+            "strict_max_intrabar_pullback_ratio": 0.35,
+            "pullback_ratio_activation_move_atr": 1,
+            "end_max_close_pullback_atr": 0.6,
+            "end_max_intrabar_pullback_atr": 0.85,
+            "end_max_close_pullback_ratio": 0.35,
+            "end_max_intrabar_pullback_ratio": 0.45
+          },
+          "not_a_forecast": true
+        }
+      }
+    },
+    {
+      "signalNumber": 7,
+      "idx": 5831,
+      "time": 1786063800,
+      "beijingTime": "2026-08-07 08:50",
+      "side": "short",
+      "setup": "窄通道回调顺势",
+      "reason": "背景上，冻结证明在trend_leg_end_idx=5829时确认5827–5829为下跌严格窄通道，方向移动3.849倍起点ATR、净移动2.580倍，且EMA20下方连续收盘为5827–5829；5830收盘后通道才因违规回调结束。位置上，方向腿50%为4237.2125，连续回调5830–5831的实体最高分别为4234.87和4233.97，均守住50%，当前K接触唯一下侧单边边沿4233.458514285714–4236.101485714285并收在其有效下侧。触发为下一根下破当前低点4231.395，固定止损取完整交互序列风险侧高点4244.03。",
+      "displayReason": "背景上，冻结证明在trend_leg_end_idx=2026-08-07 08:40（北京时间）时确认2026-08-07 08:30（北京时间）–2026-08-07 08:40（北京时间）为下跌严格窄通道，方向移动3.849倍起点ATR、净移动2.580倍，且EMA20下方连续收盘为2026-08-07 08:30（北京时间）–2026-08-07 08:40（北京时间）；2026-08-07 08:45（北京时间）收盘后通道才因违规回调结束。位置上，方向腿50%为4237.2125，连续回调2026-08-07 08:45（北京时间）–2026-08-07 08:50（北京时间）的实体最高分别为4234.87和4233.97，均守住50%，当前K接触唯一下侧单边边沿4233.458514285714–4236.101485714285并收在其有效下侧。触发为下一根下破当前低点4231.395，固定止损取完整交互序列风险侧高点4244.03。",
+      "evidenceIndices": [
+        5778,
+        5793,
+        5827,
+        5828,
+        5829,
+        5830,
+        5831
+      ],
+      "referenceCandles": [
+        {
+          "internalIndex": 5778,
+          "time": 1786044300,
+          "beijingTime": "2026-08-07 03:25"
+        },
+        {
+          "internalIndex": 5793,
+          "time": 1786048800,
+          "beijingTime": "2026-08-07 04:40"
+        },
+        {
+          "internalIndex": 5827,
+          "time": 1786062600,
+          "beijingTime": "2026-08-07 08:30"
+        },
+        {
+          "internalIndex": 5828,
+          "time": 1786062900,
+          "beijingTime": "2026-08-07 08:35"
+        },
+        {
+          "internalIndex": 5829,
+          "time": 1786063200,
+          "beijingTime": "2026-08-07 08:40"
+        },
+        {
+          "internalIndex": 5830,
+          "time": 1786063500,
+          "beijingTime": "2026-08-07 08:45"
+        },
+        {
+          "internalIndex": 5831,
+          "time": 1786063800,
+          "beijingTime": "2026-08-07 08:50"
+        }
+      ],
+      "recordSha256": "fed364f59643dbb5e1f5296175d3a58388dcc041ae4be7b8b7a634503386cd84",
+      "chainSha256": "bf717051dd94b70105ba8ca5419a05f556a91b742f855797073266d9dfc48ebb",
+      "signalContext": {
+        "rule_version": "custom_v2_range_lifecycle_bound_effective_swing_sr",
+        "family": "narrow_channel_pullback",
+        "variant": "anchor_touch_pullback",
+        "signal_bar_idx": 5831,
+        "structure_indices": [
+          5778,
+          5793,
+          5827,
+          5828,
+          5829,
+          5830,
+          5831
+        ],
+        "source_indices": [
+          5778,
+          5793,
+          5828
+        ],
+        "trend_leg_start_idx": 5827,
+        "trend_leg_end_idx": 5829,
+        "trend_leg_indices": [
+          5827,
+          5828,
+          5829
+        ],
+        "pullback_start_idx": 5830,
+        "pullback_indices": [
+          5830,
+          5831
+        ],
+        "fifty_percent_price": 4237.2125,
+        "first_pullback_required": false,
+        "touch_anchors": [
+          "prior_breakout_edge_zone"
+        ],
+        "prior_breakout_edge_zone": {
+          "kind": "one_sided_edge",
+          "edge": "lower",
+          "active_edge": "lower",
+          "start_idx": 5778,
+          "end_idx": 5828,
+          "low": 4233.458514285714,
+          "high": 4236.101485714285,
+          "lower_zone_low": 4233.458514285714,
+          "lower_zone_high": 4236.101485714285,
+          "edge_zone_low": 4233.458514285714,
+          "edge_zone_high": 4236.101485714285,
+          "edge_level": 4234.78,
+          "lower_touch_indices": [
+            5778,
+            5793,
+            5828
+          ],
+          "independent_touch_indices": [
+            5778,
+            5793,
+            5828
+          ],
+          "independent_touch_times": [
+            1786044300,
+            1786048800,
+            1786062900
+          ],
+          "independent_touch_count": 3,
+          "body_accepted_outside": false,
+          "source_indices": [
+            5778,
+            5793,
+            5828
+          ],
+          "range_lifecycle_id": "range-lifecycle-41bad4847ba433424aa4"
+        },
+        "entry_trigger_price": 4231.395,
+        "initial_stop_price": 4244.03,
+        "initial_stop_reference_idx": 5827,
+        "strict_narrow_channel": {
+          "event_type": "strict_narrow_channel",
+          "event_id": "strict-narrow-channel-down-5827-5829",
+          "direction": "down",
+          "start_idx": 5827,
+          "start_time": 1786062600,
+          "start_beijing_open_time": "2026-08-07 08:30",
+          "candidate_registered_at": 1786062900,
+          "first_detected_idx": 5829,
+          "first_detected_at": 1786063500,
+          "last_updated_idx": 5829,
+          "last_updated_at": 1786063500,
+          "bars_at_first_detection": 3,
+          "first_detection_metrics": {
+            "directional_move": 13.634999999999309,
+            "directional_move_atr": 3.8486690395772065,
+            "net_move": 9.139999999999418,
+            "net_move_atr": 2.5798925575163336,
+            "max_close_pullback": 0,
+            "max_close_pullback_atr": 0,
+            "max_intrabar_pullback": 2.180000000000291,
+            "max_intrabar_pullback_atr": 0.6153354240029231,
+            "max_close_pullback_ratio": 0,
+            "max_intrabar_pullback_ratio": 0.06067677946319075,
+            "path_efficiency": 1,
+            "close_position": 0.32966629996333835,
+            "directional_bar_ratio": 1,
+            "average_overlap_ratio": 0.35932227772436687,
+            "regression_r_squared": 0.8417111880092608,
+            "average_directional_move_atr_per_bar": 1.2828896798590688
+          },
+          "ema20_streak_at_first_detection": 3,
+          "ema20_streak_indices_at_first_detection": [
+            5827,
+            5828,
+            5829
+          ],
+          "current_bars": 3,
+          "is_active": true,
+          "atr_base": 3.5427831959011926,
+          "start_price": 4244.03,
+          "directional_extreme_idx": 5829,
+          "directional_extreme_price": 4230.395,
+          "directional_move": 13.634999999999309,
+          "directional_move_atr": 3.8486690395772065,
+          "net_move": 9.139999999999418,
+          "net_move_atr": 2.5798925575163336,
+          "max_close_pullback": 0,
+          "max_close_pullback_atr": 0,
+          "max_intrabar_pullback": 2.180000000000291,
+          "max_intrabar_pullback_atr": 0.6153354240029231,
+          "max_close_pullback_ratio": 0,
+          "max_intrabar_pullback_ratio": 0.06067677946319075,
+          "path_efficiency": 1,
+          "close_position": 0.32966629996333835,
+          "directional_bar_ratio": 1,
+          "average_overlap_ratio": 0.35932227772436687,
+          "regression_r_squared": 0.8417111880092608,
+          "average_directional_move_atr_per_bar": 1.2828896798590688,
+          "doji_count": 0,
+          "opposite_bar_count": 0,
+          "max_consecutive_opposite_bars": 0,
+          "directional_ema20_close_count": 3,
+          "current_consecutive_directional_ema20_closes": 3,
+          "max_consecutive_directional_ema20_closes": 3,
+          "max_directional_ema20_close_streak_indices": [
+            5827,
+            5828,
+            5829
+          ],
+          "ratio_eligible_pullbacks": 1,
+          "max_close_pullback_ratio_idx": null,
+          "max_close_pullback_ratio_pullback": 0,
+          "max_close_pullback_ratio_denominator": null,
+          "max_intrabar_pullback_ratio_idx": 5829,
+          "max_intrabar_pullback_ratio_pullback": 0.5199999999995271,
+          "max_intrabar_pullback_ratio_denominator": 8.569999999999709,
+          "narrow_channel_score": 98,
+          "score_components": {
+            "directional_move": 40,
+            "pullback_control": 40,
+            "path_efficiency": 10,
+            "last_close_position": 3.351668500183308,
+            "candle_combination_quality": 5
+          },
+          "classification": "极强下跌窄通道",
+          "human_summary": "3根K线已经形成极强下跌窄通道（依据：方向移动3.849倍ATR；当前仍保留2.580倍ATR净下跌；最大收盘回调占回调前推进距离的0.0%；最大盘中回调占6.1%；EMA20方向侧最大连续收盘3根（下方））。",
+          "duration_stage": "early",
+          "hard_conditions_passed": true,
+          "current_formation_conditions_passed": true,
+          "configuration": {
+            "min_channel_bars": 3,
+            "min_consecutive_directional_ema20_closes": 2,
+            "enforce_directional_ema20_close_streak": true,
+            "strict_directional_move_atr": 2,
+            "strict_net_move_atr": 1.5,
+            "strict_max_close_pullback_atr": 0.45,
+            "strict_max_intrabar_pullback_atr": 0.65,
+            "strict_max_close_pullback_ratio": 0.25,
+            "strict_max_intrabar_pullback_ratio": 0.35,
+            "pullback_ratio_activation_move_atr": 1,
+            "end_max_close_pullback_atr": 0.6,
+            "end_max_intrabar_pullback_atr": 0.85,
+            "end_max_close_pullback_ratio": 0.35,
+            "end_max_intrabar_pullback_ratio": 0.45
+          },
+          "not_a_forecast": true
+        }
+      }
+    }
+  ]
+}

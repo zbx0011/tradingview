@@ -1,0 +1,47 @@
+{
+  "schema_version": "btc_5m_schemafix_launch_v1",
+  "created_at_utc": "2026-08-16T03:53:26.2684399Z",
+  "reason": "original BTCUSDT.P 5m frozen inputs omitted required top-level bar_time_semantics",
+  "data": "D:\\项目\\tradingview\\replay_data\\bybit_btcusdtp_5m_20260810_20260815_0430_tv_frozen_v3.json",
+  "data_sha256": "24ae602035ef7ff9e03238e0ccb367b3b9be98099447ec7cc0ea45960bd95e28",
+  "source_data": "D:\\项目\\tradingview\\replay_data\\bybit_btcusdtp_5m_20260810_20260815_0430_tv_frozen_v2.json",
+  "source_data_sha256": "3bf576e0ea3d70688f362f0f09b6b0492053b1464e5e0373ccf9b58ca890e756",
+  "bars_unchanged": true,
+  "bar_time_semantics": "5m open time; native TradingView bars; no gap filling",
+  "start_idx": 300,
+  "end_idx_exclusive": 1794,
+  "bar_count": 1494,
+  "model": "gpt-5.6-luna",
+  "reasoning_effort": "max",
+  "service_tier": "default",
+  "jobs": [
+    {
+      "key": "btcusdtp_20260810-15_5m_v4_luna-max-normal_20260816_retry3",
+      "version": "v4",
+      "rule": "louie_course_target",
+      "pid": 51120,
+      "started_at_utc": "2026-08-16T03:53:26.2554360Z",
+      "work": "C:\\Users\\diffzhou\\AppData\\Local\\Temp\\codex-21-btcusdtp_20260810-15-5m-luna-max-normal-20260816_v4_retry3",
+      "output": "C:\\Users\\diffzhou\\Documents\\tradingview-checkpoint-20260809\\outputs\\btcusdtp_replay_20260810-15-0430_5m_v4_luna-max-normal_20260816_21_retry3",
+      "archive_root": "C:\\Users\\diffzhou\\Documents\\tradingview-checkpoint-20260809\\replay_archives\\btcusdtp_replay_20260810-15-0430_5m_v4_luna-max-normal_20260816_21_retry3"
+    },
+    {
+      "key": "btcusdtp_20260810-15_5m_v5_luna-max-normal_20260816_retry3",
+      "version": "v5",
+      "rule": "louie_course_target_cases",
+      "pid": 39584,
+      "started_at_utc": "2026-08-16T03:53:26.2684399Z",
+      "work": "C:\\Users\\diffzhou\\AppData\\Local\\Temp\\codex-21-btcusdtp_20260810-15-5m-luna-max-normal-20260816_v5_retry3",
+      "output": "C:\\Users\\diffzhou\\Documents\\tradingview-checkpoint-20260809\\outputs\\btcusdtp_replay_20260810-15-0430_5m_v5_luna-max-normal_20260816_21_retry3",
+      "archive_root": "C:\\Users\\diffzhou\\Documents\\tradingview-checkpoint-20260809\\replay_archives\\btcusdtp_replay_20260810-15-0430_5m_v5_luna-max-normal_20260816_21_retry3"
+    }
+  ],
+  "superseded_attempts": [
+    "initial_v4",
+    "initial_v5",
+    "retry1_v4",
+    "retry1_v5",
+    "retry2_v4",
+    "retry2_v5"
+  ]
+}

@@ -1,0 +1,4977 @@
+{
+  "schemaVersion": 4,
+  "symbol": "XAUUSD",
+  "interval": "5m",
+  "timeframeSeconds": 300,
+  "layer": {
+    "sourceId": "xauusd-5m-conservative-stop-first-7ac796132eaa1a3d",
+    "name": "XAUUSD 5m V5（快速）2026-07-27～2026-08-01 胜率44.72% 净盈亏+$1,135.31"
+  },
+  "provenance": {
+    "backtestFile": "backtest.json",
+    "backtestSha256": "07f2ecbf5d3d977e47951a4fc37cdfaed2c178fdb28e508cd92817dd3452ab2a",
+    "enrichedSignalsFile": "signals_with_trade_plans.json",
+    "enrichedSignalsSha256": "3e6f2b03452987049555badcc11c90ae3205fcfe6e628008a1707879178025ca",
+    "scenario": "conservative_stop_first",
+    "generatedBy": "scripts/import-replay-layer.mjs"
+  },
+  "summary": {
+    "trades": 123,
+    "long": 55,
+    "short": 68,
+    "entryMarkers": 123,
+    "exitMarkers": 123,
+    "uniqueTimes": 236,
+    "sameBarOpenClose": 10,
+    "exitReasonCounts": {
+      "INITIAL_STOP_LOSS": 26,
+      "INITIAL_STOP_LOSS_GAP": 0,
+      "TRAILING_STOP": 31,
+      "TRAILING_STOP_GAP": 0,
+      "OPPOSITE_SIGNAL_CLOSE": 66,
+      "END_OF_DATA_MARK_TO_MARKET": 0,
+      "COURSE_TARGET": 0,
+      "COURSE_TARGET_GAP": 0
+    }
+  },
+  "trades": [
+    {
+      "tradeNumber": 1,
+      "side": "long",
+      "entry": {
+        "signalIdx": 306,
+        "signalTime": 1785105000,
+        "time": 1785105300,
+        "beijingTime": "2026-07-27 06:35",
+        "price": 4092.185,
+        "setup": "缺口突破延续",
+        "reason": "大幅向上缺口脱离前序4052至4056结构后，回落浅且没有重新回到旧区间，背景仍由多头控制。当前位置是缺口后的高位整理上沿，本K以大实体、近高位收盘突破4091.89，缺口接受和向上跟随同时增强。当前形成多头信号K，严格入场只等待紧邻下一根突破本K高点，若不能突破则信号过期。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4085.425,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 309,
+        "time": 1785105900,
+        "beijingTime": "2026-07-27 06:50",
+        "price": 4090.15,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4085.425,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 309,
+        "signalTime": 1785105900,
+        "setup": "高位三推楔形反转",
+        "reason": "缺口上冲在306突破后于4093附近反复推进，后续高点继续抬高但收盘跟随变差，背景出现高位窄幅衰减。当前位置在新高边缘，本K再次扫过前高后收近低，拒绝和接受转弱，形成高位反转信号K；它不是仅凭缺口本身反向。严格入场只等待紧邻下一根low严格低于4089.76，若不触发则信号永久过期。"
+      },
+      "result": {
+        "barsHeld": 3,
+        "rMultiple": -0.3010355,
+        "pnlUsd": -30.10355
+      }
+    },
+    {
+      "tradeNumber": 2,
+      "side": "short",
+      "entry": {
+        "signalIdx": 311,
+        "signalTime": 1785106500,
+        "time": 1785106800,
+        "beijingTime": "2026-07-27 07:00",
+        "price": 4088.955,
+        "setup": "高位二次反转",
+        "reason": "缺口突破后的高位反复测试仍未形成干净的上行跟随，309的下行尝试未触发后，310反弹也未创新高，背景转为高位双向竞争。当前位置仍在4093.84附近的压力边缘，本K以较大实体收近低并下破前一根低点，形成新的空头信号K。严格入场只等待紧邻下一根low严格低于4088.955，未触发即过期，不能回填上一根迟到跟随。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4093.84,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 318,
+        "time": 1785108600,
+        "beijingTime": "2026-07-27 07:35",
+        "price": 4086.625,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4088.685,
+        "trailingActivated": true,
+        "trailingActivationIdx": 316,
+        "signalIdx": 318,
+        "signalTime": 1785108600,
+        "setup": "前低失败下破反转",
+        "reason": "高位空头腿回落到4084.03前低附近，316下扫后没有持续接受，市场背景由单向回落转为支撑边缘的失败下破。当前位置有前低与EMA20辅助支撑，本K以实体收近高并突破317高点，买方跟随首次清晰。当前形成多头信号K，严格入场只等待紧邻下一根high严格大于4086.785，未触发即永久过期。"
+      },
+      "result": {
+        "barsHeld": 7,
+        "rMultiple": 0.47697032,
+        "pnlUsd": 47.697032
+      }
+    },
+    {
+      "tradeNumber": 3,
+      "side": "long",
+      "entry": {
+        "signalIdx": 321,
+        "signalTime": 1785109500,
+        "time": 1785109800,
+        "beijingTime": "2026-07-27 07:50",
+        "price": 4094.76,
+        "setup": "支撑反转后的突破延续",
+        "reason": "318支撑反转后，319严格触发、320继续跟随，市场已从前低失败下破切换为短线多头推进。当前位置突破高位整理上沿和4093.84前高，本K大实体收在高点附近，接受与跟随明确。当前形成新的多头突破信号K；严格入场只等待紧邻下一根high严格大于4094.76，同向持仓中的执行状态不加仓。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4083.8,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 327,
+        "time": 1785111300,
+        "beijingTime": "2026-07-27 08:20",
+        "price": 4107.22,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4105.225,
+        "trailingActivated": true,
+        "trailingActivationIdx": 325,
+        "signalIdx": 327,
+        "signalTime": 1785111300,
+        "setup": "高潮后空头反转",
+        "reason": "前面324至326连续大实体扩张，把市场推入远离EMA20的高潮高位，当前背景从强趋势延续转向末端衰减。位置在4116.19新高边缘，本K开于高点、实体大并收近低，快速否定上一根推进，形成明确的次级反转信号K。严格入场只等待紧邻下一根low严格低于4106.67；若不触发信号永久过期，反向正式信号按规则处理现有多头而不自动反手。"
+      },
+      "result": {
+        "barsHeld": 6,
+        "rMultiple": 1.13686131,
+        "pnlUsd": 113.686131
+      }
+    },
+    {
+      "tradeNumber": 4,
+      "side": "long",
+      "entry": {
+        "signalIdx": 330,
+        "signalTime": 1785112200,
+        "time": 1785112500,
+        "beijingTime": "2026-07-27 08:35",
+        "price": 4099.965,
+        "setup": "突破回测多头信号K",
+        "reason": "前段价格从整理区向上突破并连续跟随，当前仍处于多头突破背景。位置上回测至突破边沿和EMA20附近，329根虽为强阴线但330根下探后收于高位，显示买方重新接受，后续跟随仍需下一根验证。当前触发是330根高点上方的严格多头突破，故提交SIGNAL。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4090.64,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 335,
+        "time": 1785113700,
+        "beijingTime": "2026-07-27 09:00",
+        "price": 4100.045,
+        "reasonCode": "TRAILING_STOP",
+        "ambiguous": false,
+        "finalActiveStop": 4100.045,
+        "trailingActivated": true,
+        "trailingActivationIdx": 334
+      },
+      "result": {
+        "barsHeld": 5,
+        "rMultiple": 0.00857909,
+        "pnlUsd": 0.857909
+      }
+    },
+    {
+      "tradeNumber": 5,
+      "side": "long",
+      "entry": {
+        "signalIdx": 336,
+        "signalTime": 1785114000,
+        "time": 1785114300,
+        "beijingTime": "2026-07-27 09:05",
+        "price": 4111.945,
+        "setup": "EMA20回踩后的多头延续信号K",
+        "reason": "背景上，321-326的强上破后短线回调仍被多头重新接管，335回落未能收回突破结构。位置上，336从回测低点反弹并越过334高点，收盘仍在EMA20上方，但已接近前高压力。接受与跟随重新增强，当前形成多头信号K；只有紧邻下一根严格突破4111.945才触发。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4099.075,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 341,
+        "time": 1785115500,
+        "beijingTime": "2026-07-27 09:30",
+        "price": 4099.075,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": false,
+        "finalActiveStop": 4099.075,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 5,
+        "rMultiple": -1,
+        "pnlUsd": -100
+      }
+    },
+    {
+      "tradeNumber": 6,
+      "side": "long",
+      "entry": {
+        "signalIdx": 343,
+        "signalTime": 1785116100,
+        "time": 1785116400,
+        "beijingTime": "2026-07-27 09:40",
+        "price": 4104.125,
+        "setup": "EMA20回踩支撑处的多头反转信号K",
+        "reason": "背景上，336后的回调在341-342于EMA20和短线支撑带附近减弱，当前多头仍有回收机会。位置上，343下探4098.02后收回EMA20并接近高点，且略越过342高点，拒绝证据优于前两根。当前形成多头信号K，紧邻下一根只有严格突破4104.125才触发；若已有同向持仓则按规则忽略，不加仓。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4097.13,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 348,
+        "time": 1785117600,
+        "beijingTime": "2026-07-27 10:05",
+        "price": 4105.52,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4097.13,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 348,
+        "signalTime": 1785117600,
+        "setup": "高位失败突破后的空头反转信号K",
+        "reason": "背景上，336-347多次上推仍未有效越过4112.48/4116.185，当前高位延续出现衰减并转入失败突破观察。位置上，348在前高压力下以较大空头实体收近低点，且收盘跌破347低点，拒绝与反向跟随首次明确。当前形成空头信号K，紧邻下一根只有严格跌破4105.28才触发；该反向正式信号按规则在本根收盘平掉既有多头且不自动反手。"
+      },
+      "result": {
+        "barsHeld": 5,
+        "rMultiple": 0.19942816,
+        "pnlUsd": 19.942816
+      }
+    },
+    {
+      "tradeNumber": 7,
+      "side": "short",
+      "entry": {
+        "signalIdx": 354,
+        "signalTime": 1785119400,
+        "time": 1785119700,
+        "beijingTime": "2026-07-27 10:35",
+        "price": 4099.355,
+        "setup": "紧密交易区间向下真突破信号K",
+        "reason": "背景上，348失败突破后349-353形成紧密交易区间，当前市场从重叠压缩向下选择方向。位置上，354以较大空头实体跌破352低点4102.065和区间下沿，并收近低点，初始收盘接受证据明确。当前是震荡真突破的空头信号K，紧邻下一根只有严格跌破4099.355才触发；已有同向空头时只记录并忽略，不加仓。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4105.77,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 372,
+        "time": 1785124800,
+        "beijingTime": "2026-07-27 12:05",
+        "price": 4091.645,
+        "reasonCode": "TRAILING_STOP",
+        "ambiguous": false,
+        "finalActiveStop": 4091.645,
+        "trailingActivated": true,
+        "trailingActivationIdx": 360
+      },
+      "result": {
+        "barsHeld": 18,
+        "rMultiple": 1.20187062,
+        "pnlUsd": 120.187062
+      }
+    },
+    {
+      "tradeNumber": 8,
+      "side": "long",
+      "entry": {
+        "signalIdx": 385,
+        "signalTime": 1785128700,
+        "time": 1785129000,
+        "beijingTime": "2026-07-27 13:10",
+        "price": 4094.535,
+        "setup": "震荡区间真突破多头信号K线",
+        "reason": "背景是365向下突破后被快速回收，价格在低位形成整理并反复压缩。当前位置位于整理上沿，385以较大实体收盘突破372与379确认高点并站上EMA20，说明多头首次获得接受。触发为385收盘形成震荡真突破信号K线，成功边界是下一根严格突破385高点并继续离开区间，若迅速收回区间则按失败突破处理。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4088.665,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 387,
+        "time": 1785129300,
+        "beijingTime": "2026-07-27 13:20",
+        "price": 4092.07,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4088.665,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 387,
+        "signalTime": 1785129300,
+        "setup": "震荡上破失败空头信号K线",
+        "reason": "背景是385向上突破后的短暂跟随，但市场尚未建立足够的区间外接受。当前位置在整理上沿和新高处，387以大实体近低收盘重新跌回372高点下方，显示突破跟随失败。触发为387收盘形成失败突破空头信号K线，成功边界是下一根严格跌破387低点并继续被旧区间吸收，若重新站回386高点则失败。"
+      },
+      "result": {
+        "barsHeld": 2,
+        "rMultiple": -0.41993186,
+        "pnlUsd": -41.993186
+      }
+    },
+    {
+      "tradeNumber": 9,
+      "side": "long",
+      "entry": {
+        "signalIdx": 395,
+        "signalTime": 1785131700,
+        "time": 1785132000,
+        "beijingTime": "2026-07-27 14:00",
+        "price": 4093.84,
+        "setup": "低位多头反转信号K",
+        "reason": "多头突破失败后的下探在393附近止跌，价格从低位支撑反弹，背景由空头回归转入可能的区间反转。395以较大实体收盘站上EMA20并越过390局部高点，形成当前可见的多头接受，但上方386高点仍是压力，尚无更高层级跟随。以当前K高点为计划入场价，只有紧邻下一根严格上破才成交；若未突破则信号过期。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4084.49,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 399,
+        "time": 1785132900,
+        "beijingTime": "2026-07-27 14:20",
+        "price": 4093.06,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4084.49,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 399,
+        "signalTime": 1785132900,
+        "setup": "前高假突破空头信号K",
+        "reason": "多头反弹已进入386前高上方的压力区，398扫高后没有在高位站稳，背景从延续转为突破失败候选。399以带上影的空头实体收盘跌回398低点下方，形成当前可见的回收与初步空头接受。以当前K低点为计划入场价，只有紧邻下一根严格下破才成交；若重新接受前高上方则失败。"
+      },
+      "result": {
+        "barsHeld": 4,
+        "rMultiple": -0.08342246,
+        "pnlUsd": -8.342246
+      }
+    },
+    {
+      "tradeNumber": 10,
+      "side": "long",
+      "entry": {
+        "signalIdx": 403,
+        "signalTime": 1785134100,
+        "time": 1785134400,
+        "beijingTime": "2026-07-27 14:40",
+        "price": 4098.54,
+        "setup": "上行整理后多头突破信号K线",
+        "reason": "背景是393低点反转后形成的上行推进，397至402在高位整理并保持EMA20上方。当前位置突破398确认高点，403以较大实体近高收盘并离开整理上沿，显示多头接受。触发为403收盘形成多头突破信号K线，成功边界是下一根严格突破403高点并继续跟随，若迅速收回398上方边界则失败。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4091.36,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 415,
+        "time": 1785137700,
+        "beijingTime": "2026-07-27 15:40",
+        "price": 4099.06,
+        "reasonCode": "TRAILING_STOP",
+        "ambiguous": false,
+        "finalActiveStop": 4099.06,
+        "trailingActivated": true,
+        "trailingActivationIdx": 412
+      },
+      "result": {
+        "barsHeld": 12,
+        "rMultiple": 0.0724234,
+        "pnlUsd": 7.24234
+      }
+    },
+    {
+      "tradeNumber": 11,
+      "side": "short",
+      "entry": {
+        "signalIdx": 415,
+        "signalTime": 1785137700,
+        "time": 1785138000,
+        "beijingTime": "2026-07-27 15:40",
+        "price": 4098.82,
+        "setup": "失败突破反转空头信号K",
+        "reason": "前段自4084.49低点反弹并形成偏多上行通道，但413扫高后跟随减弱，市场进入突破接受度验证。当前位置在4100.905突破边沿，415以较大实体收于4099.47并跌回旧结构，低点同时跌破414低点，失败突破已有客观回归证据。当前收盘形成空头信号K，计划价为4098.82，严格只观察紧邻下一根的低点下破，未触发不得追入。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4106.24,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 427,
+        "time": 1785141300,
+        "beijingTime": "2026-07-27 16:40",
+        "price": 4090.57,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4094.66,
+        "trailingActivated": true,
+        "trailingActivationIdx": 419,
+        "signalIdx": 427,
+        "signalTime": 1785141300,
+        "setup": "支撑边缘失败下破后的多头反转信号K",
+        "reason": "前段空头从4106.24回落至区间下沿，EMA20仍在上方，背景偏空但市场已进入4084.49附近的支撑反应区。当前位置在下沿边缘，426向下推进未能扩展后，427从4087.435开在低点并以较大实体收至4090.57，形成有位置支持的次要反转信号K。计划价为4090.95，严格只观察紧邻下一根的高点上破；反向正式信号按收盘价平掉既有空头，不自动反手。"
+      },
+      "result": {
+        "barsHeld": 12,
+        "rMultiple": 1.11185984,
+        "pnlUsd": 111.185984
+      }
+    },
+    {
+      "tradeNumber": 12,
+      "side": "short",
+      "entry": {
+        "signalIdx": 433,
+        "signalTime": 1785143100,
+        "time": 1785143400,
+        "beijingTime": "2026-07-27 17:10",
+        "price": 4094.63,
+        "setup": "压力边缘失败突破反转空头信号K",
+        "reason": "多头从4087附近支撑反转后在4095.21—4096.985压力前沿推进，但上破未获得接受。433扫高至4098.485后以较大空头实体收于4094.775并跌回4095.21下方，形成位置明确的失败突破反转空头信号K。计划价为4094.63，严格只观察紧邻下一根的低点下破；反向正式信号按当前收盘平掉既有多头，不自动反手。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4096.985,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 438,
+        "time": 1785144600,
+        "beijingTime": "2026-07-27 17:35",
+        "price": 4093.615,
+        "reasonCode": "TRAILING_STOP",
+        "ambiguous": false,
+        "finalActiveStop": 4093.615,
+        "trailingActivated": true,
+        "trailingActivationIdx": 437
+      },
+      "result": {
+        "barsHeld": 5,
+        "rMultiple": 0.43099788,
+        "pnlUsd": 43.099788
+      }
+    },
+    {
+      "tradeNumber": 13,
+      "side": "long",
+      "entry": {
+        "signalIdx": 441,
+        "signalTime": 1785145500,
+        "time": 1785145800,
+        "beijingTime": "2026-07-27 17:50",
+        "price": 4098.09,
+        "setup": "空头下破失败后的压力回收多头信号K",
+        "reason": "437空头信号后，价格在4091—4095区间回测但未能扩展下行；441从4094.275强力上推，收于4097.375并站回4095.21，说明空头下破接受失败、多头重新夺回局部压力。当前收盘形成多头回收信号K，计划价为4098.09，严格只观察紧邻下一根的高点上破；反向正式信号按当前收盘平掉既有空头，不自动反手。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4090.575,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 446,
+        "time": 1785147000,
+        "beijingTime": "2026-07-27 18:15",
+        "price": 4090.575,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": false,
+        "finalActiveStop": 4090.575,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 5,
+        "rMultiple": -1,
+        "pnlUsd": -100
+      }
+    },
+    {
+      "tradeNumber": 14,
+      "side": "short",
+      "entry": {
+        "signalIdx": 455,
+        "signalTime": 1785149700,
+        "time": 1785150000,
+        "beijingTime": "2026-07-27 19:00",
+        "price": 4098.94,
+        "setup": "区间上沿假突破反转",
+        "reason": "背景仍是交易区间，向上突破后idx454与idx455未能保持在原上沿之上。位置在idx443高点4100.38附近，当前K线从上方冲高后收回区间，失败突破位置明确。接受与跟随转弱，空头实体收于4100.38下方，说明市场重新接受旧区间。当前形成假突破反转的空头信号K，严格入场只看紧邻下一根low<4098.94。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4102.45,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 457,
+        "time": 1785150300,
+        "beijingTime": "2026-07-27 19:10",
+        "price": 4102.45,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": false,
+        "finalActiveStop": 4102.45,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 2,
+        "rMultiple": -1,
+        "pnlUsd": -100
+      }
+    },
+    {
+      "tradeNumber": 15,
+      "side": "long",
+      "entry": {
+        "signalIdx": 457,
+        "signalTime": 1785150300,
+        "time": 1785150600,
+        "beijingTime": "2026-07-27 19:10",
+        "price": 4103.345,
+        "setup": "失败突破后的二次向上真突破",
+        "reason": "背景上，前一轮向上突破先失败，idx456下探后当前重新发起第二次上攻。位置重新来到并越过idx453高点4102.45，属于区间上沿的二次突破而非中部波动。当前大实体多头收在4102.80并明显离开旧高，接受与跟随证据增强。故当前为V2震荡真突破的初始多头信号K，严格入场只看紧邻下一根high>4103.345，任何反向持仓按close_only处理。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4097.08,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 460,
+        "time": 1785151200,
+        "beijingTime": "2026-07-27 19:25",
+        "price": 4099.885,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4097.08,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 460,
+        "signalTime": 1785151200,
+        "setup": "二次突破失败后的空头反转",
+        "reason": "背景上，idx457的第二次上破在idx458至idx460连续回落中失去跟随，价格重新回到原区间。位置正处于idx443上沿4100.38的失败边界，当前收盘已落回其下方并接近本根低点。虽然信号实体不大，但背景、位置和连续失败共同提供了接受转弱证据。当前形成失败突破反转空头信号K，严格入场只看紧邻下一根low<4099.82；已有多头按close_only在本根收盘处理。"
+      },
+      "result": {
+        "barsHeld": 3,
+        "rMultiple": -0.55227454,
+        "pnlUsd": -55.227454
+      }
+    },
+    {
+      "tradeNumber": 16,
+      "side": "short",
+      "entry": {
+        "signalIdx": 471,
+        "signalTime": 1785154500,
+        "time": 1785154800,
+        "beijingTime": "2026-07-27 20:20",
+        "price": 4082.46,
+        "setup": "震荡区间向下真突破",
+        "reason": "背景上，idx470先扫过区间下沿后未能反弹，当前K线形成第二次向下推进。位置在idx446低点4086.62的主要区间下沿，当前收盘4084.51已经明确落在其下方并离开原结构。大实体空头收盘和前一根失败扫荡后的跟随，构成向下接受。当前为V2震荡真突破的初始空头信号K，严格入场只看紧邻下一根low<4082.46；同向已有空头持仓不加仓或重算。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4097.845,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 473,
+        "time": 1785155100,
+        "beijingTime": "2026-07-27 20:30",
+        "price": 4086.795,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4097.845,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 473,
+        "signalTime": 1785155100,
+        "setup": "区间下破失败后的多头反转",
+        "reason": "背景上，idx471至idx472的下破得到短暂跟随后，当前K线从新低处强势收复。位置在idx446低点4086.62的主要区间下沿，当前收盘4086.80已经回到该边界上方。大实体多头重新进入旧区间，说明向下突破的接受被破坏并出现反向跟随。当前形成失败下破反转的多头信号K，严格入场只看紧邻下一根high>4088.905；已有空头按close_only在本根收盘处理。"
+      },
+      "result": {
+        "barsHeld": 2,
+        "rMultiple": -0.28176796,
+        "pnlUsd": -28.176796
+      }
+    },
+    {
+      "tradeNumber": 17,
+      "side": "short",
+      "entry": {
+        "signalIdx": 477,
+        "signalTime": 1785156300,
+        "time": 1785156600,
+        "beijingTime": "2026-07-27 20:50",
+        "price": 4082.555,
+        "setup": "向下突破回测失败后的延续",
+        "reason": "背景上，idx471向下突破后，idx473至idx476的回收未能站稳旧下沿，当前重新恢复下压。位置在4086.62旧下沿下方的回测失败处，当前K线从4089.18回落并收于4082.76。多头回测缺乏跟随，空头实体重新显示接受与延续。当前形成下破回测延续的空头信号K，严格入场只看紧邻下一根low<4082.555。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4088.905,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 487,
+        "time": 1785159300,
+        "beijingTime": "2026-07-27 21:40",
+        "price": 4082.045,
+        "reasonCode": "TRAILING_STOP",
+        "ambiguous": false,
+        "finalActiveStop": 4082.045,
+        "trailingActivated": true,
+        "trailingActivationIdx": 485
+      },
+      "result": {
+        "barsHeld": 10,
+        "rMultiple": 0.08031496,
+        "pnlUsd": 8.031496
+      }
+    },
+    {
+      "tradeNumber": 18,
+      "side": "long",
+      "entry": {
+        "signalIdx": 488,
+        "signalTime": 1785159600,
+        "time": 1785159900,
+        "beijingTime": "2026-07-27 21:45",
+        "price": 4089.36,
+        "setup": "下破失败确认后的多头反转",
+        "reason": "背景上，idx485至idx486的强下破后，idx487先出现多头反击，当前继续向上完成边界回收。位置在4086.62旧下沿，当前收盘4086.91重新站上该位并越过EMA20，已经从下破外侧回到区间边缘。前一根反击得到当前K线的接受与跟随，失败下破边界明确。当前形成正式多头反转信号K，严格入场只看紧邻下一根high>4089.36；已有空头按close_only在本根收盘处理。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4075.695,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 490,
+        "time": 1785160200,
+        "beijingTime": "2026-07-27 21:55",
+        "price": 4083.955,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4075.695,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 490,
+        "signalTime": 1785160200,
+        "setup": "反转回测失败后的空头反转",
+        "reason": "背景上，idx487至idx489的多头反击回到旧下沿和EMA20附近后，当前K线立即失去跟随。位置位于4086.62旧下沿上方的回测阻力与前高4089.59附近，当前冲高后以大实体收回边界下方。接受与跟随转空明确，说明下破后的反转尝试失败。当前形成空头反转信号K，严格入场只看紧邻下一根low<4083.83；已有多头按close_only在本根收盘处理。"
+      },
+      "result": {
+        "barsHeld": 2,
+        "rMultiple": -0.39553604,
+        "pnlUsd": -39.553604
+      }
+    },
+    {
+      "tradeNumber": 19,
+      "side": "long",
+      "entry": {
+        "signalIdx": 506,
+        "signalTime": 1785165000,
+        "time": 1785165300,
+        "beijingTime": "2026-07-27 23:15",
+        "price": 4076.655,
+        "setup": "低位二次测试后的多头反转",
+        "reason": "背景上，空头下行在500扫低后经历两次反弹，504—505回测低位却没有向下接受，506重新收回EMA20，反向压力出现第二次明确尝试。位置上，506在500低点与494低点附近再次测试后反包收高，靠近低位支撑而非区间中部。506实体完整、收盘接近高点并越过505高点，形成当前多头信号K；只等待紧邻下一根对506高点的严格突破。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4065.415,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 526,
+        "time": 1785171000,
+        "beijingTime": "2026-07-28 00:55",
+        "price": 4082.865,
+        "reasonCode": "TRAILING_STOP",
+        "ambiguous": false,
+        "finalActiveStop": 4082.865,
+        "trailingActivated": true,
+        "trailingActivationIdx": 521
+      },
+      "result": {
+        "barsHeld": 20,
+        "rMultiple": 0.5524911,
+        "pnlUsd": 55.24911
+      }
+    },
+    {
+      "tradeNumber": 20,
+      "side": "short",
+      "entry": {
+        "signalIdx": 528,
+        "signalTime": 1785171600,
+        "time": 1785171900,
+        "beijingTime": "2026-07-28 01:05",
+        "price": 4075.405,
+        "setup": "突破失败后的空头反转",
+        "reason": "背景上，521突破后的回测在528以大实体反向下压，原多头突破接受被破坏，价格重新跌回EMA20下方。位置上，528同时跌破514旧上沿4080.05和519回测低点4079.84，且收盘接近低点，形成突破失败后的空头压力与跟随。当前K已触及既有多头初始止损4079.84（目标4092.02未触及），并以强空头收盘形成新的空头信号K。仅观察紧邻下一根对528低点的严格下破，迟到跟随不回填本根。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4094.105,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 553,
+        "time": 1785179100,
+        "beijingTime": "2026-07-28 03:10",
+        "price": 4079.89,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4094.105,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 553,
+        "signalTime": 1785179100,
+        "setup": "震荡真突破多头",
+        "reason": "背景是548大幅双向冲击后形成的局部宽幅整理，价格重新站上EMA20并在上沿反复测试。553位于前高压力边缘，以较大多头实体收盘越过548和551局部高点，当前收盘接受与跟随证据足以把它定义为震荡真突破的初始信号K。计划价为553高点，只有紧邻下一根high严格高于该价才成交，确认K和后续回调不能回填本根。"
+      },
+      "result": {
+        "barsHeld": 25,
+        "rMultiple": -0.23983957,
+        "pnlUsd": -23.983957
+      }
+    },
+    {
+      "tradeNumber": 21,
+      "side": "long",
+      "entry": {
+        "signalIdx": 561,
+        "signalTime": 1785181500,
+        "time": 1785181800,
+        "beijingTime": "2026-07-28 03:50",
+        "price": 4089.38,
+        "setup": "突破延续多头",
+        "reason": "背景是553突破后的强势多头通道，价格在556高点下方整理后重新推进，EMA20持续下方支持短线控制权。当前位置在556高点4088.815这一新结构边缘，561以较大实体收盘越过该高点并接近最高，形成新的突破接受信号。计划价为561高点4089.38，只有紧邻下一根high严格高于计划价才成交，后续确认不得回填本根。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4083.47,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 563,
+        "time": 1785182100,
+        "beijingTime": "2026-07-28 04:00",
+        "price": 4083.47,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": false,
+        "finalActiveStop": 4083.47,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 2,
+        "rMultiple": -1,
+        "pnlUsd": -100
+      }
+    },
+    {
+      "tradeNumber": 22,
+      "side": "short",
+      "entry": {
+        "signalIdx": 563,
+        "signalTime": 1785182100,
+        "time": 1785182400,
+        "beijingTime": "2026-07-28 04:00",
+        "price": 4082.505,
+        "setup": "失败突破反转空头",
+        "reason": "背景是553后强势上行，但561突破556高点后，562扫高未被接受，市场进入高位突破失败的反向验证。当前位置位于556/561高点后的压力边缘，563开盘即高并以大实体收近低点，且向下破坏557低点，空头跟随已形成。563为失败突破反转空头信号K，计划价为563低点4082.505，只有紧邻下一根low严格低于计划价才触发；若有多头持仓则仅按反向收盘平仓，不自动反手。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4089.485,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 576,
+        "time": 1785189600,
+        "beijingTime": "2026-07-28 06:05",
+        "price": 4080.98,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4082.305,
+        "trailingActivated": true,
+        "trailingActivationIdx": 574,
+        "signalIdx": 576,
+        "signalTime": 1785189600,
+        "setup": "震荡真突破",
+        "reason": "前段空头推进在571/574附近支撑处反复失败，575形成窄幅底部整理；当前上跳缺口离开整理区，背景出现由空头回吐向反向突破转换的证据。当前位置已越过575局部高点并站回EMA20，虽仍接近569前高压力，但当前K收在高点形成初始接受。按V2口径，576可作为震荡真突破的初始多头信号，入场仍只等待紧邻下一根严格突破本根高点。"
+      },
+      "result": {
+        "barsHeld": 13,
+        "rMultiple": 0.21848138,
+        "pnlUsd": 21.848138
+      }
+    },
+    {
+      "tradeNumber": 23,
+      "side": "short",
+      "entry": {
+        "signalIdx": 577,
+        "signalTime": 1785189900,
+        "time": 1785190200,
+        "beijingTime": "2026-07-28 06:10",
+        "price": 4078.885,
+        "setup": "失败突破",
+        "reason": "576的上跳缺口刚离开支撑整理，当前在已确认高点569附近上破后立即出现大阴线回收，说明上方压力对多头接受形成否定。577收盘跌回EMA20下方，虽尚未完全回到575整理内部，但当前K本身已形成位置明确、收盘靠低点的空头失败突破信号。该反向正式SIGNAL按规则只在本根收盘平掉先前多头，不自动反手，空头计划仍等待紧邻下一根严格跌破信号K低点。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4081.36,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 582,
+        "time": 1785191400,
+        "beijingTime": "2026-07-28 06:35",
+        "price": 4073.635,
+        "reasonCode": "TRAILING_STOP",
+        "ambiguous": false,
+        "finalActiveStop": 4073.635,
+        "trailingActivated": true,
+        "trailingActivationIdx": 579
+      },
+      "result": {
+        "barsHeld": 5,
+        "rMultiple": 2.12121212,
+        "pnlUsd": 212.121212
+      }
+    },
+    {
+      "tradeNumber": 24,
+      "side": "long",
+      "entry": {
+        "signalIdx": 599,
+        "signalTime": 1785196500,
+        "time": 1785196800,
+        "beijingTime": "2026-07-28 08:00",
+        "price": 4073.455,
+        "setup": "区间下破失败反转",
+        "reason": "前段下行后在4072.20—4075.14形成区间，597向下扫出后未获延续，背景由单向下压转为区间边缘的反转尝试。当前位于下沿扫荡后的回收位置，598、599连续收回区间，599以近高位收盘并得到多头跟随，但仍未越过上沿，EMA20只作辅助。599形成失败突破反转信号K；只等待紧邻下一根严格突破4073.455触发，不以当前收盘进场。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4070.035,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 600,
+        "time": 1785196800,
+        "beijingTime": "2026-07-28 08:05",
+        "price": 4070.035,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": true,
+        "finalActiveStop": 4070.035,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 1,
+        "rMultiple": -1,
+        "pnlUsd": -100
+      }
+    },
+    {
+      "tradeNumber": 25,
+      "side": "short",
+      "entry": {
+        "signalIdx": 600,
+        "signalTime": 1785196800,
+        "time": 1785197100,
+        "beijingTime": "2026-07-28 08:05",
+        "price": 4065.415,
+        "setup": "震荡区间向下真突破",
+        "reason": "597—599先形成向下扫荡后的多头回收，但反转没有站稳，价格仍处于更大下行背景的结构边缘。600从4073.36急跌至4065.51，实体大、收盘接近低点，并有效跌破597低点4070.035及近端支撑，显示失败反弹后的空头重新接受；当前位置接近近100根低点，需警惕高潮但不据此否定信号。当前形成新的震荡下破空头信号K，只等待紧邻下一根严格跌破4065.415触发，不能在收盘追入。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4073.755,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 601,
+        "time": 1785197100,
+        "beijingTime": "2026-07-28 08:10",
+        "price": 4066.93,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4073.755,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 601,
+        "signalTime": 1785197100,
+        "setup": "低位扫荡反转",
+        "reason": "600的强空头突破把市场推入更大下行背景，601则在新低附近出现长下影并收近高点，形成第一次反向反应；这仍先按次要反转而非趋势反转看待。当前位置是近端结构低点外的扫荡位，601的低点4062.11未被收盘接受，且收盘回到4066.93，显示空头突破出现拒绝，但尚未越过上方结构。601形成低位扫荡反转信号K，只有紧邻下一根严格突破4067.26才触发，失败则反转假设失效。"
+      },
+      "result": {
+        "barsHeld": 1,
+        "rMultiple": -0.18165468,
+        "pnlUsd": -18.165468
+      }
+    },
+    {
+      "tradeNumber": 26,
+      "side": "short",
+      "entry": {
+        "signalIdx": 604,
+        "signalTime": 1785198000,
+        "time": 1785198300,
+        "beijingTime": "2026-07-28 08:25",
+        "price": 4060.36,
+        "setup": "低位回测失败后的向下突破",
+        "reason": "601的低位反转在602—603仅形成弱反弹，未越过602高点，空方重新压回。604位于低位回测失败后的下沿，实体较大且收盘接近低点，跌破601低点4062.11并建立新的空方接受；虽处于近100根低点附近，但这只影响背景解释。604形成新的空头突破信号K，只等待紧邻下一根严格跌破4060.36触发，不追收盘。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4067.85,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 606,
+        "time": 1785198600,
+        "beijingTime": "2026-07-28 08:35",
+        "price": 4064.35,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4067.85,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 606,
+        "signalTime": 1785198600,
+        "setup": "低位二次扫荡反转",
+        "reason": "604下破后，605继续刷新低点但收回，606在相同低位给出第二次多头回应；背景仍是强空，故只按次要反转和低位失败突破解释。位置处于4059.24—4062.11低位区域，606以实体收近高点并重新站回601低点，出现可见拒绝与跟随，但尚未突破602高点。606形成低位二次反转信号K，计划价为4064.93，只等待紧邻下一根high严格高于该价触发，不能提前追入。"
+      },
+      "result": {
+        "barsHeld": 2,
+        "rMultiple": -0.53271028,
+        "pnlUsd": -53.271028
+      }
+    },
+    {
+      "tradeNumber": 27,
+      "side": "short",
+      "entry": {
+        "signalIdx": 611,
+        "signalTime": 1785200100,
+        "time": 1785200400,
+        "beijingTime": "2026-07-28 09:00",
+        "price": 4057.665,
+        "setup": "低位通道向下延续突破",
+        "reason": "604后的空头下破虽经605—608反弹，但609—611连续压低，市场从反转尝试重新转为低位下行通道。当前位置在4059.245确认低点下方，611收于4058.245并明确低于该低点，较609、610形成进一步跟随；末端位置提高衰竭风险，但未否定当前接受。611形成向下突破信号K，计划价为4057.665，只有紧邻下一根严格跌破触发，不能收盘追入。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4066.405,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 619,
+        "time": 1785202500,
+        "beijingTime": "2026-07-28 09:40",
+        "price": 4049.285,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4052.2,
+        "trailingActivated": true,
+        "trailingActivationIdx": 617,
+        "signalIdx": 619,
+        "signalTime": 1785202500,
+        "setup": "低位高潮后反转",
+        "reason": "618把空头下行推至新低，619在低位以开盘即低、收盘近高的强阳线回应，背景仍是强空但已出现高潮后的次要反转窗口。当前位置在618确认低点4043.46附近，619没有继续接受新低并向上离开，给出明确的拒绝与初步跟随；这尚未证明主要趋势反转。619形成高潮后低位反转信号K，计划价为4050.58，只有紧邻下一根严格突破触发，不能收盘追入。"
+      },
+      "result": {
+        "barsHeld": 8,
+        "rMultiple": 0.95881007,
+        "pnlUsd": 95.881007
+      }
+    },
+    {
+      "tradeNumber": 28,
+      "side": "long",
+      "entry": {
+        "signalIdx": 625,
+        "signalTime": 1785204300,
+        "time": 1785204600,
+        "beijingTime": "2026-07-28 10:10",
+        "price": 4047.07,
+        "setup": "低点扫荡后的多头外包反转",
+        "reason": "背景上，idx600后仍是EMA20下方的空头延伸，但下跌已推进至近端低位，反向段此前没有持续接管。位置上，625再次刺破已确认低点622/618后收回，处在区间下沿的扫荡/失败下破区域。接受与跟随上，本根以实体多头外包收在高位附近，说明空头对新低的接受失败，但后续跟随尚待验证。触发上，当前收盘形成可执行的低点扫荡多头反转信号K，按紧邻下一根严格突破其高点观察成交；若未突破则信号永久过期。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4042.77,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 631,
+        "time": 1785206100,
+        "beijingTime": "2026-07-28 10:40",
+        "price": 4044.915,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4042.77,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 631,
+        "signalTime": 1785206100,
+        "setup": "H2空头二次进攻",
+        "reason": "背景上，idx600以来的空头趋势仍占主导，625后的反弹没有收回EMA20或确认高点619。位置上，631处在反弹高点628下方并重新压回低位，属于空头回调结束而非区间中部追空。接受与跟随上，631以较大实体收近低点并跌破627/630局部低点，表明多头扫荡反弹的接受失败、空头重新获得跟随。触发上，当前收盘形成H2空头二次进攻信号K，下一根仅以low严格跌破4044.845触发；若不触发，信号永久过期。"
+      },
+      "result": {
+        "barsHeld": 6,
+        "rMultiple": -0.50116279,
+        "pnlUsd": -50.116279
+      }
+    },
+    {
+      "tradeNumber": 29,
+      "side": "long",
+      "entry": {
+        "signalIdx": 636,
+        "signalTime": 1785207600,
+        "time": 1785207900,
+        "beijingTime": "2026-07-28 11:05",
+        "price": 4044.06,
+        "setup": "低位新低扫荡后的多头反转",
+        "reason": "背景上，idx600以来空头延伸仍是主背景，但连续新低后空头跟随开始出现回收，不能只按趋势追空。位置上，636在区间下沿再次刺破635低点并靠近632低点，属于低位失败下破/扫荡位置。接受与跟随上，本根实体多头收近最高，说明新低未被接受，但后续上破仍待验证。触发上，当前收盘形成低位扫荡多头反转信号K，下一根仅以high严格突破4044.06触发；未触发则信号永久过期。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4041.645,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 641,
+        "time": 1785209100,
+        "beijingTime": "2026-07-28 11:30",
+        "price": 4047.065,
+        "reasonCode": "TRAILING_STOP",
+        "ambiguous": false,
+        "finalActiveStop": 4047.065,
+        "trailingActivated": true,
+        "trailingActivationIdx": 638
+      },
+      "result": {
+        "barsHeld": 5,
+        "rMultiple": 1.24430642,
+        "pnlUsd": 124.430642
+      }
+    },
+    {
+      "tradeNumber": 30,
+      "side": "long",
+      "entry": {
+        "signalIdx": 651,
+        "signalTime": 1785212100,
+        "time": 1785212400,
+        "beijingTime": "2026-07-28 12:20",
+        "price": 4047.78,
+        "setup": "空头破位失败后的多头反转",
+        "reason": "背景上，650的下破未获得接受，651将价格迅速收回EMA20附近，短线从突破失败转入双向反转状态。位置上，651位于650/639低位结构上方，属于空头破位失败后的支撑回收区。接受与跟随上，本根大实体收在最高附近并越过650高点，显示空头低位破位被否定，但后续上破仍需验证。触发上，650空头信号在紧邻本根未跌破4043.53而过期；651现形成多头反转信号K，下一根仅以high严格突破4047.725触发，未触发则永久过期。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4043.53,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 657,
+        "time": 1785213900,
+        "beijingTime": "2026-07-28 12:50",
+        "price": 4043.53,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": false,
+        "finalActiveStop": 4043.53,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 6,
+        "rMultiple": -1,
+        "pnlUsd": -100
+      }
+    },
+    {
+      "tradeNumber": 31,
+      "side": "short",
+      "entry": {
+        "signalIdx": 659,
+        "signalTime": 1785214500,
+        "time": 1785214800,
+        "beijingTime": "2026-07-28 13:00",
+        "price": 4041.395,
+        "setup": "交易区间第二次向下真突破（V2）",
+        "reason": "背景上，idx657的下破未被接受后价格只短暂回到下沿，当前再次向下推进，这是新的区间破位尝试而非对旧决定的回填。位置上，当前阴线收在657低点4042.765下方并接近本根低点，已经处于近期区间下沿外侧，卖方压力重新增强。当前收盘形成新的V2向下真突破初始SIGNAL，入场只观察紧邻下一根对659低点的严格下破；下方接受跟随为成功边界，快速收回区间为失败边界。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4048.06,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 670,
+        "time": 1785217800,
+        "beijingTime": "2026-07-28 13:55",
+        "price": 4044.165,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4048.06,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 670,
+        "signalTime": 1785217800,
+        "setup": "失败下破后的向上真突破（V2）",
+        "reason": "背景上，666至667的强势下破没有延续，668至669反击后，当前重新向上离开低位结构，市场正从下破失败转为可能的向上状态转换。位置上，当前大阳线收盘4044.16站上650低点4043.53、662高点4044.03及EMA20，收盘接近高点，显示多头接受与跟随增强。当前收盘形成失败下破后的V2向上真突破初始SIGNAL，下一根只观察对4044.24的严格突破；已有空头持仓，按反向正式SIGNAL在本根收盘平仓且不自动反手。"
+      },
+      "result": {
+        "barsHeld": 11,
+        "rMultiple": -0.4156039,
+        "pnlUsd": -41.56039
+      }
+    },
+    {
+      "tradeNumber": 32,
+      "side": "long",
+      "entry": {
+        "signalIdx": 678,
+        "signalTime": 1785220200,
+        "time": 1785220500,
+        "beijingTime": "2026-07-28 14:35",
+        "price": 4049.795,
+        "setup": "交易区间向上真突破（V2）",
+        "reason": "背景上，低位下破失败后的上行转换已在多根K中形成，677虽刺破但未收盘确认，当前继续上推并完成离开旧结构。位置上，当前收盘4049.49明确高于672高点4047.90，实体偏强且收盘接近高点，市场开始接受上方价格。当前收盘形成V2交易区间向上真突破的初始SIGNAL，下一根只观察对4049.80的严格突破；若重新回到672高点下方则构成失败边界。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4043.015,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 695,
+        "time": 1785225300,
+        "beijingTime": "2026-07-28 16:00",
+        "price": 4047.395,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4043.015,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 695,
+        "signalTime": 1785225300,
+        "setup": "失败向上突破后的向下真突破（V2）",
+        "reason": "背景上，向上突破后的多次高位扫荡和回测未能延续，当前大阴线把价格重新压回原突破区间，状态转为失败突破后的向下反击。位置上，当前收盘4047.395跌破672高点4047.9并位于EMA20下方，实体偏大且收盘靠近低位，空方取得接受证据。当前K形成失败向上突破后的V2向下初始SIGNAL，紧邻下一根只观察对4046.235的严格下破；已有多头按反向SIGNAL在本根收盘平仓，不自动反手。"
+      },
+      "result": {
+        "barsHeld": 17,
+        "rMultiple": -0.3539823,
+        "pnlUsd": -35.39823
+      }
+    },
+    {
+      "tradeNumber": 33,
+      "side": "short",
+      "entry": {
+        "signalIdx": 697,
+        "signalTime": 1785225900,
+        "time": 1785226200,
+        "beijingTime": "2026-07-28 16:10",
+        "price": 4048.12,
+        "setup": "高位扫高失败的空头反转",
+        "reason": "背景上，连续向上扫高后仍未形成稳定接受，当前K从4051.26急刺至4055.21后收于4048.61，显示突破尝试被强力拒绝。位置上，当前位于多次高点上方的扫荡尾端，收盘回到EMA20下方并接近本根低点，空方压力和失败跟随明确。当前K形成高位失败突破后的空头反转SIGNAL，下一根仅观察对4048.12的严格下破；若重新站回高位则构成失败边界。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4049.94,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 699,
+        "time": 1785226500,
+        "beijingTime": "2026-07-28 16:20",
+        "price": 4044.97,
+        "reasonCode": "TRAILING_STOP",
+        "ambiguous": false,
+        "finalActiveStop": 4044.97,
+        "trailingActivated": true,
+        "trailingActivationIdx": 698
+      },
+      "result": {
+        "barsHeld": 2,
+        "rMultiple": 1.73076923,
+        "pnlUsd": 173.076923
+      }
+    },
+    {
+      "tradeNumber": 34,
+      "side": "long",
+      "entry": {
+        "signalIdx": 699,
+        "signalTime": 1785226500,
+        "time": 1785226800,
+        "beijingTime": "2026-07-28 16:20",
+        "price": 4050.365,
+        "setup": "空头下破失败后的向上真突破（V2）",
+        "reason": "背景上，697下破成交后，698继续下压但当前强力收回，空头突破未能维持，市场重新向上转换。位置上，当前收盘4048.77重新站上672高点4047.9和EMA20，实体大且从低位快速收回，形成失败下破的多头接受。当前K形成V2失败下破后的向上初始SIGNAL，下一根只观察对4050.365的严格突破；已有空头按反向SIGNAL在本根收盘平仓，不自动反手。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4043.15,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 702,
+        "time": 1785227400,
+        "beijingTime": "2026-07-28 16:35",
+        "price": 4045.875,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4043.15,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 702,
+        "signalTime": 1785227400,
+        "setup": "向上反转失败后的向下真突破（V2）",
+        "reason": "背景上，699失败下破反转后的多头跟随在701后衰减，当前大阴线重新压回旧突破区间，向上转换被破坏。位置上，当前收盘4045.88跌破672高点4047.9并位于EMA20下方，实体大且收盘靠低位，空方重新取得接受。当前K形成V2向下失败反转SIGNAL，下一根只观察对4044.585的严格下破；已有多头按反向SIGNAL在本根收盘平仓，不自动反手。"
+      },
+      "result": {
+        "barsHeld": 3,
+        "rMultiple": -0.62231462,
+        "pnlUsd": -62.231462
+      }
+    },
+    {
+      "tradeNumber": 35,
+      "side": "short",
+      "entry": {
+        "signalIdx": 713,
+        "signalTime": 1785230700,
+        "time": 1785231000,
+        "beijingTime": "2026-07-28 17:30",
+        "price": 4039.155,
+        "setup": "低位交易区间再次向下真突破（V2）",
+        "reason": "背景上，710下破未触发后价格反复回收，当前再次以收盘跌破710低点，说明低位区间的向下尝试重新获得接受。位置上，当前收盘4040.41低于710低点4040.83，实体偏强且接近低点，空头压力重新清晰。当前K形成新的V2向下真突破初始SIGNAL，下一根只观察对4039.155的严格下破；若回收低点上方则构成失败边界。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4044.13,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 720,
+        "time": 1785232800,
+        "beijingTime": "2026-07-28 18:05",
+        "price": 4024.55,
+        "reasonCode": "TRAILING_STOP",
+        "ambiguous": false,
+        "finalActiveStop": 4024.55,
+        "trailingActivated": true,
+        "trailingActivationIdx": 715
+      },
+      "result": {
+        "barsHeld": 7,
+        "rMultiple": 2.93567839,
+        "pnlUsd": 293.567839
+      }
+    },
+    {
+      "tradeNumber": 36,
+      "side": "long",
+      "entry": {
+        "signalIdx": 722,
+        "signalTime": 1785233400,
+        "time": 1785233700,
+        "beijingTime": "2026-07-28 18:15",
+        "price": 4024.535,
+        "setup": "双底支撑反转信号K",
+        "reason": "背景仍是EMA20下方的下行加速，但719后的卖压没有继续扩展，市场开始在低位出现反向测试。位置位于已确认低点719及近100根低点附近，722下探后仍守住该支撑区域。722收盘接近高点，吞回前一根的主要跌幅，形成支撑拒绝和初步接受，但尚未证明大级别空头已经反转。当前触发是722的多头信号K，只有紧邻下一根严格突破722高点才进入执行状态。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4019.575,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 724,
+        "time": 1785234000,
+        "beijingTime": "2026-07-28 18:25",
+        "price": 4019.575,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": false,
+        "finalActiveStop": 4019.575,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 2,
+        "rMultiple": -1,
+        "pnlUsd": -100
+      }
+    },
+    {
+      "tradeNumber": 37,
+      "side": "long",
+      "entry": {
+        "signalIdx": 730,
+        "signalTime": 1785235800,
+        "time": 1785236100,
+        "beijingTime": "2026-07-28 18:55",
+        "price": 4028.6,
+        "setup": "低位区间向上真突破（V2）多头信号K",
+        "reason": "背景由EMA20下方的下行通道转入低位失败下破后的向上突破尝试，空方控制出现明确削弱。位置已脱离719支撑附近的低位区间，并越过726及723局部高点。730以较大实体接近高点收盘，重新站上EMA20并获得向上收盘接受，跟随质量明显强于729。当前形成低位区间向上真突破（V2）多头信号K，只有紧邻下一根严格突破730高点才触发。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4017.115,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 737,
+        "time": 1785237900,
+        "beijingTime": "2026-07-28 19:30",
+        "price": 4027.585,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4017.115,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 737,
+        "signalTime": 1785237900,
+        "setup": "高潮后二次进攻空头反转信号K",
+        "reason": "背景是730后上行突破并在735加速，随后736至737连续出现反向压力，市场从延续转入高潮后反转尝试。位置靠近735已确认高点4032.555及上行段尾部，不在区间中部。736的首个空头尝试后，737再收阴并跌破EMA20，收盘靠近低位，形成二次进攻和初步空头跟随，但尚未跌破734或726支撑。当前737形成高潮后二次进攻空头反转信号K，只有紧邻下一根严格跌破737低点才触发；已有多头按反向信号收盘平仓且不自动反手。"
+      },
+      "result": {
+        "barsHeld": 7,
+        "rMultiple": -0.08837614,
+        "pnlUsd": -8.837614
+      }
+    },
+    {
+      "tradeNumber": 38,
+      "side": "short",
+      "entry": {
+        "signalIdx": 740,
+        "signalTime": 1785238800,
+        "time": 1785239100,
+        "beijingTime": "2026-07-28 19:45",
+        "price": 4026.615,
+        "setup": "多头延续失败的空头反转信号K",
+        "reason": "背景是730后上行突破在735后进入反复，739多头延续没有得到下一根突破，市场重新暴露高位双向压力。位置在739已确认高点4031.625下方、735高点附近，属于反弹段尾部而非低位中部。740以较大阴实体收近低点并跌破EMA20，回收739反弹并显示向下接受，虽仍高于738低点支撑。当前形成多头延续失败的空头反转信号K，只有紧邻下一根严格跌破740低点才触发。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4031.625,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 743,
+        "time": 1785239700,
+        "beijingTime": "2026-07-28 20:00",
+        "price": 4028.19,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4031.625,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 743,
+        "signalTime": 1785239700,
+        "setup": "支撑下探失败的多头反转信号K",
+        "reason": "背景是735高位加速后的空头反转，但742下探已回到734支撑附近，空方延续开始减弱。位置位于742已确认低点4024.03及734低点4023.275附近，属于局部支撑边缘。743从低点无下影启动并以大实体接近高点收盘，重新站上EMA20，显示下探失败和多头反向接受。当前形成支撑下探失败的多头反转信号K，只有紧邻下一根严格突破743高点才触发；已有空头按反向信号收盘平仓且不自动反手。"
+      },
+      "result": {
+        "barsHeld": 3,
+        "rMultiple": -0.31437126,
+        "pnlUsd": -31.437126
+      }
+    },
+    {
+      "tradeNumber": 39,
+      "side": "long",
+      "entry": {
+        "signalIdx": 746,
+        "signalTime": 1785240600,
+        "time": 1785240900,
+        "beijingTime": "2026-07-28 20:15",
+        "price": 4028.145,
+        "setup": "支撑扫荡后的多头反转信号K",
+        "reason": "背景仍是735高位反转后的低位整理，744至745未能把价格持续压在734支撑下方。位置在744低点4023.91及734支撑边缘附近，746再次向下扫荡后反收。746虽未突破745高点，但以实体收在高位并重新站上EMA20，形成支撑拒绝和多头接受。当前形成支撑扫荡后的多头反转信号K，只有紧邻下一根严格突破746高点才触发；同向持仓中的该信号按规则忽略执行。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4023.91,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 750,
+        "time": 1785241800,
+        "beijingTime": "2026-07-28 20:35",
+        "price": 4030.7,
+        "reasonCode": "TRAILING_STOP",
+        "ambiguous": false,
+        "finalActiveStop": 4030.7,
+        "trailingActivated": true,
+        "trailingActivationIdx": 748
+      },
+      "result": {
+        "barsHeld": 4,
+        "rMultiple": 0.60330579,
+        "pnlUsd": 60.330579
+      }
+    },
+    {
+      "tradeNumber": 40,
+      "side": "short",
+      "entry": {
+        "signalIdx": 754,
+        "signalTime": 1785243000,
+        "time": 1785243300,
+        "beijingTime": "2026-07-28 20:55",
+        "price": 4031.47,
+        "setup": "失败突破反转",
+        "reason": "背景是下跌后的反弹进入交易区间，近期多空在4023至4035一带重叠。当前位置在区间上沿，753扫过4035后接受失败，754以阴线收回并出现空头跟随。该根形成失败突破反转信号K，触发价为其低点下方；若重新站稳4035则信号失败。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4038.22,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 764,
+        "time": 1785246000,
+        "beijingTime": "2026-07-28 21:45",
+        "price": 4025.325,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4028.725,
+        "trailingActivated": true,
+        "trailingActivationIdx": 763,
+        "signalIdx": 764,
+        "signalTime": 1785246000,
+        "setup": "失败突破反转",
+        "reason": "背景是区间下沿向下突破后立即被收回，当前处在失败突破反转窗口。位置在已确认低点4022.965附近，763破位后764扫低并以实体阳线收回区间，空头接受明显失败。该根形成失败突破反转多头信号K，下一根严格突破4025.615才具备多头计划成交；反向SIGNAL先按收盘价平掉现有空头，不自动反手。"
+      },
+      "result": {
+        "barsHeld": 10,
+        "rMultiple": 0.91037037,
+        "pnlUsd": 91.037037
+      }
+    },
+    {
+      "tradeNumber": 41,
+      "side": "long",
+      "entry": {
+        "signalIdx": 768,
+        "signalTime": 1785247200,
+        "time": 1785247500,
+        "beijingTime": "2026-07-28 22:05",
+        "price": 4027.395,
+        "setup": "区间下沿二次拒绝反转",
+        "reason": "背景是下沿破位失败后再次测试支撑，当前市场仍处在宽幅区间而非稳定上升趋势。位置靠近4020.33下沿，767未能继续破低后，768以实体阳线收回并显示买方跟随。该根形成下沿反转多头信号K，下一根严格突破4027.395才成交；若后续跌破支撑则该二次尝试失败。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4021.75,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 770,
+        "time": 1785247800,
+        "beijingTime": "2026-07-28 22:15",
+        "price": 4025.93,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4021.75,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 770,
+        "signalTime": 1785247800,
+        "setup": "区间上沿反转",
+        "reason": "背景是下沿多次拒绝后的反弹，市场仍处于宽幅双向区间而非稳定趋势。位置上770反弹至4035附近压力后形成大实体阴线，冲高未能延续并收回EMA20下方。当前形成区间上沿反转空头信号K，下一根严格跌破4025.24才成交；重新站回4033.6并向4035接受则信号失败。"
+      },
+      "result": {
+        "barsHeld": 2,
+        "rMultiple": -0.2595217,
+        "pnlUsd": -25.95217
+      }
+    },
+    {
+      "tradeNumber": 42,
+      "side": "short",
+      "entry": {
+        "signalIdx": 771,
+        "signalTime": 1785248100,
+        "time": 1785248400,
+        "beijingTime": "2026-07-28 22:20",
+        "price": 4020.2,
+        "setup": "交易区间向下真突破",
+        "reason": "背景是交易区间下沿先有一次失败下破，随后反弹再次在上部受阻，当前第二次向下推进正在改变状态。位置上771以大实体收盘跌破已确认低点4020.33并远离EMA20，突破离开证据强于先前的刺破。该根可作为新的震荡真突破空头信号K，下一根严格跌破4020.20才成交；它不是回填770的迟到跟随，同向持仓仍按规则忽略、不加仓。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4033.6,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 773,
+        "time": 1785248700,
+        "beijingTime": "2026-07-28 22:30",
+        "price": 4022.465,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4033.6,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 773,
+        "signalTime": 1785248700,
+        "setup": "向下突破失败反转",
+        "reason": "背景是向下突破后价格连续在区间下方，当前快速收回下沿，市场状态由突破接受转为失败突破反转。位置在新低4011.765之后的区间下沿附近，773以大实体阳线收回4020.33并显示买方跟随。该根形成失败突破反转多头信号K，下一根严格突破4022.755才成交；若再次接受4011.765下方则信号失败。"
+      },
+      "result": {
+        "barsHeld": 2,
+        "rMultiple": -0.16902985,
+        "pnlUsd": -16.902985
+      }
+    },
+    {
+      "tradeNumber": 43,
+      "side": "long",
+      "entry": {
+        "signalIdx": 777,
+        "signalTime": 1785249900,
+        "time": 1785250200,
+        "beijingTime": "2026-07-28 22:50",
+        "price": 4028.635,
+        "setup": "下沿二次反转",
+        "reason": "背景是向下突破后两次在低位受阻，前一次反转失败后价格重新构筑支撑，当前二次进攻质量更清晰。位置在4019附近的下沿支撑，777以大实体阳线收复4025.27并站上EMA20，买方接受和跟随增强。该根形成下沿二次反转多头信号K，下一根严格突破4028.635才成交；若重新跌破4019.035则信号失败。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4019.035,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 779,
+        "time": 1785250500,
+        "beijingTime": "2026-07-28 23:00",
+        "price": 4024.375,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4019.035,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 779,
+        "signalTime": 1785250500,
+        "setup": "反弹局部高点空头反转",
+        "reason": "背景是向下突破后的反弹，当前反弹在4029.6局部压力处停顿，整体控制仍偏空。位置在局部前高和区间内部上方，779以阴线收回并跌破EMA20，前一轮多头跟随失败。该根形成空头回调反转信号K，下一根严格跌破4024.365才成交；反向SIGNAL按收盘平掉现有多头，不自动反手。"
+      },
+      "result": {
+        "barsHeld": 2,
+        "rMultiple": -0.44375,
+        "pnlUsd": -44.375
+      }
+    },
+    {
+      "tradeNumber": 44,
+      "side": "short",
+      "entry": {
+        "signalIdx": 801,
+        "signalTime": 1785257100,
+        "time": 1785257400,
+        "beijingTime": "2026-07-29 00:50",
+        "price": 4037.63,
+        "setup": "失败突破反转空头信号K",
+        "reason": "前段向上突破后在高位整理，当前回到原突破边沿并出现明显空头实体。位置位于4040.87前高的接受边界，收盘跌破该位且下穿EMA20，显示买方接受被破坏并出现初步空头跟随。当前形成失败突破反转空头信号K，计划等待紧邻下一根严格跌破信号K低点触发。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4045.88,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 834,
+        "time": 1785267000,
+        "beijingTime": "2026-07-29 03:35",
+        "price": 4027.7,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4029.965,
+        "trailingActivated": true,
+        "trailingActivationIdx": 812,
+        "signalIdx": 834,
+        "signalTime": 1785267000,
+        "setup": "低位震荡向上真突破（V2）",
+        "reason": "此前从4046下行至4021附近，827至833形成低位微型区间与双底候选，当前位于该局部结构的上破位置。834以较大多头实体收在829/825局部压力和EMA20上方，显示失败下破后出现初步多头接受；更大背景仍偏空，但当前位置和信号K质量已经改善。当前834形成V2震荡真突破的初始收盘信号，只有紧邻下一根严格突破834高点才成交。"
+      },
+      "result": {
+        "barsHeld": 33,
+        "rMultiple": 1.20363636,
+        "pnlUsd": 120.363636
+      }
+    },
+    {
+      "tradeNumber": 45,
+      "side": "short",
+      "entry": {
+        "signalIdx": 839,
+        "signalTime": 1785268500,
+        "time": 1785268800,
+        "beijingTime": "2026-07-29 04:00",
+        "price": 4026.165,
+        "setup": "上沿二次失败突破后的空头信号",
+        "reason": "大背景仍从4046附近下行，834上破失败后836至838多次重夺仍未收盘站稳4027.89，839再次扫高至4028.07后回收，形成上沿二次失败。当前位置在微型区间上沿和前高附近，839空头实体收盘靠近低点并回到EMA20附近，位置与信号K质量共同支持空头。当前839为失败上破后的空头信号K，只有紧邻下一根严格跌破839低点才触发。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4027.89,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 842,
+        "time": 1785269400,
+        "beijingTime": "2026-07-29 04:15",
+        "price": 4024.325,
+        "reasonCode": "TRAILING_STOP",
+        "ambiguous": false,
+        "finalActiveStop": 4024.325,
+        "trailingActivated": true,
+        "trailingActivationIdx": 840
+      },
+      "result": {
+        "barsHeld": 3,
+        "rMultiple": 1.06666667,
+        "pnlUsd": 106.666667
+      }
+    },
+    {
+      "tradeNumber": 46,
+      "side": "long",
+      "entry": {
+        "signalIdx": 846,
+        "signalTime": 1785270600,
+        "time": 1785270900,
+        "beijingTime": "2026-07-29 04:35",
+        "price": 4028.615,
+        "setup": "交易区间上沿多头真突破",
+        "reason": "前段经历区间下沿反转后向上回到宽通道上沿，市场正在从交易区间向突破状态转换。846收盘越过已确认的4028.07与4027.89前高，位置处于区间边缘，实体与收盘位置支持初始接受，但后续跟随尚未可见。按V2震荡真突破口径，初始收盘突破本身可成为多头信号K；计划价为846高点4028.615，只观察下一根严格突破，若回到旧区间并被接受则失败。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4022.6,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 847,
+        "time": 1785270900,
+        "beijingTime": "2026-07-29 04:40",
+        "price": 4027.82,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4022.6,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 847,
+        "signalTime": 1785270900,
+        "setup": "交易区间上沿假突破反转",
+        "reason": "市场从区间下沿反弹至上沿，846的初始突破尚未得到稳定接受，当前位置仍是交易区间边缘。847向上扫过4028.07后收回旧高下方，长上影和收盘回落客观显示突破接受失败，虽实体不大但位置与拒绝证据一致。当前收盘形成失败突破空头信号K，计划价为847低点4027.44，只观察下一根严格跌破；该反向正式信号按close_only先在847收盘平掉846多头，不自动反手。"
+      },
+      "result": {
+        "barsHeld": 1,
+        "rMultiple": -0.13216958,
+        "pnlUsd": -13.216958
+      }
+    },
+    {
+      "tradeNumber": 47,
+      "side": "short",
+      "entry": {
+        "signalIdx": 849,
+        "signalTime": 1785271500,
+        "time": 1785271800,
+        "beijingTime": "2026-07-29 04:50",
+        "price": 4027.535,
+        "setup": "交易区间上沿突破失败空头反转",
+        "reason": "846至848曾尝试在区间上沿建立多头接受，但市场仍处于宽通道/区间边缘，接受质量不稳定。849再次扫过4030.55后以大实体近低收回4027.89与4028.07下方，空头跟随明确，失败突破边界被当前收盘确认。当前形成空头信号K，计划价为849低点4027.535，只观察下一根严格跌破；不把前一根迟到的多头确认回填为有效持仓。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4028.07,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 850,
+        "time": 1785271800,
+        "beijingTime": "2026-07-29 04:55",
+        "price": 4028.07,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": true,
+        "finalActiveStop": 4028.07,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 1,
+        "rMultiple": -1,
+        "pnlUsd": -100
+      }
+    },
+    {
+      "tradeNumber": 48,
+      "side": "short",
+      "entry": {
+        "signalIdx": 855,
+        "signalTime": 1785276900,
+        "time": 1785277200,
+        "beijingTime": "2026-07-29 06:20",
+        "price": 4022.405,
+        "setup": "交易区间下沿空头真突破",
+        "reason": "缺口未回补且854的反弹失败后，市场从区间上沿回落至下沿，当前背景转为交易区间下沿的空头突破尝试。855以大实体近低收盘，直接跌破已确认的4022.60支撑并远离EMA20，位置、接受证据与信号K质量一致。按V2震荡真突破口径，当前初始收盘突破可成为空头信号K；计划价为855低点4022.45，只观察下一根严格跌破，若回到支撑上方则突破失败。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4028.165,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 863,
+        "time": 1785279300,
+        "beijingTime": "2026-07-29 07:00",
+        "price": 4019.735,
+        "reasonCode": "TRAILING_STOP",
+        "ambiguous": false,
+        "finalActiveStop": 4019.735,
+        "trailingActivated": true,
+        "trailingActivationIdx": 858
+      },
+      "result": {
+        "barsHeld": 8,
+        "rMultiple": 0.46354167,
+        "pnlUsd": 46.354167
+      }
+    },
+    {
+      "tradeNumber": 49,
+      "side": "long",
+      "entry": {
+        "signalIdx": 874,
+        "signalTime": 1785282600,
+        "time": 1785282900,
+        "beijingTime": "2026-07-29 07:55",
+        "price": 4024.395,
+        "setup": "震荡向上突破",
+        "reason": "背景上，前段下跌后的区间在872–874连续向上试探，当前出现从区间向上转换的初始突破。位置上，本根收盘站上已确认高点872，实体收盘靠近高位且位于EMA20上方，较前一根未接受的上破更有接受证据。当前收盘突破构成V2初始信号K；后续确认与实际成交仍严格交给紧邻下一根的突破状态机。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4018.235,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 876,
+        "time": 1785283200,
+        "beijingTime": "2026-07-29 08:05",
+        "price": 4018.235,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": false,
+        "finalActiveStop": 4018.235,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 2,
+        "rMultiple": -1,
+        "pnlUsd": -100
+      }
+    },
+    {
+      "tradeNumber": 50,
+      "side": "short",
+      "entry": {
+        "signalIdx": 880,
+        "signalTime": 1785284400,
+        "time": 1785284700,
+        "beijingTime": "2026-07-29 08:25",
+        "price": 4023.815,
+        "setup": "上沿扫高反转",
+        "reason": "背景上，价格在失败突破后的区间上沿反复争夺，随后再次向上扫高，当前出现拒绝而非稳定趋势延续。位置上，本根高点越过已确认高点875并触及前段压力区，收盘回到4025附近且长上影明显，空方拒绝证据强于单根阳线外观。接受与跟随方面，上方突破没有被收盘接受，当前K构成区间上沿失败突破的空头信号；下一根只观察严格跌破本根低点的成交触发。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4026.345,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 881,
+        "time": 1785284700,
+        "beijingTime": "2026-07-29 08:30",
+        "price": 4026.345,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": true,
+        "finalActiveStop": 4026.345,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 1,
+        "rMultiple": -1,
+        "pnlUsd": -100
+      }
+    },
+    {
+      "tradeNumber": 51,
+      "side": "short",
+      "entry": {
+        "signalIdx": 890,
+        "signalTime": 1785287400,
+        "time": 1785287700,
+        "beijingTime": "2026-07-29 09:15",
+        "price": 4011.875,
+        "setup": "下破回测失败",
+        "reason": "背景上，888向下突破后，本根回测旧支撑并再次收回其下，属于突破回测失败而非普通延续。位置上，当前高点回到4015附近上方后被压回，收盘低于旧低点且仍远离EMA20，空方位置和收盘证据一致。回测没有得到区间内接受，当前K构成空头触发信号；下一根仅观察严格跌破本根低点的成交触发。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4027.995,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 894,
+        "time": 1785288600,
+        "beijingTime": "2026-07-29 09:35",
+        "price": 4024.505,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4027.995,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 894,
+        "signalTime": 1785288600,
+        "setup": "下破失败反转",
+        "reason": "背景上，888向下突破没有获得持续接受，经过回测后当前强阳线重新把价格推回旧区间，形成下破失败的状态转换。位置上，本根从下方测试区间后收在EMA20上方并越过890高点，实体接近高位，买方接受明显。当前K构成失败下破反转的多头信号；若有先前空头持仓按反向SIGNAL收盘平仓，下一根仅严格突破本根高点才成交，不自动反手。"
+      },
+      "result": {
+        "barsHeld": 4,
+        "rMultiple": -0.78349876,
+        "pnlUsd": -78.349876
+      }
+    },
+    {
+      "tradeNumber": 52,
+      "side": "short",
+      "entry": {
+        "signalIdx": 897,
+        "signalTime": 1785289500,
+        "time": 1785289800,
+        "beijingTime": "2026-07-29 09:50",
+        "price": 4024.56,
+        "setup": "前高区失败反转",
+        "reason": "背景上，失败下破反转虽曾上冲，但前高区的接受没有延续，895之后连续回吐形成上沿拒绝。位置上，本根在4030附近压力下收近低点，重新跌回已确认高点880下方，且反向于先前强阳，位置和信号质量一致。接受与跟随方面，向上扫高未被保持，本根构成前高区失败突破的空头信号K；下一根仅严格跌破本根低点成交。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4030.675,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 904,
+        "time": 1785291600,
+        "beijingTime": "2026-07-29 10:25",
+        "price": 4030.675,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": false,
+        "finalActiveStop": 4030.675,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 7,
+        "rMultiple": -1,
+        "pnlUsd": -100
+      }
+    },
+    {
+      "tradeNumber": 53,
+      "side": "short",
+      "entry": {
+        "signalIdx": 909,
+        "signalTime": 1785293100,
+        "time": 1785293400,
+        "beijingTime": "2026-07-29 10:50",
+        "price": 4032.44,
+        "setup": "高位三推楔形空头反转",
+        "reason": "904后的突破没有继续形成干净离开，906与908连续上扫且推进幅度有限，当前处在高位窄幅通道的末端位置。909以实体近低收盘，回落至904与906高点下方，首次出现明确的反向跟随，虽尚未跌回895旧上沿，仍是楔形/高潮后的反转尝试。当前K形成高位楔形空头信号，计划价为本K低点，下一根严格跌破才成交；若买方重新站回908高点，反转假设失败。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4038.08,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 925,
+        "time": 1785297900,
+        "beijingTime": "2026-07-29 12:10",
+        "price": 4023.185,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4027.52,
+        "trailingActivated": true,
+        "trailingActivationIdx": 915,
+        "signalIdx": 925,
+        "signalTime": 1785297900,
+        "setup": "支撑边缘失败下破多头反转",
+        "reason": "前一段高位失败突破的空头回撤已到达898低点4022.105附近，背景从下压转为支撑边缘的双向争夺。924下破支撑后收回，925再次扫低并收在支撑上方，拒绝证据已形成，尽管K实体不大但位置和失败下破共同提供接受转换。当前925形成支撑边缘的失败下破多头信号，计划价为本K高点，仅下一根严格上破触发；若重新接受支撑下方则信号失败。"
+      },
+      "result": {
+        "barsHeld": 16,
+        "rMultiple": 1.64095745,
+        "pnlUsd": 164.095745
+      }
+    },
+    {
+      "tradeNumber": 54,
+      "side": "short",
+      "entry": {
+        "signalIdx": 926,
+        "signalTime": 1785298200,
+        "time": 1785298500,
+        "beijingTime": "2026-07-29 12:15",
+        "price": 4021.52,
+        "setup": "交易区间支撑真下破空头",
+        "reason": "925在支撑边缘的拒绝没有得到跟随，926重新收盘跌破898低点，市场从失败下破观察转为向下接受。当前K实体收低且站在EMA20下方，旧支撑被重新夺回，位置上仍有向更低已确认结构的空间；这不是回填925的多头计划。按V2区间下破的初始收盘口径，926形成新的空头信号，计划价为本K低点，仅下一根严格下破成交。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4025.09,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 929,
+        "time": 1785299100,
+        "beijingTime": "2026-07-29 12:30",
+        "price": 4025.09,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": false,
+        "finalActiveStop": 4025.09,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 3,
+        "rMultiple": -1,
+        "pnlUsd": -100
+      }
+    },
+    {
+      "tradeNumber": 55,
+      "side": "long",
+      "entry": {
+        "signalIdx": 932,
+        "signalTime": 1785300000,
+        "time": 1785300300,
+        "beijingTime": "2026-07-29 12:45",
+        "price": 4027.44,
+        "setup": "支撑反转后的局部真突破多头",
+        "reason": "930强反弹后931收回，当前结构先经历了空头假跟随，932重新突破930高点，背景是支撑失败下破后的双向转换。932以实体近高收盘并站回EMA20，且当前收盘已越过930已确认高点，突破有初始接受证据；但后续跟随仍未释放。当前932是独立的局部真突破多头信号，不能回填930，计划价为本K高点，下一根严格上破才触发。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4020.655,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 947,
+        "time": 1785304500,
+        "beijingTime": "2026-07-29 14:00",
+        "price": 4033.365,
+        "reasonCode": "TRAILING_STOP",
+        "ambiguous": false,
+        "finalActiveStop": 4033.365,
+        "trailingActivated": true,
+        "trailingActivationIdx": 942
+      },
+      "result": {
+        "barsHeld": 15,
+        "rMultiple": 0.87324982,
+        "pnlUsd": 87.324982
+      }
+    },
+    {
+      "tradeNumber": 56,
+      "side": "long",
+      "entry": {
+        "signalIdx": 954,
+        "signalTime": 1785306600,
+        "time": 1785306900,
+        "beijingTime": "2026-07-29 14:35",
+        "price": 4043.92,
+        "setup": "高位整理后再突破多头信号K",
+        "reason": "背景是前高上方整理后继续向上，价格在结构外保持接受并重新推进。位置上，本根收盘4043.765越过idx=952已确认高点4043.225，实体向上且接近高位收盘，形成新的延续信号K。当前多头信号同时满足此前计划的严格突破，但已有同向持仓，按规则只保留并忽略，不加仓、不重算现有止损或课程目标。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4035.91,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 973,
+        "time": 1785312300,
+        "beijingTime": "2026-07-29 16:10",
+        "price": 4041.02,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4035.91,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 973,
+        "signalTime": 1785312300,
+        "setup": "高位上升通道破坏后的空头反转信号K",
+        "reason": "背景上前段仍是抬高的上升通道，但高位连续上推后重叠增加，延续效率出现减弱。位置处于近期高点4047.88下方的末端区域；本根大实体近低收盘，跌破970低点并收在EMA20下方，形成当前可见的空头接受证据。973构成高位次级反转空头信号，下一根只有严格跌破本根低点才触发，收回回踩区则是失败边界。"
+      },
+      "result": {
+        "barsHeld": 19,
+        "rMultiple": -0.36204744,
+        "pnlUsd": -36.204744
+      }
+    },
+    {
+      "tradeNumber": 57,
+      "side": "long",
+      "entry": {
+        "signalIdx": 979,
+        "signalTime": 1785314100,
+        "time": 1785314400,
+        "beijingTime": "2026-07-29 16:40",
+        "price": 4039.025,
+        "setup": "低位第二段下跌失败后的多头反转信号K",
+        "reason": "背景上前段由高位反转进入连续空头段，但976至978的第二段下跌在4035.67附近重叠，向下延伸出现失败。位置处于局部低位和已确认低点附近，本根以较强多头实体收盘并拒绝再次破低，虽仍属于逆大背景的次级反转。当前多头反转信号K已形成，下一根只有严格突破本根高点才触发，重新跌回低点区域则是失败边界。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4035.67,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 986,
+        "time": 1785316200,
+        "beijingTime": "2026-07-29 17:15",
+        "price": 4035.67,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": false,
+        "finalActiveStop": 4035.67,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 7,
+        "rMultiple": -1,
+        "pnlUsd": -100
+      }
+    },
+    {
+      "tradeNumber": 58,
+      "side": "short",
+      "entry": {
+        "signalIdx": 988,
+        "signalTime": 1785316800,
+        "time": 1785317100,
+        "beijingTime": "2026-07-29 17:25",
+        "price": 4033.835,
+        "setup": "低位扫荡回收失败后的空头破低信号K",
+        "reason": "背景上强空反向段在986扫低后仅短暂回收，987跟随不足，空头控制重新接管。位置位于4035.58局部低点下方，本根以大实体近低收盘并完成破低接受，前一低位多头反转的失败成为当前空头背景。988形成空头破低信号K，下一根只有严格跌破本根低点才触发，迅速收回4035.58则是失败边界。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4044.555,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1001,
+        "time": 1785320700,
+        "beijingTime": "2026-07-29 18:30",
+        "price": 4033.21,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4044.555,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 1001,
+        "signalTime": 1785320700,
+        "setup": "扫荡回收多头反转",
+        "reason": "前段仍是从4047.88回落的宽通道下行，空方背景尚未完全改变，但低位连续测试后出现反向压力增强。当前位置在4030附近局部低点带，1001再次下扫999低点后以大实体收在1000高点之上，拒绝证据明显。当前K同时具备低位扫荡回收和强多头收盘，形成多头信号K；仅在紧邻下一根严格上破4033.43时触发，不能把本根收盘直接当成交。"
+      },
+      "result": {
+        "barsHeld": 13,
+        "rMultiple": 0.05830224,
+        "pnlUsd": 5.830224
+      }
+    },
+    {
+      "tradeNumber": 59,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1002,
+        "signalTime": 1785321000,
+        "time": 1785321300,
+        "beijingTime": "2026-07-29 18:35",
+        "price": 4032.125,
+        "setup": "上破失败空头反转",
+        "reason": "整体背景仍是从4047.88回落的弱势段，EMA20附近的反弹尚未改变空方控制。当前位置上探997已确认高点和EMA20一带，1002冲过该压力后收在本根低点，显示突破未被接受并出现强空跟随。当前K构成上破失败的空头信号K；上一根多头计划已被本根高点严格触发，但盘中先后不可推断，反向正式信号按本根收盘价平仓且不自动反手，空头只等待下一根严格下破4032.155。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4034.245,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1006,
+        "time": 1785322200,
+        "beijingTime": "2026-07-29 18:55",
+        "price": 4028.475,
+        "reasonCode": "TRAILING_STOP",
+        "ambiguous": false,
+        "finalActiveStop": 4028.475,
+        "trailingActivated": true,
+        "trailingActivationIdx": 1003
+      },
+      "result": {
+        "barsHeld": 4,
+        "rMultiple": 1.72169811,
+        "pnlUsd": 172.169811
+      }
+    },
+    {
+      "tradeNumber": 60,
+      "side": "long",
+      "entry": {
+        "signalIdx": 1010,
+        "signalTime": 1785323400,
+        "time": 1785323700,
+        "beijingTime": "2026-07-29 19:15",
+        "price": 4029.86,
+        "setup": "下破失败多头反转",
+        "reason": "1003下破后的空方延续在1008回测后出现失败，1009虽创出新低却没有得到后续严格下破触发。当前位置仍在低位结构与EMA20下方，1010以无下影大实体收回1008高点，说明空方突破的跟随被强力否定并出现多头接受。当前K形成多头反转信号K，计划价为4029.74、只等下一根严格上破；反向正式信号按收盘价平掉已有空头且不自动反手。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4025.105,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1018,
+        "time": 1785325800,
+        "beijingTime": "2026-07-29 19:55",
+        "price": 4032.285,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4031.44,
+        "trailingActivated": true,
+        "trailingActivationIdx": 1017,
+        "signalIdx": 1018,
+        "signalTime": 1785325800,
+        "setup": "局部上破失败空头反转",
+        "reason": "1017大实体上破局部高点后，当前位置直接进入前高压力区，1018未能继续上破而以大实体回落，说明突破接受失败。价格仍在EMA20上方但已跌回1017收盘下方，失败证据来自压力位置和缺乏跟随，而非单看均线。1018形成空头反转信号K，1017的多头计划因本根high未严格突破4036.195而永久过期；反向正式信号按收盘价平掉已有多头且不自动反手，空头只等待下一根严格下破4032.035。"
+      },
+      "result": {
+        "barsHeld": 8,
+        "rMultiple": 0.50998948,
+        "pnlUsd": 50.998948
+      }
+    },
+    {
+      "tradeNumber": 61,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1022,
+        "signalTime": 1785327000,
+        "time": 1785327300,
+        "beijingTime": "2026-07-29 20:15",
+        "price": 4026.105,
+        "setup": "支撑下破空头突破",
+        "reason": "1021在4030.15附近扫荡后，1022以大实体直接跌破该支撑并收在EMA20下方，空方重新取得清晰控制。当前位置已离开反转后的支撑边缘，收盘接近低点且没有被旧结构吸回，突破接受强于前一根的犹豫。1022形成新的空头突破信号K，计划价为4026.105、只等下一根严格下破；已有空头中的同向信号忽略，不加仓或重算止损。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4033.5,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1026,
+        "time": 1785328200,
+        "beijingTime": "2026-07-29 20:35",
+        "price": 4018.56,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4020.095,
+        "trailingActivated": true,
+        "trailingActivationIdx": 1024,
+        "signalIdx": 1026,
+        "signalTime": 1785328200,
+        "setup": "空头高潮扫荡回收多头反转",
+        "reason": "1023至1025是连续加速下行，当前进入空头高潮后的极端低位，单边背景虽仍偏空但继续追空的位置明显恶化。当前位置在近端新低区域，1026下扫4009.39后以大实体收近高点，形成强拒绝和初步反向接受，EMA20仍在上方只作背景辅助。当前K形成次要反转型多头信号K，计划价为4018.84，只允许下一根严格上破；若已有空头，反向正式信号按收盘价平仓且不自动反手。"
+      },
+      "result": {
+        "barsHeld": 4,
+        "rMultiple": 1.02028398,
+        "pnlUsd": 102.028398
+      }
+    },
+    {
+      "tradeNumber": 62,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1032,
+        "signalTime": 1785330000,
+        "time": 1785330300,
+        "beijingTime": "2026-07-29 21:05",
+        "price": 4018.735,
+        "setup": "失败突破空头反转",
+        "reason": "背景是急跌后的反弹整理，当前上冲局部压力后仍未恢复多头控制。位置在1029高点附近的失败突破之后，1032以异常大阴线收盘接近低点并跌破1030低点，收盘也重新落到EMA20下方，图像显示价格被旧结构拒绝并向下离开。当前收盘形成空头信号K，触发只认紧邻下一根严格跌破其低点；不触发即永久过期，迟到跟随不能回填本决定。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4023.23,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1036,
+        "time": 1785331200,
+        "beijingTime": "2026-07-29 21:25",
+        "price": 4018.685,
+        "reasonCode": "TRAILING_STOP",
+        "ambiguous": false,
+        "finalActiveStop": 4018.685,
+        "trailingActivated": true,
+        "trailingActivationIdx": 1035
+      },
+      "result": {
+        "barsHeld": 4,
+        "rMultiple": 0.01112347,
+        "pnlUsd": 1.112347
+      }
+    },
+    {
+      "tradeNumber": 63,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1037,
+        "signalTime": 1785331500,
+        "time": 1785331800,
+        "beijingTime": "2026-07-29 21:30",
+        "price": 4013.68,
+        "setup": "失败突破空头反转",
+        "reason": "背景是急跌后的反弹进入压力，两次上扫均未被接受，当前空头重新取得控制。位置在1029与1036压力失败之后，1037以异常大实体近低收盘并跌破1035局部低点，图文均显示价格向下离开结构且低于EMA20。当前收盘形成新的空头信号K，触发只认紧邻下一根严格跌破4013.68；不触发即永久过期，迟到跟随不能回填。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4023.24,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1047,
+        "time": 1785334500,
+        "beijingTime": "2026-07-29 22:20",
+        "price": 4005.615,
+        "reasonCode": "TRAILING_STOP",
+        "ambiguous": false,
+        "finalActiveStop": 4005.615,
+        "trailingActivated": true,
+        "trailingActivationIdx": 1043
+      },
+      "result": {
+        "barsHeld": 10,
+        "rMultiple": 0.84361925,
+        "pnlUsd": 84.361925
+      }
+    },
+    {
+      "tradeNumber": 64,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1052,
+        "signalTime": 1785336000,
+        "time": 1785336300,
+        "beijingTime": "2026-07-29 22:45",
+        "price": 3999.09,
+        "setup": "局部整理下破空头",
+        "reason": "背景是失败回归后的局部重叠，空头在区间边沿再次夺回控制。当前位置在1049低点下方，1052以较大实体收盘低于4003.58并离开局部整理，图文显示这次下破具有初步接受。当前形成空头信号K，触发只认紧邻下一根严格跌破3999.09；不触发即永久过期，迟到下破不能回填。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4010.215,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1056,
+        "time": 1785337200,
+        "beijingTime": "2026-07-29 23:05",
+        "price": 4008.425,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4010.215,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 1056,
+        "signalTime": 1785337200,
+        "setup": "下破失败后的多头反转",
+        "reason": "背景是强空头延伸后的低位反复，1052下破虽曾获得跟随，但1054至1056未能继续下行，空头接受开始受损。当前位置在低位回归段，1056以较强多头实体收盘重新站上4003.58并穿越EMA20，图文显示出现多头跟随。当前形成多头信号K；若当时有空头持仓，反向SIGNAL只按当前收盘平仓、不自动反手，独立多头仍只在紧邻下一根严格突破4008.95时成交。"
+      },
+      "result": {
+        "barsHeld": 4,
+        "rMultiple": -0.83910112,
+        "pnlUsd": -83.910112
+      }
+    },
+    {
+      "tradeNumber": 65,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1058,
+        "signalTime": 1785337800,
+        "time": 1785338100,
+        "beijingTime": "2026-07-29 23:15",
+        "price": 4005.845,
+        "setup": "压力位失败空头反转",
+        "reason": "背景是低位多头反弹接近4010.215压力，当前多头没有形成稳定延续。位置在1057高点与已确认压力附近，1058以大阴线近低收盘并跌回EMA20下方，图文显示上破尝试未被接受。当前形成反向空头信号K；若有多头持仓只在当前收盘平仓、不自动反手，新的空头仅在紧邻下一根严格跌破4005.845时成交。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4009.8,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1060,
+        "time": 1785338400,
+        "beijingTime": "2026-07-29 23:25",
+        "price": 4009.8,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": false,
+        "finalActiveStop": 4009.8,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 2,
+        "rMultiple": -1,
+        "pnlUsd": -100
+      }
+    },
+    {
+      "tradeNumber": 66,
+      "side": "long",
+      "entry": {
+        "signalIdx": 1061,
+        "signalTime": 1785338700,
+        "time": 1785339000,
+        "beijingTime": "2026-07-29 23:30",
+        "price": 4011.365,
+        "setup": "交易区间上破多头",
+        "reason": "背景是低位反弹在4010.215边沿反复测试后，多头终于取得连续上冲。当前位置在局部区间上沿，1060强力上扫后1061收盘站上4010.215并保持在EMA20上方，图文显示初步接受和跟随成立。按V2交易区间真突破规则，当前收盘形成多头信号K，触发只认紧邻下一根严格突破4011.365；不触发即永久过期。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4003.815,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1063,
+        "time": 1785339300,
+        "beijingTime": "2026-07-29 23:40",
+        "price": 4008.905,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4003.815,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 1063,
+        "signalTime": 1785339300,
+        "setup": "上破回测失败空头反转",
+        "reason": "背景是区间上破后的初始反弹，价格尚未建立稳定多头延续，当前回测开始破坏上破接受。当前位置在1062局部高点和4010.215边沿附近，1063以明显空头实体收盘回到边沿下方并压近EMA20，图文显示多头跟随不足。当前形成反向空头信号K；若有多头持仓只在当前收盘平仓、不自动反手，新的空头仅在紧邻下一根严格跌破4008.12时成交。"
+      },
+      "result": {
+        "barsHeld": 2,
+        "rMultiple": -0.32582781,
+        "pnlUsd": -32.582781
+      }
+    },
+    {
+      "tradeNumber": 67,
+      "side": "long",
+      "entry": {
+        "signalIdx": 1064,
+        "signalTime": 1785339600,
+        "time": 1785339900,
+        "beijingTime": "2026-07-29 23:45",
+        "price": 4010.69,
+        "setup": "回测失败多头反转",
+        "reason": "背景是上破回测失败的空头尝试，但1064迅速收回边沿并重新显示买方控制。当前位置在4010.215与EMA20附近，当前K以多头实体近高收盘，图文显示空头回测没有得到持续接受。当前形成反向多头信号K；若有空头持仓只在当前收盘平仓、不自动反手，新的多头仅在紧邻下一根严格突破4010.69时成交。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4003.815,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1070,
+        "time": 1785341400,
+        "beijingTime": "2026-07-30 00:15",
+        "price": 4009.525,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4003.815,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 1070,
+        "signalTime": 1785341400,
+        "setup": "震荡区间上沿假突破反转",
+        "reason": "背景仍是局部交易区间，1069向上突破后当前位于区间上沿的失败验证位置。当前K先扫过1069高点并以大实体收回区间，收盘跌破EMA20，说明突破没有获得接受且出现明确空方跟随。当前形成空头假突破反转信号；按执行层反向信号只在本根收盘平掉已有多头，不自动反手，后续入场仍须服从独立状态机。"
+      },
+      "result": {
+        "barsHeld": 6,
+        "rMultiple": -0.16945455,
+        "pnlUsd": -16.945455
+      }
+    },
+    {
+      "tradeNumber": 68,
+      "side": "long",
+      "entry": {
+        "signalIdx": 1078,
+        "signalTime": 1785343800,
+        "time": 1785344100,
+        "beijingTime": "2026-07-30 00:55",
+        "price": 4025.75,
+        "setup": "V2震荡真突破",
+        "reason": "背景由上沿反复停顿转为向上离开，当前突破不是单根孤立刺破，而是经过1070失败、1072至1077高位整理后的再突破。当前位置已站上局部边界，当前K大实体并以接近高点收盘，形成更强的接受证据；但EMA20偏离提示追价位置较远，不能替代执行规则。按V2口径当前收盘突破形成多头信号，下一根仅严格上破计划价才成交。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4015.285,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1085,
+        "time": 1785345900,
+        "beijingTime": "2026-07-30 01:30",
+        "price": 4040.28,
+        "reasonCode": "TRAILING_STOP",
+        "ambiguous": false,
+        "finalActiveStop": 4040.28,
+        "trailingActivated": true,
+        "trailingActivationIdx": 1080
+      },
+      "result": {
+        "barsHeld": 7,
+        "rMultiple": 1.38843765,
+        "pnlUsd": 138.843765
+      }
+    },
+    {
+      "tradeNumber": 69,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1096,
+        "signalTime": 1785349200,
+        "time": 1785349500,
+        "beijingTime": "2026-07-30 02:25",
+        "price": 4066.62,
+        "setup": "高潮后两根空头反转",
+        "reason": "背景是极端上冲后的高位高潮与上方扫荡，1095先出现明显空头压力，当前K继续收低并跌破1095低点，说明首次反向运动获得了即时跟随。当前位置仍远高于4050突破边沿，但高位拒绝、连续空头实体和局部结构破坏共同形成空头次要反转信号；这不是对未来主趋势反转的预判。执行上当前收盘只平掉已有多头，空头计划价为本K低点，下一根仅严格下破才成交。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4086.225,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1097,
+        "time": 1785349500,
+        "beijingTime": "2026-07-30 02:30",
+        "price": 4067.93,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4086.225,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 1097,
+        "signalTime": 1785349500,
+        "setup": "突破回测多头信号K",
+        "reason": "市场刚由上行整理以1092大实体向上突破，1093—1094继续在新高区跟随，背景偏多。当前位置是突破腿后的回测低位，价格仍在突破起点上方并明显高于EMA20。1095—1096的回落尚未把价格重新接受回原结构，1097下影拒绝低位且收盘靠近高点，接受仍在但需要新的跟随。当前触发仅是下一根严格上破1097高点4068.39；不破则该信号过期，跌回突破前结构则视为失败边界。"
+      },
+      "result": {
+        "barsHeld": 1,
+        "rMultiple": -0.06681969,
+        "pnlUsd": -6.681969
+      }
+    },
+    {
+      "tradeNumber": 70,
+      "side": "long",
+      "entry": {
+        "signalIdx": 1099,
+        "signalTime": 1785350100,
+        "time": 1785350400,
+        "beijingTime": "2026-07-30 02:40",
+        "price": 4072.785,
+        "setup": "突破回测后的二次多头信号K",
+        "reason": "市场仍处于1092强突破后的多头背景，1098的深回调测试了突破腿和EMA20附近的支撑。当前位置在回测低位上方，仍未回到突破前整理区，1099以大实体阳线从低位收回并接近高点。1098没有得到空头延续，1099的强势收盘重新提供多头接受证据，但突破高点的跟随尚未释放。当前触发仅限紧邻下一根严格上破1099高点4072.78；不破则信号过期，重新回到旧结构则是失败边界。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4052.175,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1104,
+        "time": 1785351600,
+        "beijingTime": "2026-07-30 03:05",
+        "price": 4103.37,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4089.51,
+        "trailingActivated": true,
+        "trailingActivationIdx": 1101,
+        "signalIdx": 1104,
+        "signalTime": 1785351600,
+        "setup": "楔形高潮后的失败突破反转信号K",
+        "reason": "市场自1092强突破后连续加速上行，已进入高位高潮/楔形尾段，逆势风险仍高。当前位置在新高和短线高位压力处，1104向上扫过1102高点4110.12后回落。1104长上影、收盘靠近低点，显示这次创新高尚未被接受，前面的强跟随首次出现失败证据，但仍需下一根验证。当前为短空信号K，触发仅限紧邻下一根严格下破4102.01；不破则信号过期，若高位重新被接受则失败。"
+      },
+      "result": {
+        "barsHeld": 5,
+        "rMultiple": 1.48398836,
+        "pnlUsd": 148.398836
+      }
+    },
+    {
+      "tradeNumber": 71,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1107,
+        "signalTime": 1785352500,
+        "time": 1785352800,
+        "beijingTime": "2026-07-30 03:20",
+        "price": 4097.645,
+        "setup": "失败突破后的二次进攻空头信号K",
+        "reason": "高位扫高失败后的空头回落仍是当前背景，1105下破后1106只是浅反弹，未收回失败突破区域。当前位置在失败突破下方、第一段回落后的浅回调高位，仍远高于EMA20，适合检验空头二次进攻。1107实体虽小，但上方受阻且收盘靠近低点，1106反弹没有形成多头接受，信号质量由位置和失败突破背景补足。当前为短空信号K，触发仅限紧邻下一根严格下破4097.65；不破则过期，重新站回高位则为失败边界。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4116.415,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1116,
+        "time": 1785355200,
+        "beijingTime": "2026-07-30 04:05",
+        "price": 4053.005,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4063.145,
+        "trailingActivated": true,
+        "trailingActivationIdx": 1110,
+        "signalIdx": 1116,
+        "signalTime": 1785355200,
+        "setup": "失败下破后的支撑反转多头信号K",
+        "reason": "市场从高位失败突破转为向下，1115跌破1098低点后形成向下扩展，当前回到早前突破腿的关键低点测试。当前位置在1098低点4052.18附近，价格下破后迅速收回该结构，属于支撑边缘的失败下破而非区间中部；EMA20仍只作辅助背景。1116以大实体阳线收在高位并重新站上4052.18，说明空头下破未被接受、空头跟随被拒绝，但反向接受仍需下一根验证。当前为多头信号K，触发仅限紧邻下一根严格上破4053.08；不破则过期，重新接受在4052.18下方则为失败边界。"
+      },
+      "result": {
+        "barsHeld": 9,
+        "rMultiple": 2.37826319,
+        "pnlUsd": 237.826319
+      }
+    },
+    {
+      "tradeNumber": 72,
+      "side": "long",
+      "entry": {
+        "signalIdx": 1121,
+        "signalTime": 1785356700,
+        "time": 1785357000,
+        "beijingTime": "2026-07-30 04:30",
+        "price": 4057.54,
+        "setup": "双底失败下破后的多头信号K",
+        "reason": "高位失败突破后的下行在1115破低后未继续扩展，1116与1120在4043附近形成第二次测试，市场由单边回落转为支撑处双向争夺。当前位置是两次低点和原突破腿下沿的支撑边缘，第二次低点没有明显扩大，EMA20在上方只作辅助。1121以较大实体阳线收在高位并重新收回4052.18，说明第二次下破未被接受并出现多头跟随，信号质量由位置和拒绝共同支持。当前为多头信号K，触发仅限紧邻下一根严格上破4057.54；不破则过期，低点被重新接受则失败。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4043.95,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1150,
+        "time": 1785369000,
+        "beijingTime": "2026-07-30 07:55",
+        "price": 4086.895,
+        "reasonCode": "TRAILING_STOP",
+        "ambiguous": false,
+        "finalActiveStop": 4086.895,
+        "trailingActivated": true,
+        "trailingActivationIdx": 1128
+      },
+      "result": {
+        "barsHeld": 29,
+        "rMultiple": 2.16004415,
+        "pnlUsd": 216.004415
+      }
+    },
+    {
+      "tradeNumber": 73,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1150,
+        "signalTime": 1785369000,
+        "time": 1785369300,
+        "beijingTime": "2026-07-30 07:55",
+        "price": 4086.52,
+        "setup": "震荡真突破",
+        "reason": "背景上，强势上行后在4100附近形成高位窄幅区间，当前大实体向下打破其下沿，市场状态开始向反向转换。位置上，收盘4087.41跌破4088.69前高转支撑和局部整理边界，当前实体与收盘位置提供初始接受，后续跟随尚未释放。当前收盘下破构成新的震荡真突破初始空头信号；按反向信号规则只在本根收盘平多且不自动反手，下一根仅以low严格低于4086.52触发空头成交。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4093.01,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1163,
+        "time": 1785372900,
+        "beijingTime": "2026-07-30 09:00",
+        "price": 4071.45,
+        "reasonCode": "TRAILING_STOP",
+        "ambiguous": false,
+        "finalActiveStop": 4071.45,
+        "trailingActivated": true,
+        "trailingActivationIdx": 1152
+      },
+      "result": {
+        "barsHeld": 13,
+        "rMultiple": 2.3220339,
+        "pnlUsd": 232.20339
+      }
+    },
+    {
+      "tradeNumber": 74,
+      "side": "long",
+      "entry": {
+        "signalIdx": 1164,
+        "signalTime": 1785373200,
+        "time": 1785373500,
+        "beijingTime": "2026-07-30 09:05",
+        "price": 4089.745,
+        "setup": "失败突破反转（多头）",
+        "reason": "背景上，1157后的空头突破先有跟随，但1161–1163出现低位停顿与强反击，原空头接受开始失效。位置上，当前大实体从确认低点反弹，重新站回1152–1156小区间上方并越过1155局部高点，虽接近4090.51压力，仍处于失败下破的边缘位置。接受与跟随方面，本根收盘4089.255接近高点并穿越 EMA20，形成对旧区间的强力回收。触发上，当前收盘形成V2反向突破的多头信号K；后续仅按紧邻下一根严格突破当前高点执行，若迅速回到区间则为失败边界。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4064.96,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1166,
+        "time": 1785373800,
+        "beijingTime": "2026-07-30 09:15",
+        "price": 4075.52,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4064.96,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 1166,
+        "signalTime": 1785373800,
+        "setup": "失败突破反转（空头）",
+        "reason": "背景上，1164多头反向突破没有得到持续跟随，1165在4093附近压力处受阻，1166以大实体向下破坏多头接受。位置上，当前从确认高点1165附近回落，收盘重新跌破1155高点4083.735、1152低点4079.77并落回 EMA20 下方，处于失败上破的边缘。接受与跟随方面，本根收盘接近低点并穿越局部结构，形成对多头突破的强力拒绝；后续接受仍待下一根验证。触发上，当前收盘形成失败突破反转的空头信号K，下一根仅按严格跌破当前低点执行，若回收旧区间则失败。"
+      },
+      "result": {
+        "barsHeld": 2,
+        "rMultiple": -0.57393585,
+        "pnlUsd": -57.393585
+      }
+    },
+    {
+      "tradeNumber": 75,
+      "side": "long",
+      "entry": {
+        "signalIdx": 1170,
+        "signalTime": 1785375000,
+        "time": 1785375300,
+        "beijingTime": "2026-07-30 09:35",
+        "price": 4086.66,
+        "setup": "震荡区间真突破（多头）",
+        "reason": "背景上，1166的空头反转未能持续，1168–1169回收下沿后，1170形成第二次向上推进，市场由失败下破重新转为区间上沿争夺。位置上，当前收盘站上1155高点4083.735并位于 EMA20 上方，处于局部区间上沿；上方4093附近仍是已确认压力，因此信号质量依赖接受而非单根外观。接受与跟随方面，1169先刺破未收稳，1170收盘接近高点并确认上沿收盘突破，当前形成初始接受。触发上，idx=1170构成V2震荡真突破多头信号K，下一根仅以严格突破当前高点执行，若迅速回到4083.735下方则失败。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4073.4,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1178,
+        "time": 1785377400,
+        "beijingTime": "2026-07-30 10:15",
+        "price": 4082.535,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4073.4,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 1178,
+        "signalTime": 1785377400,
+        "setup": "失败突破反转（空头）",
+        "reason": "背景上，1170多头突破后虽有浅回调，但1178在上方压力处以大实体反向收盘，说明多头接受失败。位置上，当前从1175高点附近回落，收盘跌破1155高点4083.735并落到 EMA20 下方，重新回到旧区间内部。接受与跟随方面，本根近低收盘直接否定前面的上沿突破，形成明确失败上破证据；后续仍需下一根跟随确认。触发上，idx=1178形成失败突破反转的空头信号K，下一根仅按严格跌破当前低点执行，若迅速收回4083.735上方则失败。"
+      },
+      "result": {
+        "barsHeld": 8,
+        "rMultiple": -0.31108597,
+        "pnlUsd": -31.108597
+      }
+    },
+    {
+      "tradeNumber": 76,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1187,
+        "signalTime": 1785380100,
+        "time": 1785380400,
+        "beijingTime": "2026-07-30 11:00",
+        "price": 4063.435,
+        "setup": "震荡区间向下突破",
+        "reason": "背景由前段上冲后的宽幅整理转为区间震荡，连续上探4090附近后跟随减弱。当前位置在区间下沿，当前大阴实体收盘跌出4073一带并远离EMA20，说明突破尝试得到初步接受，但后续跟随仍待下一根验证。当前K以低点严格突破作为空头信号触发；若下一根不能继续离开区间或迅速收回区间，则该突破边界转为失败。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4078.955,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1217,
+        "time": 1785389100,
+        "beijingTime": "2026-07-30 13:30",
+        "price": 4047.005,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4053.12,
+        "trailingActivated": true,
+        "trailingActivationIdx": 1208,
+        "signalIdx": 1217,
+        "signalTime": 1785389100,
+        "setup": "低位失败突破反转",
+        "reason": "背景是空头延伸后的低位扫荡，1215刺破4037.60后收回，说明向下突破尚未被接受。当前位置在近低位和失败下破边缘，1216出现承接后当前多头实体收盘越过1215高点，接受与跟随开始转向但仍只是首次反向推进。当前K形成低位失败突破反转的多头信号，只等待紧邻下一根high严格高于4047.385；若未触发或迅速跌回局部低位，信号永久失效。"
+      },
+      "result": {
+        "barsHeld": 30,
+        "rMultiple": 1.05863402,
+        "pnlUsd": 105.863402
+      }
+    },
+    {
+      "tradeNumber": 77,
+      "side": "long",
+      "entry": {
+        "signalIdx": 1224,
+        "signalTime": 1785391200,
+        "time": 1785391500,
+        "beijingTime": "2026-07-30 14:05",
+        "price": 4038.5,
+        "setup": "低位失败突破反转",
+        "reason": "背景是1219大阴线破坏前一轮低位反转后，价格在4028至4038附近形成空头回测整理，向下未继续扩展。当前位置重新站回4037.60失败突破边界并突破最近小平台，当前大实体收近高，接受与跟随重新转向但仍需下一根确认。当前形成低位失败突破反转的多头信号，只等待紧邻下一根high严格高于4038.50；若不触发或重新跌回4030附近，信号永久失效。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4030.05,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1229,
+        "time": 1785392700,
+        "beijingTime": "2026-07-30 14:30",
+        "price": 4030.05,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": false,
+        "finalActiveStop": 4030.05,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 5,
+        "rMultiple": -1,
+        "pnlUsd": -100
+      }
+    },
+    {
+      "tradeNumber": 78,
+      "side": "long",
+      "entry": {
+        "signalIdx": 1248,
+        "signalTime": 1785398400,
+        "time": 1785398700,
+        "beijingTime": "2026-07-30 16:05",
+        "price": 4046.025,
+        "setup": "二次进攻多头反转K",
+        "reason": "背景上价格从4051.43回落至4036.065后出现两次向上尝试，整体仍是宽通道，但空头第二段未能在低位取得延续。当前位置贴近已确认低点4036.065，属于近期下行段下沿而非区间中部；当前大实体多头K从低位收回并收在高点。它重新越过EMA20并压过近端空头推进，显示支撑处出现接受，虽然尚无下一根跟随；因此形成二次进攻多头反转K，严格触发仅限紧邻下一根的high>4045.915。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4036.065,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1255,
+        "time": 1785400500,
+        "beijingTime": "2026-07-30 16:40",
+        "price": 4064.475,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4063.05,
+        "trailingActivated": true,
+        "trailingActivationIdx": 1250,
+        "signalIdx": 1255,
+        "signalTime": 1785400500,
+        "setup": "终结楔形空头反转K",
+        "reason": "背景上低位反转后价格以连续窄通道加速推进至1254，推进已明显延伸并出现高潮/边际衰减风险；这不是普通中段逆势。当前位置在已确认高点H@1254=4073.01附近，当前K未能创新高并从高位收近低点。空头在高位形成明确拒绝，首次打断前序多头跟随但尚无下一根确认；因此当前形成终结楔形空头反转K，严格触发仅限紧邻下一根low<4064.41。"
+      },
+      "result": {
+        "barsHeld": 7,
+        "rMultiple": 1.85240964,
+        "pnlUsd": 185.240964
+      }
+    },
+    {
+      "tradeNumber": 79,
+      "side": "long",
+      "entry": {
+        "signalIdx": 1260,
+        "signalTime": 1785402000,
+        "time": 1785402300,
+        "beijingTime": "2026-07-30 17:05",
+        "price": 4067.49,
+        "setup": "二次进攻多头反转K",
+        "reason": "背景上1255后的空头运动更像强势上行后的次级回调，1259的低位尝试未继续下破，原多头突破背景重新占优。当前位置在回撤低点4059.475附近并高于EMA20，属于回调下沿而不是高位追多。当前大实体多头K收近高点并压过回调近端高点，显示多头接受与跟随恢复；因此形成二次进攻多头反转K，严格触发仅限紧邻下一根high>4067.49。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4059.475,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1265,
+        "time": 1785403500,
+        "beijingTime": "2026-07-30 17:30",
+        "price": 4067.53,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4059.475,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 1265,
+        "signalTime": 1785403500,
+        "setup": "双顶失败空头反转K",
+        "reason": "背景上多头从4059.475回升后在4073.01前高下方进行第二次测试，前高突破没有被接受，市场回到宽通道上沿的失败突破情境。当前位置就在前高和二次测试边缘，当前K仍未有效站上4073.01并收近低点。空头拒绝打断多头跟随，形成双顶失败空头反转K，严格触发仅限紧邻下一根low<4067.14。"
+      },
+      "result": {
+        "barsHeld": 5,
+        "rMultiple": 0.00499064,
+        "pnlUsd": 0.499064
+      }
+    },
+    {
+      "tradeNumber": 80,
+      "side": "long",
+      "entry": {
+        "signalIdx": 1269,
+        "signalTime": 1785404700,
+        "time": 1785405000,
+        "beijingTime": "2026-07-30 17:50",
+        "price": 4069.565,
+        "setup": "支撑回调多头反转K",
+        "reason": "背景上4073附近高位失败后，价格回撤至4060–4064支撑，空头未能继续扩展，当前重新出现多头推进。当前位置靠近已确认低点L@1266=4060.515上方的短线支撑边缘，当前K收近高并压过近端回撤高点。接受与跟随尚只有当前一根K，但位置与信号质量共同支持回调结束；因此形成支撑回调多头反转K，严格触发仅限紧邻下一根high>4069.565。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4060.515,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1271,
+        "time": 1785405300,
+        "beijingTime": "2026-07-30 18:00",
+        "price": 4063.405,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4060.515,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 1271,
+        "signalTime": 1785405300,
+        "setup": "失败突破空头反转K",
+        "reason": "背景上1269多头反转在高位未获接受，1270扫高回收后当前空头出现连续跟随，形成失败突破与二次顶结构。当前位置处于4073.155附近压力高点下方，当前K收近低并重新压回EMA20下方。当前空头接受已经强于单次刺破，因此形成失败突破空头反转K，严格触发仅限紧邻下一根low<4062.34。"
+      },
+      "result": {
+        "barsHeld": 2,
+        "rMultiple": -0.68066298,
+        "pnlUsd": -68.066298
+      }
+    },
+    {
+      "tradeNumber": 81,
+      "side": "long",
+      "entry": {
+        "signalIdx": 1275,
+        "signalTime": 1785406500,
+        "time": 1785406800,
+        "beijingTime": "2026-07-30 18:20",
+        "price": 4077.66,
+        "setup": "交易区间上沿真突破",
+        "reason": "前段反弹在局部交易区间内重叠，但多头在上一根扫高回落后迅速重新进攻。当前位于区间上沿，实体收盘站上已确认高点1270，且收盘靠近本K高点，显示初步接受与跟随。按V2规则，本根收盘突破可形成多头信号K；紧邻下一根只有严格上破本K高点才触发，若无法延续或回到旧区间则为失败边界。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4064.29,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1302,
+        "time": 1785414600,
+        "beijingTime": "2026-07-30 20:35",
+        "price": 4073.68,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4064.29,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 1302,
+        "signalTime": 1785414600,
+        "setup": "区间上沿假突破扫高反转",
+        "reason": "突破后高位多次冲高未扩展，当前在区间上沿附近急拉扫出新高后迅速回落。收盘回到4073.68、接近旧区间边沿且上影很长，显示上方突破接受失败，当前K已形成有位置支持的空头反转信号。紧邻下一根只有严格跌破本K低点4071.82才触发；若不破则信号过期，重新站回上沿并被接受则失败边界成立。"
+      },
+      "result": {
+        "barsHeld": 27,
+        "rMultiple": -0.29768138,
+        "pnlUsd": -29.768138
+      }
+    },
+    {
+      "tradeNumber": 82,
+      "side": "long",
+      "entry": {
+        "signalIdx": 1303,
+        "signalTime": 1785414900,
+        "time": 1785415200,
+        "beijingTime": "2026-07-30 20:40",
+        "price": 4078.3,
+        "setup": "突破边沿重新接受多头信号",
+        "reason": "idx1302的空头计划在本根未被严格触发（low=4072.01未低于4071.82），价格反而在旧上沿与EMA20上方重新收复。当前K为大实体、收盘靠近高点的多头再接受信号，显示下破尝试未被接受；这是新判断，不回填或改写idx1302。idx1303形成多头SIGNAL，紧邻下一根只有严格high>4078.30才触发，若重新跌入4073.155下方则失败。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4071.82,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1306,
+        "time": 1785415800,
+        "beijingTime": "2026-07-30 20:55",
+        "price": 4071.82,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": false,
+        "finalActiveStop": 4071.82,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 3,
+        "rMultiple": -1,
+        "pnlUsd": -100
+      }
+    },
+    {
+      "tradeNumber": 83,
+      "side": "long",
+      "entry": {
+        "signalIdx": 1309,
+        "signalTime": 1785416700,
+        "time": 1785417000,
+        "beijingTime": "2026-07-30 21:10",
+        "price": 4076.73,
+        "setup": "区间下破失败反转多头",
+        "reason": "前方冲高后进入局部交易区间，1306向下突破未在紧邻下一根获得严格跟随，1308又扫低回收，空头下破的接受已经失败。当前位于区间下沿附近，1309以大阳实体收回4071.75并接近EMA20，显示多头反向跟随。该失败突破反转形成多头信号K，下一根只有严格高于4076.73才成交；若无法突破或重新跌回4071.75下方，则信号失败边界成立。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4065.315,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1316,
+        "time": 1785418800,
+        "beijingTime": "2026-07-30 21:45",
+        "price": 4087.35,
+        "reasonCode": "TRAILING_STOP",
+        "ambiguous": false,
+        "finalActiveStop": 4087.35,
+        "trailingActivated": true,
+        "trailingActivationIdx": 1315
+      },
+      "result": {
+        "barsHeld": 7,
+        "rMultiple": 0.9303548,
+        "pnlUsd": 93.03548
+      }
+    },
+    {
+      "tradeNumber": 84,
+      "side": "long",
+      "entry": {
+        "signalIdx": 1318,
+        "signalTime": 1785419400,
+        "time": 1785419700,
+        "beijingTime": "2026-07-30 21:55",
+        "price": 4103.08,
+        "setup": "突破确认后的多头延续",
+        "reason": "前方上破尝试在1316至1317没有立即确认，但价格未回到旧区间，1318再次以大实体收于4098.765上方，背景转为向上突破接受。当前位于突破边沿外，收近高点并形成跟随，EMA20偏离仅作辅助，市场显示多头控制。1318是不能回填1315的独立V2真突破多头信号K，计划价为4103.08，下一根需严格上破才成交；已有同向仓位时按规则忽略。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4074.96,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1323,
+        "time": 1785420900,
+        "beijingTime": "2026-07-30 22:20",
+        "price": 4090.88,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4074.96,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 1323,
+        "signalTime": 1785420900,
+        "setup": "向上突破失败空头反转",
+        "reason": "高位加速后价格先在1322略收回突破边沿，当前进一步以较大阴实体收于4098.765下方，背景已从突破延伸转为失败突破。位置仍在高位边沿，连续回归与当前收近低点形成空头接受和跟随，EMA20只作辅助。1323构成向上突破失败的空头信号K，计划价为4090.41，下一根只有严格跌破才成交；该反向SIGNAL按规则在信号收盘处理既有多头平仓，不自动反手。"
+      },
+      "result": {
+        "barsHeld": 5,
+        "rMultiple": -0.43385491,
+        "pnlUsd": -43.385491
+      }
+    },
+    {
+      "tradeNumber": 85,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1333,
+        "signalTime": 1785423900,
+        "time": 1785424200,
+        "beijingTime": "2026-07-30 23:10",
+        "price": 4089.895,
+        "setup": "高位失败突破后的空头延续",
+        "reason": "高位突破反复测试后，当前从1332的边沿下方弱收继续下压，背景开始出现向下接受。价格位于4098.765下方并靠近局部回归低点，1333以较大阴实体收近低点，形成新的空头跟随；EMA20只作辅助。当前是不能回填1323的独立空头延续信号K，计划价为4089.895，下一根需严格跌破才成交；已有同向空头仓位时按规则忽略。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4113.255,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1335,
+        "time": 1785424500,
+        "beijingTime": "2026-07-30 23:20",
+        "price": 4095.965,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4113.255,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 1335,
+        "signalTime": 1785424500,
+        "setup": "失败下破反转",
+        "reason": "1320冲高后形成回落，1329反弹未创新高，市场处于宽通道与区间边缘的多空转换，而非已确认的强空趋势。1334向下刺破1324低点后，当前在该下破附近收回并重新站上EMA20，长实体近高显示空头下破未被接受且买方出现跟随。当前形成失败下破反转的多头信号；下一根严格突破4096.94才触发，若不能突破或重新跌回4087.195下方则成功边界失效。"
+      },
+      "result": {
+        "barsHeld": 2,
+        "rMultiple": -0.25984589,
+        "pnlUsd": -25.984589
+      }
+    },
+    {
+      "tradeNumber": 86,
+      "side": "long",
+      "entry": {
+        "signalIdx": 1338,
+        "signalTime": 1785425400,
+        "time": 1785425700,
+        "beijingTime": "2026-07-30 23:35",
+        "price": 4100.2,
+        "setup": "区间上破（突破跟随）",
+        "reason": "此前失败下破后，1335至1337连续收复，市场从下破失败转向短线多头尝试。当前K收盘站上已确认的4098.765压力并离开1335至1337的重叠区，实体收高且位于EMA20上方，初步接受与跟随成立。当前形成区间上破的多头信号；下一根严格突破4100.20才触发，若立即回到4098.765下方则突破接受失败。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4092.145,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1345,
+        "time": 1785427500,
+        "beijingTime": "2026-07-31 00:10",
+        "price": 4111.2,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4107.875,
+        "trailingActivated": true,
+        "trailingActivationIdx": 1343,
+        "signalIdx": 1345,
+        "signalTime": 1785427500,
+        "setup": "失败上破次要反转",
+        "reason": "1334失败下破后形成窄通道上行，1344突破4113.255但已接近4120.495前高，市场虽偏多却进入高位验证。1345未能在突破位上方接受，收盘近低并回到4113.255下方，空头出现失败突破后的初步跟随。当前形成失败上破的次要反转空头信号；下一根严格跌破4111.20才触发，若重新站上4115.93并收回突破位则该反转失败。"
+      },
+      "result": {
+        "barsHeld": 7,
+        "rMultiple": 1.36561142,
+        "pnlUsd": 136.561142
+      }
+    },
+    {
+      "tradeNumber": 87,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1350,
+        "signalTime": 1785429000,
+        "time": 1785429300,
+        "beijingTime": "2026-07-31 00:35",
+        "price": 4112.79,
+        "setup": "失败上破（第二段陷阱）",
+        "reason": "1344至1348多次向上推进后，1349回测突破边沿，当前上破再次失去接受，市场从窄通道延续转为高位失败测试。当前K收盘跌破4115.93和1348的4113.595低点，实体收低，空头获得比前一根更明确的跟随。当前形成失败上破的空头信号；下一根严格跌破4112.79才触发，若重新站回4115.93上方则失败边界成立。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4119.285,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1363,
+        "time": 1785432900,
+        "beijingTime": "2026-07-31 01:40",
+        "price": 4105,
+        "reasonCode": "TRAILING_STOP",
+        "ambiguous": false,
+        "finalActiveStop": 4105,
+        "trailingActivated": true,
+        "trailingActivationIdx": 1358
+      },
+      "result": {
+        "barsHeld": 13,
+        "rMultiple": 1.19938414,
+        "pnlUsd": 119.938414
+      }
+    },
+    {
+      "tradeNumber": 88,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1365,
+        "signalTime": 1785433500,
+        "time": 1785433800,
+        "beijingTime": "2026-07-31 01:50",
+        "price": 4104.08,
+        "setup": "区间上沿假突破反转",
+        "reason": "当前处于短线交易区间与宽通道重叠的背景，价格回到已确认高点附近的局部上沿。当前K先越过4108.235后收回，收盘在低点且未出现突破接受与跟随，形成空头反转信号。只有紧邻下一根严格跌破4104.085才触发，否则该假突破判断不追溯成立。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4108.235,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1368,
+        "time": 1785434400,
+        "beijingTime": "2026-07-31 02:05",
+        "price": 4105.655,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4108.235,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 1368,
+        "signalTime": 1785434400,
+        "setup": "区间下沿多头反转",
+        "reason": "背景已从上沿假突破后的空头跟随转为交易区间下沿的反向测试，1366至1367的下行在4101.25附近停顿。当前位于局部下沿与EMA20附近，本K从低点强势收高并重新站上EMA20，显示空头跟随被拒绝但尚未突破上沿。该K形成区间下沿多头反转信号，只有紧邻下一根严格突破4105.97才触发；若不能跟随或重新跌破4101.25则信号失败。"
+      },
+      "result": {
+        "barsHeld": 3,
+        "rMultiple": -0.37906137,
+        "pnlUsd": -37.906137
+      }
+    },
+    {
+      "tradeNumber": 89,
+      "side": "long",
+      "entry": {
+        "signalIdx": 1373,
+        "signalTime": 1785435900,
+        "time": 1785436200,
+        "beijingTime": "2026-07-31 02:30",
+        "price": 4103.68,
+        "setup": "区间下沿扫荡反转",
+        "reason": "市场仍处于4100.055至4108.57的交易区间，1371至1372的回调把价格带到下沿；当前K向下扫过1367低点4101.25后收回。当前位置在区间下沿，收盘接近本K高点，说明下破没有被接受并形成多头反转信号。紧邻下一根只有严格突破4103.68才成交，若重新跌破4100.75则该反转失败。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4101.25,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1375,
+        "time": 1785436500,
+        "beijingTime": "2026-07-31 02:40",
+        "price": 4105.425,
+        "reasonCode": "TRAILING_STOP",
+        "ambiguous": false,
+        "finalActiveStop": 4105.425,
+        "trailingActivated": true,
+        "trailingActivationIdx": 1374
+      },
+      "result": {
+        "barsHeld": 2,
+        "rMultiple": 0.718107,
+        "pnlUsd": 71.8107
+      }
+    },
+    {
+      "tradeNumber": 90,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1375,
+        "signalTime": 1785436500,
+        "time": 1785436800,
+        "beijingTime": "2026-07-31 02:40",
+        "price": 4104.475,
+        "setup": "区间上沿空头反转",
+        "reason": "区间下沿反转的多头在1374回到局部上沿后，当前K从4107.855附近直接收低，背景转为区间上沿的反向测试。当前位置靠近1374确认高点和4108.57压力，当前K开在高点并收于低位、重新跌破EMA20，说明多头跟随被拒绝。形成空头反转信号，紧邻下一根仅在low严格低于4104.475时触发；若重新站回4107.855则失败。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4107.855,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1380,
+        "time": 1785438000,
+        "beijingTime": "2026-07-31 03:05",
+        "price": 4102.165,
+        "reasonCode": "TRAILING_STOP",
+        "ambiguous": false,
+        "finalActiveStop": 4102.165,
+        "trailingActivated": true,
+        "trailingActivationIdx": 1377
+      },
+      "result": {
+        "barsHeld": 5,
+        "rMultiple": 0.68343195,
+        "pnlUsd": 68.343195
+      }
+    },
+    {
+      "tradeNumber": 91,
+      "side": "long",
+      "entry": {
+        "signalIdx": 1380,
+        "signalTime": 1785438000,
+        "time": 1785438300,
+        "beijingTime": "2026-07-31 03:05",
+        "price": 4103.465,
+        "setup": "支撑处两根反转",
+        "reason": "前面空头从4107.855连续下压至4098.5支撑，当前大实体多头在该支撑处强势收回，背景出现反向状态转换候选。当前位置贴近1361确认低点4098.505，当前收盘接近高点并接近EMA20，说明空头跟随被明显拒绝。当前K形成支撑处多头反转信号，紧邻下一根只有high严格高于4103.47才触发；若跌回4098.77则反转失败。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4100.75,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1384,
+        "time": 1785439200,
+        "beijingTime": "2026-07-31 03:25",
+        "price": 4110.34,
+        "reasonCode": "TRAILING_STOP",
+        "ambiguous": false,
+        "finalActiveStop": 4110.34,
+        "trailingActivated": true,
+        "trailingActivationIdx": 1383
+      },
+      "result": {
+        "barsHeld": 4,
+        "rMultiple": 2.53222836,
+        "pnlUsd": 253.222836
+      }
+    },
+    {
+      "tradeNumber": 92,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1387,
+        "signalTime": 1785440100,
+        "time": 1785440400,
+        "beijingTime": "2026-07-31 03:40",
+        "price": 4112.195,
+        "setup": "突破后新高假突破反转",
+        "reason": "交易区间上破后的窄通道多头在1385至1386继续上推，当前在新高处上扫4114.915后收回到4113.055下方，背景转为突破后失败测试候选。当前位置位于突破延伸的高位尾段，当前K有明显上影并收回前高下方，显示上方接受失败，虽强趋势背景仍先按次要反转处理。当前形成高位假突破空头信号，紧邻下一根只有low严格低于4112.195才触发；若重新站回4115.375则失败。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4114.915,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1391,
+        "time": 1785441300,
+        "beijingTime": "2026-07-31 04:00",
+        "price": 4112.065,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4114.915,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 1391,
+        "signalTime": 1785441300,
+        "setup": "真突破回测后的多头反转",
+        "reason": "1383上破后高位假突破回落至4108.57旧上沿，当前在回测中收回，背景从失败测试转为突破回测候选。当前位置贴近旧上沿且仍高于4108.57，当前K从4109.33反弹并收在高位、重新站上EMA20，显示回测被承接。当前形成突破回测多头信号，紧邻下一根只有high严格高于4112.735才触发；若跌破4108.57并被接受则失败。"
+      },
+      "result": {
+        "barsHeld": 4,
+        "rMultiple": 0.04779412,
+        "pnlUsd": 4.779412
+      }
+    },
+    {
+      "tradeNumber": 93,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1398,
+        "signalTime": 1785443400,
+        "time": 1785443700,
+        "beijingTime": "2026-07-31 04:35",
+        "price": 4107.665,
+        "setup": "高位失败突破空头反转",
+        "reason": "背景上，前段上行在高位转为重叠，1392上冲后没有得到持续接受。位置上当前从前高区域回落，收盘跌破1391局部低点并穿过EMA20，形成失败突破后的空头触发；成功边界是下一根严格跌破当前低点，重新站回局部结构则否定延续。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4114.145,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1405,
+        "time": 1785449100,
+        "beijingTime": "2026-07-31 06:10",
+        "price": 4105.715,
+        "reasonCode": "TRAILING_STOP",
+        "ambiguous": false,
+        "finalActiveStop": 4105.715,
+        "trailingActivated": true,
+        "trailingActivationIdx": 1401
+      },
+      "result": {
+        "barsHeld": 7,
+        "rMultiple": 0.30092593,
+        "pnlUsd": 30.092593
+      }
+    },
+    {
+      "tradeNumber": 94,
+      "side": "long",
+      "entry": {
+        "signalIdx": 1413,
+        "signalTime": 1785451500,
+        "time": 1785451800,
+        "beijingTime": "2026-07-31 06:50",
+        "price": 4111.175,
+        "setup": "突破回测后的多头二次进攻",
+        "reason": "背景上，1402下破失败后多头已经收复EMA20并连续守住1391上方，当前回测没有把价格重新吸回旧结构。位置上当前下影测试突破边沿后收在1411高点上方，形成新的多头信号K；这是1411信号过期后的独立新判断，不回填旧决定，下一根严格突破当前高点才成功。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4107.06,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1418,
+        "time": 1785453000,
+        "beijingTime": "2026-07-31 07:15",
+        "price": 4107.06,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": false,
+        "finalActiveStop": 4107.06,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 5,
+        "rMultiple": -1,
+        "pnlUsd": -100
+      }
+    },
+    {
+      "tradeNumber": 95,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1418,
+        "signalTime": 1785453000,
+        "time": 1785453300,
+        "beijingTime": "2026-07-31 07:15",
+        "price": 4106.595,
+        "setup": "高位多头突破失败空头反转",
+        "reason": "背景上，1413至1417的多头突破回测在高位未能继续扩展，当前强空头K把价格重新拉回突破区，显示多头接受失败。位置上当前跌破1415局部低点、1391边沿并下穿EMA20，形成空头信号K；下一根只有严格跌破当前低点才成交，反向正式信号收盘先按规则平掉既有多头且不自动反手。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4112.01,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1432,
+        "time": 1785457200,
+        "beijingTime": "2026-07-31 08:25",
+        "price": 4102.87,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4105.6,
+        "trailingActivated": true,
+        "trailingActivationIdx": 1430,
+        "signalIdx": 1432,
+        "signalTime": 1785457200,
+        "setup": "区间下破失败后的多头反转K线",
+        "reason": "此前区间下破在1423低点下方持续试探，但当前K线进一步扫低后收回4102.345上方，说明空头没有获得下沿接受。当前位置正处于局部交易区间下沿，长下影配合多头实体和收回边界，形成了明确的失败突破反向压力。当前K线构成多头反转信号K，计划价为其高点，只有紧邻下一根严格上破才可成交；它同时作为反向正式SIGNAL，使既有空头按收盘价平仓且不自动反手。"
+      },
+      "result": {
+        "barsHeld": 14,
+        "rMultiple": 0.68790397,
+        "pnlUsd": 68.790397
+      }
+    },
+    {
+      "tradeNumber": 96,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1442,
+        "signalTime": 1785460200,
+        "time": 1785460500,
+        "beijingTime": "2026-07-31 09:15",
+        "price": 4088.705,
+        "setup": "EMA20失败测试后的空头反转K线",
+        "reason": "低位高潮式反弹在1440至1441连续测试EMA20，却没有站稳，原空头背景在该压力位置重新获得控制。当前K线从EMA20下方直接压低，收盘接近最低并跌破1436与1439低点，位置和接受均支持反向空头。当前形成新的空头反转信号K，计划价为其低点，只有紧邻下一根严格跌破才可触发，迟到的后续走势不能提前成交。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4101.71,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1443,
+        "time": 1785460500,
+        "beijingTime": "2026-07-31 09:20",
+        "price": 4093.935,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4101.71,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 1443,
+        "signalTime": 1785460500,
+        "setup": "空头下破失败后的多头反转K线",
+        "reason": "1442空头信号在本根低点严格触发后没有得到延续，当前进一步扫过4088.705却以大多头实体收回，显示空头下破接受失败。当前位置处于新低边缘和前一根空头信号的失效处，长下影、收盘接近高点形成初步反向接受，但价格仍低于EMA20，先按次要反转看待。当前构成新的多头反转信号K，计划价为其高点，只有紧邻下一根严格上破才成交；反向正式SIGNAL在本根收盘平掉已触发空头，不自动反手。"
+      },
+      "result": {
+        "barsHeld": 1,
+        "rMultiple": -0.40215302,
+        "pnlUsd": -40.215302
+      }
+    },
+    {
+      "tradeNumber": 97,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1449,
+        "signalTime": 1785462300,
+        "time": 1785462600,
+        "beijingTime": "2026-07-31 09:50",
+        "price": 4083.275,
+        "setup": "下破回测后的空头延续K线",
+        "reason": "1447的初始下破计划虽已过期，1448的浅回测仍未站回4086.63；当前K线否定该回测并重新收在4083.965下方，形成了新的独立空头延续结构。当前位置位于局部下沿下方且远离EMA20，当前实体收盘接近低点，接受与位置共同支持空头。该SIGNAL只属于当前1449，不能回填1447；计划价为当前低点，只有紧邻下一根严格跌破才可成交。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4095.045,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1453,
+        "time": 1785463500,
+        "beijingTime": "2026-07-31 10:10",
+        "price": 4089.03,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4095.045,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 1453,
+        "signalTime": 1785463500,
+        "setup": "低位二次探底后的多头反转K线",
+        "reason": "空头持仓在局部下沿反复创低后，当前以大多头实体从1452低点快速收回，低位卖压出现明显拒绝。当前位置仍低于EMA20且接近1449局部压力，属于可能的次要反转而非已确认主趋势改变；但强收盘和低位背景共同构成反转触发。当前K线形成多头信号K，计划价为其高点，只有紧邻下一根严格上破才成交；反向正式SIGNAL在本根收盘平掉既有空头，不自动反手。"
+      },
+      "result": {
+        "barsHeld": 4,
+        "rMultiple": -0.48895497,
+        "pnlUsd": -48.895497
+      }
+    },
+    {
+      "tradeNumber": 98,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1454,
+        "signalTime": 1785463800,
+        "time": 1785464100,
+        "beijingTime": "2026-07-31 10:15",
+        "price": 4085.365,
+        "setup": "多头触发后的EMA20失败空头反转K线",
+        "reason": "1453多头计划在本根触发后，价格上探EMA20附近却迅速收低，说明低位反弹没有获得更高位置的接受。当前位置正处于EMA20压力与前一根多头计划失败边界，当前空头实体收盘接近低点并回到EMA20下方，形成新的反向跟随。当前K线构成独立空头反转信号K，计划价为其低点，只有紧邻下一根严格跌破才成交；该反向正式SIGNAL在本根收盘平掉多头，不自动反手。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4087.485,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1456,
+        "time": 1785464400,
+        "beijingTime": "2026-07-31 10:25",
+        "price": 4083.7,
+        "reasonCode": "TRAILING_STOP",
+        "ambiguous": false,
+        "finalActiveStop": 4083.7,
+        "trailingActivated": true,
+        "trailingActivationIdx": 1455
+      },
+      "result": {
+        "barsHeld": 2,
+        "rMultiple": 0.78537736,
+        "pnlUsd": 78.537736
+      }
+    },
+    {
+      "tradeNumber": 99,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1460,
+        "signalTime": 1785465600,
+        "time": 1785465900,
+        "beijingTime": "2026-07-31 10:45",
+        "price": 4075.355,
+        "setup": "低位整理下破真突破",
+        "reason": "1456至1459在4081附近形成窄幅整理，当前终于以大实体收盘跌破该低位边界，背景从停顿转为新的空头离开。当前位置是局部整理下沿，当前收盘接近最低且远低于EMA20，具备初始接受与触发条件。按V2震荡真突破口径，本根初始收盘下破可登记SIGNAL；既有空头同向信号只记录、不加仓、不重算止损或课程目标。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4084.375,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1471,
+        "time": 1785468900,
+        "beijingTime": "2026-07-31 11:40",
+        "price": 4078.9,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4084.375,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 1471,
+        "signalTime": 1785468900,
+        "setup": "低位反弹突破局部压力",
+        "reason": "连续下跌后低位反弹在1463附近形成局部压力，当前以强多头实体收盘越过4078.575，市场开始脱离原下行微结构。当前位置处于低位反弹上沿并接近EMA20，收盘接近高点、初始接受出现，但更大空头背景仍使其先按局部次要突破看待。按V2初始收盘突破口径登记SIGNAL，计划价为当前高点，只有紧邻下一根严格上破才成交；反向正式SIGNAL在本根收盘平掉既有空头，不自动反手。"
+      },
+      "result": {
+        "barsHeld": 11,
+        "rMultiple": -0.39301552,
+        "pnlUsd": -39.301552
+      }
+    },
+    {
+      "tradeNumber": 100,
+      "side": "long",
+      "entry": {
+        "signalIdx": 1478,
+        "signalTime": 1785471000,
+        "time": 1785471300,
+        "beijingTime": "2026-07-31 12:15",
+        "price": 4077.14,
+        "setup": "失败突破反转",
+        "reason": "背景上，较大结构仍是下行，但近端下行已进入低位重叠，不能只按单边延续看待。位置上，价格位于1466低点4072.14与1471低点4075.20构成的局部支撑边缘，1476下破后本根收回并以大实体收近高，显示下破未被接受且出现多头跟随。当前1478形成规则定义的多头失败突破反转信号K，成交仍只允许下一根严格突破本根高点。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4075.2,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1480,
+        "time": 1785471600,
+        "beijingTime": "2026-07-31 12:25",
+        "price": 4075.2,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": false,
+        "finalActiveStop": 4075.2,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 2,
+        "rMultiple": -1,
+        "pnlUsd": -100
+      }
+    },
+    {
+      "tradeNumber": 101,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1484,
+        "signalTime": 1785472800,
+        "time": 1785473100,
+        "beijingTime": "2026-07-31 12:45",
+        "price": 4079.265,
+        "setup": "失败突破反转",
+        "reason": "背景上，较大可见结构仍是下行，前一段反弹在局部阻力处出现衰减。位置上，价格在1471确认高点4079.65上方推进至4081.53后，本根以大实体收于4079.34并重新跌回该位下方，显示向上突破未被接受。当前1484形成规则定义的空头失败突破反转信号K，计划价为本根低点4079.29，成交仅观察紧邻下一根严格跌破。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4079.65,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1485,
+        "time": 1785473100,
+        "beijingTime": "2026-07-31 12:50",
+        "price": 4079.65,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": false,
+        "finalActiveStop": 4079.65,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 1,
+        "rMultiple": -1,
+        "pnlUsd": -100
+      }
+    },
+    {
+      "tradeNumber": 102,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1489,
+        "signalTime": 1785474300,
+        "time": 1785474600,
+        "beijingTime": "2026-07-31 13:10",
+        "price": 4081.075,
+        "setup": "扫高失败突破反转",
+        "reason": "背景上，反弹已经推进到1460确认高点4082.77附近，而较大可见结构仍是下行，当前位置更像高位测试而非健康延续。位置上，本根上扫该确认高点至4083.32后回落，收盘回到4082.77下方，形成扫高后的拒绝与空头跟随。当前1489形成规则定义的空头扫高失败突破信号K，计划价为本根低点4081.075，只有下一根严格跌破才成交。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4081.535,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1490,
+        "time": 1785474600,
+        "beijingTime": "2026-07-31 13:15",
+        "price": 4081.535,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": true,
+        "finalActiveStop": 4081.535,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 1,
+        "rMultiple": -1,
+        "pnlUsd": -100
+      }
+    },
+    {
+      "tradeNumber": 103,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1496,
+        "signalTime": 1785476400,
+        "time": 1785476700,
+        "beijingTime": "2026-07-31 13:45",
+        "price": 4075.9,
+        "setup": "突破延续",
+        "reason": "背景上，较大结构仍是高位回落，1495目标退出后的反弹修正已经重新转为向下推进。位置上，1496从1492高位下方的回测区向下突破1491与1494低点，收盘靠近低点并重新落到EMA20下方，空头接受与跟随同时出现。当前1496形成规则定义的空头下破延续信号K，计划价为本根低点4075.90，成交仅观察紧邻下一根严格跌破。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4083.04,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1500,
+        "time": 1785477600,
+        "beijingTime": "2026-07-31 14:05",
+        "price": 4078.175,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4083.04,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 1500,
+        "signalTime": 1785477600,
+        "setup": "扫低失败突破反转",
+        "reason": "背景上，较大可见结构仍是下行，但价格已回到近100根低点4072.14附近，低位空头推进出现衰减。位置上，本根扫过1498确认低点4073.44并下探到4072.785后，以大实体收近高、重新站回EMA20，显示下破未被接受并出现多头跟随。当前1500形成规则定义的多头扫低失败突破反转信号K，计划价为本根高点4078.185，只有下一根严格突破才成交。"
+      },
+      "result": {
+        "barsHeld": 4,
+        "rMultiple": -0.31862745,
+        "pnlUsd": -31.862745
+      }
+    },
+    {
+      "tradeNumber": 104,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1506,
+        "signalTime": 1785479400,
+        "time": 1785479700,
+        "beijingTime": "2026-07-31 14:35",
+        "price": 4077.535,
+        "setup": "上破失败反转",
+        "reason": "1500至1503的反弹在前高区上方未能延续，当前呈现上破失败后的反转背景。当前位于1503反弹高点及1492前高压力带附近，且此前明显偏离EMA20。1506以大实体收于低位，跌回1492前高下方并穿越EMA20，拒绝证据增强但后续跟随仍待验证。当前收盘形成空头上破失败反转信号K，只有紧邻下一根严格跌破4077.535才触发空头计划。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4087.665,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1519,
+        "time": 1785483300,
+        "beijingTime": "2026-07-31 15:40",
+        "price": 4072.045,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4087.665,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 1519,
+        "signalTime": 1785483300,
+        "setup": "低点扫荡反转",
+        "reason": "1516—1518的连续下破把价格从微型区间推至1500低点下方，当前进入快速下跌后的支撑测试背景。1519位于1500低点与新低4068.16形成的下方边缘，具备扫荡和高潮后次级反转的条件。当前K下探新低后以较强多头实体收回至1518低点上方，拒绝证据出现，但主跌势尚未被结构性扭转。当前收盘形成低点扫荡反转多头信号K，只有紧邻下一根严格突破4072.595才触发多头计划。"
+      },
+      "result": {
+        "barsHeld": 13,
+        "rMultiple": 0.54195459,
+        "pnlUsd": 54.195459
+      }
+    },
+    {
+      "tradeNumber": 105,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1521,
+        "signalTime": 1785483900,
+        "time": 1785484200,
+        "beijingTime": "2026-07-31 15:50",
+        "price": 4071.335,
+        "setup": "旧支撑回测失败反转",
+        "reason": "1519多头扫荡后的首次反弹未能收复1500低点，当前背景重新偏向原下行压力。1521位于1500低点回测区域，价格刺入旧支撑后又收回其下，位置表现为支撑转压力。当前K上影明显、收盘偏低，显示多头接受失败并有空头拒绝，实体不大但位置清晰。当前形成空头失败回测反转信号K；反向正式信号只在收盘平掉已有多头且不自动反手，只有紧邻下一根严格跌破4071.335才触发新的空头计划。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4079.315,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1527,
+        "time": 1785485700,
+        "beijingTime": "2026-07-31 16:20",
+        "price": 4066.345,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4069.225,
+        "trailingActivated": true,
+        "trailingActivationIdx": 1524,
+        "signalIdx": 1527,
+        "signalTime": 1785485700,
+        "setup": "新低扫荡反转",
+        "reason": "1526空头延续信号在本根低点被触发后，价格立即在新低处强力收回，当前背景转为下破失败的次级反转验证。当前位置扫过1524与1526低点并收回1524低点上方，属于快速下跌后的关键边缘。1527以大实体多头K收近高点，拒绝和反向跟随明显，但尚未收复1519低点，仍是逆原趋势的早期反转。当前形成新低扫荡反转多头信号K，只有紧邻下一根严格突破4066.64才触发；已有空头按反向信号收盘平仓且不自动反手。"
+      },
+      "result": {
+        "barsHeld": 6,
+        "rMultiple": 0.62531328,
+        "pnlUsd": 62.531328
+      }
+    },
+    {
+      "tradeNumber": 106,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1528,
+        "signalTime": 1785486000,
+        "time": 1785486300,
+        "beijingTime": "2026-07-31 16:25",
+        "price": 4059.53,
+        "setup": "扫荡反转失败后的空头延续",
+        "reason": "1527的强多扫荡信号在紧邻下一根未能延续，价格重新跌破其信号低点，当前回到原强空背景。位置处于1524低点下方的新低边缘，前一根多头试图修复的下破已被否定。1528以大实体收近低点并创出新低，空头接受与跟随恢复，扫荡反转失败边界清晰。当前形成空头反转失败延续信号K，只有紧邻下一根严格跌破4059.53才触发；反向正式信号按收盘平多且不自动反手。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4074.415,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1545,
+        "time": 1785491100,
+        "beijingTime": "2026-07-31 17:50",
+        "price": 4056.77,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4074.415,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 1545,
+        "signalTime": 1785491100,
+        "setup": "低位多头反转K",
+        "reason": "市场仍处于1528后高点下移的空头推进中，但1543附近的下探出现了明显反向响应。当前位置贴近1543确认低点和近100根区间下沿，非中部，且上方1542确认高点是当前微型结构边界。1545以较大实体收于4056.77、越过1542高点并接近最高价，显示低位多头接受初步成立，但尚未有后续K跟随。故当前形成低位多头反转信号K，计划价为4057.16，只有紧邻下一根严格high>4057.16才可成交；若下一根不突破则永久过期，后续跌破1543低点则反转假设失败。"
+      },
+      "result": {
+        "barsHeld": 17,
+        "rMultiple": 0.18542157,
+        "pnlUsd": 18.542157
+      }
+    },
+    {
+      "tradeNumber": 107,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1550,
+        "signalTime": 1785492600,
+        "time": 1785492900,
+        "beijingTime": "2026-07-31 18:15",
+        "price": 4055.635,
+        "setup": "EMA20上穿失败后的空头反转K",
+        "reason": "市场主背景仍是1528以来的下降段，1549反弹上穿EMA20未形成持续接受，1550重新收在EMA20下方。当前位置在1549确认高点4058.435和EMA20附近的反弹阻力区，且刚完成前一低位反转的目标兑现，不是下跌中段的随机位置。1550开盘即高点、实体向下并收近低点，显示上穿失败后的空头拒绝和跟随初步出现。当前收盘形成空头反转信号K，计划价为4055.635，只有紧邻下一根严格low<4055.635成交；若下一根不突破信号永久过期，若后续重新站稳4058.435则该失败突破空头假设失效。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4058.435,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1554,
+        "time": 1785493800,
+        "beijingTime": "2026-07-31 18:35",
+        "price": 4054.815,
+        "reasonCode": "TRAILING_STOP",
+        "ambiguous": false,
+        "finalActiveStop": 4054.815,
+        "trailingActivated": true,
+        "trailingActivationIdx": 1551
+      },
+      "result": {
+        "barsHeld": 4,
+        "rMultiple": 0.29285714,
+        "pnlUsd": 29.285714
+      }
+    },
+    {
+      "tradeNumber": 108,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1558,
+        "signalTime": 1785495000,
+        "time": 1785495300,
+        "beijingTime": "2026-07-31 18:55",
+        "price": 4054.38,
+        "setup": "多头微型突破失败后的空头反转K",
+        "reason": "市场大背景仍是下降趋势，1557多头微型突破没有获得下一根严格突破，1558重新回到EMA20下方。当前位置在1557确认高点4057.115和EMA20附近的失败突破边缘，靠近反弹阻力而非低位支撑。1558最高4056.36未越过前信号计划价4057.115，收盘4054.70接近低点，显示多头尝试失败并出现空头拒绝与初步跟随。当前形成失败微型突破后的空头反转信号K，计划价为4054.38，只有紧邻下一根严格low<4054.38才成交；不突破则永久过期，重新站稳4057.115则该失败边界失效。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4057.115,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1560,
+        "time": 1785495600,
+        "beijingTime": "2026-07-31 19:05",
+        "price": 4055.74,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4057.115,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 1560,
+        "signalTime": 1785495600,
+        "setup": "前低支撑长下影多头反转K",
+        "reason": "市场仍处于1528以来的大段下降背景，且前一空头计划已成交，但1560在前低附近出现反向响应。当前位置回测至1552确认低点4052.015附近，属于支撑边缘而非区间中部，EMA20仅作为辅助证据。1560下探至4052.17后收成带长下影的多头K，收盘近高并略站在EMA20上方，显示空头下破未被接受，反向接受初步成立。当前形成低位多头反转信号K；现有空头按close_only在1560收盘4055.74平仓，新的多头计划价为4055.95，只有紧邻下一根严格high>4055.95才成交，不突破则信号永久过期。"
+      },
+      "result": {
+        "barsHeld": 2,
+        "rMultiple": -0.49725777,
+        "pnlUsd": -49.725777
+      }
+    },
+    {
+      "tradeNumber": 109,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1562,
+        "signalTime": 1785496200,
+        "time": 1785496500,
+        "beijingTime": "2026-07-31 19:15",
+        "price": 4056.85,
+        "setup": "前高扫高失败后的空头反转K",
+        "reason": "市场仍处于1528以来的大段下降背景，1561反弹上行至前高后，1562出现扫高回落。当前位置位于1549确认高点4058.435上方的反弹阻力边缘，且多头刚从1552支撑反弹到这里，不是空头下跌中段。1562最高4059.51刺破1549高点后收于4057.09并贴近本根低点，长上影显示突破未被接受，空头拒绝初步成立。当前形成前高扫高失败后的空头反转信号K；既有多头按close_only在1562收盘4057.09平仓，新的空头计划价为4056.85，只有紧邻下一根严格low<4056.85才成交，不突破则永久过期。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4057.115,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1563,
+        "time": 1785496500,
+        "beijingTime": "2026-07-31 19:20",
+        "price": 4057.115,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": true,
+        "finalActiveStop": 4057.115,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 1,
+        "rMultiple": -1,
+        "pnlUsd": -100
+      }
+    },
+    {
+      "tradeNumber": 110,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1566,
+        "signalTime": 1785497400,
+        "time": 1785497700,
+        "beijingTime": "2026-07-31 19:35",
+        "price": 4053.62,
+        "setup": "向上突破失败回到区间的空头反转K",
+        "reason": "市场大段背景仍偏空，1564向上突破后1565未触发多头计划，1566回到旧结构内部，空头重新夺回控制。当前位置位于1549与1562确认高点构成的区间上沿失败边缘，不是中部追空。1566开盘即高点4058.98，收于4054.43并接近低点，重新跌破1549上沿4058.435及EMA20，显示向上突破未被接受且空头跟随明显。当前形成向上突破失败回到区间的空头反转信号K，计划价为4053.62，只有紧邻下一根严格low<4053.62才成交；不突破则永久过期，重新站稳1564高点则失败边界失效。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4061.15,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1570,
+        "time": 1785498600,
+        "beijingTime": "2026-07-31 19:55",
+        "price": 4054.975,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4061.15,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 1570,
+        "signalTime": 1785498600,
+        "setup": "低位扫低后的强多头反转K",
+        "reason": "市场仍处于大段下降背景，但1568扫低后支撑区出现反向响应，局部空头延续开始减弱。当前位置贴近1568确认低点4050.69、1552确认低点4052.015和近100根区间下沿，属于低位边缘而非中部。1570以大实体收于4054.97并接近最高点，吞没前一小实体阴线，显示扫低后的多头接受初步成立；但收盘仍略低于EMA20，反转尚未完全确认。当前形成低位扫低后的强多头反转信号K；现有空头按close_only在1570收盘4054.97平仓，新的多头计划价为4055.065，只有紧邻下一根严格high>4055.065才成交，不突破则信号永久过期。"
+      },
+      "result": {
+        "barsHeld": 4,
+        "rMultiple": -0.17994688,
+        "pnlUsd": -17.994688
+      }
+    },
+    {
+      "tradeNumber": 111,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1575,
+        "signalTime": 1785500100,
+        "time": 1785500400,
+        "beijingTime": "2026-07-31 20:20",
+        "price": 4055.725,
+        "setup": "反弹阻力区大实体空头反转K",
+        "reason": "市场大段背景仍偏空，1574多头目标兑现后，1575的回落显示局部反弹未能继续扩展。当前位置在1562确认高点4059.515和目标区4059.44附近的反弹阻力边缘，且价格从支撑反弹后首次明显被压回。1575以4059.32开盘、收于4056.60并接近低点，形成大实体空头拒绝，接受上方价格的尝试初步失败。当前形成反弹阻力区大实体空头反转信号K，计划价为4055.72，只有紧邻下一根严格low<4055.72才成交；不突破则永久过期，重新站稳4059.515则空头解释失效。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4061.15,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1579,
+        "time": 1785501300,
+        "beijingTime": "2026-07-31 20:40",
+        "price": 4050.34,
+        "reasonCode": "TRAILING_STOP",
+        "ambiguous": false,
+        "finalActiveStop": 4050.34,
+        "trailingActivated": true,
+        "trailingActivationIdx": 1576
+      },
+      "result": {
+        "barsHeld": 4,
+        "rMultiple": 0.99262673,
+        "pnlUsd": 99.262673
+      }
+    },
+    {
+      "tradeNumber": 112,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1583,
+        "signalTime": 1785502500,
+        "time": 1785502800,
+        "beijingTime": "2026-07-31 21:00",
+        "price": 4040.575,
+        "setup": "V2震荡下沿真突破初始收盘空头K",
+        "reason": "市场仍处于大段下降背景，1582低位多头反转未获紧邻突破，1583重新以强空头压力破低。当前位置位于1582低点4041.03及近端区间下沿，当前是向下离开结构的边沿而非中部追空。1583开盘即高点、收盘4040.76接近最低并跌破1582低点，且远低于EMA20，显示低位反转失败后空头接受初步成立。当前构成V2震荡下沿真突破的初始收盘空头信号，计划价为4040.57，只有紧邻下一根严格low<4040.57才成交；不突破则永久过期，重新站回1582高点4046.515则失败边界失效。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4046.515,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1588,
+        "time": 1785504000,
+        "beijingTime": "2026-07-31 21:25",
+        "price": 4046.515,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": false,
+        "finalActiveStop": 4046.515,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 5,
+        "rMultiple": -1,
+        "pnlUsd": -100
+      }
+    },
+    {
+      "tradeNumber": 113,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1591,
+        "signalTime": 1785504900,
+        "time": 1785505200,
+        "beijingTime": "2026-07-31 21:40",
+        "price": 4027.045,
+        "setup": "空头突破延续",
+        "reason": "背景仍是空头主导的下降通道，1590的支撑测试后压力继续增强。当前位置已从已确认低点1586下方收盘，形成对结构的有效离开；1591实体较大且收盘接近低点，显示空头接受与跟随。当前触发为信号K低点4027.045，只有下一根严格跌破该低点才成交。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4047.035,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1594,
+        "time": 1785505800,
+        "beijingTime": "2026-07-31 21:55",
+        "price": 4029.17,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4047.035,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 1594,
+        "signalTime": 1785505800,
+        "setup": "低位扫荡后的多头反转",
+        "reason": "背景仍是下降趋势，但连续下行已到新低并出现扫低衰减，价格位于近期结构下沿。当前K在1593低点附近被买回，实体较大、收盘接近高点并收复1593高点，显示局部拒绝与初步接受。该多头反转信号只在下一根严格突破4029.345时成交；信号收盘先按close_only平掉既有空头，不自动反手。"
+      },
+      "result": {
+        "barsHeld": 3,
+        "rMultiple": -0.10630315,
+        "pnlUsd": -10.630315
+      }
+    },
+    {
+      "tradeNumber": 114,
+      "side": "long",
+      "entry": {
+        "signalIdx": 1598,
+        "signalTime": 1785507000,
+        "time": 1785507300,
+        "beijingTime": "2026-07-31 22:15",
+        "price": 4032.535,
+        "setup": "失败下破后的多头反转",
+        "reason": "背景仍是下降趋势，但1597在关键低点下方扫荡后未被接受，当前处于支撑边缘。1598以较大实体收于高位并延续收复，显示失败下破后的多头跟随，局部反转证据强于单纯抄底。当前触发为信号K高点4032.535，只有紧邻下一根严格突破才成交。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4020.975,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1608,
+        "time": 1785510000,
+        "beijingTime": "2026-07-31 23:05",
+        "price": 4045.14,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4038.875,
+        "trailingActivated": true,
+        "trailingActivationIdx": 1605,
+        "signalIdx": 1608,
+        "signalTime": 1785510000,
+        "setup": "前高假突破后的空头反转",
+        "reason": "背景是低位反转后的多头推进，但当前位置正处于已确认前高压力边缘。1607突破收盘未能延续，1608先越过突破位后以大实体收回并接近低点，形成接受失败与空头跟随。当前触发为信号K低点4044.645，既有多头在本信号收盘按close_only平仓，空头只在下一根严格跌破时成交。"
+      },
+      "result": {
+        "barsHeld": 10,
+        "rMultiple": 1.09039792,
+        "pnlUsd": 109.039792
+      }
+    },
+    {
+      "tradeNumber": 115,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1611,
+        "signalTime": 1785510900,
+        "time": 1785511200,
+        "beijingTime": "2026-07-31 23:20",
+        "price": 4042.22,
+        "setup": "前高重复扫高后的空头反转",
+        "reason": "背景是低位反转后的多头腿，但价格在前高压力处连续尝试仍未站稳。1611再次扫过1608高点后以明显上影和低位收盘回到压力下方，前一突破的失败得到新的空头跟随。当前触发为信号K低点4042.22，只有下一根严格跌破该低点才成交。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4050.9,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1618,
+        "time": 1785513000,
+        "beijingTime": "2026-07-31 23:55",
+        "price": 4045.475,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4050.9,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 1618,
+        "signalTime": 1785513000,
+        "setup": "空头二次进攻失败后的多头反转",
+        "reason": "背景仍是前高失败后的下降结构，但1617空头二次进攻未获跟随，当前位置在1614低点与EMA20附近。1618以大实体收复1616高点并站上EMA20，显示空头回调逻辑被迅速破坏，多头接受重新增强。当前触发为信号K高点4046.225，既有空头在信号收盘按close_only处理，下一根只允许严格突破后成交。"
+      },
+      "result": {
+        "barsHeld": 7,
+        "rMultiple": -0.375,
+        "pnlUsd": -37.5
+      }
+    },
+    {
+      "tradeNumber": 116,
+      "side": "long",
+      "entry": {
+        "signalIdx": 1625,
+        "signalTime": 1785515100,
+        "time": 1785515400,
+        "beijingTime": "2026-08-01 00:30",
+        "price": 4048.52,
+        "setup": "震荡真突破多头信号",
+        "reason": "背景是大幅下行后的局部交易区间，1614低点以来多头反复测试上沿，虽然上方仍有1608/1611前高压力。当前位置已脱离局部区间上沿而非处于区间中部，当前阳线实体和收盘位置较好。1625首次收盘站上1622高点，形成V2震荡真突破初始信号；执行仍只等待紧邻下一根严格突破本根高点。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4043.18,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1627,
+        "time": 1785515700,
+        "beijingTime": "2026-08-01 00:40",
+        "price": 4046.845,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4043.18,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 1627,
+        "signalTime": 1785515700,
+        "setup": "突破失败空头反转信号",
+        "reason": "背景仍是前段下行，局部向上突破在1626仅短暂跟随后迅速退化。当前位置回到区间上沿下方，当前阴线从新高回落并收盘靠近低点，明确显示上破接受失败。当前K形成失败突破空头信号，计划只等待紧邻下一根严格跌破本根低点。"
+      },
+      "result": {
+        "barsHeld": 2,
+        "rMultiple": -0.31367041,
+        "pnlUsd": -31.367041
+      }
+    },
+    {
+      "tradeNumber": 117,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1632,
+        "signalTime": 1785517200,
+        "time": 1785517500,
+        "beijingTime": "2026-08-01 01:05",
+        "price": 4042.545,
+        "setup": "EMA20回踩空头信号",
+        "reason": "背景是失败突破后的空头延续，1628强阴线后反弹始终未能收复EMA20。当前位置在空头回调上沿，1632上探EMA20后以小实体阴线靠近低点收回，拒绝证据与位置相互支持。当前形成顺势空头信号，计划只等待紧邻下一根严格跌破本根低点；同向持仓中的该信号按规则忽略。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4045.27,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1634,
+        "time": 1785517800,
+        "beijingTime": "2026-08-01 01:15",
+        "price": 4045.27,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": false,
+        "finalActiveStop": 4045.27,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 2,
+        "rMultiple": -1,
+        "pnlUsd": -100
+      }
+    },
+    {
+      "tradeNumber": 118,
+      "side": "long",
+      "entry": {
+        "signalIdx": 1634,
+        "signalTime": 1785517800,
+        "time": 1785518100,
+        "beijingTime": "2026-08-01 01:15",
+        "price": 4046.45,
+        "setup": "强势外包阳线反转信号",
+        "reason": "背景仍是较大下行，但1628低点附近的空头腿没有继续扩展，当前出现强烈反向冲击。当前位置贴近局部低点支撑，1634外包阳线以大实体收复EMA20并突破1632高点，接受证据明显增强但尚未突破1622上方。当前形成次级反转多头信号，计划只等待紧邻下一根严格突破本根高点；这是反向正式信号，已有空头仅按本根收盘价平仓、不自动反手。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4042.265,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1638,
+        "time": 1785519000,
+        "beijingTime": "2026-08-01 01:35",
+        "price": 4049.3,
+        "reasonCode": "TRAILING_STOP",
+        "ambiguous": false,
+        "finalActiveStop": 4049.3,
+        "trailingActivated": true,
+        "trailingActivationIdx": 1637
+      },
+      "result": {
+        "barsHeld": 4,
+        "rMultiple": 0.68100358,
+        "pnlUsd": 68.100358
+      }
+    },
+    {
+      "tradeNumber": 119,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1638,
+        "signalTime": 1785519000,
+        "time": 1785519300,
+        "beijingTime": "2026-08-01 01:35",
+        "price": 4048.02,
+        "setup": "前高失败突破空头信号",
+        "reason": "背景是次级反转上推进入1608/1611前高压力后未能建立主要接受，1637的强阳线随后被迅速否定。当前位置处于前高扫荡后的压力边缘，1638高位收阴并回到1627高点下方，空头拒绝与跟随清晰。当前形成失败突破空头信号，计划只等待紧邻下一根严格跌破本根低点；已有多头仅按本根收盘价平仓、不自动反手。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4053.485,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1641,
+        "time": 1785519900,
+        "beijingTime": "2026-08-01 01:50",
+        "price": 4053.485,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": false,
+        "finalActiveStop": 4053.485,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 3,
+        "rMultiple": -1,
+        "pnlUsd": -100
+      }
+    },
+    {
+      "tradeNumber": 120,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1644,
+        "signalTime": 1785520800,
+        "time": 1785521100,
+        "beijingTime": "2026-08-01 02:05",
+        "price": 4052.22,
+        "setup": "高位扫荡失败空头信号",
+        "reason": "背景是次级反转后在主要前高下方形成高位窄通道，多次上探但跟随效率下降。当前位置扫过1642高点后重新回到1637高点下方，当前阴线收盘接近低点，显示高位突破接受失败。当前形成高位失败突破空头信号，计划只等待紧邻下一根严格跌破本根低点。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4054.805,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1647,
+        "time": 1785521700,
+        "beijingTime": "2026-08-01 02:20",
+        "price": 4049.765,
+        "reasonCode": "TRAILING_STOP",
+        "ambiguous": false,
+        "finalActiveStop": 4049.765,
+        "trailingActivated": true,
+        "trailingActivationIdx": 1646
+      },
+      "result": {
+        "barsHeld": 3,
+        "rMultiple": 0.94970986,
+        "pnlUsd": 94.970986
+      }
+    },
+    {
+      "tradeNumber": 121,
+      "side": "short",
+      "entry": {
+        "signalIdx": 1656,
+        "signalTime": 1785524400,
+        "time": 1785524700,
+        "beijingTime": "2026-08-01 03:05",
+        "price": 4048.755,
+        "setup": "震荡区间上沿假突破反转",
+        "reason": "背景上，较长下行后的反弹已退化为局部交易区间，近期多空在4051附近反复重叠。位置上，1656向上扫过1649高点4051.81并进入前方压力带，随后收回区间且收盘接近低点，突破未获接受。当前K形成区间上沿假突破空头信号；计划价为本K低点，只有紧邻下一根严格下破才触发，后续迟到跟随不得回填本根决定。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4051.68,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_high_above_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1664,
+        "time": 1785526800,
+        "beijingTime": "2026-08-01 03:45",
+        "price": 4051.68,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": false,
+        "finalActiveStop": 4051.68,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 8,
+        "rMultiple": -1,
+        "pnlUsd": -100
+      }
+    },
+    {
+      "tradeNumber": 122,
+      "side": "long",
+      "entry": {
+        "signalIdx": 1664,
+        "signalTime": 1785526800,
+        "time": 1785527100,
+        "beijingTime": "2026-08-01 03:45",
+        "price": 4054.77,
+        "setup": "交易区间向上真突破",
+        "reason": "背景上，1656失败突破后的区间回测在1664被强力多头重新接管，局部状态出现由震荡向上突破的转换，但更大下行背景仍未完全消失。位置上，1664以大实体收盘越过4051.81和1656高点4052.98，然而正逼近1642至1644前高4054.80至4055.24压力，因此信号质量强而跟随空间受限。当前收盘已形成区间向上真突破SIGNAL；多头计划为本K高点，只有紧邻下一根严格上破才成交，反向信号仅按收盘平仓且不自动反手。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4046.955,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1666,
+        "time": 1785527400,
+        "beijingTime": "2026-08-01 03:55",
+        "price": 4051.115,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4046.955,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 1666,
+        "signalTime": 1785527400,
+        "setup": "前高扫荡失败反转",
+        "reason": "背景上，1664向上突破在1665触及旧前高后未能继续，1666迅速破坏突破接受，更大下行背景重新占优。位置上，1666从前高压力区开盘并以大实体收回4052.98下方，收盘接近低点，属于扫高后的失败突破而非普通回调。当前形成空头反转SIGNAL；计划价为本K低点，只有紧邻下一根严格下破才成交，当前多头按收盘平仓且不自动反手。"
+      },
+      "result": {
+        "barsHeld": 2,
+        "rMultiple": -0.46769034,
+        "pnlUsd": -46.769034
+      }
+    },
+    {
+      "tradeNumber": 123,
+      "side": "long",
+      "entry": {
+        "signalIdx": 1674,
+        "signalTime": 1785529800,
+        "time": 1785530100,
+        "beijingTime": "2026-08-01 04:35",
+        "price": 4051.375,
+        "setup": "低位多次测试后的多头反转",
+        "reason": "背景上，1666至1669的空头延续在低位经历多次测试后，1674以强阳重新夺回EMA20，局部下行开始转为反向尝试，但更大下行背景仍在。位置上，当前处于1669低点4045.285附近的低位测试区，1674突破1672高点4049.05并收在4050.74，信号质量与位置相互支持。当前形成低位多次测试后的多头反转SIGNAL；计划价为本K高点，只有紧邻下一根严格上破才成交，不能因收盘上涨直接进场。",
+        "ruleVersion": "next_bar_breakout_initial_stop_no_fixed_target_v3_20260816",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4046.595,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "latest_confirmed_pivot_low_below_entry",
+        "trailingActivationUsd": 100,
+        "trailingDistanceUsd": 100
+      },
+      "exit": {
+        "idx": 1678,
+        "time": 1785531000,
+        "beijingTime": "2026-08-01 04:55",
+        "price": 4046.595,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": false,
+        "finalActiveStop": 4046.595,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 4,
+        "rMultiple": -1,
+        "pnlUsd": -100
+      }
+    }
+  ]
+}

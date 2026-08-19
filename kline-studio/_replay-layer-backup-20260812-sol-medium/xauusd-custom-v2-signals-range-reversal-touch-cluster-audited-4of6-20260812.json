@@ -1,0 +1,361 @@
+{
+  "schemaVersion": 2,
+  "symbol": "XAUUSD",
+  "interval": "5m",
+  "timeframeSeconds": 300,
+  "layer": {
+    "sourceId": "xauusd-custom-v2-signals-6faa197ee050c0a5",
+    "name": "XAUUSD Custom V2 原始信号"
+  },
+  "provenance": {
+    "rawSignalsFile": "C:\\Users\\diffzhou\\Documents\\tradingview-checkpoint-20260809\\outputs\\xauusd_replay_5m_custom-v2-100pct-20260727-31-default-20260810-223831\\tradingview_drawings_custom_v2_existing_signals_range_reversal_touch_cluster_audited_20260812.json",
+    "rawSignalsSha256": "6faa197ee050c0a54c36414899d136e997afaef7078ec47118d20f5cb7b3d1bf",
+    "ruleSetId": "tvfloat_user_custom_v2_strict_narrow_channel_ema20_two_close_any_pullback_20260812",
+    "ruleSetSha256": "c800eeb751da25cef91d9814c0bf9f11c7629bd178703e9defeb95e779a9598e",
+    "sourceDataSha256": "d2349b661f6c0c4dc1caec9801d1accbb8aa0319807fc108cff91ba449aae6b9",
+    "frozenDataFile": "C:\\Users\\diffzhou\\Documents\\tradingview-replay-archives\\20260809T150252Z_oanda-xauusd_5m_d2349b661f6c_66b1adbd\\inputs\\xauusd_5m_frozen_20260809-week-full-sol-image-154911.json",
+    "frozenDataSha256": "d2349b661f6c0c4dc1caec9801d1accbb8aa0319807fc108cff91ba449aae6b9",
+    "inputMode": "image/png",
+    "signalMode": "raw_non_deduplicated",
+    "generatedBy": "scripts/import-replay-signals.mjs"
+  },
+  "window": {
+    "startTime": 1785252000,
+    "endTime": 1785477600,
+    "firstBeijingTime": "2026-07-28 23:20",
+    "lastBeijingTime": "2026-07-31 14:00"
+  },
+  "summary": {
+    "signals": 4,
+    "long": 3,
+    "short": 1,
+    "setupCounts": {
+      "震荡真突破": 0,
+      "震荡反转": 4,
+      "窄通道首次回调顺势": 0,
+      "窄通道回调顺势": 0,
+      "支撑压力反转": 0,
+      "两天以上支撑压力反转": 0
+    }
+  },
+  "signals": [
+    {
+      "signalNumber": 4,
+      "idx": 3797,
+      "time": 1785252000,
+      "beijingTime": "2026-07-28 23:20",
+      "side": "short",
+      "setup": "震荡反转",
+      "reason": "市场仍处在下跌后的宽幅双向整理，单边上沿 4035.887–4040.553 已由 3766、3773、3795 三组独立触碰确认。3795–3796 的上攻进入边沿后未形成外侧收盘接受，当前 3797 刺破外侧至 4040.870 又收回边沿下方。长上影与收回共同形成上沿假突破反转信号K。",
+      "displayReason": "市场仍处在下跌后的宽幅双向整理，单边上沿 4035.887–4040.553 已由 2026-07-28 20:45（北京时间）、2026-07-28 21:20（北京时间）、2026-07-28 23:10（北京时间） 三组独立触碰确认。2026-07-28 23:10（北京时间）–2026-07-28 23:15（北京时间） 的上攻进入边沿后未形成外侧收盘接受，当前 2026-07-28 23:20（北京时间） 刺破外侧至 4040.870 又收回边沿下方。长上影与收回共同形成上沿假突破反转信号K。",
+      "evidenceIndices": [
+        3766,
+        3773,
+        3795,
+        3796,
+        3797
+      ],
+      "referenceCandles": [
+        {
+          "internalIndex": 3766,
+          "time": 1785242700,
+          "beijingTime": "2026-07-28 20:45"
+        },
+        {
+          "internalIndex": 3773,
+          "time": 1785244800,
+          "beijingTime": "2026-07-28 21:20"
+        },
+        {
+          "internalIndex": 3795,
+          "time": 1785251400,
+          "beijingTime": "2026-07-28 23:10"
+        },
+        {
+          "internalIndex": 3796,
+          "time": 1785251700,
+          "beijingTime": "2026-07-28 23:15"
+        },
+        {
+          "internalIndex": 3797,
+          "time": 1785252000,
+          "beijingTime": "2026-07-28 23:20"
+        }
+      ],
+      "recordSha256": "9ccb39a553a6049c47de0a1edab04960380528c335cfd0fa8ca6de5a0a47642e",
+      "chainSha256": "83ba289cd6070dfffdb2af53de3d4d9030d76691eb947f18fa45be56d9fd4b4e",
+      "signalContext": {
+        "rule_version": "custom_v2_range30_one_sided_strict_narrow_channel_ema20_two_close_any_pullback_body50_anchor_contact_five_close_breakout",
+        "family": "range_reversal",
+        "variant": "failed_breakout_reentry",
+        "signal_bar_idx": 3797,
+        "structure_indices": [
+          3766,
+          3773,
+          3795,
+          3796,
+          3797
+        ],
+        "range": {
+          "kind": "one_sided_edge",
+          "active_edge": "upper",
+          "start_idx": 3766,
+          "end_idx": 3795,
+          "upper_zone_low": 4035.886714285714,
+          "upper_zone_high": 4040.5532857142857,
+          "upper_touch_indices": [
+            3766,
+            3773,
+            3795
+          ]
+        },
+        "range_reversal_rr_mode": "not_applicable_one_sided_edge",
+        "false_break_idx": 3797,
+        "reclaim_idx": 3797,
+        "entry_trigger_price": 4035.29,
+        "initial_stop_price": 4040.87,
+        "initial_stop_reference_idx": 3797
+      }
+    },
+    {
+      "signalNumber": 7,
+      "idx": 4051,
+      "time": 1785331800,
+      "beijingTime": "2026-07-29 21:30",
+      "side": "long",
+      "setup": "震荡反转",
+      "reason": "急跌后价格持续在低位宽幅拉锯，同一截止点已证明4007.16至4011.62的单边下沿。当前低点进入活动边后未在外侧形成实体接受，随即放量收回边沿上方并收近高点；本次测试距4039触碰已有独立摆动，并非突破后的近期浅回调快速重测。买方完成边沿拒绝与回收，当前形成做多触发K。",
+      "displayReason": "急跌后价格持续在低位宽幅拉锯，同一截止点已证明4007.16至4011.62的单边下沿。当前低点进入活动边后未在外侧形成实体接受，随即放量收回边沿上方并收近高点；本次测试距2026-07-29 20:30（北京时间）触碰已有独立摆动，并非突破后的近期浅回调快速重测。买方完成边沿拒绝与回收，当前形成做多触发K。",
+      "evidenceIndices": [
+        3901,
+        4039,
+        4045,
+        4051
+      ],
+      "referenceCandles": [
+        {
+          "internalIndex": 3901,
+          "time": 1785286800,
+          "beijingTime": "2026-07-29 09:00"
+        },
+        {
+          "internalIndex": 4039,
+          "time": 1785328200,
+          "beijingTime": "2026-07-29 20:30"
+        },
+        {
+          "internalIndex": 4045,
+          "time": 1785330000,
+          "beijingTime": "2026-07-29 21:00"
+        },
+        {
+          "internalIndex": 4051,
+          "time": 1785331800,
+          "beijingTime": "2026-07-29 21:30"
+        }
+      ],
+      "recordSha256": "a44de30884d4b492202185400094384ff9ed1bdd2a6658d97a4ab8124022b58d",
+      "chainSha256": "191aa02af64f64421ffd331bdc87b962e18a6f7ab602a061a149bd951dd3629b",
+      "signalContext": {
+        "rule_version": "custom_v2_range30_one_sided_strict_narrow_channel_ema20_two_close_any_pullback_body50_anchor_contact_five_close_breakout",
+        "family": "range_reversal",
+        "variant": "edge_rejection",
+        "signal_bar_idx": 4051,
+        "structure_indices": [
+          3901,
+          4039,
+          4045,
+          4051
+        ],
+        "range": {
+          "kind": "one_sided_edge",
+          "active_edge": "lower",
+          "start_idx": 3901,
+          "end_idx": 4051,
+          "lower_zone_low": 4007.156285714286,
+          "lower_zone_high": 4011.623714285714,
+          "lower_touch_indices": [
+            3901,
+            4039,
+            4051
+          ]
+        },
+        "recent_shallow_retest_breakout_bias": false,
+        "range_reversal_rr_mode": "not_applicable_one_sided_edge",
+        "entry_trigger_price": 4017.845,
+        "initial_stop_price": 4010.265,
+        "initial_stop_reference_idx": 4051,
+        "take_profit": {
+          "enabled_at_entry": false,
+          "price": null
+        }
+      }
+    },
+    {
+      "signalNumber": 10,
+      "idx": 4511,
+      "time": 1785477000,
+      "beijingTime": "2026-07-31 13:50",
+      "side": "long",
+      "setup": "震荡反转",
+      "reason": "低位双向重叠仍在，4477、4491与4511证明了跨度35根的单边震荡下沿。当前K再次把影线压入4070.815–4073.475下沿带后收回其上，且没有向下突破后浅回调快速重测的延续偏置；上一根拒绝也未被向下接受。当前K收盘靠近高点，形成新的边沿拒绝信号，下一根仅在严格突破4076.055时触发。",
+      "displayReason": "低位双向重叠仍在，2026-07-31 11:00（北京时间）、2026-07-31 12:10（北京时间）与2026-07-31 13:50（北京时间）证明了跨度35根的单边震荡下沿。当前K再次把影线压入4070.815–4073.475下沿带后收回其上，且没有向下突破后浅回调快速重测的延续偏置；上一根拒绝也未被向下接受。当前K收盘靠近高点，形成新的边沿拒绝信号，下一根仅在严格突破4076.055时触发。",
+      "evidenceIndices": [
+        4477,
+        4491,
+        4510,
+        4511
+      ],
+      "referenceCandles": [
+        {
+          "internalIndex": 4477,
+          "time": 1785466800,
+          "beijingTime": "2026-07-31 11:00"
+        },
+        {
+          "internalIndex": 4491,
+          "time": 1785471000,
+          "beijingTime": "2026-07-31 12:10"
+        },
+        {
+          "internalIndex": 4510,
+          "time": 1785476700,
+          "beijingTime": "2026-07-31 13:45"
+        },
+        {
+          "internalIndex": 4511,
+          "time": 1785477000,
+          "beijingTime": "2026-07-31 13:50"
+        }
+      ],
+      "recordSha256": "66b15e2094bfd71daea804b09e8cf7ab512591b1eb24f8e8c51fced5791a32d7",
+      "chainSha256": "8d988d9ff058877100c5148c9fc83716a883a51e3e35228f404015aec38b5459",
+      "signalContext": {
+        "rule_version": "custom_v2_range30_one_sided_strict_narrow_channel_ema20_two_close_any_pullback_body50_anchor_contact_five_close_breakout",
+        "family": "range_reversal",
+        "variant": "edge_rejection",
+        "direction": "long",
+        "signal_bar_idx": 4511,
+        "structure_indices": [
+          4477,
+          4491,
+          4511
+        ],
+        "range": {
+          "kind": "one_sided_edge",
+          "active_edge": "lower",
+          "start_idx": 4477,
+          "end_idx": 4511,
+          "lower_zone_low": 4070.815,
+          "lower_zone_high": 4073.475,
+          "lower_touch_indices": [
+            4477,
+            4491,
+            4511
+          ]
+        },
+        "range_reversal_rr_mode": "not_applicable_one_sided_edge",
+        "recent_shallow_retest_breakout_bias": false,
+        "recent_shallow_retest": false,
+        "shallow_retest_breakout_bias": false,
+        "recent_shallow_retest_breakout_bias_case": false,
+        "recent_shallow_retest_breakout_bias_excluded": true,
+        "recent_shallow_retest_excluded": true,
+        "rapid_retest_after_shallow_pullback": false,
+        "rapid_retest_excluded": true,
+        "recent_shallow_retest_exclusion": "ruled_out",
+        "shallow_retest_exclusion": "ruled_out",
+        "acceptance_state": "wick_entered_lower_edge_and_closed_back_above",
+        "entry_trigger_price": 4076.055,
+        "entry_rule": "next_bar_strict_break_above_signal_bar_high",
+        "initial_stop_price": 4073.44,
+        "initial_stop_reference_idx": 4511,
+        "initial_stop_basis": "signal_rejection_structure_low",
+        "take_profit": {
+          "enabled_at_entry": false,
+          "price": null
+        }
+      }
+    },
+    {
+      "signalNumber": 11,
+      "idx": 4513,
+      "time": 1785477600,
+      "beijingTime": "2026-07-31 14:00",
+      "side": "long",
+      "setup": "震荡反转",
+      "reason": "低位双向重叠持续，4479、4491与4513构成跨度35根且无外侧实体接受的单边震荡下沿。当前K扫入4070.941–4073.349下沿带后强力收回，收盘贴近高点，并排除了向下突破后浅回调快速重测的延续偏置。大实体多头K形成清晰边沿拒绝信号，下一根仅在严格突破4078.185时触发。",
+      "displayReason": "低位双向重叠持续，2026-07-31 11:10（北京时间）、2026-07-31 12:10（北京时间）与2026-07-31 14:00（北京时间）构成跨度35根且无外侧实体接受的单边震荡下沿。当前K扫入4070.941–4073.349下沿带后强力收回，收盘贴近高点，并排除了向下突破后浅回调快速重测的延续偏置。大实体多头K形成清晰边沿拒绝信号，下一根仅在严格突破4078.185时触发。",
+      "evidenceIndices": [
+        4479,
+        4491,
+        4513
+      ],
+      "referenceCandles": [
+        {
+          "internalIndex": 4479,
+          "time": 1785467400,
+          "beijingTime": "2026-07-31 11:10"
+        },
+        {
+          "internalIndex": 4491,
+          "time": 1785471000,
+          "beijingTime": "2026-07-31 12:10"
+        },
+        {
+          "internalIndex": 4513,
+          "time": 1785477600,
+          "beijingTime": "2026-07-31 14:00"
+        }
+      ],
+      "recordSha256": "ac491aa72c9853b94771fce4a26fffe9b4230242fdfa82a0620dcdc171c2ff86",
+      "chainSha256": "0d1d1280656fc9fa0478d39cce26ebccaa89f6c70abba542d6fb1d182309fe6c",
+      "signalContext": {
+        "rule_version": "custom_v2_range30_one_sided_strict_narrow_channel_ema20_two_close_any_pullback_body50_anchor_contact_five_close_breakout",
+        "family": "range_reversal",
+        "variant": "edge_rejection",
+        "direction": "long",
+        "signal_bar_idx": 4513,
+        "structure_indices": [
+          4479,
+          4491,
+          4513
+        ],
+        "range": {
+          "kind": "one_sided_edge",
+          "active_edge": "lower",
+          "start_idx": 4479,
+          "end_idx": 4513,
+          "lower_zone_low": 4070.940857142857,
+          "lower_zone_high": 4073.349142857143,
+          "lower_touch_indices": [
+            4479,
+            4491,
+            4513
+          ]
+        },
+        "range_reversal_rr_mode": "not_applicable_one_sided_edge",
+        "recent_shallow_retest_breakout_bias": false,
+        "recent_shallow_retest": false,
+        "shallow_retest_breakout_bias": false,
+        "recent_shallow_retest_breakout_bias_case": false,
+        "recent_shallow_retest_breakout_bias_excluded": true,
+        "recent_shallow_retest_excluded": true,
+        "rapid_retest_after_shallow_pullback": false,
+        "rapid_retest_excluded": true,
+        "recent_shallow_retest_exclusion": "ruled_out",
+        "shallow_retest_exclusion": "ruled_out",
+        "acceptance_state": "swept_into_lower_edge_and_closed_strongly_above",
+        "entry_trigger_price": 4078.185,
+        "entry_rule": "next_bar_strict_break_above_signal_bar_high",
+        "initial_stop_price": 4072.785,
+        "initial_stop_reference_idx": 4513,
+        "initial_stop_basis": "signal_rejection_structure_low",
+        "take_profit": {
+          "enabled_at_entry": false,
+          "price": null
+        }
+      }
+    }
+  ]
+}
