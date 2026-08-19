@@ -13,7 +13,9 @@ interface Props {
   interval: IntervalId
   indicators: IndicatorSettings
   indicatorsHidden: boolean
+  expanded: boolean
   onToggle: (key: IndicatorKey) => void
+  onExpandedChange: (expanded: boolean) => void
   onOpenSettings: () => void
   onRefresh?: () => void
 }
@@ -30,8 +32,7 @@ function valueAt<T extends { time: number }>(points: T[], time: number | undefin
   return points.find((point) => point.time === time) ?? points.at(-1)
 }
 
-export function IndicatorLegend({ data, candle, symbol, interval, indicators, indicatorsHidden, onToggle, onOpenSettings, onRefresh }: Props) {
-  const [expanded, setExpanded] = useState(true)
+export function IndicatorLegend({ data, candle, symbol, interval, indicators, indicatorsHidden, expanded, onToggle, onExpandedChange, onOpenSettings, onRefresh }: Props) {
   const [refreshing, setRefreshing] = useState(false)
   const activeCandle = candle ?? data.at(-1) ?? null
   const values = useMemo(() => {
@@ -66,7 +67,7 @@ export function IndicatorLegend({ data, candle, symbol, interval, indicators, in
   }
   return <section className={`indicator-legend${expanded ? ' is-expanded' : ' is-collapsed'}${indicatorsHidden ? ' all-hidden' : ''}`} data-testid="indicator-legend" aria-label="图表指标">
     <div className="indicator-legend-summary">
-      <button type="button" className="indicator-summary-toggle" aria-label={`${expanded ? '隐藏' : '显示'}图表指标列表`} aria-expanded={expanded} data-testid="indicator-summary-toggle" title={`${expanded ? '隐藏' : '显示'}图表指标列表`} onClick={() => setExpanded((value) => !value)}>
+      <button type="button" className="indicator-summary-toggle" aria-label={`${expanded ? '隐藏' : '显示'}图表指标列表`} aria-expanded={expanded} data-testid="indicator-summary-toggle" title={`${expanded ? '隐藏' : '显示'}图表指标列表`} onClick={() => onExpandedChange(!expanded)}>
         {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}<span>{total}</span>
       </button>
       <button type="button" className={`indicator-summary-refresh${refreshing ? ' is-refreshing' : ''}`} aria-label="刷新指标" title="重新计算指标" data-testid="indicator-summary-refresh" onClick={toggleRefresh}><RefreshCcw size={17} /></button>

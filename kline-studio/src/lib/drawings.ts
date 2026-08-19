@@ -14,6 +14,7 @@ export interface FibLevelSetting {
   value: number
   visible: boolean
   color: string
+  text?: string
 }
 
 export interface FibSettings {
@@ -24,23 +25,33 @@ export interface FibSettings {
   horizontalLineStyle: DrawingLineStyle
   horizontalLineWidth: number
   extend: 'none' | 'left' | 'right' | 'both'
+  useOneColor: boolean
+  backgroundVisible: boolean
+  backgroundOpacity: number
+  reverse: boolean
+  pricesVisible: boolean
+  levelsVisible: boolean
+  levelsFormat: 'values' | 'percent'
+  labelsPosition: 'left' | 'center' | 'right'
+  fontSize: number
+  levelsBasedOnLogScale: boolean
   levels: FibLevelSetting[]
   visibility: { minutes: boolean; hours: boolean; days: boolean; weeks: boolean }
 }
 
 const FIB_LEVEL_DEFAULTS: FibLevelSetting[] = [
-  { id: '0', value: 0, visible: true, color: '#f0f3fa' },
-  { id: '0236', value: .236, visible: false, color: '#a3333f' },
-  { id: '0382', value: .382, visible: false, color: '#a66c14' },
-  { id: '05', value: .5, visible: true, color: '#f0f3fa' },
-  { id: '0618', value: .618, visible: true, color: '#b42130' },
-  { id: '0786', value: .786, visible: false, color: '#1f8794' },
-  { id: '1', value: 1, visible: true, color: '#f0f3fa' },
-  { id: '1618', value: 1.618, visible: false, color: '#3655a5' },
-  { id: '2618', value: 2.618, visible: false, color: '#a43742' },
-  { id: '3618', value: 3.618, visible: false, color: '#713086' },
-  { id: '4236', value: 4.236, visible: false, color: '#9d1e56' },
-  { id: '1272', value: 1.272, visible: false, color: '#a66c14' },
+  { id: '0', value: 0, visible: true, color: '#787b86' },
+  { id: '0236', value: .236, visible: true, color: '#f23645' },
+  { id: '0382', value: .382, visible: true, color: '#ff9800' },
+  { id: '05', value: .5, visible: true, color: '#4caf50' },
+  { id: '0618', value: .618, visible: true, color: '#089981' },
+  { id: '0786', value: .786, visible: true, color: '#2962ff' },
+  { id: '1', value: 1, visible: true, color: '#787b86' },
+  { id: '1618', value: 1.618, visible: false, color: '#2962ff' },
+  { id: '2618', value: 2.618, visible: false, color: '#f23645' },
+  { id: '3618', value: 3.618, visible: false, color: '#9c27b0' },
+  { id: '4236', value: 4.236, visible: false, color: '#e91e63' },
+  { id: '1272', value: 1.272, visible: false, color: '#ff9800' },
 ]
 
 export function createDefaultFibSettings(): FibSettings {
@@ -52,6 +63,16 @@ export function createDefaultFibSettings(): FibSettings {
     horizontalLineStyle: 'solid',
     horizontalLineWidth: 1.5,
     extend: 'none',
+    useOneColor: false,
+    backgroundVisible: true,
+    backgroundOpacity: 0.08,
+    reverse: false,
+    pricesVisible: true,
+    levelsVisible: true,
+    levelsFormat: 'values',
+    labelsPosition: 'right',
+    fontSize: 12,
+    levelsBasedOnLogScale: false,
     levels: FIB_LEVEL_DEFAULTS.map((level) => ({ ...level })),
     visibility: { minutes: true, hours: true, days: true, weeks: true },
   }

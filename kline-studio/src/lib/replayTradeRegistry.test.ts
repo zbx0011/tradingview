@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  replayDecisionCandidates, replayTradeDatasetInfos, resolveReplayTradeMarker,
+  replayDecisionCandidates, replayTradeDatasetInfos, resolveReplayDecisionSignalMarker, resolveReplayTradeMarker,
   toReplayDecisionSignalSeriesMarkers, toReplayTradeConnectionSpecs, toReplayTradeSeriesMarkers,
 } from './replayTradeRegistry'
 
@@ -68,5 +68,32 @@ describe('replay trade dataset registry', () => {
     expect(toReplayDecisionSignalSeriesMarkers('US500', '5m', [sourceId], nextOppositeSignalTime - 1, initialSignalTime)).toEqual([])
     expect(toReplayDecisionSignalSeriesMarkers('US500', '5m', [sourceId], nextOppositeSignalTime, initialSignalTime))
       .toContainEqual(expect.objectContaining({ time: nextOppositeSignalTime, text: '空头信号' }))
+  })
+
+  it('keeps the current signal in the causal stream when no lower time bound is supplied', () => {
+    const sourceId = 'us500-5m-conservative-stop-first-7e97f1718d2140c2'
+    const initialSignalTime = 1_786_086_300
+    const nextOppositeSignalTime = 1_786_090_500
+    const markers = toReplayDecisionSignalSeriesMarkers('US500', '5m', [sourceId], nextOppositeSignalTime, null)
+    expect(markers).toContainEqual(expect.objectContaining({ time: initialSignalTime, text: '多头信号' }))
+    expect(markers).toContainEqual(expect.objectContaining({ time: nextOppositeSignalTime, text: '空头信号' }))
+  })
+
+  it('resolves an opposite decision signal to the closing trade detail', () => {
+    const sourceId = 'us500-5m-conservative-stop-first-7e97f1718d2140c2'
+    const initialSignalTime = 1_786_086_300
+    const nextOppositeSignalTime = 1_786_090_500
+    const marker = toReplayDecisionSignalSeriesMarkers('US500', '5m', [sourceId], nextOppositeSignalTime, initialSignalTime)
+      .find((item) => Number(item.time) === nextOppositeSignalTime && item.text === '空头信号')
+    expect(marker?.id).toBeDefined()
+    const selection = resolveReplayDecisionSignalMarker('US500', '5m', [sourceId], marker?.id)
+    expect(selection).toMatchObject({
+      sourceId,
+      kind: 'exit',
+      signalSide: 'short',
+      signalTime: nextOppositeSignalTime,
+      trade: { exit: { signalTime: nextOppositeSignalTime } },
+    })
+    expect(selection?.tradeMarkerId).toContain('-exit')
   })
 })

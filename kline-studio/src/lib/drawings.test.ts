@@ -15,6 +15,17 @@ describe('drawing history and persistence', () => {
     expect(state.present).toHaveLength(0)
   })
 
+  it('undoes property and point updates after a checkpoint', () => {
+    const drawing = { ...makeDrawing('trend', { x: 0.1, y: 0.2 }), id: 'editable' }
+    let state = drawingReducer(initialDrawingHistory, { type: 'add', drawing })
+    state = drawingReducer(state, { type: 'checkpoint' })
+    state = drawingReducer(state, { type: 'update', id: drawing.id, patch: { color: '#ff0000', points: [{ x: 0.4, y: 0.5 }] } })
+    expect(state.present[0]).toMatchObject({ color: '#ff0000', points: [{ x: 0.4, y: 0.5 }] })
+
+    state = drawingReducer(state, { type: 'undo' })
+    expect(state.present[0]).toMatchObject({ color: drawing.color, points: drawing.points })
+  })
+
   it('accepts a valid saved workspace and rejects malformed input', () => {
     const valid = JSON.stringify({
       symbol: 'XAUUSD', interval: '5m', chartType: 'candles', theme: 'dark', drawings: [],
@@ -75,7 +86,17 @@ describe('drawing history and persistence', () => {
 
   it('adds and restores complete Fibonacci settings', () => {
     const fib = makeDrawing('fib', { x: .2, y: .3 })
-    expect(fib.fib?.levels.filter((level) => level.visible).map((level) => level.value)).toEqual([0, .5, .618, 1])
+    expect(fib.fib?.levels.filter((level) => level.visible).map((level) => level.value)).toEqual([0, .236, .382, .5, .618, .786, 1])
+    expect(fib.fib).toMatchObject({
+      backgroundVisible: true,
+      backgroundOpacity: .08,
+      reverse: false,
+      pricesVisible: true,
+      levelsVisible: true,
+      labelsPosition: 'right',
+      fontSize: 12,
+      levelsBasedOnLogScale: false,
+    })
     const restored = normalizeFibSettings({ levels: [{ id: '0618', value: .65, visible: true, color: '#123456' }] })
     expect(restored.levels.find((level) => level.id === '0618')).toMatchObject({ value: .65, color: '#123456' })
     expect(restored.levels).toHaveLength(12)

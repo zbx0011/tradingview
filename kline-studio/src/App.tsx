@@ -13,7 +13,7 @@ import { DrawingToolbar, type MagnetMode } from './components/DrawingToolbar'
 import { FibSettingsDialog } from './components/FibSettingsDialog'
 import { ReplayToolbar, type ReplayStartMode } from './components/ReplayToolbar'
 import {
-  DecisionChartAnnotations, DecisionHistoryDialog, DecisionPricePicker, DecisionReplayCenter, DecisionReplayPanel, DecisionResultsDialog,
+  DecisionChartAnnotations, DecisionChartStatus, DecisionHistoryDialog, DecisionPricePicker, DecisionReplayCenter, DecisionReplayPanel, DecisionResultsDialog,
   DecisionReviewPanel, DecisionRiskOverlay,
 } from './components/DecisionReplay'
 import type { DecisionSymbolStats } from './components/DecisionReplay'
@@ -24,7 +24,7 @@ import {
 } from './lib/chartContext'
 import { ALL_DRAWING_TOOLS, getTool, shouldExitDrawingMode } from './lib/toolCatalog'
 import { clearWorkspace, loadWorkspace, saveWorkspace } from './lib/persistence'
-import { isEditableShortcutTarget, parseIntervalShortcut, TRADINGVIEW_SHORTCUTS } from './lib/shortcuts'
+import { isEditableShortcutTarget, parseIntervalShortcut, resolveHistoryShortcut, TRADINGVIEW_SHORTCUTS } from './lib/shortcuts'
 import { aggregateCandles, formatPrice, generateCandles, INTERVALS, SYMBOLS, type Candle, type IntervalId, type SymbolId } from './lib/market'
 import {
   fetchBybitMinuteCandles, fetchBybitMonthCandles, fetchXauMonthCandles, getSnapshotCandles, getSnapshotStatus,
@@ -48,7 +48,7 @@ import {
   advanceDecisionAttempt, buildDecisionResult, candleAtOrBefore, candlesKnownAt, createDecisionAttempt,
   createDecisionSession, currentDecisionAttempt, currentDecisionCandidate, decisionShortcutAction, defaultDecisionLevels,
   decisionSessionPositionSizingModes, historyCoversDecisionCandidate, intervalCutoffTime, intervalSeconds, loadDecisionReplayStore, nextCandleAfter,
-  pnlForDecisionMode, resultReviewCutoff, sampleDecisionCandidates, saveDecisionReplayStore, sessionResults, validDecisionLevels,
+  pnlForDecisionMode, resultReviewCutoff, sampleDecisionCandidates, saveDecisionReplayStore, sessionResults, validDecisionLevels, validOpenPositionLevels,
   type DecisionAttempt, type DecisionExit, type DecisionPositionSizingMode, type DecisionReplaySession, type DecisionTradeResult,
 } from './lib/decisionReplay'
 
@@ -117,6 +117,7 @@ function App() {
   const [priceScalePercent, setPriceScalePercent] = useState(saved?.priceScalePercent ?? false)
   const [priceScaleInverted, setPriceScaleInverted] = useState(saved?.priceScaleInverted ?? false)
   const [indicators, setIndicators] = useState<IndicatorSettings>(saved?.indicators ?? DEFAULT_INDICATORS)
+  const [indicatorLegendExpanded, setIndicatorLegendExpanded] = useState(saved?.indicatorLegendExpanded ?? true)
   const [drawings, dispatchDrawing] = useReducer(drawingReducer, { ...initialDrawingHistory, present: withoutTransientMeasurements(saved?.drawings ?? []) })
   const [decisionDrawings, dispatchDecisionDrawing] = useReducer(drawingReducer, initialDrawingHistory)
   const [activeTool, setActiveTool] = useState('cursor')
@@ -132,6 +133,8 @@ function App() {
   const [indicatorsHidden, setIndicatorsHidden] = useState(false)
   const [syncDrawings, setSyncDrawings] = useState(false)
   const [hoverCandle, setHoverCandle] = useState<Candle | null>(null)
+  const [chartMarkerHovering, setChartMarkerHovering] = useState(false)
+  const [decisionAnnotationHovering, setDecisionAnnotationHovering] = useState(false)
   const [symbolPickerOpen, setSymbolPickerOpen] = useState(false)
   const [symbolQuery, setSymbolQuery] = useState('')
   const [indicatorPanelOpen, setIndicatorPanelOpen] = useState(false)
@@ -298,7 +301,7 @@ function App() {
   const decisionPositionCandle = activeDecisionAttempt?.stage === 'position-open' ? data.at(-1) ?? null : null
   const decisionPositionPnlByMode = activeDecisionCandidate?.trade.side && activeDecisionAttempt?.stage === 'position-open' && activeDecisionAttempt.fill && activeDecisionAttempt.stopLoss !== null && decisionPositionCandle
     ? {
-        'fixed-risk': pnlForDecisionMode('fixed-risk', activeDecisionCandidate.trade.side, activeDecisionAttempt.fill.price, decisionPositionCandle.close, activeDecisionAttempt.stopLoss),
+        'fixed-risk': pnlForDecisionMode('fixed-risk', activeDecisionCandidate.trade.side, activeDecisionAttempt.fill.price, decisionPositionCandle.close, activeDecisionAttempt.initialStopLoss ?? activeDecisionAttempt.stopLoss),
         'fixed-notional': pnlForDecisionMode('fixed-notional', activeDecisionCandidate.trade.side, activeDecisionAttempt.fill.price, decisionPositionCandle.close, activeDecisionAttempt.stopLoss),
       }
     : null
@@ -638,10 +641,10 @@ function App() {
   useEffect(() => {
     const timer = window.setTimeout(() => saveWorkspace({
       symbol, interval, chartType, theme, priceScaleAuto, priceScaleLog, priceScalePercent, priceScaleInverted,
-      indicators, drawings: withoutTransientMeasurements(drawings.present), collapsedReplayRangeLayerIds,
+      indicators, indicatorLegendExpanded, drawings: withoutTransientMeasurements(drawings.present), collapsedReplayRangeLayerIds,
     }), 120)
     return () => window.clearTimeout(timer)
-  }, [chartType, collapsedReplayRangeLayerIds, drawings.present, indicators, interval, priceScaleAuto, priceScaleInverted, priceScaleLog, priceScalePercent, symbol, theme])
+  }, [chartType, collapsedReplayRangeLayerIds, drawings.present, indicatorLegendExpanded, indicators, interval, priceScaleAuto, priceScaleInverted, priceScaleLog, priceScalePercent, symbol, theme])
 
   const notify = useCallback((message: string) => {
     setToast(message)
@@ -869,7 +872,7 @@ function App() {
   const cancelDecisionSetup = useCallback(() => {
     setDecisionPriceDraft(null)
     setDecisionRiskDraft(null)
-    updateActiveDecisionAttempt((attempt) => ({ ...attempt, stage: 'entry-decision', entryMode: null, orderKind: null, pendingEntryPrice: null, stopLoss: null, takeProfit: null }))
+    updateActiveDecisionAttempt((attempt) => ({ ...attempt, stage: 'entry-decision', entryMode: null, orderKind: null, pendingEntryPrice: null, initialStopLoss: null, stopLoss: null, takeProfit: null }))
   }, [updateActiveDecisionAttempt])
 
   const confirmDecisionPrice = useCallback(() => {
@@ -892,7 +895,7 @@ function App() {
       return
     }
     const configured: DecisionAttempt = {
-      ...activeDecisionAttempt, stage: 'order-pending', stopLoss: decisionRiskDraft.stopLoss,
+      ...activeDecisionAttempt, stage: 'order-pending', initialStopLoss: decisionRiskDraft.stopLoss, stopLoss: decisionRiskDraft.stopLoss,
       takeProfit: decisionRiskDraft.takeProfit, drawings: withoutTransientMeasurements(decisionDrawings.present),
     }
     setDecisionRiskDraft(null)
@@ -912,7 +915,11 @@ function App() {
       if ((attempt.stage !== 'order-pending' && attempt.stage !== 'position-open') || attempt.pendingEntryPrice === null || attempt.stopLoss === null || attempt.takeProfit === null) return attempt
       const stopLoss = field === 'stopLoss' ? value : attempt.stopLoss
       const takeProfit = field === 'takeProfit' ? value : attempt.takeProfit
-      if (!validDecisionLevels(candidate.trade.side, attempt.pendingEntryPrice, stopLoss, takeProfit)) return attempt
+      const entryPrice = attempt.fill?.price ?? attempt.pendingEntryPrice
+      const valid = attempt.stage === 'position-open'
+        ? validOpenPositionLevels(candidate.trade.side, entryPrice, stopLoss, takeProfit)
+        : validDecisionLevels(candidate.trade.side, entryPrice, stopLoss, takeProfit)
+      if (!valid) return attempt
       return { ...attempt, stopLoss, takeProfit }
     })
   }, [updateActiveDecisionAttempt])
@@ -1088,6 +1095,7 @@ function App() {
   const resetWorkspace = () => {
     clearWorkspace()
     setSymbol('XAUUSD'); setIntervalId(DEFAULT_INTERVAL); setChartType('candles'); setTheme('dark'); setIndicators(DEFAULT_INDICATORS)
+    setIndicatorLegendExpanded(true)
     setCollapsedReplayRangeLayerIds([])
     setPriceScaleAuto(true); setPriceScaleLog(false); setPriceScalePercent(false); setPriceScaleInverted(false)
     dispatchDrawing({ type: 'clear' }); setActiveTool('cursor'); setMagnetMode('off'); setKeepDrawing(false); setDrawingsLocked(false)
@@ -1100,10 +1108,10 @@ function App() {
   const saveCurrentLayout = useCallback(() => {
     saveWorkspace({
       symbol, interval, chartType, theme, priceScaleAuto, priceScaleLog, priceScalePercent, priceScaleInverted,
-      indicators, drawings: withoutTransientMeasurements(drawings.present), collapsedReplayRangeLayerIds,
+      indicators, indicatorLegendExpanded, drawings: withoutTransientMeasurements(drawings.present), collapsedReplayRangeLayerIds,
     })
     notify('图表布局已保存')
-  }, [chartType, collapsedReplayRangeLayerIds, drawings.present, indicators, interval, notify, priceScaleAuto, priceScaleInverted, priceScaleLog, priceScalePercent, symbol, theme])
+  }, [chartType, collapsedReplayRangeLayerIds, drawings.present, indicatorLegendExpanded, indicators, interval, notify, priceScaleAuto, priceScaleInverted, priceScaleLog, priceScalePercent, symbol, theme])
 
   const loadSavedLayout = useCallback(() => {
     const layout = loadWorkspace()
@@ -1114,6 +1122,7 @@ function App() {
     setSymbol(layout.symbol); setIntervalId(layout.interval); setChartType(layout.chartType); setTheme(layout.theme)
     setPriceScaleAuto(layout.priceScaleAuto ?? true); setPriceScaleLog(layout.priceScaleLog ?? false)
     setPriceScalePercent(layout.priceScalePercent ?? false); setPriceScaleInverted(layout.priceScaleInverted ?? false)
+    setIndicatorLegendExpanded(layout.indicatorLegendExpanded ?? true)
     setCollapsedReplayRangeLayerIds(layout.collapsedReplayRangeLayerIds ?? [])
     setIndicators(layout.indicators); dispatchDrawing({ type: 'load', drawings: withoutTransientMeasurements(layout.drawings) }); setQuickMeasurement(null)
     notify('已加载本地图表布局')
@@ -1228,11 +1237,9 @@ function App() {
       if (mod && key === 's') {
         event.preventDefault(); saveCurrentLayout(); return
       }
-      if (mod && key === 'z') {
-        event.preventDefault(); dispatchUiDrawing({ type: event.shiftKey ? 'redo' : 'undo' }); return
-      }
-      if (mod && key === 'y') {
-        event.preventDefault(); dispatchUiDrawing({ type: 'redo' }); return
+      const historyShortcut = resolveHistoryShortcut(event)
+      if (historyShortcut) {
+        event.preventDefault(); dispatchUiDrawing({ type: historyShortcut }); return
       }
       if (mod && key === 'c' && selectedDrawing) {
         event.preventDefault(); drawingClipboardRef.current = selectedDrawing; setDrawingClipboardAvailable(true); notify('已复制绘图对象'); return
@@ -1410,7 +1417,7 @@ function App() {
           <button type="button" disabled={decisionMode} className="replay-entry-button replay-rewind-button" aria-label="回放上一格" title="回退一格并进入回放" onClick={stepReplayBack}><Rewind size={24} /></button>
         </div>
         <button type="button" className={`decision-entry-button ${decisionMode ? 'active' : ''}`} onClick={() => setDecisionCenterOpen(true)} title="随机交易决策回放"><BrainCircuit size={20} /><span>决策回放</span>{activeDecisionSession && <b>{activeDecisionSession.currentIndex + 1}/{activeDecisionSession.candidates.length}</b>}</button>
-        <button type="button" className={`decision-entry-button decision-history-button ${decisionHistoryOpen ? 'active' : ''}`} onClick={() => { setDecisionCenterOpen(false); setDecisionResultsSessionId(null); setDecisionHistoryOpen(true) }} title="查看当前标的的决策历史记录" aria-label="查看决策历史记录"><History size={19} /><span>历史记录</span></button>
+        <button type="button" className={`decision-entry-button decision-history-button ${decisionHistoryOpen ? 'active' : ''}`} onClick={() => { setDecisionCenterOpen(false); setDecisionResultsSessionId(null); setDecisionHistoryOpen(true) }} title="查看决策历史记录（可切换当前或全部标的）" aria-label="查看决策历史记录"><History size={19} /><span>历史记录</span></button>
         <div className="toolbar-divider" />
         <IconButton label="撤销 (Ctrl+Z)" disabled={uiDrawings.past.length === 0} onClick={() => dispatchUiDrawing({ type: 'undo' })}><Undo2 size={18} /></IconButton>
         <IconButton label="重做 (Ctrl+Shift+Z)" disabled={uiDrawings.future.length === 0} onClick={() => dispatchUiDrawing({ type: 'redo' })}><Redo2 size={18} /></IconButton>
@@ -1485,7 +1492,11 @@ function App() {
               priceScalePercent={priceScalePercent} priceScaleInverted={priceScaleInverted}
               visibleTradeLayerSourceIds={decisionMode ? [] : visibleTradeLayerSourceIds}
               decisionSignalSourceIds={decisionSignalSourceIds}
-              decisionSignalAfterTime={activeDecisionCandidate?.trade.entry.signalTime ?? null}
+              // Decision replay is a chronological tape: every signal whose
+              // candle has already arrived is visible, including the current
+              // long signal and earlier signals from the same source.  The
+              // chart data cutoff remains the causal guard for future signals.
+              decisionSignalAfterTime={null}
               visibleRangeLayerSourceIds={decisionMode ? [] : visibleRangeLayerSourceIds}
               suppressedRangeObjectIds={suppressedRangeObjectIds}
               selectedRangeObjectId={activeSelectedReplayRangeId}
@@ -1497,6 +1508,9 @@ function App() {
               followLatest={!decisionMode && marketStatus.kind === 'live' && replayCursor === null}
               focusLatestKey={marketHydrationKey + (decisionMode ? 10_000 + decisionFocusTick : 0)}
               suppressAutoFocus={Boolean(decisionReviewResult)}
+              centerLatestByDefault={decisionMode}
+              forceFadeMarkers={decisionAnnotationHovering}
+              onMarkerHoverChange={setChartMarkerHovering}
               onHover={setHoverCandle}
               onViewportChange={refreshDrawingProjection}
               onPriceScaleStateChange={(autoScale, logarithmic, percentage, inverted) => {
@@ -1506,6 +1520,12 @@ function App() {
                 setPriceScaleInverted(inverted)
               }}
             />
+            {activeDecisionSession && activeDecisionCandidate && activeDecisionAttempt && !decisionReviewResult && <DecisionChartStatus
+              session={activeDecisionSession}
+              attempt={activeDecisionAttempt}
+              currentPnlByMode={decisionPositionPnlByMode}
+              positionSizingModes={activeDecisionPositionSizingModes}
+            />}
             {contextOverlayPositions.lockedCursorX !== null && <div className="locked-time-cursor" data-testid="locked-time-cursor" style={{ left: contextOverlayPositions.lockedCursorX }}><span>{new Date(lockedCursorTime! * 1000).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}</span></div>}
             {!decisionMode && chartAlerts.filter((alert) => alert.symbol === symbol).map((alert) => contextOverlayPositions.alertY[alert.id] === null || contextOverlayPositions.alertY[alert.id] === undefined ? null : <div className="context-price-line alert" data-testid="alert-price-line" key={alert.id} style={{ top: contextOverlayPositions.alertY[alert.id]! }}><span>警报 {formatPrice(alert.price, symbol)}</span></div>)}
             {!decisionMode && paperOrders.filter((order) => order.symbol === symbol).map((order) => contextOverlayPositions.orderY[order.id] === null || contextOverlayPositions.orderY[order.id] === undefined ? null : <div className={`context-price-line order-${order.side}`} data-testid="paper-order-line" key={order.id} style={{ top: contextOverlayPositions.orderY[order.id]! }}><span>{order.side === 'buy' ? '买' : '卖'} {order.quantity} @ {formatPrice(order.price, symbol)}</span></div>)}
@@ -1579,6 +1599,8 @@ function App() {
               data={data}
               toX={(time) => chartRef.current?.timeToCoordinate(time) ?? null}
               toY={(price) => chartRef.current?.priceToCoordinate(price) ?? null}
+              dimmed={chartMarkerHovering || decisionAnnotationHovering}
+              onHoverChange={setDecisionAnnotationHovering}
             />}
             {activeDecisionCandidate && activeDecisionAttempt && !decisionReviewResult && <DecisionReplayPanel
               candidate={activeDecisionCandidate}
@@ -1668,6 +1690,8 @@ function App() {
               interval={interval}
               indicators={indicators}
               indicatorsHidden={indicatorsHidden}
+              expanded={indicatorLegendExpanded}
+              onExpandedChange={setIndicatorLegendExpanded}
               onToggle={(key) => {
                 setIndicatorsHidden(false)
                 setIndicators((current) => ({ ...current, [key]: !current[key] }))
@@ -1680,10 +1704,10 @@ function App() {
                 ? <button type="button" className="property-tool-glyph property-settings-trigger" aria-label="打开斐波那契设置" title="斐波那契设置" onClick={() => setDrawingSettingsId(selectedDrawing.id)}>{getTool(selectedDrawing.tool).glyph}</button>
                 : <span className="property-tool-glyph">{getTool(selectedDrawing.tool).glyph}</span>}
               <strong>{selectedDrawing.label}</strong>
-              <input aria-label="绘图颜色" type="color" value={selectedDrawing.color} onChange={(event) => { setDrawingColor(event.target.value); dispatchUiDrawing({ type: 'update', id: selectedDrawing.id, patch: { color: event.target.value } }) }} />
-              <select aria-label="线型" value={selectedDrawing.lineStyle ?? 'solid'} onChange={(event) => dispatchUiDrawing({ type: 'update', id: selectedDrawing.id, patch: { lineStyle: event.target.value as 'solid' | 'dashed' | 'dotted' } })}><option value="solid">实线</option><option value="dashed">虚线</option><option value="dotted">点线</option></select>
-              <input className="width-range" aria-label="线宽" type="range" min="1" max="14" step="0.5" value={selectedDrawing.width} onChange={(event) => dispatchUiDrawing({ type: 'update', id: selectedDrawing.id, patch: { width: Number(event.target.value) } })} />
-              <button onClick={() => dispatchUiDrawing({ type: 'update', id: selectedDrawing.id, patch: { locked: !selectedDrawing.locked } })} title={selectedDrawing.locked ? '解锁绘图' : '锁定绘图'}><Lock size={15} /></button>
+              <input aria-label="绘图颜色" type="color" value={selectedDrawing.color} onPointerDown={() => dispatchUiDrawing({ type: 'checkpoint' })} onChange={(event) => { setDrawingColor(event.target.value); dispatchUiDrawing({ type: 'update', id: selectedDrawing.id, patch: { color: event.target.value } }) }} />
+              <select aria-label="线型" value={selectedDrawing.lineStyle ?? 'solid'} onChange={(event) => { dispatchUiDrawing({ type: 'checkpoint' }); dispatchUiDrawing({ type: 'update', id: selectedDrawing.id, patch: { lineStyle: event.target.value as 'solid' | 'dashed' | 'dotted' } }) }}><option value="solid">实线</option><option value="dashed">虚线</option><option value="dotted">点线</option></select>
+              <input className="width-range" aria-label="线宽" type="range" min="1" max="14" step="0.5" value={selectedDrawing.width} onPointerDown={() => dispatchUiDrawing({ type: 'checkpoint' })} onKeyDown={(event) => { if (!event.repeat) dispatchUiDrawing({ type: 'checkpoint' }) }} onChange={(event) => dispatchUiDrawing({ type: 'update', id: selectedDrawing.id, patch: { width: Number(event.target.value) } })} />
+              <button onClick={() => { dispatchUiDrawing({ type: 'checkpoint' }); dispatchUiDrawing({ type: 'update', id: selectedDrawing.id, patch: { locked: !selectedDrawing.locked } }) }} title={selectedDrawing.locked ? '解锁绘图' : '锁定绘图'}><Lock size={15} /></button>
               <button onClick={() => dispatchUiDrawing({ type: 'delete', id: selectedDrawing.id })} title="删除选中绘图"><Trash2 size={15} /></button>
               <button onClick={() => { setActiveTool('cursor'); dispatchUiDrawing({ type: 'select', id: null }) }} title="退出绘图"><X size={15} /></button>
             </div>}
@@ -1842,7 +1866,9 @@ function App() {
       {shortcutsOpen && <ShortcutHelpDialog onClose={() => setShortcutsOpen(false)} />}
       {drawingSettingsTarget && ['fib', 'fib-extension'].includes(drawingSettingsTarget.behavior) && <FibSettingsDialog
         drawing={drawingSettingsTarget}
+        logScale={priceScaleLog}
         onApply={(settings, points, label) => {
+          dispatchUiDrawing({ type: 'checkpoint' })
           dispatchUiDrawing({ type: 'update', id: drawingSettingsTarget.id, patch: { fib: settings, points, label } })
           setDrawingSettingsId(null)
           notify('斐波那契回撤设置已更新')
@@ -1864,6 +1890,7 @@ function App() {
         onResults={(sessionId) => { setDecisionCenterOpen(false); setDecisionResultsSessionId(sessionId) }}
       />
       <DecisionHistoryDialog
+        key={`${symbol}-${decisionHistoryOpen ? 'open' : 'closed'}`}
         open={decisionHistoryOpen}
         currentSymbol={symbol}
         sessions={decisionStore.sessions}
@@ -1877,6 +1904,18 @@ function App() {
           setDecisionReviewResult(null)
           setDecisionResultsSessionId(target?.status === 'active' ? null : sessionId)
           if (target?.status === 'active') focusDecisionChartLatest()
+        }}
+        onOpenFavoriteTrade={(sessionId, candidateKey) => {
+          const target = decisionStore.sessions.find((session) => session.id === sessionId)
+          const result = target?.attempts.find((attempt) => attempt.candidateKey === candidateKey)?.result ?? null
+          setDecisionHistoryOpen(false)
+          setDecisionCenterOpen(false)
+          setDecisionResultsSessionId(null)
+          if (result) reviewDecisionResult(result)
+          else {
+            setDecisionReviewResult(null)
+            if (target?.status === 'active') focusDecisionChartLatest()
+          }
         }}
       />
       <DecisionResultsDialog
@@ -1909,7 +1948,7 @@ function IndicatorPanel({ value, onChange, onClose }: { value: IndicatorSettings
 
 function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onImportWorkspace, onClose }: { theme: Theme; onTheme: (theme: Theme) => void; onReset: () => void; onExportWorkspace: () => void; onImportWorkspace: (file: File) => void; onClose: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null)
-  return <aside className="settings-panel"><div className="panel-heading"><div><b>图表设置</b><small>外观与工作区</small></div><button onClick={onClose} aria-label="关闭"><X size={18} /></button></div><section><h3>外观</h3><div className="theme-options"><button className={theme === 'dark' ? 'active' : ''} onClick={() => onTheme('dark')}><Moon size={18} />深色</button><button className={theme === 'light' ? 'active' : ''} onClick={() => onTheme('light')}><Sun size={18} />亮色</button></div></section><section><h3>交互说明</h3><ul><li>鼠标滚轮：水平缩放</li><li>拖拽主图：平移时间轴</li><li>底部“适应”：显示全部数据</li><li>Shift+↓：播放 / 暂停回放</li><li>Shift+→：回放前进一格</li><li>Delete：删除选中绘图</li><li>Ctrl+Z / Ctrl+Y：撤销 / 重做</li></ul></section><section><h3>跨电脑同步</h3><p>导出的备份包含当前品种、周期、指标、绘图、回放进度、模拟订单图层、对象树状态和面板偏好。把 JSON 文件带到另一台电脑后导入即可恢复。</p><div className="workspace-transfer-actions"><button type="button" onClick={onExportWorkspace}><Download size={16} />导出完整工作区</button><button type="button" onClick={() => inputRef.current?.click()}><Upload size={16} />导入工作区备份</button><input ref={inputRef} type="file" accept="application/json,.json" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) onImportWorkspace(file); event.currentTarget.value = '' }} /></div></section><section className="danger-section"><h3>工作区</h3><p>品种、周期、指标、绘图和回放进度会自动保存在当前浏览器。</p><button onClick={() => { onReset(); onClose() }}><RefreshCcw size={16} />恢复所有默认设置</button></section></aside>
+  return <aside className="settings-panel"><div className="panel-heading"><div><b>图表设置</b><small>外观与工作区</small></div><button onClick={onClose} aria-label="关闭"><X size={18} /></button></div><section><h3>外观</h3><div className="theme-options"><button className={theme === 'dark' ? 'active' : ''} onClick={() => onTheme('dark')}><Moon size={18} />深色</button><button className={theme === 'light' ? 'active' : ''} onClick={() => onTheme('light')}><Sun size={18} />亮色</button></div></section><section><h3>交互说明</h3><ul><li>鼠标滚轮：水平缩放</li><li>拖拽主图：平移时间轴</li><li>底部“适应”：显示全部数据</li><li>Shift+↓：播放 / 暂停回放</li><li>Shift+→：回放前进一格</li><li>Delete：删除选中绘图</li><li>Ctrl+Z：撤销</li><li>Ctrl+Y / Ctrl+Shift+Z：重做</li></ul></section><section><h3>跨电脑同步</h3><p>导出的备份包含当前品种、周期、指标、绘图、回放进度、模拟订单图层、对象树状态和面板偏好。把 JSON 文件带到另一台电脑后导入即可恢复。</p><div className="workspace-transfer-actions"><button type="button" onClick={onExportWorkspace}><Download size={16} />导出完整工作区</button><button type="button" onClick={() => inputRef.current?.click()}><Upload size={16} />导入工作区备份</button><input ref={inputRef} type="file" accept="application/json,.json" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) onImportWorkspace(file); event.currentTarget.value = '' }} /></div></section><section className="danger-section"><h3>工作区</h3><p>品种、周期、指标、绘图和回放进度会自动保存在当前浏览器。</p><button onClick={() => { onReset(); onClose() }}><RefreshCcw size={16} />恢复所有默认设置</button></section></aside>
 }
 
 function QuickSearchDialog({ items, query, onQuery, onSelect, onClose }: {

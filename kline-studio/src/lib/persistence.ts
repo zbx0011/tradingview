@@ -11,6 +11,7 @@ export interface SavedWorkspace {
   priceScalePercent?: boolean
   priceScaleInverted?: boolean
   indicatorProfileVersion?: 1
+  indicatorLegendExpanded?: boolean
   indicators: { ma: boolean; ema: boolean; boll: boolean; volume: boolean; maPeriod: number; emaPeriod: number; bollPeriod: number; bollDeviation: number }
   drawings: Drawing[]
   /** Replay-range groups that were collapsed in the Object Tree. */
@@ -44,11 +45,16 @@ export interface DecisionReplayMenuPreferences {
   position: TradeMarkerPanelPosition | null
 }
 
+export interface DecisionChartStatusPreferences {
+  position: TradeMarkerPanelPosition | null
+}
+
 export const STORAGE_KEY = 'kline-studio-workspace-v1'
 export const INDICATOR_PROFILE_VERSION = 1 as const
 export const TRADE_MARKER_PANEL_STORAGE_KEY = 'kline-studio-trade-marker-panel-v1'
 export const DECISION_REPLAY_PANEL_STORAGE_KEY = 'kline-studio-decision-replay-panel-v1'
 export const DECISION_REPLAY_MENU_STORAGE_KEY = 'kline-studio-decision-replay-menu-v1'
+export const DECISION_CHART_STATUS_STORAGE_KEY = 'kline-studio-decision-chart-status-v1'
 export const DEFAULT_TRADE_MARKER_PANEL_PREFERENCES: TradeMarkerPanelPreferences = {
   position: null,
   size: null,
@@ -59,6 +65,9 @@ export const DEFAULT_DECISION_REPLAY_PANEL_PREFERENCES: DecisionReplayPanelPrefe
   size: null,
 }
 export const DEFAULT_DECISION_REPLAY_MENU_PREFERENCES: DecisionReplayMenuPreferences = {
+  position: null,
+}
+export const DEFAULT_DECISION_CHART_STATUS_PREFERENCES: DecisionChartStatusPreferences = {
   position: null,
 }
 
@@ -78,6 +87,7 @@ export function parseWorkspace(raw: string | null): SavedWorkspace | null {
     return {
       ...value,
       indicatorProfileVersion: INDICATOR_PROFILE_VERSION,
+      indicatorLegendExpanded: value.indicatorLegendExpanded !== false,
       indicators,
       collapsedReplayRangeLayerIds,
       priceScaleAuto: value.priceScaleAuto !== false,
@@ -193,4 +203,28 @@ export function loadDecisionReplayMenuPreferences(): DecisionReplayMenuPreferenc
 
 export function saveDecisionReplayMenuPreferences(value: DecisionReplayMenuPreferences) {
   if (typeof localStorage !== 'undefined') localStorage.setItem(DECISION_REPLAY_MENU_STORAGE_KEY, JSON.stringify(value))
+}
+
+export function parseDecisionChartStatusPreferences(raw: string | null): DecisionChartStatusPreferences {
+  if (!raw) return { ...DEFAULT_DECISION_CHART_STATUS_PREFERENCES }
+  try {
+    const value = JSON.parse(raw) as Partial<DecisionChartStatusPreferences>
+    const position = value.position
+      && Number.isFinite(value.position.left)
+      && Number.isFinite(value.position.top)
+      ? { left: value.position.left, top: value.position.top }
+      : null
+    return { position }
+  } catch {
+    return { ...DEFAULT_DECISION_CHART_STATUS_PREFERENCES }
+  }
+}
+
+export function loadDecisionChartStatusPreferences(): DecisionChartStatusPreferences {
+  if (typeof localStorage === 'undefined') return { ...DEFAULT_DECISION_CHART_STATUS_PREFERENCES }
+  return parseDecisionChartStatusPreferences(localStorage.getItem(DECISION_CHART_STATUS_STORAGE_KEY))
+}
+
+export function saveDecisionChartStatusPreferences(value: DecisionChartStatusPreferences) {
+  if (typeof localStorage !== 'undefined') localStorage.setItem(DECISION_CHART_STATUS_STORAGE_KEY, JSON.stringify(value))
 }

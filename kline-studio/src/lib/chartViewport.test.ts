@@ -1,11 +1,48 @@
 import { describe, expect, it } from 'vitest'
 import {
+  centeredLatestLogicalRange,
+  initialChartLogicalRange,
   isRealtimeScrollPosition,
   shouldDeferViewportProjectionSync,
   shouldFollowRealtime,
+  viewportActionAfterDataUpdate,
 } from './chartViewport'
 
+describe('chart viewport default placement', () => {
+  it('places the latest candle exactly at the horizontal center', () => {
+    const range = centeredLatestLogicalRange(200)
+    expect((range.from + range.to) / 2).toBe(199)
+  })
+
+  it('centers decision replay on first load instead of restoring an old viewport', () => {
+    expect(initialChartLogicalRange(200, { from: 10, to: 50 }, true)).toEqual(centeredLatestLogicalRange(200))
+    expect(initialChartLogicalRange(200, { from: 10, to: 50 }, false)).toEqual({ from: 10, to: 50 })
+  })
+})
+
 describe('chart viewport live-follow behavior', () => {
+  it('preserves the complete decision viewport when key 1 reveals one more candle', () => {
+    expect(viewportActionAfterDataUpdate({
+      focusReady: false,
+      hasVisibleRange: true,
+      followLatest: false,
+      wasAtRealtime: true,
+      previousLength: 100,
+      nextLength: 101,
+    })).toBe('preserve')
+  })
+
+  it('only recenters a decision chart for an explicit candidate focus request', () => {
+    expect(viewportActionAfterDataUpdate({
+      focusReady: true,
+      hasVisibleRange: true,
+      followLatest: false,
+      wasAtRealtime: false,
+      previousLength: 100,
+      nextLength: 101,
+    })).toBe('center')
+  })
+
   it('keeps following live data while the viewport is already at the realtime edge', () => {
     expect(shouldFollowRealtime({
       shouldFocusLatest: false,
@@ -57,11 +94,14 @@ describe('chart viewport live-follow behavior', () => {
 })
 
 describe('chart viewport projection scheduling', () => {
-  it('defers expensive overlays during either continuous input burst', () => {
+  it('defers expensive overlays during a continuous wheel burst', () => {
     expect(shouldDeferViewportProjectionSync({
       wheelZoomBurstActive: true,
       mousePanBurstActive: false,
     })).toBe(true)
+  })
+
+  it('defers React projection while pointer panning uses a compositor preview', () => {
     expect(shouldDeferViewportProjectionSync({
       wheelZoomBurstActive: false,
       mousePanBurstActive: true,

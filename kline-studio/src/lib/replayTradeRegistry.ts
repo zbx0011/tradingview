@@ -73,6 +73,12 @@ export interface ReplayTradeMarkerSelection extends XauTradeMarkerSelection {
   sourceId: string
 }
 
+export interface ReplayDecisionSignalMarkerSelection extends ReplayTradeMarkerSelection {
+  tradeMarkerId: string
+  signalSide: XauTradeMarker['side']
+  signalTime: number
+}
+
 export interface ReplayTradeActiveSelection {
   sourceId: string
   tradeNumber: number
@@ -212,6 +218,10 @@ function markerId(sourceId: string, tradeNumber: number, kind: TradeMarkerKind) 
   return `replay-trade-${sourceId}-${tradeNumber}-${kind}`
 }
 
+function decisionSignalMarkerId(sourceId: string, time: number, side: XauTradeMarker['side']) {
+  return `decision-signal-${sourceId}-${time}-${side}`
+}
+
 function markerFor(sourceId: string, trade: XauTradeMarker, kind: TradeMarkerKind, active?: ReplayTradeActiveSelection | null): SeriesMarker<UTCTimestamp> {
   const entry = kind === 'entry'
   const long = trade.side === 'long'
@@ -289,10 +299,63 @@ export function toReplayDecisionSignalSeriesMarkers(
         color: long ? '#22ab94' : '#f7525f',
         text: long ? '多头信号' : '空头信号',
         size: 1,
-        id: `decision-signal-${event.sourceId}-${event.time}-${event.side}`,
+        id: decisionSignalMarkerId(event.sourceId, event.time, event.side),
       }
     })
     .sort((left, right) => Number(left.time) - Number(right.time) || String(left.id).localeCompare(String(right.id)))
+}
+
+/**
+ * Resolves a decision-replay signal marker to the completed trade record that
+ * produced it. Initial signals map to the trade entry; opposite signals map
+ * to that trade's exit, so both marker kinds can reuse the full trade detail
+ * card without exposing a future trade before its signal candle is revealed.
+ */
+export function resolveReplayDecisionSignalMarker(
+  symbol: SymbolId,
+  interval: IntervalId,
+  sourceIds: readonly string[],
+  id: unknown,
+): ReplayDecisionSignalMarkerSelection | null {
+  if (typeof id !== 'string') return null
+  for (const dataset of datasetsFor(symbol, interval, sourceIds)) {
+    const prefix = `decision-signal-${dataset.sourceId}-`
+    if (!id.startsWith(prefix)) continue
+    const match = /^(\d+)-(long|short)$/.exec(id.slice(prefix.length))
+    if (!match) return null
+    const signalTime = Number(match[1])
+    const signalSide = match[2] as XauTradeMarker['side']
+    const entryTrade = dataset.trades.find((trade) => trade.entry.signalTime === signalTime && trade.side === signalSide)
+    if (entryTrade) {
+      return {
+        id,
+        sourceId: dataset.sourceId,
+        kind: 'entry',
+        tradeMarkerId: markerId(dataset.sourceId, entryTrade.tradeNumber, 'entry'),
+        trade: entryTrade,
+        signalSide,
+        signalTime,
+      }
+    }
+    const oppositeTrade = dataset.trades.find((trade) => (
+      (trade.exit.reasonCode === 'OPPOSITE_SIGNAL_CLOSE' || trade.exit.reasonCode === 'OPPOSITE_SIGNAL_NEXT_BAR_BREAK')
+      && trade.exit.signalTime === signalTime
+      && oppositeSide(trade.side) === signalSide
+    ))
+    if (oppositeTrade) {
+      return {
+        id,
+        sourceId: dataset.sourceId,
+        kind: 'exit',
+        tradeMarkerId: markerId(dataset.sourceId, oppositeTrade.tradeNumber, 'exit'),
+        trade: oppositeTrade,
+        signalSide,
+        signalTime,
+      }
+    }
+    return null
+  }
+  return null
 }
 
 export function toReplayTradeConnectionSpecs(symbol: SymbolId, interval: IntervalId, sourceIds: readonly string[], revealedThrough?: number): ReplayTradeConnectionSpec[] {

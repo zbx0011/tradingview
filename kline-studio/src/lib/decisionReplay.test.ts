@@ -8,6 +8,7 @@ import {
   decisionShortcutAction, defaultDecisionLevels, evaluatePositionBar, fillPendingOrder,
   decisionResultPnl, historyCoversDecisionCandidate, intervalCutoffTime, parseDecisionReplayStore,
   pnlForDecision, pnlForDecisionMode, rewardRiskRatio, sampleDecisionCandidates,
+  validDecisionLevels, validOpenPositionLevels,
 } from './decisionReplay'
 
 function candidate(key: string, side: 'long' | 'short' = 'long'): ReplayDecisionCandidate {
@@ -82,6 +83,28 @@ describe('decision replay', () => {
     expect(levels).toEqual({ stopLoss: 95, takeProfit: 105 })
     expect(rewardRiskRatio(100, 95, 110)).toBe(2)
     expect(pnlForDecision('long', 100, 110, 95)).toEqual({ pnlUsd: 200, rMultiple: 2 })
+  })
+
+  it('allows a filled position stop to lock profit while retaining its initial fixed-risk sizing', () => {
+    expect(validDecisionLevels('long', 100, 102, 105)).toBe(false)
+    expect(validOpenPositionLevels('long', 100, 102, 105)).toBe(true)
+    expect(validOpenPositionLevels('short', 100, 98, 95)).toBe(true)
+
+    const item = candidate('a:1')
+    const attempt = {
+      ...createDecisionAttempt(item),
+      stage: 'position-open' as const,
+      entryMode: 'signal-extreme' as const,
+      orderKind: 'stop' as const,
+      pendingEntryPrice: 100,
+      fill: { time: 3300, price: 100 },
+      initialStopLoss: 95,
+      stopLoss: 102,
+      takeProfit: 105,
+    }
+    const result = buildDecisionResult(item, attempt, { time: 3600, price: 103, reason: 'manual-close' }, [])
+    expect(result.userPnlUsd).toBe(60)
+    expect(result.userR).toBeCloseTo(0.6)
   })
 
   it('advances pending orders and finalizes comparable results without future data', () => {

@@ -6,6 +6,15 @@ export function decisionReplayFavoriteKey(kind: DecisionReplayFavoriteKind, id: 
   return `${kind}:${id}`
 }
 
+export function decisionReplaySessionHasFavorite(
+  favorites: readonly string[],
+  sessionId: string,
+  candidateKeys: readonly string[],
+) {
+  return favorites.includes(decisionReplayFavoriteKey('session', sessionId))
+    || candidateKeys.some((key) => favorites.includes(decisionReplayFavoriteKey('trade', key)))
+}
+
 export function normalizeDecisionReplayFavorites(value: unknown) {
   if (!Array.isArray(value)) return []
   return Array.from(new Set(value.filter((item): item is string => typeof item === 'string' && item.length > 0)))

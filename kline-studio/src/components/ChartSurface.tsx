@@ -1,4 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { flushSync } from 'react-dom'
 import {
   AreaSeries,
   CandlestickSeries,
@@ -17,9 +18,11 @@ import {
 } from 'lightweight-charts'
 import { bollinger, ema, sma, volumeSma } from '../lib/indicators'
 import {
+  centeredLatestLogicalRange,
+  initialChartLogicalRange,
   isRealtimeScrollPosition,
   shouldDeferViewportProjectionSync,
-  shouldFollowRealtime,
+  viewportActionAfterDataUpdate,
 } from '../lib/chartViewport'
 import { formatBeijingChartTime, formatBeijingTickMark } from '../lib/chartTime'
 import { normalizedWheelDelta, zoomLogicalRangeAt } from '../lib/chartWheelZoom'
@@ -32,8 +35,8 @@ import {
   exitReasonDetail, exitReasonLabel, toggleXauTradeMarkerSelection, tradeLevelMethodLabel, tradeMarkerTitle, tradeRuleLabel, triggerConditionLabel,
 } from '../lib/tradeMarkers'
 import {
-  resolveReplayTradeMarker, toReplayDecisionSignalSeriesMarkers, toReplayTradeConnectionSpecs, toReplayTradeSeriesMarkers,
-  type ReplayTradeActiveSelection, type ReplayTradeConnectionSpec, type ReplayTradeMarkerSelection,
+  resolveReplayDecisionSignalMarker, resolveReplayTradeMarker, toReplayDecisionSignalSeriesMarkers, toReplayTradeConnectionSpecs, toReplayTradeSeriesMarkers,
+  type ReplayDecisionSignalMarkerSelection, type ReplayTradeActiveSelection, type ReplayTradeConnectionSpec, type ReplayTradeMarkerSelection,
 } from '../lib/replayTradeRegistry'
 import {
   resolveReplaySignalMarker, toReplaySignalRangeSpecs, toReplaySignalSeriesMarkers, toggleReplaySignalMarkerSelection,
@@ -43,6 +46,7 @@ import {
 import { hasReplayRangeDataset, shouldRenderReplayRangeSpec, toReplayRangeSpecs, type ReplayRangeSpec } from '../lib/replayRangeRegistry'
 import { extractReasonCandleIndexes, resolveTradeCandleReferences } from '../lib/tradeCandleReferences'
 import { labelLayoutObstacle, tradeEndpointLabelLayout, type TradeLabelObstacle } from '../lib/tradeEndpointLabelLayout'
+import { fadeChartMarkersOnHover } from '../lib/chartMarkerVisibility'
 
 export interface IndicatorSettings {
   ma: boolean
@@ -94,6 +98,9 @@ interface Props {
   focusLatestKey?: number
   /** Keep the current viewport while a historical review is opened. */
   suppressAutoFocus?: boolean
+  centerLatestByDefault?: boolean
+  forceFadeMarkers?: boolean
+  onMarkerHoverChange?: (hovering: boolean) => void
   onHover: (candle: Candle | null) => void
   onPriceScaleStateChange: (autoScale: boolean, logarithmic: boolean, percentage: boolean, inverted: boolean) => void
   onViewportChange?: () => void
@@ -116,14 +123,6 @@ interface TradeConnectionSegment extends ReplayTradeConnectionSpec {
   y1: number
   x2: number
   y2: number
-}
-
-function centeredLatestLogicalRange(length: number) {
-  const latestIndex = Math.max(0, length - 1)
-  // Show the whole short replay window when possible, while keeping the
-  // latest available candle at the visual center for longer datasets.
-  const halfSpan = Math.min(110, Math.max(1, latestIndex))
-  return { from: latestIndex - halfSpan, to: latestIndex + halfSpan }
 }
 
 function sameTradeLabelObstacles(left: readonly TradeLabelObstacle[], right: readonly TradeLabelObstacle[]) {
@@ -345,6 +344,7 @@ function visibleTradeMarkers(
   referenceMarkers: readonly SeriesMarker<UTCTimestamp>[] = [],
   decisionSignalSourceIds: readonly string[] = [],
   decisionSignalAfterTime: number | null = null,
+  hoveredMarkerId: string | null = null,
 ) {
   const revealedThrough = data.at(-1)?.time
   if (revealedThrough === undefined) return []
@@ -356,13 +356,14 @@ function visibleTradeMarkers(
   // vertical column of labels at the right edge of the chart.  Keep replay
   // annotations causal, but never move them to another candle as a fallback.
   const candleTimes = new Set(data.map((candle) => candle.time))
-  return [
+  const markers = [
     ...toReplayTradeSeriesMarkers(symbol, interval, sourceIds, revealedThrough, active),
     ...toReplaySignalSeriesMarkers(symbol, interval, revealedThrough),
     ...toReplayDecisionSignalSeriesMarkers(symbol, interval, decisionSignalSourceIds, revealedThrough, decisionSignalAfterTime),
     ...referenceMarkers,
   ].filter((marker) => candleTimes.has(Number(marker.time)))
     .sort((left, right) => Number(left.time) - Number(right.time) || String(left.id).localeCompare(String(right.id)))
+  return fadeChartMarkersOnHover(markers, hoveredMarkerId)
 }
 
 export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function ChartSurface(
@@ -370,7 +371,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     data, symbol, interval, chartType, theme, indicators, priceScaleAuto, priceScaleLog, priceScalePercent, priceScaleInverted,
     visibleTradeLayerSourceIds = [], decisionSignalSourceIds = [], decisionSignalAfterTime = null,
     visibleRangeLayerSourceIds = [], suppressedRangeObjectIds = [], selectedRangeObjectId = null, onSelectRangeObject,
-    followLatest = false, focusLatestKey = 0, suppressAutoFocus = false, onHover, onPriceScaleStateChange, onViewportChange,
+    followLatest = false, focusLatestKey = 0, suppressAutoFocus = false, centerLatestByDefault = false, forceFadeMarkers = false, onMarkerHoverChange, onHover, onPriceScaleStateChange, onViewportChange,
   },
   forwardedRef,
 ) {
@@ -395,16 +396,21 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
   const visibleTradeLayerSourceIdsRef = useRef<readonly string[]>(visibleTradeLayerSourceIds)
   const decisionSignalSourceIdsRef = useRef<readonly string[]>(decisionSignalSourceIds)
   const decisionSignalAfterTimeRef = useRef<number | null>(decisionSignalAfterTime)
+  const forceFadeMarkersRef = useRef(forceFadeMarkers)
   const visibleRangeLayerSourceIdsRef = useRef<readonly string[]>(visibleRangeLayerSourceIds)
   const suppressedRangeObjectIdsRef = useRef<ReadonlySet<string>>(new Set(suppressedRangeObjectIds))
   const [selectedTradeMarkerId, setSelectedTradeMarkerId] = useState<string | null>(null)
   const selectedTradeMarkerIdRef = useRef<string | null>(null)
   const [selectedSignalMarkerId, setSelectedSignalMarkerId] = useState<string | null>(null)
   const selectedSignalMarkerIdRef = useRef<string | null>(null)
+  const [selectedDecisionSignalMarkerId, setSelectedDecisionSignalMarkerId] = useState<string | null>(null)
+  const selectedDecisionSignalMarkerIdRef = useRef<string | null>(null)
   const [hoveredTradeNumber, setHoveredTradeNumber] = useState<number | null>(null)
   const hoveredTradeNumberRef = useRef<number | null>(null)
   const [hoveredTradeSourceId, setHoveredTradeSourceId] = useState<string | null>(null)
   const hoveredTradeSourceIdRef = useRef<string | null>(null)
+  const [hoveredMarkerId, setHoveredMarkerId] = useState<string | null>(null)
+  const hoveredMarkerIdRef = useRef<string | null>(null)
   const [initialTradeMarkerPanelPreferences] = useState(loadTradeMarkerPanelPreferences)
   const [selectedTradeMarkerPanelPosition, setSelectedTradeMarkerPanelPosition] = useState<TradeMarkerPanelPosition | null>(initialTradeMarkerPanelPreferences.position)
   const [selectedTradeMarkerPanelSize, setSelectedTradeMarkerPanelSize] = useState<TradeMarkerPanelSize | null>(initialTradeMarkerPanelPreferences.size)
@@ -419,16 +425,19 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
   const signalRangeSyncFrameRef = useRef<number | null>(null)
   const selectedTradeMarker = selectedTradeMarkerId ? resolveReplayTradeMarker(symbol, interval, visibleTradeLayerSourceIds, selectedTradeMarkerId) : null
   const selectedSignalMarker = selectedSignalMarkerId ? resolveReplaySignalMarker(symbol, interval, selectedSignalMarkerId) : null
+  const selectedDecisionSignalMarker = selectedDecisionSignalMarkerId
+    ? resolveReplayDecisionSignalMarker(symbol, interval, decisionSignalSourceIds, selectedDecisionSignalMarkerId)
+    : null
+  const selectedTradeDetails: ReplayTradeMarkerSelection | ReplayDecisionSignalMarkerSelection | null = selectedTradeMarker ?? selectedDecisionSignalMarker
   const tradeReferenceMarkers = useMemo(() => {
-    const selection = selectedTradeMarkerId ? resolveReplayTradeMarker(symbol, interval, visibleTradeLayerSourceIds, selectedTradeMarkerId) : null
+    const selection = selectedTradeDetails
     return selection ? tradeReferenceSeriesMarkers(selection, data) : []
-  }, [data, selectedTradeMarkerId, symbol, interval, visibleTradeLayerSourceIds])
+  }, [data, selectedTradeDetails])
   const tradeReferenceMarkersRef = useRef<readonly SeriesMarker<UTCTimestamp>[]>(tradeReferenceMarkers)
-  const activeTradeNumber = hoveredTradeNumber ?? selectedTradeMarker?.trade.tradeNumber ?? null
-  const activeTradeSourceId = hoveredTradeSourceId ?? selectedTradeMarker?.sourceId ?? null
+  const activeTradeNumber = hoveredTradeNumber ?? selectedTradeDetails?.trade.tradeNumber ?? null
+  const activeTradeSourceId = hoveredTradeSourceId ?? selectedTradeDetails?.sourceId ?? null
   const activeTrade = useMemo(() => activeTradeNumber !== null && activeTradeSourceId ? { sourceId: activeTradeSourceId, tradeNumber: activeTradeNumber } : null, [activeTradeNumber, activeTradeSourceId])
   const activeTradeRef = useRef<ReplayTradeActiveSelection | null>(activeTrade)
-
   useEffect(() => {
     tradeReferenceMarkersRef.current = tradeReferenceMarkers
   }, [tradeReferenceMarkers])
@@ -659,9 +668,14 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     visibleTradeLayerSourceIdsRef.current = visibleTradeLayerSourceIds
     decisionSignalSourceIdsRef.current = decisionSignalSourceIds
     decisionSignalAfterTimeRef.current = decisionSignalAfterTime
+    forceFadeMarkersRef.current = forceFadeMarkers
     visibleRangeLayerSourceIdsRef.current = visibleRangeLayerSourceIds
     suppressedRangeObjectIdsRef.current = new Set(suppressedRangeObjectIds)
-  }, [data, decisionSignalAfterTime, decisionSignalSourceIds, followLatest, interval, onHover, onPriceScaleStateChange, onSelectRangeObject, onViewportChange, priceScaleAuto, priceScaleInverted, priceScaleLog, priceScalePercent, suppressedRangeObjectIds, symbol, visibleRangeLayerSourceIds, visibleTradeLayerSourceIds])
+  }, [data, decisionSignalAfterTime, decisionSignalSourceIds, followLatest, forceFadeMarkers, interval, onHover, onPriceScaleStateChange, onSelectRangeObject, onViewportChange, priceScaleAuto, priceScaleInverted, priceScaleLog, priceScalePercent, suppressedRangeObjectIds, symbol, visibleRangeLayerSourceIds, visibleTradeLayerSourceIds])
+
+  useEffect(() => {
+    onMarkerHoverChange?.(hoveredMarkerId !== null)
+  }, [hoveredMarkerId, onMarkerHoverChange])
 
   useEffect(() => {
     selectedTradeMarkerIdRef.current = selectedTradeMarkerId
@@ -672,21 +686,44 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
   }, [selectedSignalMarkerId])
 
   useEffect(() => {
+    selectedDecisionSignalMarkerIdRef.current = selectedDecisionSignalMarkerId
+  }, [selectedDecisionSignalMarkerId])
+
+  useEffect(() => {
     activeTradeRef.current = activeTrade
   }, [activeTrade])
 
   useEffect(() => {
+    // Decision replay intentionally has no normal trade layer.  A decision
+    // signal is still a selectable marker, so only clear its selection when
+    // the decision signal source itself disappears (for example, after
+    // leaving replay mode), not merely because visibleTradeLayerSourceIds is
+    // empty.
+    if (decisionSignalSourceIds.length > 0) return
+    const clearTimer = window.setTimeout(() => {
+      selectedDecisionSignalMarkerIdRef.current = null
+      setSelectedDecisionSignalMarkerId(null)
+    }, 0)
+    return () => window.clearTimeout(clearTimer)
+  }, [decisionSignalSourceIds])
+
+  useEffect(() => {
     const markerApi = seriesRef.current?.markers
     if (!markerApi) return
-    const markers = visibleTradeMarkers(symbol, interval, dataRef.current, visibleTradeLayerSourceIds, activeTrade, tradeReferenceMarkers, decisionSignalSourceIds, decisionSignalAfterTime)
+    const markers = visibleTradeMarkers(symbol, interval, dataRef.current, visibleTradeLayerSourceIds, activeTrade, tradeReferenceMarkers, decisionSignalSourceIds, decisionSignalAfterTime, hoveredMarkerId ?? (forceFadeMarkers ? 'annotation-hover' : null))
     markerApi.setMarkers(markers)
     let clearSelectionTimer: number | undefined
     if (visibleTradeLayerSourceIds.length === 0) {
       selectedTradeMarkerIdRef.current = null
+      hoveredMarkerIdRef.current = null
       hoveredTradeNumberRef.current = null
       hoveredTradeSourceIdRef.current = null
+      const clearDecisionSignalSelection = decisionSignalSourceIds.length === 0
+      if (clearDecisionSignalSelection) selectedDecisionSignalMarkerIdRef.current = null
       clearSelectionTimer = window.setTimeout(() => {
         setSelectedTradeMarkerId(null)
+        if (clearDecisionSignalSelection) setSelectedDecisionSignalMarkerId(null)
+        setHoveredMarkerId(null)
         setHoveredTradeNumber(null)
         setHoveredTradeSourceId(null)
       }, 0)
@@ -695,7 +732,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     return () => {
       if (clearSelectionTimer !== undefined) window.clearTimeout(clearSelectionTimer)
     }
-  }, [activeTrade, decisionSignalAfterTime, decisionSignalSourceIds, interval, requestTradeConnectionSync, symbol, tradeReferenceMarkers, visibleTradeLayerSourceIds])
+  }, [activeTrade, decisionSignalAfterTime, decisionSignalSourceIds, forceFadeMarkers, hoveredMarkerId, interval, requestTradeConnectionSync, symbol, tradeReferenceMarkers, visibleTradeLayerSourceIds])
 
   useImperativeHandle(forwardedRef, () => ({
     fitContent: () => chartRef.current?.timeScale().fitContent(),
@@ -886,7 +923,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       // Keep native drag scrolling enabled for the whole chart lifetime. Toggling
       // this option on every pointerdown/pointerup forces lightweight-charts to
       // rebuild its gesture configuration and makes the first pan frames stutter.
-      handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
+      handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true },
       // Vertical wheel zoom is handled below so accelerated wheel deltas can be
       // accumulated instead of being capped to one library zoom step/event.
       handleScale: { axisPressedMouseMove: true, mouseWheel: false, pinch: true },
@@ -944,17 +981,16 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       tradeReferenceMarkersRef.current,
       decisionSignalSourceIdsRef.current,
       decisionSignalAfterTimeRef.current,
+      hoveredMarkerIdRef.current ?? (forceFadeMarkersRef.current ? 'annotation-hover' : null),
     ))
     const timeScale = chart.timeScale()
     let wheelZoomBurstActive = false
     let mousePanBurstActive = false
     let wheelProjectionIdleTimer: number | null = null
     const onTimeScaleChange = () => {
-      // Keep the native lightweight-charts canvas responsive for the whole
-      // gesture. Trade links, signal ranges and drawing projections all live
-      // in React/SVG and are intentionally refreshed once after the gesture;
-      // recalculating them for every logical-range event makes panning lag far
-      // behind the pointer on charts with many replay objects.
+      // Native canvas panning stays on the compositor path. DOM/SVG overlays
+      // use a cheap translate preview during the gesture and receive one exact
+      // React projection after pointerup.
       if (shouldDeferViewportProjectionSync({ wheelZoomBurstActive, mousePanBurstActive })) return
       requestViewportProjectionSync()
     }
@@ -964,7 +1000,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     timeScale.subscribeVisibleLogicalRangeChange(onTimeScaleChange)
     timeScale.subscribeSizeChange(onTimeScaleChange)
     const cachedRange = viewportRangeCache.get(viewportRangeCacheKey(symbol, interval))
-    chart.timeScale().setVisibleLogicalRange(cachedRange ?? { from: Math.max(0, dataRef.current.length - 360), to: dataRef.current.length + 8 })
+    chart.timeScale().setVisibleLogicalRange(initialChartLogicalRange(dataRef.current.length, cachedRange, centerLatestByDefault))
     previousLengthRef.current = dataRef.current.length
     cacheVisibleViewport()
     requestViewportProjectionSync()
@@ -976,9 +1012,15 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       // the primary button is held keeps the chart attached to the pointer;
       // normal hover state resumes on the first move after the drag finishes.
       if (mousePanBurstActive) return
-      const markerId = param.hoveredInfo?.objectKind === 'series-marker'
+      const rawMarkerId = param.hoveredInfo?.objectKind === 'series-marker'
         ? param.hoveredInfo.objectId ?? param.hoveredObjectId
         : undefined
+      const markerId = typeof rawMarkerId === 'string' ? rawMarkerId : undefined
+      const nextHoveredMarkerId = markerId ?? null
+      if (hoveredMarkerIdRef.current !== nextHoveredMarkerId) {
+        hoveredMarkerIdRef.current = nextHoveredMarkerId
+        setHoveredMarkerId(nextHoveredMarkerId)
+      }
       const hoveredSelection = resolveReplayTradeMarker(symbolRef.current, intervalRef.current, visibleTradeLayerSourceIdsRef.current, markerId)
       const nextHoveredTradeNumber = hoveredSelection?.trade.tradeNumber ?? null
       const nextHoveredTradeSourceId = hoveredSelection?.sourceId ?? null
@@ -1001,6 +1043,10 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
         setSelectedTradeMarkerId(null)
         selectedSignalMarkerIdRef.current = null
         setSelectedSignalMarkerId(null)
+        selectedDecisionSignalMarkerIdRef.current = null
+        setSelectedDecisionSignalMarkerId(null)
+        hoveredMarkerIdRef.current = null
+        setHoveredMarkerId(null)
         hoveredTradeNumberRef.current = null
         setHoveredTradeNumber(null)
         hoveredTradeSourceIdRef.current = null
@@ -1013,6 +1059,8 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
           onSelectRangeObjectRef.current?.(null)
           selectedSignalMarkerIdRef.current = null
           setSelectedSignalMarkerId(null)
+          selectedDecisionSignalMarkerIdRef.current = null
+          setSelectedDecisionSignalMarkerId(null)
           const nextId = toggleXauTradeMarkerSelection(selectedTradeMarkerIdRef.current, tradeSelection.id)
           selectedTradeMarkerIdRef.current = nextId
           setSelectedTradeMarkerId(nextId)
@@ -1023,9 +1071,28 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
           onSelectRangeObjectRef.current?.(null)
           selectedTradeMarkerIdRef.current = null
           setSelectedTradeMarkerId(null)
+          selectedDecisionSignalMarkerIdRef.current = null
+          setSelectedDecisionSignalMarkerId(null)
           const nextId = toggleReplaySignalMarkerSelection(selectedSignalMarkerIdRef.current, signalSelection.id)
           selectedSignalMarkerIdRef.current = nextId
           setSelectedSignalMarkerId(nextId)
+          return
+        }
+        const decisionSignalSelection = resolveReplayDecisionSignalMarker(
+          symbolRef.current,
+          intervalRef.current,
+          decisionSignalSourceIdsRef.current,
+          objectId,
+        )
+        if (decisionSignalSelection) {
+          onSelectRangeObjectRef.current?.(null)
+          selectedTradeMarkerIdRef.current = null
+          setSelectedTradeMarkerId(null)
+          selectedSignalMarkerIdRef.current = null
+          setSelectedSignalMarkerId(null)
+          const nextId = selectedDecisionSignalMarkerIdRef.current === decisionSignalSelection.id ? null : decisionSignalSelection.id
+          selectedDecisionSignalMarkerIdRef.current = nextId
+          setSelectedDecisionSignalMarkerId(nextId)
         }
         return
       }
@@ -1103,28 +1170,133 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       if (wheelZoomFrame === null) wheelZoomFrame = window.requestAnimationFrame(flushWheelZoom)
     }
     let mousePanFinishFrame: number | null = null
+    let mousePanPreviewFrame: number | null = null
+    let mousePanPreviewX = 0
+    let mousePanPreviewY = 0
+    type PanPreviewTarget = {
+      element: HTMLElement | SVGElement
+      axis: 'both' | 'x' | 'y'
+      previousTranslate: string
+      previousWillChange: string
+    }
+    let mousePanPreviewTargets: PanPreviewTarget[] = []
+    const collectPanPreviewTargets = () => {
+      const root = container.closest('.chart-area') ?? container
+      const targetGroups: Array<{ selector: string; axis: PanPreviewTarget['axis'] }> = [
+        { selector: '.decision-chart-annotations, .drawing-overlay, .signal-range-overlay, .trade-connection-overlay', axis: 'both' },
+        { selector: '.locked-time-cursor', axis: 'x' },
+        { selector: '.context-price-line, .decision-price-line, .decision-risk-line, .decision-position-pnl-line', axis: 'y' },
+      ]
+      mousePanPreviewTargets = targetGroups.flatMap(({ selector, axis }) => (
+        [...root.querySelectorAll<HTMLElement | SVGElement>(selector)].map((element) => ({
+          element,
+          axis,
+          previousTranslate: element.style.translate,
+          previousWillChange: element.style.willChange,
+        }))
+      ))
+      for (const target of mousePanPreviewTargets) target.element.style.willChange = 'translate'
+    }
+    const applyPanPreview = () => {
+      mousePanPreviewFrame = null
+      for (const target of mousePanPreviewTargets) {
+        const x = target.axis === 'y' ? 0 : mousePanPreviewX
+        const y = target.axis === 'x' ? 0 : mousePanPreviewY
+        target.element.style.translate = `${x}px ${y}px`
+      }
+    }
+    const requestPanPreview = (x: number, y: number) => {
+      mousePanPreviewX = x
+      mousePanPreviewY = y
+      if (mousePanPreviewFrame !== null) return
+      mousePanPreviewFrame = window.requestAnimationFrame(applyPanPreview)
+    }
+    const clearPanPreview = () => {
+      if (mousePanPreviewFrame !== null) {
+        window.cancelAnimationFrame(mousePanPreviewFrame)
+        mousePanPreviewFrame = null
+      }
+      for (const target of mousePanPreviewTargets) {
+        target.element.style.translate = target.previousTranslate
+        target.element.style.willChange = target.previousWillChange
+      }
+      mousePanPreviewTargets = []
+      mousePanPreviewX = 0
+      mousePanPreviewY = 0
+    }
+    let armedPricePan: {
+      pointerId: number
+      startX: number
+      startY: number
+      maxVerticalDistance: number
+      autoScaleWasOn: boolean
+    } | null = null
     const armMousePan = (event: PointerEvent) => {
-      if (event.pointerType !== 'mouse' || event.button !== 0) return
+      if (!event.isPrimary || event.button !== 0) return
       // lightweight-charts canvases may use pointer-events:none, so their
       // internal table/cell can be the target. Accept the complete chart root
       // and only exclude controls which own an independent pointer gesture.
       const target = event.target instanceof Element ? event.target : null
       if (target?.closest('.trade-marker-details, button, input, textarea, select, [role="dialog"], [data-chart-pan-block="true"]')) return
+      const bounds = container.getBoundingClientRect()
+      const paneHeight = chart.panes()[0]?.getHeight() ?? Math.max(0, container.clientHeight - timeScale.height())
+      const paneWidth = Math.max(0, bounds.width - chart.priceScale('right').width())
+      const localX = event.clientX - bounds.left
+      const localY = event.clientY - bounds.top
+      // Keep TradingView-compatible axis gestures intact: the right price
+      // axis scales prices and the bottom time axis scales time. Vertical
+      // panning is armed only when the actual candle pane is pressed.
+      if (localX < 0 || localX > paneWidth || localY < 0 || localY > paneHeight) return
+      const priceScale = chart.priceScale('right')
+      const autoScaleWasOn = priceScale.options().autoScale
+      // lightweight-charts deliberately ignores pane price scrolling while
+      // autoScale is active. Disable it before the library receives the same
+      // pointerdown so vertical dragging works immediately in every mode.
+      if (autoScaleWasOn) priceScale.setAutoScale(false)
+      clearPanPreview()
+      collectPanPreviewTargets()
+      armedPricePan = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, maxVerticalDistance: 0, autoScaleWasOn }
+      container.dataset.pricePanActive = 'true'
       mousePanBurstActive = true
       cancelQueuedProjectionSync()
     }
-    const finishMousePan = () => {
+    const finishMousePan = (event?: Event) => {
+      if (event instanceof PointerEvent && armedPricePan && event.pointerId !== armedPricePan.pointerId) return
+      const completedPan = armedPricePan
+      armedPricePan = null
+      delete container.dataset.pricePanActive
+      const restoreAutoScale = Boolean(completedPan?.autoScaleWasOn
+        && (event?.type === 'pointercancel' || event?.type === 'blur' || completedPan.maxVerticalDistance < 3))
       const shouldSync = mousePanBurstActive
       mousePanBurstActive = false
       if (!shouldSync || mousePanFinishFrame !== null) return
       mousePanFinishFrame = window.requestAnimationFrame(() => {
         mousePanFinishFrame = null
+        // Wait until after lightweight-charts receives its native mouseup and
+        // clears the internal price-scroll snapshot. Restoring auto scale in
+        // the pointerup capture phase would make its end-scroll handler bail
+        // out early and leave the next gesture in a stale state.
+        if (restoreAutoScale) chart.priceScale('right').setAutoScale(true)
         const options = chart.priceScale('right').options()
         onPriceScaleStateChangeRef.current(options.autoScale, options.mode === PriceScaleMode.Logarithmic, options.mode === PriceScaleMode.Percentage, options.invertScale)
-        requestViewportProjectionSync()
+        cancelQueuedProjectionSync()
+        // One synchronous projection commit replaces dozens of App-level
+        // renders during the gesture. Clear the compositor preview only after
+        // the exact coordinates have reached the DOM.
+        flushSync(() => {
+          cacheVisibleViewport()
+          syncTradeConnections()
+          syncSignalRanges()
+          onViewportChangeRef.current?.()
+        })
+        clearPanPreview()
       })
     }
     const rejectUnpressedMouseMove = (event: PointerEvent) => {
+      if (armedPricePan?.pointerId === event.pointerId) {
+        armedPricePan.maxVerticalDistance = Math.max(armedPricePan.maxVerticalDistance, Math.abs(event.clientY - armedPricePan.startY))
+        requestPanPreview(event.clientX - armedPricePan.startX, event.clientY - armedPricePan.startY)
+      }
       if (event.pointerType === 'mouse' && event.buttons === 0) finishMousePan()
     }
     const projectionResizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(requestViewportProjectionSync)
@@ -1143,6 +1315,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       if (wheelZoomFrame !== null) window.cancelAnimationFrame(wheelZoomFrame)
       if (wheelProjectionIdleTimer !== null) window.clearTimeout(wheelProjectionIdleTimer)
       if (mousePanFinishFrame !== null) window.cancelAnimationFrame(mousePanFinishFrame)
+      clearPanPreview()
       window.removeEventListener('pointerup', finishMousePan, true)
       window.removeEventListener('pointercancel', finishMousePan, true)
       window.removeEventListener('blur', finishMousePan)
@@ -1165,6 +1338,10 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       setSelectedTradeMarkerId(null)
       selectedSignalMarkerIdRef.current = null
       setSelectedSignalMarkerId(null)
+      selectedDecisionSignalMarkerIdRef.current = null
+      setSelectedDecisionSignalMarkerId(null)
+      hoveredMarkerIdRef.current = null
+      setHoveredMarkerId(null)
       hoveredTradeNumberRef.current = null
       setHoveredTradeNumber(null)
       hoveredTradeSourceIdRef.current = null
@@ -1177,7 +1354,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       chartRef.current = null
       seriesRef.current = null
     }
-  }, [cacheVisibleViewport, chartType, indicators, interval, requestSignalRangeSync, requestTradeConnectionSync, requestViewportProjectionSync, symbol, theme])
+  }, [cacheVisibleViewport, centerLatestByDefault, chartType, indicators, interval, requestSignalRangeSync, requestTradeConnectionSync, requestViewportProjectionSync, symbol, syncSignalRanges, syncTradeConnections, theme])
 
   useEffect(() => {
     chartRef.current?.priceScale('right').applyOptions({
@@ -1197,6 +1374,8 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     const dataChanged = previousDataIdentityRef.current !== data
     if (dataChanged) {
       previousDataIdentityRef.current = data
+      hoveredMarkerIdRef.current = null
+      setHoveredMarkerId(null)
       hoveredTradeNumberRef.current = null
       setHoveredTradeNumber(null)
       hoveredTradeSourceIdRef.current = null
@@ -1214,7 +1393,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     const focusReady = shouldFocusLatest && dataChanged && data.length > 0
     const wasAtRealtime = isRealtimeScrollPosition(timeScale.scrollPosition())
     updateSeries(series, data, chartType, indicators)
-    const revealedMarkers = visibleTradeMarkers(symbol, interval, data, visibleTradeLayerSourceIds, activeTradeRef.current, tradeReferenceMarkers, decisionSignalSourceIds, decisionSignalAfterTime)
+    const revealedMarkers = visibleTradeMarkers(symbol, interval, data, visibleTradeLayerSourceIds, activeTradeRef.current, tradeReferenceMarkers, decisionSignalSourceIds, decisionSignalAfterTime, hoveredMarkerIdRef.current ?? (forceFadeMarkers ? 'annotation-hover' : null))
     series.markers?.setMarkers(revealedMarkers)
     if (selectedTradeMarkerIdRef.current && !revealedMarkers.some((marker) => marker.id === selectedTradeMarkerIdRef.current)) {
       selectedTradeMarkerIdRef.current = null
@@ -1224,25 +1403,27 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       selectedSignalMarkerIdRef.current = null
       setSelectedSignalMarkerId(null)
     }
+    if (selectedDecisionSignalMarkerIdRef.current && !revealedMarkers.some((marker) => marker.id === selectedDecisionSignalMarkerIdRef.current)) {
+      selectedDecisionSignalMarkerIdRef.current = null
+      setSelectedDecisionSignalMarkerId(null)
+    }
     previousLengthRef.current = data.length
-    // An explicit focus request must win over the previous trade's cached
-    // viewport.  This is what makes entering the next decision behave like
-    // pressing the A button, rather than restoring a blank/old range.
-    if (focusReady) {
-      timeScale.setVisibleLogicalRange(centeredLatestLogicalRange(data.length))
-    } else if (shouldFollowRealtime({
-      // Only the new candidate's committed data may activate the automatic
-      // realtime-follow branch.  Keeping the old request out of this branch
-      // prevents the previous trade's viewport from winning the race.
-      shouldFocusLatest: focusReady,
+    // Entering another decision candidate may explicitly request a fresh
+    // center. Revealing the next candle inside the same trade must preserve
+    // the user's horizontal and vertical chart placement.
+    const viewportAction = viewportActionAfterDataUpdate({
+      focusReady,
       hasVisibleRange: Boolean(visibleRange),
       followLatest: followLatestRef.current,
       wasAtRealtime,
       previousLength,
       nextLength: data.length,
-    })) {
+    })
+    if (viewportAction === 'center') {
+      timeScale.setVisibleLogicalRange(centeredLatestLogicalRange(data.length))
+    } else if (viewportAction === 'realtime') {
       timeScale.scrollToRealTime()
-    } else if (visibleRange) {
+    } else if (viewportAction === 'preserve' && visibleRange) {
       timeScale.setVisibleLogicalRange(visibleRange)
     }
     // Keep a focus request pending while the causal data set is empty.  The
@@ -1250,7 +1431,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     if (!shouldFocusLatest || focusReady) focusLatestKeyRef.current = focusLatestKey
     requestTradeConnectionSync()
     requestSignalRangeSync()
-  }, [chartType, data, decisionSignalAfterTime, decisionSignalSourceIds, focusLatestKey, indicators, interval, requestSignalRangeSync, requestTradeConnectionSync, suppressAutoFocus, suppressedRangeObjectIds, symbol, tradeReferenceMarkers, visibleRangeLayerSourceIds, visibleTradeLayerSourceIds])
+  }, [chartType, data, decisionSignalAfterTime, decisionSignalSourceIds, focusLatestKey, forceFadeMarkers, indicators, interval, requestSignalRangeSync, requestTradeConnectionSync, suppressAutoFocus, suppressedRangeObjectIds, symbol, tradeReferenceMarkers, visibleRangeLayerSourceIds, visibleTradeLayerSourceIds])
 
   useEffect(() => {
     saveTradeMarkerPanelPreferences({
@@ -1263,6 +1444,8 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
   const closeTradeMarkerDetails = () => {
     selectedTradeMarkerIdRef.current = null
     setSelectedTradeMarkerId(null)
+    selectedDecisionSignalMarkerIdRef.current = null
+    setSelectedDecisionSignalMarkerId(null)
   }
 
   const closeSignalMarkerDetails = () => {
@@ -1272,7 +1455,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
 
   const cycleTradeMarkerFontSize = () => setTradeMarkerFontSize((size) => nextTradeMarkerFontSize(size))
   const replaySignalMarkerCount = data.length === 0 ? 0 : toReplaySignalSeriesMarkers(symbol, interval, data.at(-1)?.time).length
-  const tradeDetailsPanelObstacles = selectedTradeMarker
+  const tradeDetailsPanelObstacles = selectedTradeDetails
     ? [tradeDetailsPanelObstacle(selectedTradeMarkerPanelPosition, selectedTradeMarkerPanelSize, chartViewportSize.width, chartViewportSize.height)]
     : []
   return <div
@@ -1280,8 +1463,10 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     className="chart-canvas"
     data-testid="chart-canvas"
     data-wheel-zoom="accumulated"
+    data-vertical-pan="always"
     data-active-trade-number={activeTradeNumber ?? undefined}
     data-hovered-trade-number={hoveredTradeNumber ?? undefined}
+    data-marker-hover-active={hoveredMarkerId !== null || forceFadeMarkers ? 'true' : undefined}
     data-replay-signal-marker-count={replaySignalMarkerCount}
     data-replay-signal-range-count={signalRangeSegments.length}
     data-trade-reference-count={tradeReferenceMarkers.length}
@@ -1347,6 +1532,8 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     >
       {tradeConnectionSegments.map((segment) => {
         const isActive = activeTradeNumber !== null && segment.tradeNumber === activeTradeNumber && segment.sourceId === activeTradeSourceId
+        const isHovered = hoveredTradeNumber !== null && segment.tradeNumber === hoveredTradeNumber && segment.sourceId === hoveredTradeSourceId
+        const isSelected = selectedTradeDetails?.trade.tradeNumber === segment.tradeNumber && selectedTradeDetails.sourceId === segment.sourceId
         const isMuted = activeTradeNumber !== null && !isActive
         const entryLabel = isActive ? tradeEndpointLabelLayout(
           segment.x1,
@@ -1368,7 +1555,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
         ) : null
         return <g key={segment.id}>
           <line
-            className={`trade-connection-line trade-connection-line-${segment.outcome}${isActive ? ' is-active' : isMuted ? ' is-muted' : ''}`}
+            className={`trade-connection-line trade-connection-line-${segment.outcome}${isActive ? ' is-active' : isMuted ? ' is-muted' : ''}${isHovered ? ' is-hovered' : ''}`}
             data-testid={`trade-connection-line-${segment.tradeNumber}`}
             data-trade-number={segment.tradeNumber}
             x1={segment.x1}
@@ -1379,7 +1566,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
             strokeWidth={isActive ? 4 : 2}
           />
             {entryLabel && <g
-              className="trade-endpoint trade-endpoint-entry"
+              className={`trade-endpoint trade-endpoint-entry${isHovered ? ' is-hovered' : ''}${isSelected ? ' is-selected' : ''}${entryLabel.obstacleOverlapArea > 0 ? ' has-candle-overlap' : ''}`}
               data-testid={`trade-entry-point-${segment.tradeNumber}`}
               data-trade-number={segment.tradeNumber}
               data-candle-overlap-area={entryLabel.obstacleOverlapArea}
@@ -1393,7 +1580,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
               <text className="trade-endpoint-time" x={entryLabel.boxX + 10} y={entryLabel.boxY + 31}>{formatBeijingChartTime(segment.entryTime as UTCTimestamp)}</text>
             </g>}
             {exitLabel && <g
-              className="trade-endpoint trade-endpoint-exit"
+              className={`trade-endpoint trade-endpoint-exit${isHovered ? ' is-hovered' : ''}${isSelected ? ' is-selected' : ''}${exitLabel.obstacleOverlapArea > 0 ? ' has-candle-overlap' : ''}`}
               data-testid={`trade-exit-point-${segment.tradeNumber}`}
               data-trade-number={segment.tradeNumber}
               data-candle-overlap-area={exitLabel.obstacleOverlapArea}
@@ -1409,8 +1596,8 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
           </g>
       })}
     </svg>
-    {selectedTradeMarker && <TradeMarkerDetails
-      selection={selectedTradeMarker}
+    {selectedTradeDetails && <TradeMarkerDetails
+       selection={selectedTradeDetails}
       referenceCount={tradeReferenceMarkers.length}
       panelPosition={selectedTradeMarkerPanelPosition}
       onPositionChange={setSelectedTradeMarkerPanelPosition}

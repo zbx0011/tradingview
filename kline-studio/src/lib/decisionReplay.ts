@@ -56,6 +56,8 @@ export interface DecisionAttempt {
   entryMode: DecisionEntryMode | null
   orderKind: DecisionOrderKind | null
   pendingEntryPrice: number | null
+  /** The stop used to size fixed-risk positions; it stays unchanged after trailing edits. */
+  initialStopLoss: number | null
   stopLoss: number | null
   takeProfit: number | null
   fill: DecisionFill | null
@@ -181,6 +183,7 @@ export function createDecisionAttempt(candidate: ReplayDecisionCandidate): Decis
     entryMode: null,
     orderKind: null,
     pendingEntryPrice: null,
+    initialStopLoss: null,
     stopLoss: null,
     takeProfit: null,
     fill: null,
@@ -287,6 +290,16 @@ export function validDecisionLevels(side: TradeSide, entryPrice: number, stopLos
     : stopLoss > entryPrice && takeProfit < entryPrice
 }
 
+/**
+ * Once an order is filled, the stop is protection rather than an entry setup.
+ * It may therefore cross the entry price to lock in profit. Keep the target
+ * on the position's profit side, but do not force the stop to remain at a loss.
+ */
+export function validOpenPositionLevels(side: TradeSide, entryPrice: number, stopLoss: number, takeProfit: number) {
+  if (![entryPrice, stopLoss, takeProfit].every(Number.isFinite)) return false
+  return side === 'long' ? takeProfit > entryPrice : takeProfit < entryPrice
+}
+
 export function rewardRiskRatio(entryPrice: number, stopLoss: number, takeProfit: number) {
   const risk = Math.abs(entryPrice - stopLoss)
   return risk > 0 ? Math.abs(takeProfit - entryPrice) / risk : 0
@@ -391,8 +404,9 @@ export function buildDecisionResult(candidate: ReplayDecisionCandidate, attempt:
   const choice: DecisionTradeResult['choice'] = traded
     ? 'traded'
     : exit.reason === 'skipped' || attempt.pendingEntryPrice === null ? 'skipped' : 'unfilled'
+  const riskStopLoss = attempt.initialStopLoss ?? attempt.stopLoss
   const user = traded
-    ? pnlForDecision(candidate.trade.side, attempt.fill!.price, exit.price, attempt.stopLoss!, DECISION_PLANNED_RISK_USD)
+    ? pnlForDecision(candidate.trade.side, attempt.fill!.price, exit.price, riskStopLoss!, DECISION_PLANNED_RISK_USD)
     : { pnlUsd: 0, rMultiple: 0 }
   return {
     candidateKey: candidate.key,

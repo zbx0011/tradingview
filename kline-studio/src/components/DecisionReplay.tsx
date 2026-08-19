@@ -16,12 +16,12 @@ import {
 import { formatPrice, INTERVALS, SYMBOLS, type Candle, type SymbolId } from '../lib/market'
 import { extractReasonCandleIndexes, resolveTradeCandleReferences } from '../lib/tradeCandleReferences'
 import {
-  loadDecisionReplayMenuPreferences, loadDecisionReplayPanelPreferences,
-  saveDecisionReplayMenuPreferences, saveDecisionReplayPanelPreferences,
-  type DecisionReplayMenuPreferences, type DecisionReplayPanelPreferences,
+  loadDecisionChartStatusPreferences, loadDecisionReplayMenuPreferences, loadDecisionReplayPanelPreferences,
+  saveDecisionChartStatusPreferences, saveDecisionReplayMenuPreferences, saveDecisionReplayPanelPreferences,
+  type DecisionChartStatusPreferences, type DecisionReplayMenuPreferences, type DecisionReplayPanelPreferences,
   type TradeMarkerPanelPosition, type TradeMarkerPanelSize,
 } from '../lib/persistence'
-import { decisionReplayFavoriteKey } from '../lib/decisionReplayFavorites'
+import { decisionReplayFavoriteKey, decisionReplaySessionHasFavorite } from '../lib/decisionReplayFavorites'
 
 const DECISION_PANEL_EDGE = 8
 const DECISION_PANEL_MIN_WIDTH = 390
@@ -66,6 +66,16 @@ function decisionMenuStyle(preferences: DecisionReplayMenuPreferences): CSSPrope
     top: `${preferences.position.top}px`,
     right: 'auto',
     bottom: 'auto',
+    transform: 'none',
+  }
+}
+
+function decisionChartStatusStyle(preferences: DecisionChartStatusPreferences): CSSProperties | undefined {
+  if (!preferences.position) return undefined
+  return {
+    left: `${preferences.position.left}px`,
+    top: `${preferences.position.top}px`,
+    right: 'auto',
     transform: 'none',
   }
 }
@@ -306,18 +316,33 @@ export function DecisionReplayCenter({ open, availableCount, totalCount, symbolS
  * Opening a card delegates to the existing results dialog, whose individual
  * rows restore the original drawing snapshot and decision review view.
  */
-export function DecisionHistoryDialog({ open, currentSymbol, sessions, onClose, onOpenSession, favoriteKeys = [], onToggleFavorite = () => undefined }: {
+export function DecisionHistoryDialog({ open, currentSymbol, sessions, onClose, onOpenSession, onOpenFavoriteTrade, favoriteKeys = [], onToggleFavorite = () => undefined, defaultView = 'history' }: {
   open: boolean
-  currentSymbol: string
+  currentSymbol: SymbolId
   sessions: DecisionReplaySession[]
   onClose: () => void
   onOpenSession: (sessionId: string) => void
+  onOpenFavoriteTrade?: (sessionId: string, candidateKey: string) => void
   favoriteKeys?: readonly string[]
   onToggleFavorite?: (key: string) => void
+  defaultView?: 'history' | 'favorites'
 }) {
-  const entries = sessions.map((session) => {
-    const candidates = session.candidates.filter((candidate) => candidate.symbol === currentSymbol)
-    const results = sessionResults(session).filter((result) => result.candidate.symbol === currentSymbol)
+  const [historyScope, setHistoryScope] = useState<'all' | SymbolId>(defaultView === 'favorites' ? 'all' : currentSymbol)
+  const [favoritesOnly, setFavoritesOnly] = useState(defaultView === 'favorites')
+  const showAllSymbols = historyScope === 'all'
+  const historyScopeLabel = favoritesOnly ? '已收藏' : showAllSymbols ? '全部标的' : historyScope === currentSymbol ? '当前标的' : historyScope
+  const historyScopeTitle = favoritesOnly ? '全部标的的收藏记录' : showAllSymbols ? '全部标的' : historyScope === currentSymbol ? currentSymbol : historyScope
+  const historyScopeOptions: Array<{ value: 'all' | SymbolId; label: string }> = [
+    { value: 'all', label: '全部' },
+    { value: currentSymbol, label: '当前标的' },
+    ...SYMBOLS
+      .filter((item) => item.id !== currentSymbol)
+      .map((item) => ({ value: item.id, label: item.id })),
+  ]
+
+  const scopedEntries = sessions.map((session) => {
+    const candidates = session.candidates.filter((candidate) => showAllSymbols || candidate.symbol === historyScope)
+    const results = sessionResults(session).filter((result) => showAllSymbols || result.candidate.symbol === historyScope)
     // A session is useful history as soon as it has real progress.  Previously
     // the list required at least one result, which made a partially completed
     // exercise look as if it had never been saved.
@@ -332,31 +357,116 @@ export function DecisionHistoryDialog({ open, currentSymbol, sessions, onClose, 
       })
     const modes = decisionSessionPositionSizingModes(session)
     const intervals = [...new Set(candidates.map((candidate) => INTERVALS[candidate.interval].label))]
-    return { session, candidates, results, modes, intervals, hasProgress }
+    const symbols = [...new Set(candidates.map((candidate) => candidate.symbol))]
+    const favoriteTradeCount = candidates.filter((candidate) => favoriteKeys.includes(decisionReplayFavoriteKey('trade', candidate.key))).length
+    const favorite = decisionReplaySessionHasFavorite(favoriteKeys, session.id, candidates.map((candidate) => candidate.key))
+    return { session, candidates, results, modes, intervals, symbols, symbolLabel: symbols.join(' / '), hasProgress, favorite, favoriteTradeCount }
   }).filter((entry) => entry.candidates.length > 0 && entry.hasProgress)
+  const entries = scopedEntries
+  const favoriteTradeEntries = sessions.flatMap((session) => {
+    const modes = decisionSessionPositionSizingModes(session)
+    return session.candidates.flatMap((candidate, index) => {
+      const favoriteKey = decisionReplayFavoriteKey('trade', candidate.key)
+      if (!favoriteKeys.includes(favoriteKey)) return []
+      const attempt = session.attempts.find((item) => item.candidateKey === candidate.key) ?? null
+      return [{ session, candidate, attempt, result: attempt?.result ?? null, modes, favoriteKey, ordinal: index + 1 }]
+    })
+  })
 
   if (!open) return null
-  const historyModes = [...new Set(entries.flatMap((entry) => entry.modes))]
+  const summaryResults = favoritesOnly
+    ? favoriteTradeEntries.flatMap((entry) => entry.result ? [entry.result] : [])
+    : entries.flatMap((entry) => entry.results)
+  const visibleTradeCount = favoritesOnly ? favoriteTradeEntries.length : summaryResults.length
+  const hasVisibleHistory = favoritesOnly ? favoriteTradeEntries.length > 0 : entries.length > 0
+  const historyModes = [...new Set(favoritesOnly
+    ? favoriteTradeEntries.flatMap((entry) => entry.modes)
+    : entries.flatMap((entry) => entry.modes))]
+  const openFavoriteTrade = (sessionId: string, candidateKey: string) => {
+    if (onOpenFavoriteTrade) onOpenFavoriteTrade(sessionId, candidateKey)
+    else onOpenSession(sessionId)
+  }
   return <div className="modal-backdrop decision-history-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
     <section className="decision-history" role="dialog" aria-modal="true" aria-label="决策历史记录" data-testid="decision-history-dialog">
       <header>
         <span className="decision-history-icon"><History size={25} /></span>
-        <div><h2>历史记录</h2><small>{currentSymbol} · 已保存的决策练习</small></div>
+        <div><h2>历史记录</h2><small>{historyScopeTitle} · {favoritesOnly ? '每笔收藏交易独立展示' : '已保存的决策练习'}</small></div>
+        <div className="decision-history-filters">
+          <div className="decision-history-scope" role="group" aria-label="历史记录范围">
+            {historyScopeOptions.map((option) => <button
+              type="button"
+              key={option.value}
+              className={!favoritesOnly && historyScope === option.value ? 'active' : ''}
+              aria-pressed={!favoritesOnly && historyScope === option.value}
+              onClick={() => { setFavoritesOnly(false); setHistoryScope(option.value) }}
+            >{option.label}</button>)}
+          </div>
+          <button
+            type="button"
+            className={`decision-history-favorites-filter${favoritesOnly ? ' active' : ''}`}
+            aria-pressed={favoritesOnly}
+            aria-label="查看全部已收藏记录"
+            onClick={() => {
+              if (favoritesOnly) {
+                setFavoritesOnly(false)
+                setHistoryScope(currentSymbol)
+              } else {
+                setHistoryScope('all')
+                setFavoritesOnly(true)
+              }
+            }}
+          ><Star size={14} fill={favoritesOnly ? 'currentColor' : 'none'} />已收藏</button>
+        </div>
         <button aria-label="关闭历史记录" onClick={onClose}><X size={21} /></button>
       </header>
       <div className="decision-history-overview">
-        <article><span>练习场次</span><b>{entries.length}</b><small>当前标的</small></article>
-        <article><span>你的累计净盈亏</span><DecisionModeMoneyStack modes={historyModes} compact={false} valueFor={(mode) => entries.reduce((sum, entry) => sum + aggregateDecisionResults(entry.results, mode).userPnlUsd, 0)} /><small>已保存练习中的完成结果</small></article>
-        <article><span>系统累计净盈亏</span><DecisionModeMoneyStack modes={historyModes} compact={false} valueFor={(mode) => entries.reduce((sum, entry) => sum + aggregateDecisionResults(entry.results, mode).systemPnlUsd, 0)} /><small>V5 原始结果</small></article>
-        <article><span>相对系统</span><DecisionModeMoneyStack modes={historyModes} compact={false} valueFor={(mode) => entries.reduce((sum, entry) => sum + aggregateDecisionResults(entry.results, mode).differenceUsd, 0)} /><small>你的净盈亏 − 系统净盈亏</small></article>
+        <article><span>{favoritesOnly ? '收藏笔数' : '总笔数'}</span><b>{visibleTradeCount}</b><small>{historyScopeLabel}</small></article>
+        <article><span>你的累计净盈亏</span><DecisionModeMoneyStack modes={historyModes} compact={false} valueFor={(mode) => aggregateDecisionResults(summaryResults, mode).userPnlUsd} /><small>{favoritesOnly ? '仅统计已收藏且已完成的交易' : '已保存练习中的完成结果'}</small></article>
+        <article><span>系统累计净盈亏</span><DecisionModeMoneyStack modes={historyModes} compact={false} valueFor={(mode) => aggregateDecisionResults(summaryResults, mode).systemPnlUsd} /><small>{favoritesOnly ? '收藏交易对应的 V5 结果' : 'V5 原始结果'}</small></article>
+        <article><span>相对系统</span><DecisionModeMoneyStack modes={historyModes} compact={false} valueFor={(mode) => aggregateDecisionResults(summaryResults, mode).differenceUsd} /><small>你的净盈亏 − 系统净盈亏</small></article>
       </div>
       <div className="decision-history-body">
-        {entries.length === 0 ? <div className="decision-empty">当前标的还没有已保存的练习记录。</div> : <div className="decision-history-list">
-          {entries.map(({ session, candidates, results, modes, intervals }) => {
+        {!hasVisibleHistory ? <div className="decision-empty">{favoritesOnly ? '还没有收藏任何一笔交易。' : showAllSymbols ? '全部标的还没有已保存的练习记录。' : '当前标的还没有已保存的练习记录。'}</div> : favoritesOnly ? <div className="decision-history-list">
+          {favoriteTradeEntries.map(({ session, candidate, attempt, result, modes, favoriteKey, ordinal }) => <div
+            key={`${session.id}:${candidate.key}`}
+            className="decision-history-card decision-history-trade-card favorite"
+            role="button"
+            tabIndex={0}
+            onClick={() => openFavoriteTrade(session.id, candidate.key)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                openFavoriteTrade(session.id, candidate.key)
+              }
+            }}
+            aria-label={`查看收藏交易 ${candidate.symbol} 第 ${candidate.trade.tradeNumber} 笔`}
+          >
+            <div className="decision-history-card-head decision-history-trade-card-head">
+              <span className={`decision-session-status ${result ? 'completed' : session.status}`}>{result ? '已完成' : statusLabel(session.status)}</span>
+              <span>
+                <b>{candidate.symbol} · {INTERVALS[candidate.interval].label} · {candidate.trade.side === 'long' ? '多头' : '空头'} · 第 {candidate.trade.tradeNumber} 笔</b>
+                <small>信号 K {formatDecisionDate(candidate.trade.entry.signalTime)} · 本场第 {ordinal} / {session.candidates.length} 笔</small>
+              </span>
+              <DecisionFavoriteButton favorite onToggle={() => onToggleFavorite(favoriteKey)} label="取消收藏本笔交易" />
+              <ChevronRight size={19} />
+            </div>
+            {result ? <div className="decision-history-card-stats">
+              <span>你的选择 <b>{choiceLabel(result)}</b></span>
+              <span>你的 <DecisionModeMoneyStack modes={modes} valueFor={(mode) => decisionResultPnl(result, mode, 'user')} /></span>
+              <span>系统 <DecisionModeMoneyStack modes={modes} valueFor={(mode) => decisionResultPnl(result, mode, 'system')} /></span>
+              <span>差额 <DecisionModeMoneyStack modes={modes} valueFor={(mode) => decisionResultPnl(result, mode, 'user') - decisionResultPnl(result, mode, 'system')} /></span>
+            </div> : <div className="decision-history-card-stats decision-history-trade-pending">
+              <span>交易状态 <b>{attempt ? '进行中，尚未结算' : '等待开始'}</b></span>
+              <span>点击后继续这笔交易；结算后会在这里显示本笔盈亏与系统对比。</span>
+            </div>}
+            <small className="decision-history-card-hint">{result ? '点击直接打开这一笔的 K 线复盘与独立画图' : '点击返回这一笔尚未完成的决策练习'}</small>
+          </div>)}
+        </div> : <div className="decision-history-list">
+          {entries.map(({ session, candidates, results, modes, intervals, symbolLabel, favorite, favoriteTradeCount }) => {
             const favoriteKey = decisionReplayFavoriteKey('session', session.id)
             return <div
               key={session.id}
-              className="decision-history-card"
+              className={`decision-history-card${favorite ? ' favorite' : ''}`}
               role="button"
               tabIndex={0}
               onClick={() => onOpenSession(session.id)}
@@ -366,11 +476,12 @@ export function DecisionHistoryDialog({ open, currentSymbol, sessions, onClose, 
                   onOpenSession(session.id)
                 }
               }}
-              aria-label={`查看 ${currentSymbol} 的决策练习`}
+               aria-label={`查看 ${symbolLabel} 的决策练习`}
             >
               <div className="decision-history-card-head">
                 <span className={`decision-session-status ${session.status}`}>{statusLabel(session.status)}</span>
-                <span><b>{currentSymbol} · 决策练习</b><small>{new Date(session.startedAt).toLocaleString('zh-CN')} · {intervals.join(' / ') || '多周期'}</small></span>
+                <span><b>{symbolLabel} · 决策练习</b><small>{new Date(session.startedAt).toLocaleString('zh-CN')} · {intervals.join(' / ') || '多周期'}</small></span>
+                {favoriteTradeCount > 0 && <span className="decision-history-favorite-count"><Star size={12} fill="currentColor" />{favoriteTradeCount} 笔</span>}
                 <DecisionFavoriteButton favorite={favoriteKeys.includes(favoriteKey)} onToggle={() => onToggleFavorite(favoriteKey)} label={favoriteKeys.includes(favoriteKey) ? '取消收藏本场练习' : '收藏本场练习'} />
                 <ChevronRight size={19} />
               </div>
@@ -389,12 +500,258 @@ export function DecisionHistoryDialog({ open, currentSymbol, sessions, onClose, 
   </div>
 }
 
+export function DecisionChartStatus({ session, attempt, currentPnlByMode = null, positionSizingModes = ['fixed-risk'] }: {
+  session: DecisionReplaySession
+  attempt: DecisionAttempt
+  currentPnlByMode?: Partial<Record<DecisionPositionSizingMode, number>> | null
+  positionSizingModes?: readonly DecisionPositionSizingMode[]
+}) {
+  const statusRef = useRef<HTMLElement>(null)
+  const statusDragRef = useRef<{ pointerId: number; startX: number; startY: number; startLeft: number; startTop: number } | null>(null)
+  const [statusPreferences, setStatusPreferences] = useState(loadDecisionChartStatusPreferences)
+  const [statusDragging, setStatusDragging] = useState(false)
+  const results = sessionResults(session)
+  const positionOpen = attempt.stage === 'position-open' && currentPnlByMode !== null
+  const hasCurrentResult = Boolean(attempt.result)
+  const hasCurrentPnl = positionOpen || hasCurrentResult
+  const stageLabel: Record<DecisionAttempt['stage'], string> = {
+    'entry-decision': '等待你的决策',
+    'entry-price': '选择挂单价',
+    'risk-setup': '设置止损止盈',
+    'order-pending': '挂单等待成交',
+    'position-open': '实时浮动，随下一根 K 线更新',
+    'post-exit': '本笔已结算，仍可继续观察',
+    complete: '本笔已完成',
+  }
+  const currentValueFor = (mode: DecisionPositionSizingMode) => positionOpen
+    ? currentPnlByMode?.[mode] ?? 0
+    : attempt.result ? decisionResultPnl(attempt.result, mode, 'user') : 0
+  const totalValueFor = (mode: DecisionPositionSizingMode) => aggregateDecisionResults(results, mode).userPnlUsd
+    + (positionOpen ? currentPnlByMode?.[mode] ?? 0 : 0)
+  const aiTotalValueFor = (mode: DecisionPositionSizingMode) => aggregateDecisionResults(results, mode).systemPnlUsd
+
+  const clampCurrentStatus = useCallback(() => {
+    const status = statusRef.current
+    const parent = status?.parentElement
+    if (!status || !parent) return
+    const containerRect = parent.getBoundingClientRect()
+    const statusRect = status.getBoundingClientRect()
+    setStatusPreferences((current) => {
+      if (!current.position) return current
+      const position = clampDecisionMenuPosition(current.position, containerRect, statusRect)
+      if (position.left === current.position.left && position.top === current.position.top) return current
+      return { position }
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!statusDragging) saveDecisionChartStatusPreferences(statusPreferences)
+  }, [statusDragging, statusPreferences])
+
+  useEffect(() => {
+    const status = statusRef.current
+    const parent = status?.parentElement
+    if (!parent) return
+    clampCurrentStatus()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(clampCurrentStatus)
+    observer?.observe(parent)
+    window.addEventListener('resize', clampCurrentStatus)
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', clampCurrentStatus)
+    }
+  }, [clampCurrentStatus])
+
+  const endStatusDrag = (event: ReactPointerEvent<HTMLElement>) => {
+    const drag = statusDragRef.current
+    if (!drag || event.pointerId !== drag.pointerId) return
+    statusDragRef.current = null
+    setStatusDragging(false)
+    try {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    } catch { /* the pointer may already have been released */ }
+  }
+
+  const handleStatusDragStart = (event: ReactPointerEvent<HTMLElement>) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    const status = statusRef.current
+    const parent = status?.parentElement
+    if (!status || !parent) return
+    event.preventDefault()
+    event.stopPropagation()
+    const containerRect = parent.getBoundingClientRect()
+    const statusRect = status.getBoundingClientRect()
+    const position = clampDecisionMenuPosition({
+      left: statusRect.left - containerRect.left,
+      top: statusRect.top - containerRect.top,
+    }, containerRect, statusRect)
+    setStatusPreferences({ position })
+    statusDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startLeft: position.left,
+      startTop: position.top,
+    }
+    setStatusDragging(true)
+    try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* pointer capture is optional */ }
+  }
+
+  const handleStatusDragMove = (event: ReactPointerEvent<HTMLElement>) => {
+    const drag = statusDragRef.current
+    const status = statusRef.current
+    const parent = status?.parentElement
+    if (!drag || event.pointerId !== drag.pointerId || !status || !parent) return
+    event.preventDefault()
+    const next = clampDecisionMenuPosition({
+      left: drag.startLeft + event.clientX - drag.startX,
+      top: drag.startTop + event.clientY - drag.startY,
+    }, parent.getBoundingClientRect(), status.getBoundingClientRect())
+    setStatusPreferences({ position: next })
+  }
+
+  return <aside ref={statusRef} style={decisionChartStatusStyle(statusPreferences)} className={`decision-chart-status${statusDragging ? ' is-dragging' : ''}`} data-testid="decision-chart-status" aria-label="本场练习盈亏">
+    <header
+      data-testid="decision-chart-status-drag-handle"
+      title="拖动移动本场练习盈亏"
+      onPointerDown={handleStatusDragStart}
+      onPointerMove={handleStatusDragMove}
+      onPointerUp={endStatusDrag}
+      onPointerCancel={endStatusDrag}
+      onLostPointerCapture={(event) => {
+        if (statusDragRef.current?.pointerId !== event.pointerId) return
+        statusDragRef.current = null
+        setStatusDragging(false)
+      }}
+    >
+      <strong><span className="decision-chart-status-grip" aria-hidden="true">⠿</span><CircleDollarSign size={15} />本场练习盈亏</strong>
+      <span>第 {session.currentIndex + 1} / {session.candidates.length} 笔</span>
+    </header>
+    <div className="decision-chart-status-grid">
+      <article className={`current-pnl${hasCurrentPnl ? ' has-value' : ''}`}>
+        <div><span>{positionOpen ? '当前笔实时盈亏' : '当前笔盈亏'}</span><small>{stageLabel[attempt.stage]}</small></div>
+        {hasCurrentPnl
+          ? <DecisionModeMoneyStack modes={positionSizingModes} valueFor={currentValueFor} compact />
+          : <b className="decision-chart-status-empty">—</b>}
+      </article>
+      <article className="user-total has-value">
+        <div><span>本场累计净盈亏</span><small>{positionOpen ? '已结算结果 + 当前浮盈' : `${results.length} 笔已结算`}</small></div>
+        <DecisionModeMoneyStack modes={positionSizingModes} valueFor={totalValueFor} compact />
+      </article>
+      <article className="ai-total has-value" data-testid="decision-chart-ai-total">
+        <div><span>本场 AI 累计净盈亏</span><small>{results.length} 笔已结算</small></div>
+        <DecisionModeMoneyStack modes={positionSizingModes} valueFor={aiTotalValueFor} compact />
+      </article>
+    </div>
+  </aside>
+}
+
 function StageBadge({ attempt }: { attempt: DecisionAttempt }) {
   const labels: Record<DecisionAttempt['stage'], string> = {
     'entry-decision': '等待决策', 'entry-price': '选择挂单价', 'risk-setup': '设置止盈止损',
     'order-pending': '挂单等待成交', 'position-open': '持仓中', 'post-exit': '已平仓·观察中', complete: '已完成',
   }
   return <span className={`decision-stage ${attempt.stage}`}>{labels[attempt.stage]}</span>
+}
+
+type DecisionAnnotationPlacement =
+  | 'placement-above-right' | 'placement-above-left'
+  | 'placement-below-right' | 'placement-below-left'
+  | 'placement-above' | 'placement-below'
+  | 'placement-center-right' | 'placement-center-left'
+
+interface DecisionAnnotationSpec {
+  id: string
+  x: number
+  y: number
+  kind: 'point' | 'reason'
+  preference: DecisionAnnotationPlacement
+}
+
+interface DecisionAnnotationRect {
+  left: number
+  right: number
+  top: number
+  bottom: number
+}
+
+const DECISION_POINT_LABEL_WIDTH = 176
+const DECISION_POINT_LABEL_HEIGHT = 26
+const DECISION_REASON_LABEL_WIDTH = 48
+const DECISION_REASON_LABEL_HEIGHT = 18
+const DECISION_ANNOTATION_GAP = 14
+
+function decisionAnnotationRect(spec: DecisionAnnotationSpec, placement: DecisionAnnotationPlacement): DecisionAnnotationRect {
+  const width = spec.kind === 'point' ? DECISION_POINT_LABEL_WIDTH : DECISION_REASON_LABEL_WIDTH
+  const height = spec.kind === 'point' ? DECISION_POINT_LABEL_HEIGHT : DECISION_REASON_LABEL_HEIGHT
+  switch (placement) {
+    case 'placement-above-right':
+      return { left: spec.x + 8, right: spec.x + 8 + width, top: spec.y - height - DECISION_ANNOTATION_GAP, bottom: spec.y - DECISION_ANNOTATION_GAP }
+    case 'placement-above-left':
+      return { left: spec.x - 8 - width, right: spec.x - 8, top: spec.y - height - DECISION_ANNOTATION_GAP, bottom: spec.y - DECISION_ANNOTATION_GAP }
+    case 'placement-below-right':
+      return { left: spec.x + 8, right: spec.x + 8 + width, top: spec.y + DECISION_ANNOTATION_GAP, bottom: spec.y + DECISION_ANNOTATION_GAP + height }
+    case 'placement-below-left':
+      return { left: spec.x - 8 - width, right: spec.x - 8, top: spec.y + DECISION_ANNOTATION_GAP, bottom: spec.y + DECISION_ANNOTATION_GAP + height }
+    case 'placement-above':
+      return { left: spec.x - width / 2, right: spec.x + width / 2, top: spec.y - height - DECISION_ANNOTATION_GAP, bottom: spec.y - DECISION_ANNOTATION_GAP }
+    case 'placement-below':
+      return { left: spec.x - width / 2, right: spec.x + width / 2, top: spec.y + DECISION_ANNOTATION_GAP, bottom: spec.y + DECISION_ANNOTATION_GAP + height }
+    case 'placement-center-right':
+      return { left: spec.x + 8, right: spec.x + 8 + width, top: spec.y - height / 2, bottom: spec.y + height / 2 }
+    case 'placement-center-left':
+      return { left: spec.x - 8 - width, right: spec.x - 8, top: spec.y - height / 2, bottom: spec.y + height / 2 }
+  }
+}
+
+function decisionAnnotationOverlap(left: DecisionAnnotationRect, right: DecisionAnnotationRect) {
+  return Math.max(0, Math.min(left.right, right.right) - Math.max(left.left, right.left))
+    * Math.max(0, Math.min(left.bottom, right.bottom) - Math.max(left.top, right.top))
+}
+
+function decisionAnnotationCandidates(spec: DecisionAnnotationSpec): DecisionAnnotationPlacement[] {
+  if (spec.kind === 'reason') {
+    return spec.preference === 'placement-below'
+      ? ['placement-below', 'placement-below-left', 'placement-below-right', 'placement-above', 'placement-above-left', 'placement-above-right']
+      : ['placement-above', 'placement-above-left', 'placement-above-right', 'placement-below', 'placement-below-left', 'placement-below-right']
+  }
+  const candidates: Record<DecisionAnnotationPlacement, DecisionAnnotationPlacement[]> = {
+    'placement-above-right': ['placement-above-right', 'placement-above-left', 'placement-below-right', 'placement-below-left', 'placement-center-right', 'placement-center-left'],
+    'placement-above-left': ['placement-above-left', 'placement-above-right', 'placement-below-left', 'placement-below-right', 'placement-center-left', 'placement-center-right'],
+    'placement-below-right': ['placement-below-right', 'placement-below-left', 'placement-above-right', 'placement-above-left', 'placement-center-right', 'placement-center-left'],
+    'placement-below-left': ['placement-below-left', 'placement-below-right', 'placement-above-left', 'placement-above-right', 'placement-center-left', 'placement-center-right'],
+    'placement-above': ['placement-above-right', 'placement-above-left', 'placement-below-right', 'placement-below-left', 'placement-center-right', 'placement-center-left'],
+    'placement-below': ['placement-below-right', 'placement-below-left', 'placement-above-right', 'placement-above-left', 'placement-center-right', 'placement-center-left'],
+    'placement-center-right': ['placement-center-right', 'placement-center-left', 'placement-above-right', 'placement-below-right', 'placement-above-left', 'placement-below-left'],
+    'placement-center-left': ['placement-center-left', 'placement-center-right', 'placement-above-left', 'placement-below-left', 'placement-above-right', 'placement-below-right'],
+  }
+  return candidates[spec.preference]
+}
+
+/** Keep replay labels readable when several causal references share a candle. */
+function layoutDecisionAnnotations(specs: readonly DecisionAnnotationSpec[]) {
+  const placements = new Map<string, { placement: DecisionAnnotationPlacement; rect: DecisionAnnotationRect }>()
+  const reserved: DecisionAnnotationRect[] = []
+  specs.forEach((spec) => {
+    const candidates = decisionAnnotationCandidates(spec)
+    let bestPlacement: DecisionAnnotationPlacement | null = null
+    let bestRect: DecisionAnnotationRect | null = null
+    let bestScore = Number.POSITIVE_INFINITY
+    candidates.forEach((placement, rank) => {
+      const rect = decisionAnnotationRect(spec, placement)
+      const overlap = reserved.reduce((total, item) => total + decisionAnnotationOverlap(rect, item), 0)
+      const score = overlap * 1000 + rank
+      if (score < bestScore) {
+        bestPlacement = placement
+        bestRect = rect
+        bestScore = score
+      }
+    })
+    if (!bestPlacement || !bestRect) return
+    placements.set(spec.id, { placement: bestPlacement, rect: bestRect })
+    reserved.push(bestRect)
+  })
+  return placements
 }
 
 export function DecisionReplayPanel({ candidate, attempt, ordinal, total, currentClose = null, currentPnlUsd = null, currentPnlByMode = null, positionSizingModes = ['fixed-risk'], favorite = false, onToggleFavorite = () => undefined, onAdvance, onSignalExtreme, onFreePrice, onSkip, onManualClose, onCancelPending, onNextTrade, onStop }: {
@@ -861,33 +1218,66 @@ export function DecisionRiskOverlay({ candidate, entryPrice, entryLabel = '挂�
   </div>
 }
 
-export function DecisionChartAnnotations({ candidate, attempt, result, data, toX, toY }: {
+export function DecisionChartAnnotations({ candidate, attempt, result, data, toX, toY, dimmed = false, onHoverChange }: {
   candidate: ReplayDecisionCandidate
   attempt?: DecisionAttempt | null
   result?: DecisionTradeResult | null
   data: readonly Candle[]
   toX: (time: number) => number | null
   toY: (price: number) => number | null
+  dimmed?: boolean
+  onHoverChange?: (hovering: boolean) => void
 }) {
   const reasonReferences = useMemo(() => {
     const references = resolveTradeCandleReferences(candidate.trade, data)
-    // This panel shows only the entry explanation.  Keep hidden system-exit
+    // The chart shows only the entry explanation. Keep hidden system-exit
     // reasoning out of the chart, including after the user closes the trade.
     return references.filter((reference) => reference.sections.includes('entry'))
   }, [candidate.trade, data])
+  // A decision chart is a causal tape. The system's fill and exit may be
+  // known from the replay data before the user has made the corresponding
+  // decision, but they must not appear until their own candles arrive.
+  const revealedThrough = data.at(-1)?.time ?? Number.NEGATIVE_INFINITY
+  const systemEntryVisible = candidate.trade.entry.time <= revealedThrough
+  const systemExitVisible = candidate.trade.exit.time <= revealedThrough
   const signalX = toX(candidate.trade.entry.signalTime)
-  const systemEntryX = toX(candidate.trade.entry.time)
-  const systemEntryY = toY(candidate.trade.entry.price)
-  const systemExitX = toX(candidate.trade.exit.time)
-  const systemExitY = toY(candidate.trade.exit.price)
+  const systemEntryX = systemEntryVisible ? toX(candidate.trade.entry.time) : null
+  const systemEntryY = systemEntryVisible ? toY(candidate.trade.entry.price) : null
+  const systemExitX = systemExitVisible ? toX(candidate.trade.exit.time) : null
+  const systemExitY = systemExitVisible ? toY(candidate.trade.exit.price) : null
   const userEntry = result?.userEntry ?? attempt?.fill ?? null
   const userExit = result?.userExit ?? null
   const userEntryX = userEntry ? toX(userEntry.time) : null
   const userEntryY = userEntry ? toY(userEntry.price) : null
   const userExitX = userExit ? toX(userExit.time) : null
   const userExitY = userExit ? toY(userExit.price) : null
-  return <div className="decision-chart-annotations" aria-hidden="true">
-    {signalX !== null && <div className="decision-signal-cursor" style={{ left: signalX }}><span>信号 K</span></div>}
+  const pointSpecs = [
+    systemEntryX !== null && systemEntryY !== null ? { id: 'system-entry', x: systemEntryX, y: systemEntryY, kind: 'point' as const, preference: 'placement-above-right' as const } : null,
+    systemExitX !== null && systemExitY !== null ? { id: 'system-exit', x: systemExitX, y: systemExitY, kind: 'point' as const, preference: 'placement-above-left' as const } : null,
+    userEntryX !== null && userEntryY !== null ? { id: 'user-entry', x: userEntryX, y: userEntryY, kind: 'point' as const, preference: 'placement-below-right' as const } : null,
+    userExitX !== null && userExitY !== null ? { id: 'user-exit', x: userExitX, y: userExitY, kind: 'point' as const, preference: 'placement-below-left' as const } : null,
+  ].filter((spec): spec is NonNullable<typeof spec> => spec !== null)
+  const reasonSpecs = reasonReferences.flatMap((reference) => {
+    const exitOnly = reference.sections.length === 1 && reference.sections[0] === 'exit'
+    const x = toX(reference.time)
+    const y = toY(exitOnly ? reference.candle.low : reference.candle.high)
+    return x === null || y === null ? [] : [{
+      id: `reason-${reference.index}-${reference.time}`,
+      x,
+      y,
+      kind: 'reason' as const,
+      preference: exitOnly ? 'placement-below' as const : 'placement-above' as const,
+    }]
+  })
+  const annotationPlacements = layoutDecisionAnnotations([...pointSpecs, ...reasonSpecs])
+  const placementFor = (id: string) => annotationPlacements.get(id)?.placement
+  return <div
+    className={`decision-chart-annotations${dimmed ? ' is-dimmed' : ''}`}
+    aria-hidden="true"
+    onPointerEnter={() => onHoverChange?.(true)}
+    onPointerLeave={() => onHoverChange?.(false)}
+  >
+    {signalX !== null && candidate.trade.entry.signalTime <= revealedThrough && <div className="decision-signal-cursor" style={{ left: signalX }}><span>信号 K</span></div>}
     {reasonReferences.map((reference) => {
       const exitOnly = reference.sections.length === 1 && reference.sections[0] === 'exit'
       const x = toX(reference.time)
@@ -895,19 +1285,19 @@ export function DecisionChartAnnotations({ candidate, attempt, result, data, toX
       if (x === null || y === null) return null
       return <span
         key={`decision-reason-reference-${reference.index}-${reference.time}`}
-        className={`decision-reason-candle-marker${exitOnly ? ' exit' : ''}`}
+        className={`decision-reason-candle-marker${exitOnly ? ' exit' : ''}${placementFor(`reason-${reference.index}-${reference.time}`) ? ` ${placementFor(`reason-${reference.index}-${reference.time}`)}` : ''}`}
         style={{ left: x, top: y }}
       >K{reference.index}</span>
     })}
-    {result && systemEntryX !== null && systemEntryY !== null && systemExitX !== null && systemExitY !== null && <>
+    {systemEntryX !== null && systemEntryY !== null && systemExitX !== null && systemExitY !== null && <>
       <svg width="100%" height="100%" preserveAspectRatio="none"><line className="system-path" x1={systemEntryX} y1={systemEntryY} x2={systemExitX} y2={systemExitY} /></svg>
-      <span className="decision-point system entry" style={{ left: systemEntryX, top: systemEntryY }}>系统开 {formatPrice(candidate.trade.entry.price, candidate.symbol)}</span>
-      <span className="decision-point system exit" style={{ left: systemExitX, top: systemExitY }}>系统平 {formatPrice(candidate.trade.exit.price, candidate.symbol)}</span>
     </>}
-    {userEntryX !== null && userEntryY !== null && <span className="decision-point user entry" style={{ left: userEntryX, top: userEntryY }}>你的开仓 {formatPrice(userEntry!.price, candidate.symbol)}</span>}
+    {systemEntryX !== null && systemEntryY !== null && <span className={`decision-point system entry ${placementFor('system-entry') ?? 'placement-above-right'}`} style={{ left: systemEntryX, top: systemEntryY }}>系统开 {formatPrice(candidate.trade.entry.price, candidate.symbol)}</span>}
+    {systemExitX !== null && systemExitY !== null && <span className={`decision-point system exit ${placementFor('system-exit') ?? 'placement-above-left'}`} style={{ left: systemExitX, top: systemExitY }}>系统平 {formatPrice(candidate.trade.exit.price, candidate.symbol)}</span>}
+    {userEntryX !== null && userEntryY !== null && <span className={`decision-point user entry ${placementFor('user-entry') ?? 'placement-below-right'}`} style={{ left: userEntryX, top: userEntryY }}>你的开仓 {formatPrice(userEntry!.price, candidate.symbol)}</span>}
     {userEntryX !== null && userEntryY !== null && userExitX !== null && userExitY !== null && <>
       <svg width="100%" height="100%" preserveAspectRatio="none"><line className="user-path" x1={userEntryX} y1={userEntryY} x2={userExitX} y2={userExitY} /></svg>
-      <span className="decision-point user exit" style={{ left: userExitX, top: userExitY }}>你的平仓 {formatPrice(userExit!.price, candidate.symbol)}</span>
+      <span className={`decision-point user exit ${placementFor('user-exit') ?? 'placement-below-left'}`} style={{ left: userExitX, top: userExitY }}>你的平仓 {formatPrice(userExit!.price, candidate.symbol)}</span>
     </>}
   </div>
 }

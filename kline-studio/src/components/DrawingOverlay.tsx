@@ -6,6 +6,7 @@ import {
 import {
   calculateChartMeasurement, formatMeasurementDuration, formatMeasurementTime, formatMeasurementVolume, formatSignedMeasurement,
 } from '../lib/measurement'
+import { calculateFibLevelGeometry, layoutFibLabels } from '../lib/fibLayout'
 import { formatPrice, type Candle, type IntervalId, type SymbolId } from '../lib/market'
 import {
   calculatePositionMetrics, calculatePositionMetricsFromLevels, createDefaultPositionPoints, formatPositionNumber,
@@ -58,6 +59,7 @@ interface DrawingDrag {
   moved: boolean
   cloneId?: string
   positionHandle?: PositionHandle
+  pointIndex?: number
 }
 
 export function DrawingOverlay({
@@ -74,9 +76,11 @@ export function DrawingOverlay({
   const dragRef = useRef<DrawingDrag | null>(null)
   const activeDefinition = getTool(activeTool)
   const selectedDrawingIds = history.selectedIds ?? (history.selectedId ? [history.selectedId] : [])
+  const viewportWidth = Math.max(1, viewportSize.width)
+  const viewportHeight = Math.max(1, viewportSize.height)
   const handleRadius = {
-    x: 5 * 1000 / Math.max(1, viewportSize.width),
-    y: 5 * 1000 / Math.max(1, viewportSize.height),
+    x: 5,
+    y: 5,
   }
 
   const anchorPoint = useCallback((point: DrawingPoint): DrawingPoint => {
@@ -157,7 +161,7 @@ export function DrawingOverlay({
 
   const px = (point: DrawingPoint) => {
     const projected = projectNormalizedPoint(point)
-    return { x: projected.x * 1000, y: projected.y * 1000 }
+    return { x: projected.x * viewportWidth, y: projected.y * viewportHeight }
   }
 
   const commitDraft = (drawing: Drawing) => {
@@ -213,11 +217,37 @@ export function DrawingOverlay({
     svgRef.current?.setPointerCapture(event.pointerId)
   }
 
+  const startDrawingPointDrag = (drawing: Drawing, pointIndex: number) => (event: ReactPointerEvent<SVGElement>) => {
+    if (activeDefinition.behavior !== 'cursor' || drawingsLocked || drawing.locked) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (!selectedDrawingIds.includes(drawing.id)) dispatch({ type: 'select', id: drawing.id })
+    dispatch({ type: 'checkpoint' })
+    dragRef.current = {
+      start: normalizedPoint(event),
+      pointerId: event.pointerId,
+      originals: [{ id: drawing.id, points: drawing.points.map(projectNormalizedPoint) }],
+      source: drawing,
+      control: false,
+      moved: false,
+      pointIndex,
+    }
+    svgRef.current?.setPointerCapture(event.pointerId)
+  }
+
   const handlePointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
     let point = normalizedPoint(event)
     const drag = dragRef.current
     if (drag) {
       event.preventDefault()
+      if (drag.pointIndex !== undefined) {
+        const original = drag.originals.find((item) => item.id === drag.source.id)
+        if (!original || distance(point, drag.start) <= 0.003) return
+        const points = original.points.map((item, index) => index === drag.pointIndex ? anchorPoint(point) : item)
+        drag.moved = true
+        dispatch({ type: 'update', id: original.id, patch: { points } })
+        return
+      }
       if (drag.positionHandle) {
         const original = drag.originals.find((item) => item.id === drag.source.id)
         if (!original) return
@@ -347,7 +377,10 @@ export function DrawingOverlay({
       if ((event.ctrlKey || event.metaKey) && freehandBehaviors.includes(drawing.behavior) && drawing.points.length > 3) {
         const point = normalizedPoint(event)
         const points = partiallyEraseDrawing(drawing, point)
-        if (points) dispatch({ type: 'update', id: drawing.id, patch: { points } })
+        if (points) {
+          dispatch({ type: 'checkpoint' })
+          dispatch({ type: 'update', id: drawing.id, patch: { points } })
+        }
         else dispatch({ type: 'delete', id: drawing.id })
         return
       }
@@ -428,9 +461,7 @@ export function DrawingOverlay({
       const left = Math.min(first.x, last.x)
       const right = Math.max(first.x, last.x)
       const x1 = fib.extend === 'left' || fib.extend === 'both' ? 0 : left
-      const x2 = fib.extend === 'right' || fib.extend === 'both' ? 1000 : right
-      const labelX = x2 === 1000 ? 988 : x2 + 9
-      const textAnchor = x2 === 1000 ? 'end' : 'start'
+      const x2 = fib.extend === 'right' || fib.extend === 'both' ? viewportWidth : right
       const startPoint = drawing.points[0]
       const endPoint = drawing.points.at(-1) ?? startPoint
       const startAnchor = Number.isFinite(startPoint.time) && Number.isFinite(startPoint.price)
@@ -439,29 +470,86 @@ export function DrawingOverlay({
       const endAnchor = Number.isFinite(endPoint.time) && Number.isFinite(endPoint.price)
         ? { time: endPoint.time!, price: endPoint.price! }
         : onMeasurePoint(endPoint)
+      const visibleLevels = fib.levels.filter((level) => level.visible)
+      const calculatedLevels = calculateFibLevelGeometry(
+        visibleLevels,
+        first.y,
+        last.y,
+        startAnchor?.price ?? null,
+        endAnchor?.price ?? null,
+        fib.reverse,
+        fib.levelsBasedOnLogScale,
+      )
+      const levelGeometry = calculatedLevels.map((level) => {
+        if (level.price === null || !startAnchor) return level
+        const projected = onProjectPoint({ time: startAnchor.time, price: level.price })
+        return projected && Number.isFinite(projected.y) ? { ...level, y: projected.y } : level
+      })
+      const labels = layoutFibLabels(levelGeometry, viewportHeight, fib.fontSize)
+      const labelYById = new Map(labels.map((level) => [level.id, level.labelY]))
+      const labelX = fib.labelsPosition === 'left'
+        ? Math.min(viewportWidth - 8, Math.max(8, x1 + 6))
+        : fib.labelsPosition === 'center'
+          ? (x1 + x2) / 2
+          : Math.min(viewportWidth - 8, Math.max(8, x2 - 6))
+      const textAnchor = fib.labelsPosition === 'left' ? 'start' : fib.labelsPosition === 'center' ? 'middle' : 'end'
+      const bandLevels = [...levelGeometry].sort((a, b) => a.y - b.y)
       content = <g className="fib-drawing">
+        {fib.backgroundVisible && bandLevels.slice(0, -1).map((level, index) => {
+          const next = bandLevels[index + 1]
+          const levelSetting = visibleLevels.find((item) => item.id === level.id)
+          const bandColor = fib.useOneColor ? fib.horizontalLineColor : (levelSetting?.color || fib.horizontalLineColor)
+          return <rect
+            key={`band-${level.id}-${next.id}`}
+            data-fib-band={`${level.id}-${next.id}`}
+            x={x1} y={level.y} width={Math.max(0, x2 - x1)} height={Math.max(0, next.y - level.y)}
+            fill={colorWithAlpha(bandColor, fib.backgroundOpacity)}
+            pointerEvents="none"
+          />
+        })}
         {fib.trendLineVisible && <line
           x1={first.x} y1={first.y} x2={last.x} y2={last.y}
           stroke={fib.trendLineColor} strokeWidth={drawing.width}
           strokeDasharray={dashForLineStyle(fib.trendLineStyle)} vectorEffect="non-scaling-stroke"
         />}
-        {fib.levels.filter((level) => level.visible).map((level) => {
-          const y = first.y + dy * level.value
-          const levelPrice = startAnchor && endAnchor
-            ? startAnchor.price + (endAnchor.price - startAnchor.price) * level.value
-            : null
-          const label = levelPrice === null
-            ? formatFibValue(level.value)
-            : `${formatFibValue(level.value)} (${formatPrice(levelPrice, symbol)})`
+        {levelGeometry.map((geometry) => {
+          const level = visibleLevels.find((item) => item.id === geometry.id)!
+          const levelColor = fib.useOneColor ? fib.horizontalLineColor : (level.color || fib.horizontalLineColor)
+          const levelText = fib.levelsFormat === 'percent'
+            ? `${Number((level.value * 100).toFixed(1))}%`
+            : formatFibValue(level.value)
+          const labelParts = [
+            fib.levelsVisible ? levelText : '',
+            fib.pricesVisible && geometry.price !== null ? `(${formatPrice(geometry.price, symbol)})` : '',
+            level.text?.trim() ?? '',
+          ].filter(Boolean)
+          const levelLabelY = labelYById.get(level.id) ?? geometry.y
+          const labelDisplaced = Math.abs(levelLabelY - geometry.y) > 1.5
           return <g key={level.id} data-fib-level={level.id}>
+            <line x1={x1} x2={x2} y1={geometry.y} y2={geometry.y} stroke="transparent" strokeWidth="10" pointerEvents="stroke" vectorEffect="non-scaling-stroke" />
             <line
-              x1={x1} x2={x2} y1={y} y2={y}
-              stroke={level.color || fib.horizontalLineColor}
+              x1={x1} x2={x2} y1={geometry.y} y2={geometry.y}
+              stroke={levelColor}
               strokeWidth={fib.horizontalLineWidth}
               strokeDasharray={dashForLineStyle(fib.horizontalLineStyle)}
               vectorEffect="non-scaling-stroke"
             />
-            <text x={labelX} y={y - 7} textAnchor={textAnchor} fill={level.color || fib.horizontalLineColor} fontSize="15" fontWeight="600">{label}</text>
+            {labelParts.length > 0 && <>
+              {labelDisplaced && <line
+                data-fib-label-connector={level.id}
+                x1={labelX} x2={labelX} y1={geometry.y} y2={levelLabelY}
+                stroke={levelColor} strokeWidth="1" strokeDasharray="2 2" opacity=".72" vectorEffect="non-scaling-stroke"
+              />}
+              <text
+                data-fib-label={level.id}
+                data-fib-label-y={levelLabelY}
+                x={labelX} y={levelLabelY}
+                textAnchor={textAnchor} dominantBaseline="middle"
+                fill={levelColor} stroke="#131722" strokeWidth="3" paintOrder="stroke"
+                fontFamily="-apple-system, BlinkMacSystemFont, Segoe UI, Microsoft YaHei, sans-serif"
+                fontSize={fib.fontSize} fontWeight="500"
+              >{labelParts.join(' ')}</text>
+            </>}
           </g>
         })}
       </g>
@@ -470,7 +558,7 @@ export function DrawingOverlay({
       content = <g>{levels.map((level) => <line key={level} x1={first.x} y1={first.y + level * 180} x2={last.x} y2={last.y + level * 180} {...common} opacity={level === 0 || level === 1 ? 1 : .65} />)}</g>
     } else if (behavior === 'fib-time' || behavior === 'cycles') {
       const multipliers = [0, 1, 2, 3, 5, 8]
-      content = <g>{multipliers.map((value) => { const x = first.x + dx * value; return <g key={value}><line x1={x} x2={x} y1="0" y2="1000" {...common} opacity={value === 0 ? 1 : .55} /><text x={x + 4} y="24" fill={drawing.color} fontSize="11">{value}</text></g> })}</g>
+      content = <g>{multipliers.map((value) => { const x = first.x + dx * value; return <g key={value}><line x1={x} x2={x} y1="0" y2={viewportHeight} {...common} opacity={value === 0 ? 1 : .55} /><text x={x + 4} y="24" fill={drawing.color} fontSize="11">{value}</text></g> })}</g>
     } else if (behavior === 'fan') {
       content = <g>{[-.5, -.25, 0, .25, .5].map((offset) => <line key={offset} x1={first.x} y1={first.y} x2={last.x} y2={last.y + offset * Math.abs(dx)} {...common} opacity={offset === 0 ? 1 : .55} />)}</g>
     } else if (behavior === 'pitchfork') {
@@ -546,24 +634,24 @@ export function DrawingOverlay({
       const pnlColor = !metrics || metrics.pnl < 0 ? red : green
       const stopText = `停止：${metrics ? formatPositionNumber(stopDistance!, priceDigits) : '—'} (${stopPercent === null ? '—' : formatPositionNumber(stopPercent, 3)}%) ${stopTicks === null ? '—' : formatPositionNumber(stopTicks, 1)}, 金额：${metrics?.stopAmount ?? 750}`
       const targetText = `目标：${metrics ? formatPositionNumber(targetDistance!, priceDigits) : '—'} (${targetPercent === null ? '—' : formatPositionNumber(targetPercent, 3)}%) ${targetTicks === null ? '—' : formatPositionNumber(targetTicks, 1)}, 金额：${metrics?.targetAmount ?? 1250}`
-      const unitX = 1000 / Math.max(1, viewportSize.width)
-      const unitY = 1000 / Math.max(1, viewportSize.height)
+      const unitX = 1
+      const unitY = 1
       const screenWidth = (characters: number, min: number, max: number) => Math.min(max, Math.max(min, characters * 6.2 + 18))
       const outsideWidth = Math.min(Math.max(120, viewportSize.width - 16), screenWidth(Math.max(stopText.length, targetText.length), 170, 390)) * unitX
       const centralLineOne = `开仓 PnL: ${pnl}, 数量: ${metrics?.quantity ?? 5}`
       const centralLineTwo = `风险/回报比: ${riskReward}`
       const centralWidth = Math.min(Math.max(120, viewportSize.width - 16), screenWidth(Math.max(centralLineOne.length, centralLineTwo.length), 150, 280)) * unitX
       const centerX = x + w / 2
-      const centralX = Math.min(1000 - centralWidth - 8 * unitX, Math.max(8 * unitX, centerX - centralWidth / 2))
-      const outsideX = Math.min(1000 - outsideWidth - 8 * unitX, Math.max(8 * unitX, centerX - outsideWidth / 2))
+      const centralX = Math.min(viewportWidth - centralWidth - 8 * unitX, Math.max(8 * unitX, centerX - centralWidth / 2))
+      const outsideX = Math.min(viewportWidth - outsideWidth - 8 * unitX, Math.max(8 * unitX, centerX - outsideWidth / 2))
       const labelHeight = 24 * unitY
       const centralHeight = 40 * unitY
       const labelGap = 5 * unitY
       const labelAbove = (edge: number) => Math.max(5 * unitY, edge - labelHeight - labelGap)
-      const labelBelow = (edge: number) => edge + labelHeight + labelGap * 2 <= 1000 ? edge + labelGap : Math.max(5 * unitY, edge - labelHeight - labelGap)
+      const labelBelow = (edge: number) => edge + labelHeight + labelGap * 2 <= viewportHeight ? edge + labelGap : Math.max(5 * unitY, edge - labelHeight - labelGap)
       const stopY = long ? labelBelow(stopEdge) : labelAbove(stopEdge)
       const targetY = long ? labelAbove(targetEdge) : labelBelow(targetEdge)
-      const textScaleX = Math.max(.45, Math.min(1.5, viewportSize.height / Math.max(1, viewportSize.width)))
+      const textScaleX = 1
       const positionFont = '-apple-system, BlinkMacSystemFont, Segoe UI, Microsoft YaHei, sans-serif'
       const fontSize = 12 * unitY
       const secondaryFontSize = 11 * unitY
@@ -627,8 +715,8 @@ export function DrawingOverlay({
           <line x1={last.x} x2={last.x} y1={first.y} y2={last.y} stroke={accent} strokeWidth="1.5" strokeDasharray="7 6" vectorEffect="non-scaling-stroke" />
           <line x1={first.x} x2={last.x} y1={last.y} y2={last.y} stroke={accent} strokeWidth="2" markerEnd={`url(#${arrowId})`} vectorEffect="non-scaling-stroke" />
           {selected && <>
-            <line x1="0" x2="1000" y1={last.y} y2={last.y} stroke="#b2b5be" strokeWidth="1" strokeDasharray="7 7" opacity=".8" vectorEffect="non-scaling-stroke" />
-            <line x1={last.x} x2={last.x} y1="0" y2="1000" stroke="#b2b5be" strokeWidth="1" strokeDasharray="7 7" opacity=".8" vectorEffect="non-scaling-stroke" />
+            <line x1="0" x2={viewportWidth} y1={last.y} y2={last.y} stroke="#b2b5be" strokeWidth="1" strokeDasharray="7 7" opacity=".8" vectorEffect="non-scaling-stroke" />
+            <line x1={last.x} x2={last.x} y1="0" y2={viewportHeight} stroke="#b2b5be" strokeWidth="1" strokeDasharray="7 7" opacity=".8" vectorEffect="non-scaling-stroke" />
             <ellipse cx={first.x} cy={first.y} rx={handleRadius.x} ry={handleRadius.y} fill="white" stroke={accent} strokeWidth="2" vectorEffect="non-scaling-stroke" />
             <ellipse cx={last.x} cy={last.y} rx={handleRadius.x} ry={handleRadius.y} fill="white" stroke={accent} strokeWidth="2" vectorEffect="non-scaling-stroke" />
           </>}
@@ -660,10 +748,10 @@ export function DrawingOverlay({
       const offset=behavior==='regression'?70:95
       content = <g><polygon points={`${first.x},${first.y-offset} ${last.x},${last.y-offset} ${last.x},${last.y+offset} ${first.x},${first.y+offset}`} fill={fill} /><line x1={first.x} y1={first.y-offset} x2={last.x} y2={last.y-offset} {...common} /><line x1={first.x} y1={first.y} x2={last.x} y2={last.y} {...common} opacity=".65" /><line x1={first.x} y1={first.y+offset} x2={last.x} y2={last.y+offset} {...common} /></g>
     } else if (behavior === 'horizontal' || behavior === 'horizontal-ray' || behavior === 'vertical' || behavior === 'cross') {
-      content = <g>{behavior !== 'vertical' && <line x1={behavior==='horizontal-ray'?first.x:0} x2="1000" y1={first.y} y2={first.y} {...common} />}{(behavior==='vertical'||behavior==='cross')&&<line x1={first.x} x2={first.x} y1="0" y2="1000" {...common} />}</g>
+      content = <g>{behavior !== 'vertical' && <line x1={behavior==='horizontal-ray'?first.x:0} x2={viewportWidth} y1={first.y} y2={first.y} {...common} />}{(behavior==='vertical'||behavior==='cross')&&<line x1={first.x} x2={first.x} y1="0" y2={viewportHeight} {...common} />}</g>
     } else if (behavior === 'ray' || behavior === 'extended-line') {
       const slope = dx === 0 ? 0 : dy / dx
-      const x1 = behavior === 'extended-line' ? 0 : first.x; const x2 = 1000
+      const x1 = behavior === 'extended-line' ? 0 : first.x; const x2 = viewportWidth
       content = <line x1={x1} y1={first.y + (x1-first.x)*slope} x2={x2} y2={first.y + (x2-first.x)*slope} {...common} />
     } else if (behavior === 'info-line' || behavior === 'angle') {
       const angle = Math.atan2(-dy, dx) * 180 / Math.PI
@@ -698,12 +786,28 @@ export function DrawingOverlay({
           }
           if (!textBehaviors.includes(behavior)) return
           const text = window.prompt('编辑内容', drawing.text)
-          if (text) dispatch({ type: 'update', id: drawing.id, patch: { text } })
+          if (text && text !== drawing.text) {
+            dispatch({ type: 'checkpoint' })
+            dispatch({ type: 'update', id: drawing.id, patch: { text } })
+          }
         }}
         style={{ pointerEvents: isDraft || forceSelected ? 'none' : 'all', cursor: activeDefinition.behavior === 'eraser' ? 'not-allowed' : activeDefinition.behavior === 'cursor' && !drawingsLocked ? 'move' : 'crosshair' }}
       >
         <g opacity={isDraft && !forceSelected ? .78 : 1}>{content}</g>
-        {selected && !['measure', 'long-position', 'short-position'].includes(behavior) && <g className="drawing-anchor-points"><ellipse cx={first.x} cy={first.y} rx={handleRadius.x} ry={handleRadius.y} fill="#fff" stroke="#2962ff" strokeWidth="2" vectorEffect="non-scaling-stroke" /><ellipse cx={last.x} cy={last.y} rx={handleRadius.x} ry={handleRadius.y} fill="#fff" stroke="#2962ff" strokeWidth="2" vectorEffect="non-scaling-stroke" /></g>}
+        {selected && !['measure', 'long-position', 'short-position'].includes(behavior) && <g className="drawing-anchor-points" pointerEvents="all">
+          <ellipse
+            data-drawing-anchor="start" cx={first.x} cy={first.y} rx={handleRadius.x} ry={handleRadius.y}
+            fill="#131722" stroke="#2962ff" strokeWidth="2" vectorEffect="non-scaling-stroke"
+            onPointerDown={behavior === 'fib' || behavior === 'fib-extension' ? startDrawingPointDrag(drawing, 0) : undefined}
+            style={{ cursor: behavior === 'fib' || behavior === 'fib-extension' ? 'crosshair' : undefined }}
+          />
+          <ellipse
+            data-drawing-anchor="end" cx={last.x} cy={last.y} rx={handleRadius.x} ry={handleRadius.y}
+            fill="#131722" stroke="#2962ff" strokeWidth="2" vectorEffect="non-scaling-stroke"
+            onPointerDown={behavior === 'fib' || behavior === 'fib-extension' ? startDrawingPointDrag(drawing, drawing.points.length - 1) : undefined}
+            style={{ cursor: behavior === 'fib' || behavior === 'fib-extension' ? 'crosshair' : undefined }}
+          />
+        </g>}
       </g>
     )
   }
@@ -747,7 +851,7 @@ export function DrawingOverlay({
       ref={svgRef}
       className={`drawing-overlay tool-${activeDefinition.behavior}`}
       data-placement-phase={placementPhase}
-      viewBox="0 0 1000 1000" preserveAspectRatio="none"
+      viewBox={`0 0 ${viewportWidth} ${viewportHeight}`} preserveAspectRatio="none"
       onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp}
       onPointerCancel={() => { cancelDraft(); dragRef.current = null; onToolComplete() }}
       onClick={handleCanvasClick}

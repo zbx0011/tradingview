@@ -50,6 +50,7 @@ export interface BybitHistoryOptions {
 }
 
 const snapshots = snapshotJson as SnapshotFile
+const snapshotCandleCache = new Map<string, Candle[]>()
 const BYBIT_KLINE_ENDPOINT = 'https://api.bybit.com/v5/market/kline'
 const XAU_MONTH_URL = `${import.meta.env.BASE_URL}data/xauusd-1m-30d.json`
 const CACHE_DB_NAME = 'kline-studio-market-v1'
@@ -64,8 +65,13 @@ export function hasMarketSnapshot(symbol: SymbolId): boolean {
 export function getSnapshotCandles(symbol: SymbolId, interval: IntervalId = '1m'): Candle[] | null {
   const bars = snapshots.series[symbol]?.bars
   if (!bars?.length) return null
+  const cacheKey = `${symbol}:${interval}`
+  const cached = snapshotCandleCache.get(cacheKey)
+  if (cached) return cached
   const copied = bars.map((bar) => ({ ...bar }))
-  return interval === '1m' ? copied : aggregateCandles(copied, INTERVALS[interval].seconds)
+  const result = interval === '1m' ? copied : aggregateCandles(copied, INTERVALS[interval].seconds)
+  snapshotCandleCache.set(cacheKey, result)
+  return result
 }
 
 export function getSnapshotStatus(symbol: SymbolId): MarketDataStatus {

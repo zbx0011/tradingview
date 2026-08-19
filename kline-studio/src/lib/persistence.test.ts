@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseDecisionReplayMenuPreferences, parseDecisionReplayPanelPreferences, parseTradeMarkerPanelPreferences, parseWorkspace } from './persistence'
+import { parseDecisionChartStatusPreferences, parseDecisionReplayMenuPreferences, parseDecisionReplayPanelPreferences, parseTradeMarkerPanelPreferences, parseWorkspace } from './persistence'
 
 const workspace = {
   symbol: 'XAUUSD',
@@ -61,6 +61,11 @@ describe('workspace price scale state', () => {
       collapsedReplayRangeLayerIds: ['range-a', 42, '', null, 'range-b'],
     }))).toMatchObject({ collapsedReplayRangeLayerIds: ['range-a', 'range-b'] })
   })
+
+  it('restores the indicator legend collapsed state and defaults legacy workspaces to expanded', () => {
+    expect(parseWorkspace(JSON.stringify({ ...workspace, indicatorLegendExpanded: false }))).toMatchObject({ indicatorLegendExpanded: false })
+    expect(parseWorkspace(JSON.stringify(workspace))).toMatchObject({ indicatorLegendExpanded: true })
+  })
 })
 
 describe('trade marker panel preferences', () => {
@@ -116,5 +121,18 @@ describe('decision replay menu preferences', () => {
   it('ignores malformed action menu layout data', () => {
     expect(parseDecisionReplayMenuPreferences('{broken')).toEqual({ position: null })
     expect(parseDecisionReplayMenuPreferences(JSON.stringify({ position: { left: 'bad', top: 512 } }))).toEqual({ position: null })
+  })
+})
+
+describe('decision chart status preferences', () => {
+  it('restores the last dragged PnL panel position', () => {
+    expect(parseDecisionChartStatusPreferences(JSON.stringify({ position: { left: 360, top: 72 } }))).toEqual({
+      position: { left: 360, top: 72 },
+    })
+  })
+
+  it('ignores malformed PnL panel layout data', () => {
+    expect(parseDecisionChartStatusPreferences('{broken')).toEqual({ position: null })
+    expect(parseDecisionChartStatusPreferences(JSON.stringify({ position: { left: 360, top: 'bad' } }))).toEqual({ position: null })
   })
 })

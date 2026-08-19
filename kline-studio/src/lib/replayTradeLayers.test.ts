@@ -46,6 +46,20 @@ describe('replay trade layers', () => {
     expect(loadReplayTradeLayers(storage)).toEqual([])
   })
 
+  it('keeps the next-bar-confirmed version when an older named window is also present', () => {
+    const layers = createDefaultReplayTradeLayers()
+    const pairedSourceIds = new Set([
+      'xagusd-5m-conservative-stop-first-cb952aecedad0c23',
+      'xagusd-5m-conservative-stop-first-cf1f9665945cf63c',
+      'xagusd-5m-conservative-stop-first-e0d1a1cb0690b52c',
+    ])
+    const pairedLayers = layers.filter((layer) => pairedSourceIds.has(layer.sourceId))
+
+    expect(pairedLayers).toHaveLength(1)
+    expect(pairedLayers[0].sourceId).toBe('xagusd-5m-conservative-stop-first-e0d1a1cb0690b52c')
+    expect(pairedLayers[0].name).toBe('XAGUSD 5m V5 2026-08-10~2026-08-15')
+  })
+
   it('sorts replay layers by latest completion time first', () => {
     const base = { ...createDefaultReplayTradeLayer(), finishedAt: 100 }
     const older = { ...base, id: 'older', sourceId: 'older', finishedAt: 100, endTime: base.endTime - 3600, startTime: base.startTime - 3600 }
@@ -55,7 +69,9 @@ describe('replay trade layers', () => {
 
   it('persists visibility and only activates a matching visible layer', () => {
     const storage = new MemoryStorage()
-    const hidden = { ...createDefaultReplayTradeLayer(), visible: false }
+    const current = createDefaultReplayTradeLayers().find((layer) => layer.sourceId === 'xauusd-5m-conservative-stop-first-df68c64a47f5f569')
+    expect(current).toBeDefined()
+    const hidden = { ...current!, visible: false }
     saveReplayTradeLayers([hidden], storage)
     const restored = loadReplayTradeLayers(storage)
     expect(restored).toEqual([hidden])
@@ -66,23 +82,83 @@ describe('replay trade layers', () => {
 
   it('persists a renamed replay layer across reloads', () => {
     const storage = new MemoryStorage()
-    const renamed = { ...createDefaultReplayTradeLayer(), name: '伦敦盘回放 01' }
+    const current = createDefaultReplayTradeLayers().find((layer) => layer.sourceId === 'xauusd-5m-conservative-stop-first-df68c64a47f5f569')
+    expect(current).toBeDefined()
+    const renamed = { ...current!, name: '伦敦盘回放 01' }
     saveReplayTradeLayers([renamed], storage)
     expect(loadReplayTradeLayers(storage)[0].name).toBe('伦敦盘回放 01')
   })
 
-  it('refreshes generated metric names after a dataset replacement', () => {
+  it('preserves the latest layer display name across reloads', () => {
     const storage = new MemoryStorage()
-    const current = createDefaultReplayTradeLayers().find((layer) => layer.sourceId === 'xauusd-5m-conservative-stop-first-ce496184a2c3638e')
+    const current = createDefaultReplayTradeLayers().find((layer) => layer.sourceId === 'xauusd-5m-conservative-stop-first-df68c64a47f5f569')
     expect(current).toBeDefined()
-    const metricPrefix = current!.name.replace(/\s*胜率.*$/, '')
-    const stale = { ...current!, name: `${metricPrefix} 胜率60.98% 净盈亏+$1,062.72` }
-    saveReplayTradeLayers([stale], storage)
+    const renamed = { ...current!, name: 'XAUUSD 5m V5 2026-08-03~2026-08-08' }
+    saveReplayTradeLayers([renamed], storage)
     expect(loadReplayTradeLayers(storage)[0]).toMatchObject({
-      name: current!.name,
+      name: renamed.name,
       tradeCount: current!.tradeCount,
       markerCount: current!.markerCount,
     })
+  })
+
+  it('removes the superseded XAUUSD 5m layer from an existing store', () => {
+    const storage = new MemoryStorage()
+    const current = createDefaultReplayTradeLayers().find((layer) => layer.sourceId === 'xauusd-5m-conservative-stop-first-df68c64a47f5f569')
+    expect(current).toBeDefined()
+    storage.setItem(REPLAY_TRADE_LAYERS_STORAGE_KEY, JSON.stringify({
+      version: 2,
+      initialized: true,
+      seenSourceIds: ['xauusd-5m-conservative-stop-first-ee9da04efccd7ed5', current!.sourceId],
+      layers: [current],
+    }))
+
+    const loaded = loadReplayTradeLayers(storage)
+
+    expect(loaded.map((layer) => layer.sourceId)).not.toContain('xauusd-5m-conservative-stop-first-ee9da04efccd7ed5')
+    expect(loaded.map((layer) => layer.sourceId)).toContain(current!.sourceId)
+  })
+
+  it('removes V4 layers from an existing store once', () => {
+    const storage = new MemoryStorage()
+    const current = createDefaultReplayTradeLayers().find((layer) => layer.sourceId === 'xauusd-5m-conservative-stop-first-df68c64a47f5f569')
+    expect(current).toBeDefined()
+    storage.setItem(REPLAY_TRADE_LAYERS_STORAGE_KEY, JSON.stringify({
+      version: 2,
+      initialized: true,
+      seenSourceIds: ['xauusd-5m-conservative-stop-first-7434d1dc4125d1a7', current!.sourceId],
+      layers: [{
+        ...current!,
+        id: 'replay-layer-xauusd-5m-conservative-stop-first-7434d1dc4125d1a7',
+        sourceId: 'xauusd-5m-conservative-stop-first-7434d1dc4125d1a7',
+        name: 'XAUUSD 5m V4 2026-08-03~2026-08-08',
+      }, current],
+    }))
+
+    const loaded = loadReplayTradeLayers(storage)
+
+    expect(loaded.map((layer) => layer.sourceId)).not.toContain('xauusd-5m-conservative-stop-first-7434d1dc4125d1a7')
+    expect(loaded.map((layer) => layer.sourceId)).toContain(current!.sourceId)
+  })
+
+  it('removes obsolete duplicate versions and keeps the corrected layer', () => {
+    const storage = new MemoryStorage()
+    const current = createDefaultReplayTradeLayers().find((layer) => layer.sourceId === 'xauusd-5m-conservative-stop-first-df68c64a47f5f569')
+    expect(current).toBeDefined()
+    storage.setItem(REPLAY_TRADE_LAYERS_STORAGE_KEY, JSON.stringify({
+      version: 2,
+      initialized: true,
+      seenSourceIds: ['xauusd-5m-conservative-stop-first-ee9da04efccd7ed5', current!.sourceId],
+      layers: [
+        { ...current!, id: 'replay-layer-xauusd-5m-conservative-stop-first-ee9da04efccd7ed5', sourceId: 'xauusd-5m-conservative-stop-first-ee9da04efccd7ed5', name: 'XAUUSD 5m V5 old' },
+        current,
+      ],
+    }))
+
+    const loaded = loadReplayTradeLayers(storage)
+
+    expect(loaded.map((layer) => layer.sourceId)).not.toContain('xauusd-5m-conservative-stop-first-ee9da04efccd7ed5')
+    expect(loaded.map((layer) => layer.sourceId)).toContain(current!.sourceId)
   })
 
   it('rejects malformed stores and drops malformed layer entries', () => {

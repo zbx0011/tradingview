@@ -1,9 +1,17 @@
 import { writeFile } from 'node:fs/promises'
 
 const OUTPUT = new URL('../src/data/marketSnapshots.json', import.meta.url)
-const TARGET_BARS = 45_000
+// Fetch enough history to cover the requested July-August window, then keep
+// only that window in the bundled snapshot so the chart does not grow without
+// bound when this script is reused.
+const TARGET_BARS = Number(process.env.MARKET_TARGET_BARS ?? 80_000)
 const REQUEST_BATCH = 5_000
 const SOCKET_URL = 'wss://prodata.tradingview.com/socket.io/websocket'
+const RANGE_START = Math.floor(Date.parse(process.env.MARKET_RANGE_START ?? '2026-07-01T00:00:00Z') / 1000)
+const RANGE_END = Math.floor(Date.parse(process.env.MARKET_RANGE_END ?? '2026-09-01T00:00:00Z') / 1000)
+
+if (!Number.isInteger(TARGET_BARS) || TARGET_BARS <= 0) throw new Error('MARKET_TARGET_BARS 必须是正整数')
+if (!Number.isFinite(RANGE_START) || !Number.isFinite(RANGE_END) || RANGE_START >= RANGE_END) throw new Error('MARKET_RANGE_START/END 必须是有效的时间范围')
 const SOCKET_OPTIONS = {
   headers: {
     Origin: 'https://prodata.tradingview.com',
@@ -59,18 +67,28 @@ function fetchSeries(series) {
     const bars = new Map()
     let buffer = ''
     let lastRequestedSize = 0
+    let oldestTime = Infinity
+    let moreRequestPending = false
+    let moreRequestTimer
     let finished = false
 
     const finish = (error) => {
       if (finished) return
       finished = true
       clearTimeout(timeout)
+      clearTimeout(moreRequestTimer)
       try { ws.close() } catch { /* already closed */ }
       if (error) {
         reject(error)
         return
       }
-      const result = [...bars.values()].sort((left, right) => left.time - right.time)
+      const result = [...bars.values()]
+        .filter((bar) => bar.time >= RANGE_START && bar.time < RANGE_END)
+        .sort((left, right) => left.time - right.time)
+      if (result.length === 0) {
+        reject(new Error(`${series.symbol} 没有覆盖请求时间范围`))
+        return
+      }
       resolve({
         symbol: series.symbol,
         vendor: series.vendor,
@@ -98,22 +116,34 @@ function fetchSeries(series) {
         const params = message.p ?? []
         if (message.m === 'timescale_update') {
           const points = params[1]?.[seriesId]?.s ?? []
+          const sizeBefore = bars.size
           for (const point of points) {
             const values = point.v
             if (!Array.isArray(values) || values.length < 6) continue
             const [time, open, high, low, close, volume] = values.map(Number)
             if (![time, open, high, low, close, volume].every(Number.isFinite)) continue
             bars.set(time, { time, open, high, low, close, volume })
+            oldestTime = Math.min(oldestTime, time)
           }
+          if (bars.size > sizeBefore) moreRequestPending = false
         }
         if (message.m === 'series_error' || message.m === 'symbol_error') {
           finish(new Error(`${series.symbol} TradingView 返回 ${message.m}`))
           continue
         }
         if (message.m === 'series_completed') {
-          if (bars.size < TARGET_BARS && bars.size > lastRequestedSize) {
+          if ((bars.size < TARGET_BARS || oldestTime > RANGE_START) && bars.size > lastRequestedSize) {
             lastRequestedSize = bars.size
+            moreRequestPending = true
             send('request_more_data', [session, seriesId, REQUEST_BATCH])
+            clearTimeout(moreRequestTimer)
+            moreRequestTimer = setTimeout(() => {
+              if (moreRequestPending) finish()
+            }, 2_500)
+          } else if (moreRequestPending) {
+            // TradingView can emit series_completed before the response to
+            // request_more_data arrives. Wait for that response instead of
+            // treating the unchanged intermediate count as the final range.
           } else {
             finish()
           }
@@ -140,6 +170,10 @@ for (const series of SERIES) {
 const output = {
   fetchedAt: new Date().toISOString(),
   timezone: 'UTC',
+  range: {
+    from: new Date(RANGE_START * 1000).toISOString(),
+    to: new Date(RANGE_END * 1000).toISOString(),
+  },
   series: fetched,
 }
 await writeFile(OUTPUT, `${JSON.stringify(output)}\n`, 'utf8')

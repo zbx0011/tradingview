@@ -4,8 +4,9 @@ import type { ReplayDecisionCandidate } from '../lib/replayTradeRegistry'
 import {
   buildDecisionResult, createDecisionAttempt, createDecisionSession,
 } from '../lib/decisionReplay'
+import { decisionReplayFavoriteKey } from '../lib/decisionReplayFavorites'
 import {
-  DecisionChartAnnotations, DecisionHistoryDialog, DecisionReplayCenter, DecisionReplayPanel, DecisionResultsDialog, DecisionReviewPanel, DecisionRiskOverlay,
+  DecisionChartAnnotations, DecisionChartStatus, DecisionHistoryDialog, DecisionReplayCenter, DecisionReplayPanel, DecisionResultsDialog, DecisionReviewPanel, DecisionRiskOverlay,
 } from './DecisionReplay'
 
 function candidate(): ReplayDecisionCandidate {
@@ -71,7 +72,7 @@ describe('decision replay components', () => {
     expect(markup).toContain('aria-pressed="true"')
   })
 
-  it('marks the referenced causal candles on the decision chart without exposing future candles', () => {
+  it('marks causal references and reveals system open/close only after their candles arrive', () => {
     const item = candidate()
     const data = [2400, 2700, 3000, 3300, 3600, 3900, 4200].map((time, index) => ({
       time, open: 100 + index, high: 101 + index, low: 99 + index, close: 100.5 + index, volume: 10,
@@ -87,7 +88,20 @@ describe('decision replay components', () => {
     expect((markup.match(/decision-reason-candle-marker/g) ?? []).length).toBe(2)
     expect(markup).toContain('>K8</span>')
     expect(markup).toContain('>K10</span>')
+    expect(markup).toContain('系统开 101.000')
+    expect(markup).toContain('系统平 103.000')
     expect(markup).not.toContain('K14')
+
+    const beforeSystemExit = renderToStaticMarkup(<DecisionChartAnnotations
+      candidate={item}
+      attempt={createDecisionAttempt(item)}
+      result={null}
+      data={data.slice(0, -1)}
+      toX={(time) => time / 100}
+      toY={(price) => price}
+    />)
+    expect(beforeSystemExit).toContain('系统开 101.000')
+    expect(beforeSystemExit).not.toContain('系统平 103.000')
   })
 
   it('renders three price levels, a draggable setup hint and the one-R default', () => {
@@ -138,6 +152,31 @@ describe('decision replay components', () => {
     expect(markup).toContain('浮盈 +$198.02')
     expect(markup).not.toContain('固定风险 100U')
     expect(markup).not.toContain('+$40.00')
+  })
+
+  it('shows current live PnL and the exercise total directly on the chart status', () => {
+    const item = candidate()
+    const attempt = {
+      ...createDecisionAttempt(item), stage: 'position-open' as const, entryMode: 'signal-extreme' as const,
+      orderKind: 'stop' as const, pendingEntryPrice: 101, stopLoss: 95, takeProfit: 107, fill: { time: 3300, price: 101 },
+    }
+    const session = { ...createDecisionSession([item], 1, 1, ['fixed-notional']), attempts: [attempt] }
+    const markup = renderToStaticMarkup(<DecisionChartStatus
+      session={session}
+      attempt={attempt}
+      currentPnlByMode={{ 'fixed-notional': 198.019801980198 }}
+      positionSizingModes={['fixed-notional']}
+    />)
+    expect(markup).toContain('当前笔实时盈亏')
+    expect(markup).toContain('本场累计净盈亏')
+    expect(markup).toContain('本场 AI 累计净盈亏')
+    expect(markup).toContain('data-testid="decision-chart-ai-total"')
+    expect(markup).toMatch(/data-testid="decision-chart-ai-total"[\s\S]*\$0\.00/)
+    expect(markup).toContain('+$198.02')
+    expect(markup).toContain('仓位 10,000U')
+    expect(markup).not.toContain('风险 100U')
+    expect(markup).toContain('data-testid="decision-chart-status-drag-handle"')
+    expect(markup).toContain('拖动移动本场练习盈亏')
   })
 
   it('labels a pending order that reached the data boundary as unfilled', () => {
@@ -217,12 +256,69 @@ describe('decision replay components', () => {
     }
     const markup = renderToStaticMarkup(<DecisionHistoryDialog
       open currentSymbol="XAUUSD" sessions={[session]} onClose={noop} onOpenSession={noop}
+      favoriteKeys={[decisionReplayFavoriteKey('trade', item.key)]}
     />)
     expect(markup).toContain('历史记录')
+    expect(markup).toContain('<span>总笔数</span><b>1</b>')
+    expect(markup).not.toContain('练习场次')
     expect(markup).toContain('你的累计净盈亏')
     expect(markup).toContain('系统累计净盈亏')
     expect(markup).toContain('XAUUSD · 决策练习')
+    expect(markup).toContain('查看全部已收藏记录')
+    expect(markup).toContain('1 笔')
     expect(markup).toContain('查看本场每笔决策、收益对比及独立画图')
+  })
+
+  it('renders every favorite trade as its own history card instead of grouping by session', () => {
+    const first = candidate()
+    const second: ReplayDecisionCandidate = {
+      ...first,
+      key: 'XAUUSD:5m:short:3600:3900',
+      trade: {
+        ...first.trade,
+        tradeNumber: 13,
+        side: 'short',
+        entry: { ...first.trade.entry, signalTime: 3600, time: 3900 },
+        exit: { ...first.trade.exit, time: 4800 },
+      },
+    }
+    const completedAttempt = (item: ReplayDecisionCandidate) => {
+      const filled = {
+        ...createDecisionAttempt(item),
+        stage: 'position-open' as const,
+        entryMode: 'signal-extreme' as const,
+        orderKind: 'stop' as const,
+        pendingEntryPrice: 101,
+        stopLoss: 95,
+        takeProfit: 107,
+        fill: { time: item.trade.entry.time, price: 101 },
+      }
+      const result = buildDecisionResult(item, filled, { time: item.trade.exit.time, price: 103, reason: 'manual-close' }, [])
+      return { ...filled, stage: 'post-exit' as const, result }
+    }
+    const session = {
+      ...createDecisionSession([first, second], 2, 1),
+      status: 'completed' as const,
+      attempts: [completedAttempt(first), completedAttempt(second)],
+      finishedAt: 2,
+    }
+    const markup = renderToStaticMarkup(<DecisionHistoryDialog
+      open currentSymbol="XAUUSD" sessions={[session]} onClose={noop} onOpenSession={noop}
+      defaultView="favorites"
+      favoriteKeys={[
+        decisionReplayFavoriteKey('trade', first.key),
+        decisionReplayFavoriteKey('trade', second.key),
+      ]}
+    />)
+
+    expect(markup).toContain('收藏笔数')
+    expect(markup).toContain('每笔收藏交易独立展示')
+    expect(markup).toContain('XAUUSD · 5分 · 多头 · 第 12 笔')
+    expect(markup).toContain('XAUUSD · 5分 · 空头 · 第 13 笔')
+    expect(markup).toContain('本场第 1 / 2 笔')
+    expect(markup).toContain('本场第 2 / 2 笔')
+    expect(markup).toContain('点击直接打开这一笔的 K 线复盘与独立画图')
+    expect(markup).not.toContain('XAUUSD · 决策练习')
   })
 
   it('shows per-symbol total and remaining counts in the new exercise selector', () => {

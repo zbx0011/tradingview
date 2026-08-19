@@ -7,11 +7,12 @@ const SYMBOL = 'XBTUSDTM'
 const BAR_MS = 60_000
 const DEFAULT_DAYS = 30
 const PAGE_SIZE = 200
-const MAX_CONCURRENCY = 6
+const MAX_CONCURRENCY = Number(process.env.BTC_MAX_CONCURRENCY ?? 6)
 const REQUEST_RETRIES = 4
 
 const days = Number(process.env.BTC_DAYS ?? DEFAULT_DAYS)
 if (!Number.isFinite(days) || days <= 0 || days > 90) throw new Error('BTC_DAYS 必须是 0 到 90 之间的数字')
+if (!Number.isInteger(MAX_CONCURRENCY) || MAX_CONCURRENCY <= 0) throw new Error('BTC_MAX_CONCURRENCY 必须是正整数')
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 

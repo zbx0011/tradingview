@@ -13,7 +13,7 @@ export const TRADINGVIEW_SHORTCUTS: ShortcutDefinition[] = [
   { id: 'load-layout', section: '图表', label: '加载图表布局', keys: '.' },
   { id: 'save-layout', section: '图表', label: '保存图表布局', keys: 'Ctrl+S' },
   { id: 'undo', section: '图表', label: '撤销', keys: 'Ctrl+Z' },
-  { id: 'redo', section: '图表', label: '重做', keys: 'Ctrl+Y' },
+  { id: 'redo', section: '图表', label: '重做', keys: 'Ctrl+Y / Ctrl+Shift+Z' },
   { id: 'symbol', section: '图表', label: '更改商品', keys: '直接输入代码' },
   { id: 'interval', section: '图表', label: '更改周期', keys: '数字 或 ,' },
   { id: 'move-bar', section: '图表', label: '左右移动一根 K 线', keys: '← / →' },
@@ -67,6 +67,22 @@ const intervalAliases: Record<string, IntervalId> = {
 
 export function parseIntervalShortcut(value: string): IntervalId | null {
   return intervalAliases[value.trim().toLowerCase()] ?? null
+}
+
+export type HistoryShortcutAction = 'undo' | 'redo'
+
+export function resolveHistoryShortcut(
+  event: Pick<KeyboardEvent, 'altKey' | 'code' | 'ctrlKey' | 'key' | 'metaKey' | 'shiftKey'>,
+): HistoryShortcutAction | null {
+  if ((!event.ctrlKey && !event.metaKey) || event.altKey) return null
+
+  const key = event.key.toLowerCase()
+  const isZ = key === 'z' || event.code === 'KeyZ'
+  const isY = key === 'y' || event.code === 'KeyY'
+
+  if (isZ) return event.shiftKey ? 'redo' : 'undo'
+  if (isY && !event.shiftKey) return 'redo'
+  return null
 }
 
 export function isEditableShortcutTarget(target: EventTarget | null): boolean {
