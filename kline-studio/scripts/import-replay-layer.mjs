@@ -4,7 +4,7 @@ import { basename, dirname, extname, join, resolve } from 'node:path'
 
 const DEFAULT_PROJECT = 'D:/项目/tradingview/kline-studio'
 const DEFAULT_ARCHIVE_ROOT = 'C:/Users/diffzhou/Documents/tradingview-replay-archives'
-const SUPPORTED_REASONS = new Set(['INITIAL_STOP_LOSS', 'INITIAL_STOP_LOSS_GAP', 'TRAILING_STOP', 'TRAILING_STOP_GAP', 'OPPOSITE_SIGNAL_CLOSE', 'END_OF_DATA_MARK_TO_MARKET', 'COURSE_TARGET', 'COURSE_TARGET_GAP'])
+const SUPPORTED_REASONS = new Set(['INITIAL_STOP_LOSS', 'INITIAL_STOP_LOSS_GAP', 'TRAILING_STOP', 'TRAILING_STOP_GAP', 'OPPOSITE_SIGNAL_CLOSE', 'OPPOSITE_SIGNAL_NEXT_BAR_BREAK', 'END_OF_DATA_MARK_TO_MARKET', 'COURSE_TARGET', 'COURSE_TARGET_GAP'])
 const INTERVAL_IDS = new Map([[1, '1m'], [5, '5m'], [15, '15m'], [30, '30m'], [60, '1h'], [120, '2h'], [240, '4h'], [1440, '1d'], [10080, '1w']])
 
 function parseArgs(argv) {
@@ -219,12 +219,15 @@ const trades = rawTrades.map((trade, index) => {
     trailingStructureConfirmationIdx: trade.trailing_structure_confirmation_idx === null || trade.trailing_structure_confirmation_idx === undefined ? null : asFinite(trade.trailing_structure_confirmation_idx, `trailing structure confirmation index for trade ${tradeNumber}`),
     trailingStructurePrice: trade.trailing_structure_price === null || trade.trailing_structure_price === undefined ? null : asFinite(trade.trailing_structure_price, `trailing structure price for trade ${tradeNumber}`),
   }
-  if (reasonCode === 'OPPOSITE_SIGNAL_CLOSE') {
-    const exitSignal = drawingsByIdx.get(trade.exit_idx)
-    exit.signalIdx = Number.isInteger(trade.exit_idx) ? trade.exit_idx : 0
-    exit.signalTime = asFinite(exitSignal?.bar_open_time ?? exitTime, `exit signal time for trade ${tradeNumber}`)
-    exit.setup = nonEmpty(exitSignal?.setup, `反向信号 #${trade.exit_idx}`)
-    exit.reason = nonEmpty(exitSignal?.reason, '回放结果记录的反向公开信号平仓。')
+  if (reasonCode === 'OPPOSITE_SIGNAL_CLOSE' || reasonCode === 'OPPOSITE_SIGNAL_NEXT_BAR_BREAK') {
+    const exitSignalIdx = Number.isInteger(trade.exit_signal_idx) ? trade.exit_signal_idx : trade.exit_idx
+    const exitSignal = drawingsByIdx.get(exitSignalIdx)
+    exit.signalIdx = Number.isInteger(exitSignalIdx) ? exitSignalIdx : 0
+    exit.signalTime = asFinite(trade.exit_signal_bar_open_time ?? exitSignal?.bar_open_time ?? exitTime, `exit signal time for trade ${tradeNumber}`)
+    exit.setup = nonEmpty(exitSignal?.setup, `反向信号 #${exitSignalIdx}`)
+    exit.reason = nonEmpty(exitSignal?.reason, reasonCode === 'OPPOSITE_SIGNAL_NEXT_BAR_BREAK'
+      ? '反向信号出现后，下一根K线严格突破信号极值确认平仓。'
+      : '回放结果记录的反向公开信号平仓。')
   }
   const result = {
     barsHeld: asFinite(trade.bars_held_including_entry, `bars held for trade ${tradeNumber}`),

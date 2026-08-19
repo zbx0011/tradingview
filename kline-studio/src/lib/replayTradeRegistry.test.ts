@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
-  replayTradeDatasetInfos, resolveReplayTradeMarker, toReplayTradeConnectionSpecs, toReplayTradeSeriesMarkers,
+  replayDecisionCandidates, replayTradeDatasetInfos, resolveReplayTradeMarker,
+  toReplayDecisionSignalSeriesMarkers, toReplayTradeConnectionSpecs, toReplayTradeSeriesMarkers,
 } from './replayTradeRegistry'
 
 describe('replay trade dataset registry', () => {
   const sourceId = 'xauusd-replay-a702a57a46cb7143'
-  const v5SourceId = 'xauusd-5m-conservative-stop-first-ce496184a2c3638e'
+  const v5SourceId = 'xauusd-5m-conservative-stop-first-eaea27ed89715719'
 
   it('registers the built-in replay as a source-addressable dataset', () => {
     expect(replayTradeDatasetInfos()).toContainEqual(expect.objectContaining({
@@ -49,5 +50,23 @@ describe('replay trade dataset registry', () => {
     expect(trades.length).toBeGreaterThan(0)
     expect(trades.every((trade) => trade.entry.takeProfit === null && trade.entry.noFixedTakeProfitAtEntry)).toBe(true)
     expect(trades.some((trade) => trade.exit.reasonCode === 'COURSE_TARGET' || trade.exit.reasonCode === 'COURSE_TARGET_GAP')).toBe(false)
+  })
+
+  it('reveals the later US500 decision signals only when their own signal candle is reached', () => {
+    const sourceId = 'us500-5m-conservative-stop-first-7e97f1718d2140c2'
+    const initialSignalTime = 1_786_086_300 // 2026-08-07 15:05 Asia/Shanghai, K5902
+    const nextOppositeSignalTime = 1_786_090_500 // 2026-08-07 16:15 Asia/Shanghai
+    const candidate = replayDecisionCandidates([sourceId]).find((item) => item.trade.entry.signalTime === initialSignalTime)
+    expect(candidate).toBeDefined()
+
+    const laterSignals = toReplayDecisionSignalSeriesMarkers('US500', '5m', [sourceId], undefined, initialSignalTime)
+    expect(laterSignals.length).toBeGreaterThan(0)
+    expect(laterSignals.every((marker) => Number(marker.time) > initialSignalTime)).toBe(true)
+    expect(laterSignals.every((marker) => marker.text === '多头信号' || marker.text === '空头信号')).toBe(true)
+
+    expect(Number(laterSignals[0].time)).toBe(nextOppositeSignalTime)
+    expect(toReplayDecisionSignalSeriesMarkers('US500', '5m', [sourceId], nextOppositeSignalTime - 1, initialSignalTime)).toEqual([])
+    expect(toReplayDecisionSignalSeriesMarkers('US500', '5m', [sourceId], nextOppositeSignalTime, initialSignalTime))
+      .toContainEqual(expect.objectContaining({ time: nextOppositeSignalTime, text: '空头信号' }))
   })
 })

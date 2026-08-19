@@ -54,6 +54,17 @@ export interface ReplayTradeDatasetInfo {
   markerCount: number
 }
 
+export interface ReplayDecisionCandidate {
+  key: string
+  sourceId: string
+  sourceName: string
+  symbol: SymbolId
+  interval: IntervalId
+  scenario: string
+  backtestSha256: string
+  trade: XauTradeMarker
+}
+
 interface RegisteredReplayTradeDataset extends ReplayTradeDatasetInfo {
   trades: XauTradeMarker[]
 }
@@ -83,7 +94,7 @@ export interface ReplayTradeConnectionSpec {
 const importedModules = import.meta.glob<{ default: unknown }>('../data/replay-trade-layers/*.json', { eager: true })
 const supportedSymbols: SymbolId[] = ['XAUUSD', 'XAGUSD', 'BTCUSDT.P', 'US500', 'ETHUSD']
 const supportedIntervals: IntervalId[] = ['1m', '5m', '15m', '30m', '1h', '2h', '4h', '1d', '1w']
-const supportedExitReasons = new Set(['INITIAL_STOP_LOSS', 'INITIAL_STOP_LOSS_GAP', 'TRAILING_STOP', 'TRAILING_STOP_GAP', 'OPPOSITE_SIGNAL_CLOSE', 'END_OF_DATA_MARK_TO_MARKET', 'COURSE_TARGET', 'COURSE_TARGET_GAP'])
+const supportedExitReasons = new Set(['INITIAL_STOP_LOSS', 'INITIAL_STOP_LOSS_GAP', 'TRAILING_STOP', 'TRAILING_STOP_GAP', 'OPPOSITE_SIGNAL_CLOSE', 'OPPOSITE_SIGNAL_NEXT_BAR_BREAK', 'END_OF_DATA_MARK_TO_MARKET', 'COURSE_TARGET', 'COURSE_TARGET_GAP'])
 
 function finite(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value)
@@ -170,6 +181,28 @@ export function replayTradeDatasetInfos(): ReplayTradeDatasetInfo[] {
   }))
 }
 
+export function replayDecisionCandidates(sourceIds?: readonly string[]): ReplayDecisionCandidate[] {
+  const allowed = sourceIds ? new Set(sourceIds) : null
+  const priority = new Map(sourceIds?.map((sourceId, index) => [sourceId, index]) ?? [])
+  const candidates = [...registry.values()]
+    .filter((dataset) => !allowed || allowed.has(dataset.sourceId))
+    .sort((left, right) => (priority.get(left.sourceId) ?? Number.MAX_SAFE_INTEGER) - (priority.get(right.sourceId) ?? Number.MAX_SAFE_INTEGER))
+    .flatMap((dataset) => dataset.trades.map((trade) => ({
+      // Source files can overlap when the same market window was re-run. The
+      // identity deliberately excludes sourceId so an identical signal/entry
+      // can never be sampled twice in this or a later practice session.
+      key: `${dataset.symbol}:${dataset.interval}:${trade.side}:${trade.entry.signalTime}:${trade.entry.time}`,
+      sourceId: dataset.sourceId,
+      sourceName: dataset.name,
+      symbol: dataset.symbol,
+      interval: dataset.interval,
+      scenario: dataset.scenario,
+      backtestSha256: dataset.backtestSha256,
+      trade,
+    })))
+  return [...new Map(candidates.map((candidate) => [candidate.key, candidate])).values()]
+}
+
 function datasetsFor(symbol: SymbolId, interval: IntervalId, sourceIds: readonly string[]) {
   const allowed = new Set(sourceIds)
   return [...registry.values()].filter((dataset) => allowed.has(dataset.sourceId) && dataset.symbol === symbol && dataset.interval === interval)
@@ -198,6 +231,67 @@ export function toReplayTradeSeriesMarkers(symbol: SymbolId, interval: IntervalI
   return datasetsFor(symbol, interval, sourceIds)
     .flatMap((dataset) => dataset.trades.flatMap((trade) => [markerFor(dataset.sourceId, trade, 'entry', active), markerFor(dataset.sourceId, trade, 'exit', active)]))
     .filter((marker) => revealedThrough === undefined || Number(marker.time) <= revealedThrough)
+    .sort((left, right) => Number(left.time) - Number(right.time) || String(left.id).localeCompare(String(right.id)))
+}
+
+interface ReplayDecisionSignalEvent {
+  sourceId: string
+  time: number
+  side: XauTradeMarker['side']
+}
+
+function oppositeSide(side: XauTradeMarker['side']): XauTradeMarker['side'] {
+  return side === 'long' ? 'short' : 'long'
+}
+
+/**
+ * Builds the causal signal-only stream used by decision replay.
+ *
+ * Normal replay markers are intentionally unsuitable here: their entry marker
+ * is anchored to the later fill candle and they also reveal the system exit and
+ * result. Decision replay instead shows a signal exactly when its signal candle
+ * becomes known, including an explicit opposite signal that closed a previous
+ * system position, without exposing any future fill or PnL information.
+ */
+export function toReplayDecisionSignalSeriesMarkers(
+  symbol: SymbolId,
+  interval: IntervalId,
+  sourceIds: readonly string[],
+  revealedThrough?: number,
+  afterSignalTime?: number | null,
+): SeriesMarker<UTCTimestamp>[] {
+  const events = datasetsFor(symbol, interval, sourceIds).flatMap((dataset): ReplayDecisionSignalEvent[] => dataset.trades.flatMap((trade) => {
+    const tradeEvents: ReplayDecisionSignalEvent[] = []
+    if (finite(trade.entry.signalTime)) {
+      tradeEvents.push({ sourceId: dataset.sourceId, time: trade.entry.signalTime, side: trade.side })
+    }
+    if (
+      (trade.exit.reasonCode === 'OPPOSITE_SIGNAL_CLOSE' || trade.exit.reasonCode === 'OPPOSITE_SIGNAL_NEXT_BAR_BREAK')
+      && finite(trade.exit.signalTime)
+    ) {
+      tradeEvents.push({ sourceId: dataset.sourceId, time: trade.exit.signalTime, side: oppositeSide(trade.side) })
+    }
+    return tradeEvents
+  }))
+  const uniqueEvents = [...new Map(events.map((event) => [
+    `${event.sourceId}:${event.time}:${event.side}`,
+    event,
+  ])).values()]
+  return uniqueEvents
+    .filter((event) => (afterSignalTime === undefined || afterSignalTime === null || event.time > afterSignalTime)
+      && (revealedThrough === undefined || event.time <= revealedThrough))
+    .map((event): SeriesMarker<UTCTimestamp> => {
+      const long = event.side === 'long'
+      return {
+        time: event.time as UTCTimestamp,
+        position: long ? 'belowBar' : 'aboveBar',
+        shape: long ? 'arrowUp' : 'arrowDown',
+        color: long ? '#22ab94' : '#f7525f',
+        text: long ? '多头信号' : '空头信号',
+        size: 1,
+        id: `decision-signal-${event.sourceId}-${event.time}-${event.side}`,
+      }
+    })
     .sort((left, right) => Number(left.time) - Number(right.time) || String(left.id).localeCompare(String(right.id)))
 }
 

@@ -138,13 +138,14 @@ describe('XAUUSD conservative trade markers', () => {
 
   it('provides non-empty public exit explanations and titles', () => {
     const trade = getXauTradeMarkers('XAUUSD', '5m')[0]
-    expect(exitReasonLabel('OPPOSITE_SIGNAL_CLOSE')).toBe('反向信号平仓')
+expect(exitReasonLabel('OPPOSITE_SIGNAL_CLOSE')).toBe('反向信号平仓')
+expect(exitReasonLabel('OPPOSITE_SIGNAL_NEXT_BAR_BREAK')).toBe('反向信号下一根确认')
     expect(exitReasonLabel('INITIAL_STOP_LOSS')).toBe('固定止损')
     expect(exitReasonLabel('TRAILING_STOP')).toBe('移动止盈')
     expect(exitReasonLabel('COURSE_TARGET')).toBe('动态课程目标')
     expect(exitReasonLabel('COURSE_TARGET_GAP')).toBe('动态课程目标跳空')
     expect(exitReasonLabel('UNKNOWN_REASON' as never)).toBe('未知退出原因')
-    for (const code of ['OPPOSITE_SIGNAL_CLOSE', 'INITIAL_STOP_LOSS', 'INITIAL_STOP_LOSS_GAP', 'TRAILING_STOP', 'TRAILING_STOP_GAP', 'END_OF_DATA_MARK_TO_MARKET', 'COURSE_TARGET', 'COURSE_TARGET_GAP'] as const) expect(exitReasonDetail(code, trade.side).trim()).not.toBe('')
+for (const code of ['OPPOSITE_SIGNAL_CLOSE', 'OPPOSITE_SIGNAL_NEXT_BAR_BREAK', 'INITIAL_STOP_LOSS', 'INITIAL_STOP_LOSS_GAP', 'TRAILING_STOP', 'TRAILING_STOP_GAP', 'END_OF_DATA_MARK_TO_MARKET', 'COURSE_TARGET', 'COURSE_TARGET_GAP'] as const) expect(exitReasonDetail(code, trade.side).trim()).not.toBe('')
     expect(exitReasonDetail('COURSE_TARGET', trade.side)).toContain('动态课程目标')
     expect(exitReasonDetail('UNKNOWN_REASON' as never, trade.side)).toContain('未被界面映射')
     expect(tradeRuleLabel('next_bar_breakout_initial_stop_no_fixed_target_v2_20260809')).toContain('无固定止盈')

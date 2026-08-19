@@ -4,7 +4,7 @@ import type { IntervalId, SymbolId } from './market'
 
 export type TradeSide = 'long' | 'short'
 export type TradeMarkerKind = 'entry' | 'exit'
-export type TradeExitReasonCode = 'INITIAL_STOP_LOSS' | 'INITIAL_STOP_LOSS_GAP' | 'TRAILING_STOP' | 'TRAILING_STOP_GAP' | 'OPPOSITE_SIGNAL_CLOSE' | 'END_OF_DATA_MARK_TO_MARKET' | 'COURSE_TARGET' | 'COURSE_TARGET_GAP'
+export type TradeExitReasonCode = 'INITIAL_STOP_LOSS' | 'INITIAL_STOP_LOSS_GAP' | 'TRAILING_STOP' | 'TRAILING_STOP_GAP' | 'OPPOSITE_SIGNAL_CLOSE' | 'OPPOSITE_SIGNAL_NEXT_BAR_BREAK' | 'END_OF_DATA_MARK_TO_MARKET' | 'COURSE_TARGET' | 'COURSE_TARGET_GAP'
 
 export interface XauTradeEntryDetails {
   signalIdx: number
@@ -84,7 +84,7 @@ interface TradeMarkerDataset {
     exitMarkers: number
     uniqueTimes: number
     sameBarOpenClose: number
-    exitReasonCounts: Record<TradeExitReasonCode, number>
+    exitReasonCounts: Partial<Record<TradeExitReasonCode, number>>
   }
   trades: XauTradeMarker[]
 }
@@ -113,7 +113,7 @@ export interface XauTradeMarkerSelection {
 const EXPECTED_BACKTEST_SHA256 = 'a702a57a46cb714317380ad8bdcc50851a93ba345ca18afeb229e2c5f380f51c'
 const EXPECTED_SIGNALS_SHA256 = '1a03e2efb24085071ba271064f1a89591c210d80355a30acdebbc5ee2bdeb3ad'
 const dataset = markerData as TradeMarkerDataset
-const reasonCodes: TradeExitReasonCode[] = ['INITIAL_STOP_LOSS', 'INITIAL_STOP_LOSS_GAP', 'TRAILING_STOP', 'TRAILING_STOP_GAP', 'OPPOSITE_SIGNAL_CLOSE', 'END_OF_DATA_MARK_TO_MARKET', 'COURSE_TARGET', 'COURSE_TARGET_GAP']
+const reasonCodes: TradeExitReasonCode[] = ['INITIAL_STOP_LOSS', 'INITIAL_STOP_LOSS_GAP', 'TRAILING_STOP', 'TRAILING_STOP_GAP', 'OPPOSITE_SIGNAL_CLOSE', 'OPPOSITE_SIGNAL_NEXT_BAR_BREAK', 'END_OF_DATA_MARK_TO_MARKET', 'COURSE_TARGET', 'COURSE_TARGET_GAP']
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
@@ -140,7 +140,7 @@ function validateDataset(value: TradeMarkerDataset): XauTradeMarker[] {
   const entryTimes = new Set<number>()
   const exitTimes = new Set<number>()
   let longCount = 0
-  const exitReasonCounts: Record<TradeExitReasonCode, number> = { INITIAL_STOP_LOSS: 0, INITIAL_STOP_LOSS_GAP: 0, TRAILING_STOP: 0, TRAILING_STOP_GAP: 0, OPPOSITE_SIGNAL_CLOSE: 0, END_OF_DATA_MARK_TO_MARKET: 0, COURSE_TARGET: 0, COURSE_TARGET_GAP: 0 }
+  const exitReasonCounts: Record<TradeExitReasonCode, number> = { INITIAL_STOP_LOSS: 0, INITIAL_STOP_LOSS_GAP: 0, TRAILING_STOP: 0, TRAILING_STOP_GAP: 0, OPPOSITE_SIGNAL_CLOSE: 0, OPPOSITE_SIGNAL_NEXT_BAR_BREAK: 0, END_OF_DATA_MARK_TO_MARKET: 0, COURSE_TARGET: 0, COURSE_TARGET_GAP: 0 }
   for (const [index, trade] of value.trades.entries()) {
     if (trade.tradeNumber !== index + 1 || trade.side !== 'long' && trade.side !== 'short') {
       throw new Error('XAUUSD trade marker dataset contains an invalid trade identity')
@@ -166,7 +166,7 @@ function validateDataset(value: TradeMarkerDataset): XauTradeMarker[] {
     if (!isNonEmptyString(trade.exit.beijingTime) || !isFiniteNumber(trade.exit.price) || !isFiniteNumber(trade.exit.finalActiveStop) || typeof trade.exit.trailingActivated !== 'boolean' || trade.exit.trailingActivationIdx !== null && !isIntegerNumber(trade.exit.trailingActivationIdx) || !isNonEmptyString(trade.exit.reasonCode) || !reasonCodes.includes(trade.exit.reasonCode)) {
       throw new Error(`Exit details are incomplete for trade ${trade.tradeNumber}`)
     }
-    if (trade.exit.reasonCode === 'OPPOSITE_SIGNAL_CLOSE' && (!isIntegerNumber(trade.exit.signalIdx) || !isIntegerNumber(trade.exit.signalTime) || trade.exit.signalTime % value.timeframeSeconds !== 0 || !isNonEmptyString(trade.exit.setup) || !isNonEmptyString(trade.exit.reason))) {
+    if ((trade.exit.reasonCode === 'OPPOSITE_SIGNAL_CLOSE' || trade.exit.reasonCode === 'OPPOSITE_SIGNAL_NEXT_BAR_BREAK') && (!isIntegerNumber(trade.exit.signalIdx) || !isIntegerNumber(trade.exit.signalTime) || trade.exit.signalTime % value.timeframeSeconds !== 0 || !isNonEmptyString(trade.exit.setup) || !isNonEmptyString(trade.exit.reason))) {
       throw new Error(`Opposite-signal exit details are incomplete for trade ${trade.tradeNumber}`)
     }
     if (!isFiniteNumber(trade.result.barsHeld) || !isFiniteNumber(trade.result.rMultiple) || !isFiniteNumber(trade.result.pnlUsd)) {
@@ -183,7 +183,7 @@ function validateDataset(value: TradeMarkerDataset): XauTradeMarker[] {
   if (longCount !== value.summary.long || value.trades.length - longCount !== value.summary.short || value.summary.entryMarkers !== value.trades.length || value.summary.exitMarkers !== value.trades.length || value.summary.uniqueTimes !== uniqueTimes || value.summary.sameBarOpenClose !== sameBarOpenClose) {
     throw new Error('XAUUSD trade marker dataset summary is invalid')
   }
-  for (const reasonCode of reasonCodes) if (value.summary.exitReasonCounts[reasonCode] !== exitReasonCounts[reasonCode]) throw new Error('XAUUSD exit reason summary is invalid')
+  for (const reasonCode of reasonCodes) if ((value.summary.exitReasonCounts[reasonCode] ?? 0) !== exitReasonCounts[reasonCode]) throw new Error('XAUUSD exit reason summary is invalid')
   if (uniqueTimes !== 182 || sameBarOpenClose !== 6 || exitReasonCounts.INITIAL_STOP_LOSS !== 26 || exitReasonCounts.INITIAL_STOP_LOSS_GAP !== 0 || exitReasonCounts.TRAILING_STOP !== 20 || exitReasonCounts.TRAILING_STOP_GAP !== 1 || exitReasonCounts.OPPOSITE_SIGNAL_CLOSE !== 47 || exitReasonCounts.END_OF_DATA_MARK_TO_MARKET !== 0 || exitReasonCounts.COURSE_TARGET !== 0 || exitReasonCounts.COURSE_TARGET_GAP !== 0) throw new Error('XAUUSD trade marker cardinality is invalid')
   return value.trades
 }
@@ -332,6 +332,7 @@ const exitReasonLabels: Record<TradeExitReasonCode, string> = {
   TRAILING_STOP: '移动止盈',
   TRAILING_STOP_GAP: '移动止盈跳空',
   OPPOSITE_SIGNAL_CLOSE: '反向信号平仓',
+  OPPOSITE_SIGNAL_NEXT_BAR_BREAK: '反向信号下一根确认',
   END_OF_DATA_MARK_TO_MARKET: '数据结束结算',
   COURSE_TARGET: '动态课程目标',
   COURSE_TARGET_GAP: '动态课程目标跳空',
@@ -343,6 +344,7 @@ const exitReasonDetails: Record<TradeExitReasonCode, (side: TradeSide) => string
   TRAILING_STOP: () => '此前已生效的移动止盈线被触及；移动线由上一根或更早 K 线收盘后确认。',
   TRAILING_STOP_GAP: () => '本根开盘跳过此前已生效的移动止盈线，按可成交开盘价退出。',
   OPPOSITE_SIGNAL_CLOSE: (side) => `出现与${side === 'long' ? '多' : '空'}仓相反的公开信号，按信号K线收盘价平仓且不反转。`,
+  OPPOSITE_SIGNAL_NEXT_BAR_BREAK: (side) => `出现与${side === 'long' ? '多' : '空'}仓相反的信号后不立即平仓；下一根 K 线严格${side === 'long' ? '跌破信号K线低点' : '突破信号K线高点'}才按确认价平仓，未突破则继续持仓且不反转。`,
   END_OF_DATA_MARK_TO_MARKET: () => '回放数据结束，按最后一根 K 线收盘价结算。',
   COURSE_TARGET: () => '入场后按实际风险与结构因果生成的动态课程目标被触及。',
   COURSE_TARGET_GAP: () => '本根开盘跳过动态课程目标，按可成交开盘价退出。',

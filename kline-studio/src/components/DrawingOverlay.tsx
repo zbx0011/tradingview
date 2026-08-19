@@ -7,7 +7,11 @@ import {
   calculateChartMeasurement, formatMeasurementDuration, formatMeasurementTime, formatMeasurementVolume, formatSignedMeasurement,
 } from '../lib/measurement'
 import { formatPrice, type Candle, type IntervalId, type SymbolId } from '../lib/market'
-import { calculatePositionMetrics, formatPositionNumber } from '../lib/positionDrawing'
+import {
+  calculatePositionMetrics, calculatePositionMetricsFromLevels, createDefaultPositionPoints, formatPositionNumber,
+  resolvePositionGeometry, updatePositionPoints,
+  type PositionHandle,
+} from '../lib/positionDrawing'
 import { getTool, type ToolBehavior } from '../lib/toolCatalog'
 import type { MagnetMode } from './DrawingToolbar'
 
@@ -35,6 +39,7 @@ const distance = (a: DrawingPoint, b: DrawingPoint) => Math.hypot(a.x - b.x, a.y
 const textBehaviors: ToolBehavior[] = ['text', 'note', 'callout', 'comment', 'price-label', 'signpost', 'flag', 'table', 'media', 'icon', 'arrow-mark']
 const freehandBehaviors: ToolBehavior[] = ['brush', 'highlighter', 'polyline']
 const oneClickBehaviors: ToolBehavior[] = [...textBehaviors, 'horizontal', 'horizontal-ray', 'vertical', 'cross']
+const positionBehaviors: ToolBehavior[] = ['long-position', 'short-position']
 const dashForLineStyle = (style: DrawingLineStyle) => style === 'dashed' ? '8 6' : style === 'dotted' ? '2 5' : undefined
 const formatFibValue = (value: number) => String(Number(value.toFixed(3)))
 const visibilityGroupForInterval = (interval: IntervalId): 'minutes' | 'hours' | 'days' | 'weeks' => {
@@ -52,6 +57,7 @@ interface DrawingDrag {
   control: boolean
   moved: boolean
   cloneId?: string
+  positionHandle?: PositionHandle
 }
 
 export function DrawingOverlay({
@@ -170,7 +176,7 @@ export function DrawingOverlay({
 
   const handlePointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
     const behavior = activeDefinition.behavior
-    if (event.button !== 0 || behavior === 'cursor' || behavior === 'eraser' || oneClickBehaviors.includes(behavior) || awaitingSecondPointRef.current) return
+    if (event.button !== 0 || behavior === 'cursor' || behavior === 'eraser' || oneClickBehaviors.includes(behavior) || positionBehaviors.includes(behavior) || awaitingSecondPointRef.current) return
     const point = anchorPoint(normalizedPoint(event))
     if (activeDefinition.id === 'measure') onQuickMeasurementChange(null)
     placementRef.current = { start: point, pointerId: event.pointerId, moved: false }
@@ -178,10 +184,51 @@ export function DrawingOverlay({
     event.currentTarget.setPointerCapture(event.pointerId)
   }
 
+  /**
+   * TradingView's long/short position tool is a one-click tool.  The click
+   * becomes the entry point and the tool creates a compact 1:1 rectangle so
+   * the three price controls are immediately available for dragging.
+   */
+  const createDefaultPositionDrawing = (point: DrawingPoint) => {
+    const side = activeDefinition.behavior === 'short-position' ? 'short' : 'long'
+    const points = createDefaultPositionPoints(point, side).map(anchorPoint)
+    const first = points[0]
+    const drawing = makeDrawing(activeDefinition, first, color)
+    drawing.points = points
+    return drawing
+  }
+
+  const startPositionHandleDrag = (drawing: Drawing, handle: PositionHandle) => (event: ReactPointerEvent<SVGElement>) => {
+    if (activeDefinition.behavior !== 'cursor' || drawingsLocked || drawing.locked) return
+    event.preventDefault()
+    event.stopPropagation()
+    const selectedIds = selectedDrawingIds.includes(drawing.id) ? selectedDrawingIds : [drawing.id]
+    if (!selectedDrawingIds.includes(drawing.id)) dispatch({ type: 'select', id: drawing.id })
+    dispatch({ type: 'checkpoint' })
+    dragRef.current = {
+      start: normalizedPoint(event), pointerId: event.pointerId,
+      originals: history.present.filter((item) => selectedIds.includes(item.id)).map((item) => ({ id: item.id, points: item.points.map(projectNormalizedPoint) })),
+      source: drawing, control: false, moved: false, positionHandle: handle,
+    }
+    svgRef.current?.setPointerCapture(event.pointerId)
+  }
+
   const handlePointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
     let point = normalizedPoint(event)
     const drag = dragRef.current
     if (drag) {
+      event.preventDefault()
+      if (drag.positionHandle) {
+        const original = drag.originals.find((item) => item.id === drag.source.id)
+        if (!original) return
+        const base = original.points
+        const side = drag.source.behavior === 'short-position' ? 'short' : 'long'
+        const nextPoints = updatePositionPoints(base, drag.positionHandle, point, side).map((item) => anchorPoint(item))
+        if (distance(point, drag.start) <= 0.003) return
+        drag.moved = true
+        dispatch({ type: 'update', id: original.id, patch: { points: nextPoints } })
+        return
+      }
       let delta = { x: point.x - drag.start.x, y: point.y - drag.start.y }
       const rect = svgRef.current!.getBoundingClientRect()
       if (event.shiftKey) {
@@ -231,6 +278,7 @@ export function DrawingOverlay({
     const drag = dragRef.current
     if (drag) {
       if (drag.control && !drag.moved) dispatch({ type: 'select', id: drag.source.id, additive: true })
+      if (drag.moved) suppressNextClickRef.current = true
       dragRef.current = null
       if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
       return
@@ -265,6 +313,11 @@ export function DrawingOverlay({
     }
     if (behavior === 'eraser' || freehandBehaviors.includes(behavior)) return
     let point = normalizedPoint(event)
+    if (positionBehaviors.includes(behavior)) {
+      dispatch({ type: 'add', drawing: createDefaultPositionDrawing(point) })
+      onToolComplete()
+      return
+    }
     if (oneClickBehaviors.includes(behavior)) {
       point = anchorPoint(point)
       const drawing = makeDrawing(activeDefinition, point, color)
@@ -315,7 +368,7 @@ export function DrawingOverlay({
       originals: history.present.filter((item) => selectedIds.includes(item.id)).map((item) => ({ id: item.id, points: item.points.map(projectNormalizedPoint) })),
       source: drawing, control, moved: false,
     }
-    event.currentTarget.setPointerCapture(event.pointerId)
+    svgRef.current?.setPointerCapture(event.pointerId)
   }
 
   const measurementForDrawing = (drawing: Drawing) => {
@@ -443,75 +496,118 @@ export function DrawingOverlay({
       const sine = Array.from({ length: 50 }, (_, index) => { const t=index/49; return `${first.x+dx*t},${mid.y+Math.sin(t*Math.PI*4)*Math.abs(dy)/2}` }).join(' ')
       content = <polyline points={sine} {...common} />
     } else if (behavior === 'long-position' || behavior === 'short-position') {
-      const x = Math.min(first.x, last.x)
-      const w = Math.max(24, Math.abs(dx))
-      const top = Math.min(first.y, last.y)
-      const bottom = Math.max(first.y, last.y)
-      const entry = (top + bottom) / 2
       const long = behavior === 'long-position'
+      const side = long ? 'long' : 'short'
+      const geometry = resolvePositionGeometry(points, side)!
+      const x = geometry.left
+      const w = Math.max(24, geometry.right - geometry.left)
+      const entry = geometry.entryY
+      const targetEdge = geometry.targetY
+      const stopEdge = geometry.stopY
+      const top = Math.min(targetEdge, stopEdge)
+      const bottom = Math.max(targetEdge, stopEdge)
+      const upperIsTarget = targetEdge < entry
       const red = '#f23645'
       const green = '#089981'
+      const tickSize = symbol === 'BTCUSDT.P' ? .1 : .01
+      const rawGeometry = resolvePositionGeometry(drawing.points, side)
+      const entryPrice = rawGeometry?.entryLeft.price
+      const targetPrice = rawGeometry?.target.price
+      const stopPrice = rawGeometry?.stop.price
+      const canonicalPricesAvailable = drawing.points.length >= 4
+        && Number.isFinite(entryPrice) && Number.isFinite(targetPrice) && Number.isFinite(stopPrice)
       const firstPrice = drawing.points[0]?.price
       const lastPrice = drawing.points.at(-1)?.price
-      const hasPrices = Number.isFinite(firstPrice) && Number.isFinite(lastPrice)
-      const metrics = hasPrices ? calculatePositionMetrics({
-        side: long ? 'long' : 'short',
+      const legacyPricesAvailable = Number.isFinite(firstPrice) && Number.isFinite(lastPrice)
+      const currentPrice = candles.at(-1)?.close
+      const metrics = canonicalPricesAvailable ? calculatePositionMetricsFromLevels({
+        side,
+        entryPrice: entryPrice!,
+        targetPrice: targetPrice!,
+        stopPrice: stopPrice!,
+        currentPrice: currentPrice ?? entryPrice!,
+        tickSize,
+      }) : legacyPricesAvailable ? calculatePositionMetrics({
+        side,
         topPrice: Math.max(firstPrice!, lastPrice!),
         bottomPrice: Math.min(firstPrice!, lastPrice!),
-        currentPrice: candles.at(-1)?.close ?? (firstPrice! + lastPrice!) / 2,
-        tickSize: symbol === 'BTCUSDT.P' ? .1 : symbol === 'XAUUSD' ? .01 : .01,
+        currentPrice: currentPrice ?? (firstPrice! + lastPrice!) / 2,
+        tickSize,
       }) : null
       const priceDigits = symbol === 'XAUUSD' ? 3 : symbol === 'BTCUSDT.P' ? 1 : 2
-      const distance = metrics ? formatPositionNumber(metrics.distance, priceDigits) : '—'
-      const percent = metrics ? formatPositionNumber(metrics.percent, 3) : '—'
-      const ticks = metrics ? formatPositionNumber(metrics.ticks, 1) : '—'
+      const stopDistance = metrics?.distance ?? null
+      const targetDistance = metrics ? Math.abs(metrics.targetPrice - metrics.entryPrice) : null
+      const stopPercent = metrics && metrics.entryPrice !== 0 ? stopDistance! / Math.abs(metrics.entryPrice) * 100 : null
+      const targetPercent = metrics && metrics.entryPrice !== 0 ? targetDistance! / Math.abs(metrics.entryPrice) * 100 : null
+      const stopTicks = metrics ? stopDistance! / (symbol === 'BTCUSDT.P' ? .1 : .01) : null
+      const targetTicks = metrics ? targetDistance! / (symbol === 'BTCUSDT.P' ? .1 : .01) : null
       const riskReward = metrics ? formatPositionNumber(metrics.riskReward, 2) : '—'
       const pnl = metrics ? formatPositionNumber(metrics.pnl, 3) : '—'
       const pnlColor = !metrics || metrics.pnl < 0 ? red : green
-      const stopText = `停止：${distance} (${percent}%) ${ticks}, 金额：${metrics?.stopAmount ?? 750}`
-      const targetText = `目标：${distance} (${percent}%) ${ticks}, 金额：${metrics?.targetAmount ?? 1250}`
-      const centralWidth = Math.min(440, Math.max(220, w + 18))
-      const outsideWidth = Math.min(500, Math.max(270, w + 70))
-      const centralX = Math.min(992 - centralWidth, Math.max(8, x + w / 2 - centralWidth / 2))
-      const outsideX = Math.min(992 - outsideWidth, Math.max(8, x + w / 2 - outsideWidth / 2))
-      const labelHeight = 42
-      const centralHeight = 68
-      const labelAbove = (edge: number) => Math.max(8, edge - labelHeight - 12)
-      const labelBelow = (edge: number) => edge + labelHeight + 20 <= 1000 ? edge + 12 : Math.max(8, edge - labelHeight - 12)
-      const stopY = long ? labelBelow(bottom) : labelAbove(top)
-      const targetY = long ? labelAbove(top) : labelBelow(bottom)
+      const stopText = `停止：${metrics ? formatPositionNumber(stopDistance!, priceDigits) : '—'} (${stopPercent === null ? '—' : formatPositionNumber(stopPercent, 3)}%) ${stopTicks === null ? '—' : formatPositionNumber(stopTicks, 1)}, 金额：${metrics?.stopAmount ?? 750}`
+      const targetText = `目标：${metrics ? formatPositionNumber(targetDistance!, priceDigits) : '—'} (${targetPercent === null ? '—' : formatPositionNumber(targetPercent, 3)}%) ${targetTicks === null ? '—' : formatPositionNumber(targetTicks, 1)}, 金额：${metrics?.targetAmount ?? 1250}`
+      const unitX = 1000 / Math.max(1, viewportSize.width)
+      const unitY = 1000 / Math.max(1, viewportSize.height)
+      const screenWidth = (characters: number, min: number, max: number) => Math.min(max, Math.max(min, characters * 6.2 + 18))
+      const outsideWidth = Math.min(Math.max(120, viewportSize.width - 16), screenWidth(Math.max(stopText.length, targetText.length), 170, 390)) * unitX
+      const centralLineOne = `开仓 PnL: ${pnl}, 数量: ${metrics?.quantity ?? 5}`
+      const centralLineTwo = `风险/回报比: ${riskReward}`
+      const centralWidth = Math.min(Math.max(120, viewportSize.width - 16), screenWidth(Math.max(centralLineOne.length, centralLineTwo.length), 150, 280)) * unitX
+      const centerX = x + w / 2
+      const centralX = Math.min(1000 - centralWidth - 8 * unitX, Math.max(8 * unitX, centerX - centralWidth / 2))
+      const outsideX = Math.min(1000 - outsideWidth - 8 * unitX, Math.max(8 * unitX, centerX - outsideWidth / 2))
+      const labelHeight = 24 * unitY
+      const centralHeight = 40 * unitY
+      const labelGap = 5 * unitY
+      const labelAbove = (edge: number) => Math.max(5 * unitY, edge - labelHeight - labelGap)
+      const labelBelow = (edge: number) => edge + labelHeight + labelGap * 2 <= 1000 ? edge + labelGap : Math.max(5 * unitY, edge - labelHeight - labelGap)
+      const stopY = long ? labelBelow(stopEdge) : labelAbove(stopEdge)
+      const targetY = long ? labelAbove(targetEdge) : labelBelow(targetEdge)
       const textScaleX = Math.max(.45, Math.min(1.5, viewportSize.height / Math.max(1, viewportSize.width)))
       const positionFont = '-apple-system, BlinkMacSystemFont, Segoe UI, Microsoft YaHei, sans-serif'
-      const handleWidth = handleRadius.x * 3.4
-      const handleHeight = handleRadius.y * 3.4
-      const handle = (cx: number, cy: number, key: string) => <rect
-        key={key} x={cx - handleWidth / 2} y={cy - handleHeight / 2}
-        width={handleWidth} height={handleHeight} rx={Math.min(handleWidth, handleHeight) * .28}
-        fill="#131722" stroke="#2962ff" strokeWidth="3" vectorEffect="non-scaling-stroke"
-      />
+      const fontSize = 12 * unitY
+      const secondaryFontSize = 11 * unitY
+      const handleWidth = 10 * unitX
+      const handleHeight = 10 * unitY
+      const handle = (cx: number, cy: number, key: string, handleType: PositionHandle, shape: 'square' | 'circle' = 'square') => {
+        const props = {
+          key,
+          'data-position-handle': handleType,
+          'aria-label': `拖动${handleType === 'target' ? '目标' : handleType === 'stop' ? '止损' : handleType === 'entry' ? '入场' : '宽度'}控制点`,
+          onPointerDown: startPositionHandleDrag(drawing, handleType),
+          pointerEvents: 'all' as const,
+          fill: '#131722',
+          stroke: '#2962ff',
+          strokeWidth: 2,
+          vectorEffect: 'non-scaling-stroke' as const,
+        }
+        return shape === 'circle'
+          ? <ellipse {...props} cx={cx} cy={cy} rx={handleWidth / 2} ry={handleHeight / 2} />
+          : <rect {...props} x={cx - handleWidth / 2} y={cy - handleHeight / 2} width={handleWidth} height={handleHeight} rx={2 * unitX} />
+      }
       content = <g className="position-drawing" data-position-side={long ? 'long' : 'short'}>
-        <rect data-testid="position-upper-zone" x={x} y={top} width={w} height={entry - top} fill={long ? 'rgba(8,153,129,.22)' : 'rgba(242,54,69,.23)'} stroke={long ? green : red} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-        <rect data-testid="position-lower-zone" x={x} y={entry} width={w} height={bottom - entry} fill={long ? 'rgba(242,54,69,.20)' : 'rgba(8,153,129,.22)'} stroke={long ? red : green} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-        <line x1={x} x2={x + w} y1={entry} y2={entry} stroke="#f0f3fa" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+        <rect data-testid="position-upper-zone" x={x} y={top} width={w} height={Math.max(0, entry - top)} fill={upperIsTarget ? 'rgba(8,153,129,.2)' : 'rgba(242,54,69,.2)'} stroke={upperIsTarget ? green : red} strokeWidth="1" vectorEffect="non-scaling-stroke" />
+        <rect data-testid="position-lower-zone" x={x} y={entry} width={w} height={Math.max(0, bottom - entry)} fill={upperIsTarget ? 'rgba(242,54,69,.2)' : 'rgba(8,153,129,.2)'} stroke={upperIsTarget ? red : green} strokeWidth="1" vectorEffect="non-scaling-stroke" />
+        <line data-testid="position-entry-line" x1={x} x2={x + w} y1={entry} y2={entry} stroke="#787b86" strokeWidth="1" vectorEffect="non-scaling-stroke" />
 
         <g data-testid="position-stop-label" transform={`translate(${outsideX} ${stopY})`}>
-          <rect width={outsideWidth} height={labelHeight} rx="8" fill={red} />
-          <text x="0" y="29" transform={`translate(${outsideWidth / 2} 0) scale(${textScaleX} 1)`} textAnchor="middle" fill="white" fontFamily={positionFont} fontSize="22" fontWeight="500">{stopText}</text>
+          <rect width={outsideWidth} height={labelHeight} rx={4 * unitX} fill={red} />
+          <text x="0" y={16 * unitY} transform={`translate(${outsideWidth / 2} 0) scale(${textScaleX} 1)`} textAnchor="middle" fill="white" fontFamily={positionFont} fontSize={fontSize} fontWeight="500">{stopText}</text>
         </g>
         <g data-testid="position-target-label" transform={`translate(${outsideX} ${targetY})`}>
-          <rect width={outsideWidth} height={labelHeight} rx="8" fill={green} />
-          <text x="0" y="29" transform={`translate(${outsideWidth / 2} 0) scale(${textScaleX} 1)`} textAnchor="middle" fill="white" fontFamily={positionFont} fontSize="22" fontWeight="500">{targetText}</text>
+          <rect width={outsideWidth} height={labelHeight} rx={4 * unitX} fill={green} />
+          <text x="0" y={16 * unitY} transform={`translate(${outsideWidth / 2} 0) scale(${textScaleX} 1)`} textAnchor="middle" fill="white" fontFamily={positionFont} fontSize={fontSize} fontWeight="500">{targetText}</text>
         </g>
         <g data-testid="position-entry-label" transform={`translate(${centralX} ${entry - centralHeight / 2})`}>
-          <rect width={centralWidth} height={centralHeight} rx="10" fill={pnlColor} stroke="#f0f3fa" strokeWidth="2" vectorEffect="non-scaling-stroke" />
-          <text x="0" y="29" transform={`translate(${centralWidth / 2} 0) scale(${textScaleX} 1)`} textAnchor="middle" fill="white" fontFamily={positionFont} fontSize="22" fontWeight="500">开仓 PnL: {pnl}, 数量: {metrics?.quantity ?? 5}</text>
-          <text x="0" y="55" transform={`translate(${centralWidth / 2} 0) scale(${textScaleX} 1)`} textAnchor="middle" fill="white" fontFamily={positionFont} fontSize="22" fontWeight="500">风险/回报比: {riskReward}</text>
+          <rect width={centralWidth} height={centralHeight} rx={5 * unitX} fill={pnlColor} stroke="#f0f3fa" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+          <text x="0" y={16 * unitY} transform={`translate(${centralWidth / 2} 0) scale(${textScaleX} 1)`} textAnchor="middle" fill="white" fontFamily={positionFont} fontSize={fontSize} fontWeight="500">{centralLineOne}</text>
+          <text x="0" y={32 * unitY} transform={`translate(${centralWidth / 2} 0) scale(${textScaleX} 1)`} textAnchor="middle" fill="white" fontFamily={positionFont} fontSize={secondaryFontSize} fontWeight="500">{centralLineTwo}</text>
         </g>
-        {selected && <g className="position-control-points" data-testid="position-control-points">
-          {handle(x, top, 'top-left')}
-          {handle(x, entry, 'entry-left')}
-          {handle(x + w, entry, 'entry-right')}
-          {handle(x, bottom, 'bottom-left')}
+        {selected && <g className="position-control-points" data-testid="position-control-points" pointerEvents="all">
+          {handle(x, targetEdge, 'target', 'target')}
+          {handle(x, entry, 'entry', 'entry', 'circle')}
+          {handle(x + w, entry, 'width', 'width')}
+          {handle(x, stopEdge, 'stop', 'stop')}
         </g>}
       </g>
     } else if (behavior === 'forecast') {

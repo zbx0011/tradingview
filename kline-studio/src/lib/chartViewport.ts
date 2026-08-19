@@ -7,6 +7,11 @@ interface RealtimeFollowDecision {
   nextLength: number
 }
 
+interface ViewportProjectionSyncDecision {
+  wheelZoomBurstActive: boolean
+  mousePanBurstActive: boolean
+}
+
 export function shouldFollowRealtime({
   shouldFocusLatest,
   hasVisibleRange = false,
@@ -24,4 +29,11 @@ export function shouldFollowRealtime({
 
 export function isRealtimeScrollPosition(scrollPosition: number) {
   return scrollPosition <= 1
+}
+
+export function shouldDeferViewportProjectionSync({
+  wheelZoomBurstActive,
+  mousePanBurstActive,
+}: ViewportProjectionSyncDecision) {
+  return wheelZoomBurstActive || mousePanBurstActive
 }

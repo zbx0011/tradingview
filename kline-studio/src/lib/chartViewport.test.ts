@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { isRealtimeScrollPosition, shouldFollowRealtime } from './chartViewport'
+import {
+  isRealtimeScrollPosition,
+  shouldDeferViewportProjectionSync,
+  shouldFollowRealtime,
+} from './chartViewport'
 
 describe('chart viewport live-follow behavior', () => {
   it('keeps following live data while the viewport is already at the realtime edge', () => {
@@ -49,5 +53,25 @@ describe('chart viewport live-follow behavior', () => {
     expect(isRealtimeScrollPosition(-8)).toBe(true)
     expect(isRealtimeScrollPosition(0.8)).toBe(true)
     expect(isRealtimeScrollPosition(2)).toBe(false)
+  })
+})
+
+describe('chart viewport projection scheduling', () => {
+  it('defers expensive overlays during either continuous input burst', () => {
+    expect(shouldDeferViewportProjectionSync({
+      wheelZoomBurstActive: true,
+      mousePanBurstActive: false,
+    })).toBe(true)
+    expect(shouldDeferViewportProjectionSync({
+      wheelZoomBurstActive: false,
+      mousePanBurstActive: true,
+    })).toBe(true)
+  })
+
+  it('allows one projection sync after zooming and panning are idle', () => {
+    expect(shouldDeferViewportProjectionSync({
+      wheelZoomBurstActive: false,
+      mousePanBurstActive: false,
+    })).toBe(false)
   })
 })

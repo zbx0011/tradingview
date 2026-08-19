@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseTradeMarkerPanelPreferences, parseWorkspace } from './persistence'
+import { parseDecisionReplayMenuPreferences, parseDecisionReplayPanelPreferences, parseTradeMarkerPanelPreferences, parseWorkspace } from './persistence'
 
 const workspace = {
   symbol: 'XAUUSD',
@@ -83,5 +83,38 @@ describe('trade marker panel preferences', () => {
       size: { width: 0, height: 560 },
       fontSize: 'huge',
     }))).toEqual({ position: null, size: null, fontSize: 'medium' })
+  })
+})
+
+describe('decision replay panel preferences', () => {
+  it('restores the last dragged position and resized dimensions', () => {
+    expect(parseDecisionReplayPanelPreferences(JSON.stringify({
+      position: { left: 144, top: 96 },
+      size: { width: 720, height: 640 },
+    }))).toEqual({
+      position: { left: 144, top: 96 },
+      size: { width: 720, height: 640 },
+    })
+  })
+
+  it('ignores malformed decision panel layout data', () => {
+    expect(parseDecisionReplayPanelPreferences('{broken')).toEqual({ position: null, size: null })
+    expect(parseDecisionReplayPanelPreferences(JSON.stringify({
+      position: { left: 'bad', top: 96 },
+      size: { width: -1, height: 640 },
+    }))).toEqual({ position: null, size: null })
+  })
+})
+
+describe('decision replay menu preferences', () => {
+  it('restores the last dragged action menu position', () => {
+    expect(parseDecisionReplayMenuPreferences(JSON.stringify({ position: { left: 248, top: 512 } }))).toEqual({
+      position: { left: 248, top: 512 },
+    })
+  })
+
+  it('ignores malformed action menu layout data', () => {
+    expect(parseDecisionReplayMenuPreferences('{broken')).toEqual({ position: null })
+    expect(parseDecisionReplayMenuPreferences(JSON.stringify({ position: { left: 'bad', top: 512 } }))).toEqual({ position: null })
   })
 })
