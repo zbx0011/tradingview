@@ -70,8 +70,10 @@ for (const item of series) {
     batchSize: 20,
     pauseBetweenBatchesMs: 250,
     retryCount: 3,
-    retryOnEmpty: true,
-    failAfterRetryCount: true,
+    // Weekend/holiday artifacts are naturally empty for CFD feeds; keep
+    // fetching the remaining hours instead of treating those gaps as failure.
+    retryOnEmpty: false,
+    failAfterRetryCount: false,
     pauseBetweenRetriesMs: 500,
   })
   const bars = normaliseBars(rows, item.id)
