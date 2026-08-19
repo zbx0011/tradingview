@@ -41,14 +41,15 @@ import {
 } from './lib/replayTradeLayers'
 import { deleteReplayRangeObjectFromLayers, loadReplayRangeLayers, saveReplayRangeLayers, toggleReplayRangeObjectInLayers, type ReplayRangeLayer } from './lib/replayRangeLayers'
 import { loadFavoriteTools, saveFavoriteTools, toggleFavoriteTool } from './lib/favoriteTools'
-import { decisionReplayFavoriteKey, loadDecisionReplayFavorites, saveDecisionReplayFavorites, toggleDecisionReplayFavorite } from './lib/decisionReplayFavorites'
+import { DECISION_REPLAY_FAVORITES_STORAGE_KEY, decisionReplayFavoriteKey, loadDecisionReplayFavorites, parseDecisionReplayFavorites, saveDecisionReplayFavorites, toggleDecisionReplayFavorite } from './lib/decisionReplayFavorites'
 import { collectPortableWorkspace, downloadPortableWorkspace, parsePortableWorkspace, restorePortableWorkspace } from './lib/portableWorkspace'
 import { replayDecisionCandidates, type ReplayDecisionCandidate } from './lib/replayTradeRegistry'
 import {
   advanceDecisionAttempt, buildDecisionResult, candleAtOrBefore, candlesKnownAt, createDecisionAttempt,
   createDecisionSession, currentDecisionAttempt, currentDecisionCandidate, decisionShortcutAction, defaultDecisionLevels,
-  decisionSessionPositionSizingModes, historyCoversDecisionCandidate, intervalCutoffTime, intervalSeconds, loadDecisionReplayStore, nextCandleAfter,
-  pnlForDecisionMode, resultReviewCutoff, sampleDecisionCandidates, saveDecisionReplayStore, sessionResults, validDecisionLevels, validOpenPositionLevels,
+  DECISION_REPLAY_STORAGE_KEY, decisionSessionPositionSizingModes, historyCoversDecisionCandidate, intervalCutoffTime, intervalSeconds, loadDecisionReplayStore,
+  mergeDecisionReplayStores, nextCandleAfter, parseDecisionReplayStore, pnlForDecisionMode, resultReviewCutoff, sampleDecisionCandidates,
+  saveDecisionReplayStore, sessionResults, validDecisionLevels, validOpenPositionLevels,
   type DecisionAttempt, type DecisionExit, type DecisionPositionSizingMode, type DecisionReplaySession, type DecisionTradeResult,
 } from './lib/decisionReplay'
 
@@ -968,6 +969,26 @@ function App() {
       window.setTimeout(() => window.location.reload(), 250)
     }).catch(() => notify('导入失败：无法读取备份文件'))
   }, [notify])
+  const mergeWorkspaceProgress = useCallback((file: File) => {
+    void file.text().then((raw) => {
+      const snapshot = parsePortableWorkspace(raw)
+      if (!snapshot) {
+        notify('合并失败：文件不是有效的 K 线工作区备份')
+        return
+      }
+      const localStore = loadDecisionReplayStore()
+      const importedStore = parseDecisionReplayStore(snapshot.entries[DECISION_REPLAY_STORAGE_KEY] ?? null)
+      const mergedStore = mergeDecisionReplayStores(localStore, importedStore)
+      const mergedFavorites = [...new Set([
+        ...loadDecisionReplayFavorites(),
+        ...parseDecisionReplayFavorites(snapshot.entries[DECISION_REPLAY_FAVORITES_STORAGE_KEY] ?? null),
+      ])]
+      saveDecisionReplayStore(mergedStore)
+      saveDecisionReplayFavorites(mergedFavorites)
+      notify(`已合并做题进度：共 ${mergedStore.sessions.length} 场，正在刷新页面`)
+      window.setTimeout(() => window.location.reload(), 250)
+    }).catch(() => notify('合并失败：无法读取备份文件'))
+  }, [notify])
   const deleteReplayRangeObject = useCallback((objectId: string) => {
     setReplayRangeLayers((current) => deleteReplayRangeObjectFromLayers(current, objectId))
     setSelectedReplayRangeId((current) => current === objectId ? null : current)
@@ -1859,7 +1880,7 @@ function App() {
       />}
 
       {indicatorPanelOpen && <IndicatorPanel value={indicators} onChange={setIndicators} onClose={() => setIndicatorPanelOpen(false)} />}
-      {settingsOpen && <SettingsPanel theme={theme} onTheme={setTheme} onReset={resetWorkspace} onExportWorkspace={exportWorkspace} onImportWorkspace={importWorkspace} onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <SettingsPanel theme={theme} onTheme={setTheme} onReset={resetWorkspace} onExportWorkspace={exportWorkspace} onMergeProgress={mergeWorkspaceProgress} onImportWorkspace={importWorkspace} onClose={() => setSettingsOpen(false)} />}
       {quickSearchOpen && <QuickSearchDialog items={quickSearchItems} query={quickSearchQuery} onQuery={setQuickSearchQuery} onSelect={runQuickSearchItem} onClose={() => setQuickSearchOpen(false)} />}
       {intervalDialogOpen && <IntervalShortcutDialog value={intervalDraft} onChange={setIntervalDraft} onApply={applyIntervalInput} onClose={() => setIntervalDialogOpen(false)} />}
       {goToDateOpen && <GoToDateDialog initialTime={data.at(-1)?.time ?? 0} onSelect={(time) => { chartRef.current?.goToTime(time); setGoToDateOpen(false); notify('已转到指定日期') }} onClose={() => setGoToDateOpen(false)} />}
@@ -1946,9 +1967,30 @@ function IndicatorPanel({ value, onChange, onClose }: { value: IndicatorSettings
   return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section className="modal indicator-modal" role="dialog" aria-modal="true" aria-label="指标设置"><div className="modal-header"><div><b>技术指标</b><small>叠加到主图的本地计算指标</small></div><button onClick={onClose} aria-label="关闭"><X size={18} /></button></div><div className="indicator-list">{rows.map((row) => <div className="indicator-row" key={row.key}><span className="indicator-color" style={{ background: row.color }} /><div><b>{row.name}</b><small>{row.detail}</small></div><label className="switch" aria-label={`${row.name}开关`} title={`${row.name}开关`}><input type="checkbox" checked={value[row.key]} onChange={(event) => onChange({ ...value, [row.key]: event.target.checked })} /><span /></label></div>)}</div><div className="parameter-grid"><label>MA 周期<input type="number" min="2" max="200" value={value.maPeriod} onChange={(event) => onChange({ ...value, maPeriod: Number(event.target.value) })} /></label><label>EMA 周期<input type="number" min="2" max="200" value={value.emaPeriod} onChange={(event) => onChange({ ...value, emaPeriod: Number(event.target.value) })} /></label><label>BOLL 周期<input type="number" min="2" max="200" value={value.bollPeriod} onChange={(event) => onChange({ ...value, bollPeriod: Number(event.target.value) })} /></label><label>标准差<input type="number" step="0.1" min="0.1" max="5" value={value.bollDeviation} onChange={(event) => onChange({ ...value, bollDeviation: Number(event.target.value) })} /></label></div><div className="modal-footer"><button onClick={() => onChange(DEFAULT_INDICATORS)}>恢复指标默认</button><button className="primary" onClick={onClose}>完成</button></div></section></div>
 }
 
-function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onImportWorkspace, onClose }: { theme: Theme; onTheme: (theme: Theme) => void; onReset: () => void; onExportWorkspace: () => void; onImportWorkspace: (file: File) => void; onClose: () => void }) {
-  const inputRef = useRef<HTMLInputElement>(null)
-  return <aside className="settings-panel"><div className="panel-heading"><div><b>图表设置</b><small>外观与工作区</small></div><button onClick={onClose} aria-label="关闭"><X size={18} /></button></div><section><h3>外观</h3><div className="theme-options"><button className={theme === 'dark' ? 'active' : ''} onClick={() => onTheme('dark')}><Moon size={18} />深色</button><button className={theme === 'light' ? 'active' : ''} onClick={() => onTheme('light')}><Sun size={18} />亮色</button></div></section><section><h3>交互说明</h3><ul><li>鼠标滚轮：水平缩放</li><li>拖拽主图：平移时间轴</li><li>底部“适应”：显示全部数据</li><li>Shift+↓：播放 / 暂停回放</li><li>Shift+→：回放前进一格</li><li>Delete：删除选中绘图</li><li>Ctrl+Z：撤销</li><li>Ctrl+Y / Ctrl+Shift+Z：重做</li></ul></section><section><h3>跨电脑同步</h3><p>导出的备份包含当前品种、周期、指标、绘图、回放进度、模拟订单图层、对象树状态和面板偏好。把 JSON 文件带到另一台电脑后导入即可恢复。</p><div className="workspace-transfer-actions"><button type="button" onClick={onExportWorkspace}><Download size={16} />导出完整工作区</button><button type="button" onClick={() => inputRef.current?.click()}><Upload size={16} />导入工作区备份</button><input ref={inputRef} type="file" accept="application/json,.json" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) onImportWorkspace(file); event.currentTarget.value = '' }} /></div></section><section className="danger-section"><h3>工作区</h3><p>品种、周期、指标、绘图和回放进度会自动保存在当前浏览器。</p><button onClick={() => { onReset(); onClose() }}><RefreshCcw size={16} />恢复所有默认设置</button></section></aside>
+function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProgress, onImportWorkspace, onClose }: {
+  theme: Theme
+  onTheme: (theme: Theme) => void
+  onReset: () => void
+  onExportWorkspace: () => void
+  onMergeProgress: (file: File) => void
+  onImportWorkspace: (file: File) => void
+  onClose: () => void
+}) {
+  const mergeInputRef = useRef<HTMLInputElement>(null)
+  const importInputRef = useRef<HTMLInputElement>(null)
+  return <aside className="settings-panel">
+    <div className="panel-heading"><div><b>图表设置</b><small>外观与工作区</small></div><button onClick={onClose} aria-label="关闭"><X size={18} /></button></div>
+    <section><h3>外观</h3><div className="theme-options"><button className={theme === 'dark' ? 'active' : ''} onClick={() => onTheme('dark')}><Moon size={18} />深色</button><button className={theme === 'light' ? 'active' : ''} onClick={() => onTheme('light')}><Sun size={18} />亮色</button></div></section>
+    <section><h3>交互说明</h3><ul><li>鼠标滚轮：水平缩放</li><li>拖拽主图：平移时间轴</li><li>底部“适应”：显示全部数据</li><li>Shift+↓：播放 / 暂停回放</li><li>Shift+→：回放前进一格</li><li>Delete：删除选中绘图</li><li>Ctrl+Z：撤销</li><li>Ctrl+Y / Ctrl+Shift+Z：重做</li></ul></section>
+    <section><h3>跨电脑同步</h3><p>先导出完整工作区。在另一台电脑选择“合并做题进度”，会合并两边的练习场次、已做题目和收藏，不覆盖另一台已有历史；“完整覆盖导入”仅用于整机恢复。</p><div className="workspace-transfer-actions">
+      <button type="button" onClick={onExportWorkspace}><Download size={16} />导出完整工作区</button>
+      <button type="button" className="merge-progress" onClick={() => mergeInputRef.current?.click()}><Upload size={16} />合并做题进度</button>
+      <button type="button" onClick={() => importInputRef.current?.click()}><Upload size={16} />完整覆盖导入</button>
+      <input ref={mergeInputRef} type="file" accept="application/json,.json" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) onMergeProgress(file); event.currentTarget.value = '' }} />
+      <input ref={importInputRef} type="file" accept="application/json,.json" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) onImportWorkspace(file); event.currentTarget.value = '' }} />
+    </div></section>
+    <section className="danger-section"><h3>工作区</h3><p>品种、周期、指标、绘图和回放进度会自动保存在当前浏览器。</p><button onClick={() => { onReset(); onClose() }}><RefreshCcw size={16} />恢复所有默认设置</button></section>
+  </aside>
 }
 
 function QuickSearchDialog({ items, query, onQuery, onSelect, onClose }: {

@@ -143,6 +143,42 @@ export function parseDecisionReplayStore(raw: string | null): DecisionReplayStor
   }
 }
 
+function sessionProgressRank(session: DecisionReplaySession) {
+  const completed = session.attempts.filter((attempt) => attempt.result).length
+  const stageRank = Math.max(0, ...session.attempts.map((attempt) => (
+    attempt.stage === 'post-exit' ? 3 : attempt.stage === 'position-open' ? 2 : attempt.stage === 'order-pending' ? 1 : 0
+  )))
+  return [completed, session.currentIndex, stageRank, session.updatedAt] as const
+}
+
+function newerDecisionSession(left: DecisionReplaySession, right: DecisionReplaySession) {
+  const leftRank = sessionProgressRank(left)
+  const rightRank = sessionProgressRank(right)
+  for (let index = 0; index < leftRank.length; index += 1) {
+    if (leftRank[index] !== rightRank[index]) return leftRank[index] > rightRank[index] ? left : right
+  }
+  return left
+}
+
+/** Merge independently-created exercise histories without discarding either computer's progress. */
+export function mergeDecisionReplayStores(local: DecisionReplayStore, imported: DecisionReplayStore): DecisionReplayStore {
+  const sessionsById = new Map(local.sessions.map((session) => [session.id, session]))
+  for (const session of imported.sessions) {
+    const existing = sessionsById.get(session.id)
+    sessionsById.set(session.id, existing ? newerDecisionSession(existing, session) : session)
+  }
+  const sessions = [...sessionsById.values()].sort((left, right) => right.startedAt - left.startedAt)
+  const activeSessionId = [local.activeSessionId, imported.activeSessionId]
+    .flatMap((id) => id ? sessions.filter((session) => session.id === id && session.status === 'active') : [])
+    .sort((left, right) => right.updatedAt - left.updatedAt)[0]?.id ?? null
+  return {
+    version: DECISION_REPLAY_VERSION,
+    seenTradeKeys: [...new Set([...local.seenTradeKeys, ...imported.seenTradeKeys])],
+    activeSessionId,
+    sessions,
+  }
+}
+
 export function loadDecisionReplayStore(): DecisionReplayStore {
   if (typeof localStorage === 'undefined') return emptyDecisionReplayStore()
   return parseDecisionReplayStore(localStorage.getItem(DECISION_REPLAY_STORAGE_KEY))

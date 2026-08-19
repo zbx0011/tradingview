@@ -4,10 +4,10 @@ import { replayDecisionCandidates } from './replayTradeRegistry'
 import type { Candle } from './market'
 import { getSnapshotCandles } from './liveMarket'
 import {
-  advanceDecisionAttempt, buildDecisionResult, candlesKnownAt, createDecisionAttempt,
+  advanceDecisionAttempt, buildDecisionResult, candlesKnownAt, createDecisionAttempt, createDecisionSession,
   decisionShortcutAction, defaultDecisionLevels, evaluatePositionBar, fillPendingOrder,
   decisionResultPnl, historyCoversDecisionCandidate, intervalCutoffTime, parseDecisionReplayStore,
-  pnlForDecision, pnlForDecisionMode, rewardRiskRatio, sampleDecisionCandidates,
+  mergeDecisionReplayStores, pnlForDecision, pnlForDecisionMode, rewardRiskRatio, sampleDecisionCandidates,
   validDecisionLevels, validOpenPositionLevels,
 } from './decisionReplay'
 
@@ -146,5 +146,20 @@ describe('decision replay', () => {
 
   it('rejects malformed persisted data', () => {
     expect(parseDecisionReplayStore('{bad json')).toMatchObject({ sessions: [], seenTradeKeys: [] })
+  })
+
+  it('merges histories from two computers and keeps the more advanced duplicate session', () => {
+    const shared = { ...createDecisionSession([candidate('shared:1')], 1, 1000), id: 'shared' }
+    const advanced = { ...shared, currentIndex: 1, status: 'completed' as const, updatedAt: 3000, finishedAt: 3000 }
+    const localOnly = { ...createDecisionSession([candidate('local:1')], 1, 1100), id: 'local' }
+    const importedOnly = { ...createDecisionSession([candidate('imported:1')], 1, 1200), id: 'imported' }
+    const merged = mergeDecisionReplayStores(
+      { version: 1, seenTradeKeys: ['local:1'], activeSessionId: localOnly.id, sessions: [shared, localOnly] },
+      { version: 1, seenTradeKeys: ['shared:1', 'imported:1'], activeSessionId: null, sessions: [advanced, importedOnly] },
+    )
+    expect(merged.sessions.map((session) => session.id)).toEqual(['imported', 'local', 'shared'])
+    expect(merged.sessions.find((session) => session.id === 'shared')).toMatchObject({ status: 'completed', updatedAt: 3000 })
+    expect(merged.seenTradeKeys).toEqual(['local:1', 'shared:1', 'imported:1'])
+    expect(merged.activeSessionId).toBe('local')
   })
 })
