@@ -14,7 +14,9 @@ concurrency:
 
 jobs:
   sync:
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'ci: trigger market snapshot sync'))
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'ci: trigger market snapshot sync'))
     runs-on: ubuntu-latest
     defaults:
       run:
