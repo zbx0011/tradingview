@@ -1,0 +1,72 @@
+name: Sync K-line market snapshots
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: market-snapshot-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: kline-studio
+    steps:
+      - name: Checkout master
+        uses: actions/checkout@v4
+        with:
+          ref: master
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: kline-studio/package-lock.json
+
+      - name: Install project dependencies
+        run: npm ci
+
+      - name: Install public historical-data client
+        run: npm install --no-save --no-package-lock dukascopy-node@1.50.0
+
+      - name: Fetch June to latest XAU/XAG/US500 snapshots
+        run: node scripts/fetch-dukascopy-market-snapshots.mjs
+        env:
+          MARKET_FROM: 2026-06-01T00:00:00.000Z
+
+      - name: Fetch June to latest BTC snapshot
+        run: npm run fetch:btc
+        env:
+          BTC_DAYS: 90
+
+      - name: Validate snapshot coverage
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs')
+          const data = JSON.parse(fs.readFileSync('src/data/marketSnapshots.json', 'utf8'))
+          for (const [id, series] of Object.entries(data.series)) {
+            if (!series.bars?.length) throw new Error(`${id} has no bars`)
+            const first = new Date(series.bars[0].time * 1000).toISOString()
+            const last = new Date(series.bars.at(-1).time * 1000).toISOString()
+            console.log(`${id}: ${series.vendor}, ${series.bars.length} bars, ${first} -> ${last}`)
+          }
+          NODE
+
+      - name: Commit updated snapshots
+        working-directory: .
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add kline-studio/src/data/marketSnapshots.json kline-studio/public/data/btcusdt-p-1m-30d.json
+          if git diff --cached --quiet; then
+            echo "No market data changes"
+            exit 0
+          fi
+          git commit -m "data: sync market snapshots through $(date -u +%F)"
+          git push origin HEAD:master
