@@ -2,6 +2,8 @@ name: Sync K-line market snapshots
 
 on:
   workflow_dispatch:
+  push:
+    branches: [master]
 
 permissions:
   contents: write
@@ -12,6 +14,7 @@ concurrency:
 
 jobs:
   sync:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'ci: trigger market snapshot sync'))
     runs-on: ubuntu-latest
     defaults:
       run:
