@@ -51,7 +51,7 @@ export interface BybitHistoryOptions {
 
 const snapshots = snapshotJson as SnapshotFile
 const BYBIT_KLINE_ENDPOINT = 'https://api.bybit.com/v5/market/kline'
-const XAU_MONTH_URL = '/data/xauusd-1m-30d.json'
+const XAU_MONTH_URL = `${import.meta.env.BASE_URL}data/xauusd-1m-30d.json`
 const CACHE_DB_NAME = 'kline-studio-market-v1'
 const CACHE_STORE_NAME = 'histories'
 export const MARKET_HISTORY_DAYS = 30
