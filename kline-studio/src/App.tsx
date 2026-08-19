@@ -381,13 +381,13 @@ function App() {
     let active = true
     void fetchXauMonthCandles(controller.signal).then((bars) => {
       if (!active) return
-      // Keep the shipped 30-day history while overlaying the newest TradingView
-      // bars captured for this build. This prevents the async 30-day hydration
-      // from replacing a freshly updated tail with the older local file.
+      // Keep the shipped 30-day history while overlaying the bundled DUKASCOPY
+      // snapshot. This prevents async hydration from replacing a freshly
+      // updated tail with the older public file.
       const merged = mergeCandleHistory([bars, getSnapshotCandles('XAUUSD', '1m') ?? []])
       setRemoteMarket({ symbol, bars: merged, status: {
-        kind: 'snapshot', label: 'OANDA 最新', vendor: 'OANDA', fetchedAt: merged.at(-1)!.time,
-        detail: `OANDA:XAUUSD · 近30天+最新 · ${merged.length.toLocaleString('zh-CN')} 根 1 分钟 K 线 · TradingView`,
+        kind: 'snapshot', label: 'DUKASCOPY 最新', vendor: 'DUKASCOPY', fetchedAt: merged.at(-1)!.time,
+        detail: `DUKASCOPY:XAUUSD · 2026-06-01 至最新 · ${merged.length.toLocaleString('zh-CN')} 根 1 分钟 K 线`,
       } })
       setMarketHydrationKey((value) => value + 1)
     }).catch((error) => {
@@ -1389,7 +1389,7 @@ function App() {
                   </button>
                 ))}
               </div>
-              <div className="data-disclaimer">XAUUSD/XAGUSD/US500：TradingView 最新快照；BTCUSDT.P：KUCOIN XBTUSDTM 近30天快照；ETHUSD：本地模拟</div>
+              <div className="data-disclaimer">XAUUSD/XAGUSD/US500：DUKASCOPY 2026-06-01 至最新 1 分钟快照；BTCUSDT.P：KUCOIN XBTUSDTM 近90天快照；ETHUSD：本地模拟</div>
             </div>
           )}
         </div>

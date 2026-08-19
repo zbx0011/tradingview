@@ -67,7 +67,11 @@ describe('decision replay', () => {
   })
 
   it('has fully backed decision questions across the four imported markets', () => {
-    const eligible = replayDecisionCandidates().filter((item) => historyCoversDecisionCandidate(item, getSnapshotCandles(item.symbol, '1m')))
+    const historyBySymbol = new Map<string, Candle[] | null>()
+    const eligible = replayDecisionCandidates().filter((item) => {
+      if (!historyBySymbol.has(item.symbol)) historyBySymbol.set(item.symbol, getSnapshotCandles(item.symbol, '1m'))
+      return historyCoversDecisionCandidate(item, historyBySymbol.get(item.symbol))
+    })
     const symbols = new Set(eligible.map((item) => item.symbol))
     expect(eligible.length).toBeGreaterThan(0)
     expect([...symbols]).toEqual(expect.arrayContaining(['XAUUSD', 'XAGUSD', 'BTCUSDT.P', 'US500']))

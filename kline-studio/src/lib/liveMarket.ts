@@ -77,7 +77,7 @@ export function getSnapshotStatus(symbol: SymbolId): MarketDataStatus {
     label: `${series.vendor} 最新`,
     vendor: series.vendor,
     fetchedAt: last,
-    detail: `${series.symbol} · 最新 TradingView 快照 · ${series.bars.length} 根 1 分钟 K 线 · UTC`,
+    detail: `${series.symbol} · ${series.vendor} 静态快照 · ${series.bars.length.toLocaleString('zh-CN')} 根 1 分钟 K 线 · UTC`,
   }
 }
 
