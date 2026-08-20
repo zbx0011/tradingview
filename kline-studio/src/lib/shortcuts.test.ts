@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isChartAnnotationVisibilityShortcut, parseIntervalShortcut, resolveHistoryShortcut, TRADINGVIEW_SHORTCUTS } from './shortcuts'
+import { decisionExerciseNavigationDirection, isChartAnnotationVisibilityShortcut, parseIntervalShortcut, resolveHistoryShortcut, TRADINGVIEW_SHORTCUTS } from './shortcuts'
 
 const historyKey = (overrides: Partial<KeyboardEvent>) => resolveHistoryShortcut({
   altKey: false,
@@ -24,7 +24,7 @@ describe('TradingView shortcut catalog', () => {
 
   it('contains the official chart, drawing and replay key groups', () => {
     const keys = new Set(TRADINGVIEW_SHORTCUTS.map((item) => item.keys))
-    for (const shortcut of ['Ctrl+K', 'Ctrl+Z', 'Ctrl+Y / Ctrl+Shift+Z', 'Alt+G', 'Alt+T', 'Ctrl+Alt+H', '·', 'Shift+↓', 'Shift+→']) {
+    for (const shortcut of ['Ctrl+K', 'Ctrl+Z', 'Ctrl+Y / Ctrl+Shift+Z', 'Alt+G', 'Alt+T', 'Ctrl+Alt+H', '·', 'Shift+↓', 'Shift+→', '-', '=']) {
       expect(keys.has(shortcut)).toBe(true)
     }
   })
@@ -43,6 +43,16 @@ describe('TradingView shortcut catalog', () => {
     expect(historyKey({ ctrlKey: true, shiftKey: true, key: 'Z', code: 'KeyZ' })).toBe('redo')
     expect(historyKey({ ctrlKey: true, key: 'y', code: 'KeyY' })).toBe('redo')
     expect(historyKey({ metaKey: true, key: 'z', code: 'KeyZ' })).toBe('undo')
+  })
+
+  it('maps unmodified left/right arrow keys to bounded decision exercise navigation', () => {
+    const base = { altKey: false, code: '', ctrlKey: false, key: '', metaKey: false, repeat: false, shiftKey: false }
+    expect(decisionExerciseNavigationDirection({ ...base, key: 'ArrowLeft', code: 'ArrowLeft' })).toBe(-1)
+    expect(decisionExerciseNavigationDirection({ ...base, key: 'ArrowRight', code: 'ArrowRight' })).toBe(1)
+    expect(decisionExerciseNavigationDirection({ ...base, key: '-', code: 'Minus' })).toBeNull()
+    expect(decisionExerciseNavigationDirection({ ...base, key: '=', code: 'Equal' })).toBeNull()
+    expect(decisionExerciseNavigationDirection({ ...base, key: 'ArrowRight', code: 'ArrowRight', shiftKey: true })).toBeNull()
+    expect(decisionExerciseNavigationDirection({ ...base, key: 'ArrowLeft', code: 'ArrowLeft', repeat: true })).toBeNull()
   })
 
   it('does not steal unrelated or Alt-modified shortcuts', () => {

@@ -1,5 +1,6 @@
 import type { Drawing } from './drawings'
 import type { IntervalId, SymbolId } from './market'
+import type { DecisionPositionSizingMode } from './decisionReplay'
 
 export interface SavedWorkspace {
   symbol: SymbolId
@@ -49,12 +50,19 @@ export interface DecisionChartStatusPreferences {
   position: TradeMarkerPanelPosition | null
 }
 
+export interface DecisionReplayCenterPreferences {
+  count: number
+  selectedSymbols: SymbolId[]
+  selectedModes: DecisionPositionSizingMode[]
+}
+
 export const STORAGE_KEY = 'kline-studio-workspace-v1'
 export const INDICATOR_PROFILE_VERSION = 1 as const
 export const TRADE_MARKER_PANEL_STORAGE_KEY = 'kline-studio-trade-marker-panel-v1'
 export const DECISION_REPLAY_PANEL_STORAGE_KEY = 'kline-studio-decision-replay-panel-v1'
 export const DECISION_REPLAY_MENU_STORAGE_KEY = 'kline-studio-decision-replay-menu-v1'
 export const DECISION_CHART_STATUS_STORAGE_KEY = 'kline-studio-decision-chart-status-v1'
+export const DECISION_REPLAY_CENTER_STORAGE_KEY = 'kline-studio-decision-replay-center-v1'
 export const DEFAULT_TRADE_MARKER_PANEL_PREFERENCES: TradeMarkerPanelPreferences = {
   position: null,
   size: null,
@@ -70,6 +78,9 @@ export const DEFAULT_DECISION_REPLAY_MENU_PREFERENCES: DecisionReplayMenuPrefere
 export const DEFAULT_DECISION_CHART_STATUS_PREFERENCES: DecisionChartStatusPreferences = {
   position: null,
 }
+
+const DECISION_REPLAY_SYMBOLS: readonly SymbolId[] = ['XAUUSD', 'XAGUSD', 'BTCUSDT.P', 'US500', 'ETHUSD']
+const DECISION_REPLAY_POSITION_MODES: readonly DecisionPositionSizingMode[] = ['fixed-risk', 'fixed-notional']
 
 export function parseWorkspace(raw: string | null): SavedWorkspace | null {
   if (!raw) return null
@@ -227,4 +238,30 @@ export function loadDecisionChartStatusPreferences(): DecisionChartStatusPrefere
 
 export function saveDecisionChartStatusPreferences(value: DecisionChartStatusPreferences) {
   if (typeof localStorage !== 'undefined') localStorage.setItem(DECISION_CHART_STATUS_STORAGE_KEY, JSON.stringify(value))
+}
+
+export function parseDecisionReplayCenterPreferences(raw: string | null): DecisionReplayCenterPreferences | null {
+  if (!raw) return null
+  try {
+    const value = JSON.parse(raw) as Partial<DecisionReplayCenterPreferences>
+    if (!Number.isFinite(value.count) || value.count! < 1 || !Array.isArray(value.selectedSymbols) || !Array.isArray(value.selectedModes)) return null
+    const selectedSymbols = value.selectedSymbols.filter((symbol): symbol is SymbolId => DECISION_REPLAY_SYMBOLS.includes(symbol as SymbolId))
+    const selectedModes = value.selectedModes.filter((mode): mode is DecisionPositionSizingMode => DECISION_REPLAY_POSITION_MODES.includes(mode as DecisionPositionSizingMode))
+    return {
+      count: Math.floor(value.count!),
+      selectedSymbols: [...new Set(selectedSymbols)],
+      selectedModes: [...new Set(selectedModes)],
+    }
+  } catch {
+    return null
+  }
+}
+
+export function loadDecisionReplayCenterPreferences(): DecisionReplayCenterPreferences | null {
+  if (typeof localStorage === 'undefined') return null
+  return parseDecisionReplayCenterPreferences(localStorage.getItem(DECISION_REPLAY_CENTER_STORAGE_KEY))
+}
+
+export function saveDecisionReplayCenterPreferences(value: DecisionReplayCenterPreferences) {
+  if (typeof localStorage !== 'undefined') localStorage.setItem(DECISION_REPLAY_CENTER_STORAGE_KEY, JSON.stringify(value))
 }

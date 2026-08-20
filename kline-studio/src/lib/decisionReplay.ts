@@ -24,6 +24,7 @@ export type DecisionAttemptStage = 'entry-decision' | 'entry-price' | 'risk-setu
 export type DecisionSessionStatus = 'active' | 'completed' | 'stopped'
 export type DecisionExitReason = 'skipped' | 'manual-close' | 'stop-loss' | 'take-profit' | 'end-of-data'
 export type DecisionShortcutAction = 'advance' | 'signal-extreme' | 'free-price' | 'skip' | 'cancel-pending' | 'manual-close' | 'next-trade' | 'confirm-risk' | 'cancel-setup'
+export type DecisionExerciseNavigationTarget = { kind: 'review'; result: DecisionTradeResult } | { kind: 'active' }
 
 export interface DecisionFill {
   time: number
@@ -421,6 +422,23 @@ export function advanceDecisionAttempt(candidate: ReplayDecisionCandidate, attem
   return { attempt: nextAttempt, exit: null }
 }
 
+export function cancelPendingOrderAndAdvance(attempt: DecisionAttempt, nextCandle: Candle): DecisionAttempt {
+  if (attempt.stage !== 'order-pending') return attempt
+  return {
+    ...attempt,
+    cursorTime: nextCandle.time,
+    stage: 'entry-decision',
+    entryMode: null,
+    orderKind: null,
+    pendingEntryPrice: null,
+    initialStopLoss: null,
+    stopLoss: null,
+    takeProfit: null,
+    fill: null,
+    result: null,
+  }
+}
+
 export function pnlForDecision(side: TradeSide, entryPrice: number, exitPrice: number, stopLoss: number, plannedRiskUsd = DECISION_PLANNED_RISK_USD) {
   const riskDistance = Math.abs(entryPrice - stopLoss)
   if (riskDistance <= 0) return { pnlUsd: 0, rMultiple: 0 }
@@ -575,7 +593,7 @@ export function decisionShortcutAction(stage: DecisionAttemptStage, key: string)
   }
   if (stage === 'order-pending') {
     if (key === '1') return 'advance'
-    if (key === '4') return 'cancel-pending'
+    if (key === '2') return 'cancel-pending'
   }
   if (stage === 'risk-setup') {
     if (key === '1') return 'confirm-risk'
@@ -590,6 +608,54 @@ export function decisionShortcutAction(stage: DecisionAttemptStage, key: string)
     if (key === '4') return 'next-trade'
   }
   return null
+}
+
+/**
+ * Move through already-reached exercises without mutating the persisted session cursor.
+ * The active exercise is a hard upper boundary: forward navigation can return to it,
+ * but can never advance the session into an unseen candidate.
+ */
+export function adjacentDecisionExerciseTarget(
+  session: DecisionReplaySession,
+  reviewedCandidateKey: string | null,
+  direction: -1 | 1,
+): DecisionExerciseNavigationTarget | null {
+  const results = session.candidates.map((candidate) => (
+    session.attempts.find((attempt) => attempt.candidateKey === candidate.key)?.result ?? null
+  ))
+  let latestResultIndex = -1
+  for (let index = results.length - 1; index >= 0; index -= 1) {
+    if (results[index]) {
+      latestResultIndex = index
+      break
+    }
+  }
+  const latestIndex = session.status === 'active'
+    ? Math.min(Math.max(session.currentIndex, 0), session.candidates.length - 1)
+    : latestResultIndex
+  if (latestIndex < 0) return null
+
+  const reviewedIndex = reviewedCandidateKey === null
+    ? latestIndex
+    : session.candidates.findIndex((candidate) => candidate.key === reviewedCandidateKey)
+  if (reviewedIndex < 0) return null
+
+  if (direction < 0) {
+    for (let index = reviewedIndex - 1; index >= 0; index -= 1) {
+      const result = results[index]
+      if (result) return { kind: 'review', result }
+    }
+    return null
+  }
+
+  // "=" is deliberately inert until the user has first moved backward.
+  if (reviewedCandidateKey === null) return null
+  const reviewBoundary = session.status === 'active' ? latestIndex - 1 : latestIndex
+  for (let index = reviewedIndex + 1; index <= reviewBoundary; index += 1) {
+    const result = results[index]
+    if (result) return { kind: 'review', result }
+  }
+  return session.status === 'active' ? { kind: 'active' } : null
 }
 
 export function sessionResults(session: DecisionReplaySession) {

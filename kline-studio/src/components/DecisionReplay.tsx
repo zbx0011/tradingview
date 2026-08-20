@@ -16,8 +16,8 @@ import {
 import { formatPrice, INTERVALS, SYMBOLS, type Candle, type SymbolId } from '../lib/market'
 import { extractReasonCandleIndexes, resolveTradeCandleReferences } from '../lib/tradeCandleReferences'
 import {
-  loadDecisionChartStatusPreferences, loadDecisionReplayMenuPreferences, loadDecisionReplayPanelPreferences,
-  saveDecisionChartStatusPreferences, saveDecisionReplayMenuPreferences, saveDecisionReplayPanelPreferences,
+  loadDecisionChartStatusPreferences, loadDecisionReplayCenterPreferences, loadDecisionReplayMenuPreferences, loadDecisionReplayPanelPreferences,
+  saveDecisionChartStatusPreferences, saveDecisionReplayCenterPreferences, saveDecisionReplayMenuPreferences, saveDecisionReplayPanelPreferences,
   type DecisionChartStatusPreferences, type DecisionReplayMenuPreferences, type DecisionReplayPanelPreferences,
   type TradeMarkerPanelPosition, type TradeMarkerPanelSize,
 } from '../lib/persistence'
@@ -220,9 +220,13 @@ export function DecisionReplayCenter({ open, availableCount, totalCount, symbolS
   favoriteKeys?: readonly string[]
   onToggleFavorite?: (key: string) => void
 }) {
-  const [count, setCount] = useState(30)
-  const [selectedSymbols, setSelectedSymbols] = useState<SymbolId[]>(() => symbolStats.filter((item) => item.remaining > 0).map((item) => item.symbol))
-  const [selectedModes, setSelectedModes] = useState<DecisionPositionSizingMode[]>(() => [...DEFAULT_DECISION_POSITION_SIZING_MODES])
+  const [newSessionPreferences, setNewSessionPreferences] = useState(() => loadDecisionReplayCenterPreferences() ?? ({
+    count: 30,
+    selectedSymbols: symbolStats.filter((item) => item.remaining > 0).map((item) => item.symbol),
+    selectedModes: [...DEFAULT_DECISION_POSITION_SIZING_MODES],
+  }))
+  const { count, selectedSymbols, selectedModes } = newSessionPreferences
+  useEffect(() => saveDecisionReplayCenterPreferences(newSessionPreferences), [newSessionPreferences])
   const selectedStats = symbolStats.filter((item) => selectedSymbols.includes(item.symbol))
   const selectedAvailableCount = selectedStats.reduce((sum, item) => sum + item.remaining, 0)
   const selectedTotalCount = selectedStats.reduce((sum, item) => sum + item.total, 0)
@@ -255,9 +259,12 @@ export function DecisionReplayCenter({ open, availableCount, totalCount, symbolS
                     type="checkbox"
                     checked={selectedSymbols.includes(item.symbol)}
                     disabled={disabled}
-                    onChange={() => setSelectedSymbols((current) => current.includes(item.symbol)
-                      ? current.filter((symbol) => symbol !== item.symbol)
-                      : [...current, item.symbol])}
+                    onChange={() => setNewSessionPreferences((current) => ({
+                      ...current,
+                      selectedSymbols: current.selectedSymbols.includes(item.symbol)
+                        ? current.selectedSymbols.filter((symbol) => symbol !== item.symbol)
+                        : [...current.selectedSymbols, item.symbol],
+                    }))}
                   />
                   <span className="decision-symbol-option-copy"><b>{item.symbol}</b><small>{info?.name ?? '未知标的'}</small></span>
                   <span className="decision-symbol-option-count">共 {item.total.toLocaleString('zh-CN')} 笔 · 剩余 {item.remaining.toLocaleString('zh-CN')} 笔</span>
@@ -275,15 +282,18 @@ export function DecisionReplayCenter({ open, availableCount, totalCount, symbolS
                 <input
                   type="checkbox"
                   checked={selectedModes.includes(mode)}
-                  onChange={() => setSelectedModes((current) => current.includes(mode)
-                    ? current.filter((item) => item !== mode)
-                    : [...current, mode])}
+                  onChange={() => setNewSessionPreferences((current) => ({
+                    ...current,
+                    selectedModes: current.selectedModes.includes(mode)
+                      ? current.selectedModes.filter((item) => item !== mode)
+                      : [...current.selectedModes, mode],
+                  }))}
                 />
                 <span><b>{title}</b><small>{description}</small></span>
               </label>)}
             </div>
           </div>
-          <label><span>交易数量 N</span><input className="decision-count-input" type="number" min="1" max={Math.max(1, effectiveAvailableCount)} value={boundedCount} disabled={effectiveAvailableCount === 0} onChange={(event) => setCount(Math.max(1, Number(event.target.value) || 1))} /></label>
+          <label><span>交易数量 N</span><input className="decision-count-input" type="number" min="1" max={Math.max(1, effectiveAvailableCount)} value={boundedCount} disabled={effectiveAvailableCount === 0} onChange={(event) => setNewSessionPreferences((current) => ({ ...current, count: Math.max(1, Number(event.target.value) || 1) }))} /></label>
           <div className="decision-availability"><b>{effectiveAvailableCount.toLocaleString('zh-CN')}</b> 笔未练习 / 共 {effectiveTotalCount.toLocaleString('zh-CN')} 笔</div>
           <button className="decision-primary" disabled={effectiveAvailableCount === 0 || selectedSymbols.length === 0 || selectedModes.length === 0} onClick={() => onStart(boundedCount, selectedSymbols, selectedModes)}>随机抽取并开始</button>
         </section>
@@ -550,6 +560,7 @@ export function DecisionChartStatus({ session, attempt, currentPnlByMode = null,
   const totalValueFor = (mode: DecisionPositionSizingMode) => aggregateDecisionResults(results, mode).userPnlUsd
     + (positionOpen ? currentPnlByMode?.[mode] ?? 0 : 0)
   const aiTotalValueFor = (mode: DecisionPositionSizingMode) => aggregateDecisionResults(results, mode).systemPnlUsd
+  const userWinRate = decisionWinRateText(decisionWinStats(participatedResults, positionSizingModes[0] ?? 'fixed-risk', 'user'))
 
   const clampCurrentStatus = useCallback(() => {
     const status = statusRef.current
@@ -656,7 +667,7 @@ export function DecisionChartStatus({ session, attempt, currentPnlByMode = null,
           : <b className="decision-chart-status-empty">—</b>}
       </article>
       <article className="user-total has-value">
-        <div><span>本场累计净盈亏</span><small>{positionOpen ? '已参与结果 + 当前浮盈' : `参与 ${participatedResults.length} / 未参与 ${skippedTradeCount} / 已结算 ${results.length} 笔`}</small></div>
+        <div><span>本场累计净盈亏</span><small>参与胜率 <strong>{userWinRate}</strong> · {positionOpen ? '已参与结果 + 当前浮盈' : `参与 ${participatedResults.length} / 未参与 ${skippedTradeCount} / 已结算 ${results.length} 笔`}</small></div>
         <DecisionModeMoneyStack modes={positionSizingModes} valueFor={totalValueFor} compact />
       </article>
       <article className="ai-total has-value" data-testid="decision-chart-ai-total">
@@ -1140,7 +1151,7 @@ export function DecisionReplayPanel({ candidate, attempt, ordinal, total, curren
         <button onClick={onFreePrice}><kbd>3</kbd><span><b>自由选择挂单价</b><small>在图上点击价格</small></span></button>
         <button className="skip" onClick={onSkip}><kbd>4</kbd><span><b>不参与</b><small>直接进入下一笔</small></span></button>
       </div>}
-      {attempt.stage === 'order-pending' && <div className="decision-active-actions"><button onClick={onAdvance}><kbd>1</kbd>进入下一根 K 线</button><button className="danger" onClick={onCancelPending}><kbd>4</kbd>撤销挂单并跳过</button></div>}
+      {attempt.stage === 'order-pending' && <div className="decision-active-actions"><button onClick={onAdvance}><kbd>1</kbd>进入下一根 K 线</button><button className="danger" onClick={onCancelPending}><kbd>2</kbd>撤单并进入下一根 K 线</button></div>}
       {attempt.stage === 'position-open' && <>
         {hasLivePnl && <div className={`decision-live-pnl${livePnlValue === null ? '' : livePnlValue >= 0 ? ' positive' : ' negative'}`} data-testid="decision-live-pnl">
           <span>本根收盘 {formatPrice(currentClose, candidate.symbol)}</span>
@@ -1194,22 +1205,30 @@ function useLineDrag(toPrice: (y: number) => number | null, onValue: (price: num
     if (moveRef.current) window.removeEventListener('pointermove', moveRef.current)
   }, [])
   return (event: React.PointerEvent) => {
+    if (event.button !== 0) return
     event.preventDefault()
+    event.stopPropagation()
     const root = (event.currentTarget as HTMLElement).closest('.decision-risk-overlay') as HTMLElement | null
     if (!root) return
+    const pointerId = event.pointerId
     const move = (pointer: PointerEvent) => {
+      if (pointer.pointerId !== pointerId) return
+      pointer.preventDefault()
       const rect = root.getBoundingClientRect()
       const price = toPrice(pointer.clientY - rect.top)
       if (price !== null) onValue(price)
     }
-    const up = () => {
+    const up = (pointer: PointerEvent) => {
+      if (pointer.pointerId !== pointerId) return
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
       moveRef.current = null
     }
     moveRef.current = move
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', up, { once: true })
+    window.addEventListener('pointermove', move, { passive: false })
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
   }
 }
 
@@ -1244,10 +1263,10 @@ export function DecisionRiskOverlay({ candidate, entryPrice, entryLabel = '挂�
   const dragTarget = useLineDrag(toPrice, onTakeProfit ?? (() => undefined))
   const precision = symbolPrecision(candidate.symbol)
   return <div className={`decision-risk-overlay ${editable ? 'editable' : 'locked'}`} data-testid="decision-risk-overlay">
-    {targetY !== null && <div className="decision-risk-line target" style={{ top: targetY }} onPointerDown={editable ? dragTarget : undefined}><i /><span><Target size={15} />止盈 {takeProfit.toFixed(precision)}</span></div>}
+    {targetY !== null && <div className="decision-risk-line target" data-testid="decision-take-profit-line" title={editable ? '拖动调整止盈' : undefined} style={{ top: targetY }} onPointerDown={editable ? dragTarget : undefined}><b className="decision-risk-hit-area" aria-hidden="true" /><i /><span><Target size={15} />止盈 {takeProfit.toFixed(precision)}</span></div>}
     {entryY !== null && <div className={`decision-risk-line entry${entryLabel === '开仓' ? ' filled' : ''}`} style={{ top: entryY }}><span>{entryLabel} {entryPrice.toFixed(precision)} · 盈亏比 1 : {ratio.toFixed(2)}</span></div>}
     {hasCurrentPnl && <div className={`decision-position-pnl-line${currentPnlValue === null ? '' : currentPnlValue >= 0 ? ' positive' : ' negative'}`} style={{ top: currentY! }} data-testid="decision-position-pnl-line"><span>收盘 {formatPrice(currentClose!, candidate.symbol)} · {currentPnlByMode !== null ? <DecisionModeMoneyStack modes={positionSizingModes} compact={false} valueFor={(mode) => currentPnlByMode[mode] ?? 0} valueLabel={(value) => value >= 0 ? '浮盈' : '浮亏'} /> : <>{currentPnlUsd! >= 0 ? '浮盈' : '浮亏'} {formatDecisionPnl(currentPnlUsd!)}</>}</span></div>}
-    {stopY !== null && <div className="decision-risk-line stop" style={{ top: stopY }} onPointerDown={editable ? dragStop : undefined}><i /><span><Shield size={15} />止损 {stopLoss.toFixed(precision)}</span></div>}
+    {stopY !== null && <div className="decision-risk-line stop" data-testid="decision-stop-loss-line" title={editable ? '拖动调整止损' : undefined} style={{ top: stopY }} onPointerDown={editable ? dragStop : undefined}><b className="decision-risk-hit-area" aria-hidden="true" /><i /><span><Shield size={15} />止损 {stopLoss.toFixed(precision)}</span></div>}
     {editable && showConfirmControls && <div className="decision-risk-confirm"><div><b>拖动上下两个控制点</b><small>当前盈亏比 1 : {ratio.toFixed(2)} · {decisionSizingLabels(positionSizingModes)}</small></div><button onClick={onCancel}>取消</button><button className="primary" onClick={onConfirm}><Check size={17} />确认并进入下一根 K 线</button></div>}
   </div>
 }

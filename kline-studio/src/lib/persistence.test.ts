@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseDecisionChartStatusPreferences, parseDecisionReplayMenuPreferences, parseDecisionReplayPanelPreferences, parseTradeMarkerPanelPreferences, parseWorkspace } from './persistence'
+import { parseDecisionChartStatusPreferences, parseDecisionReplayCenterPreferences, parseDecisionReplayMenuPreferences, parseDecisionReplayPanelPreferences, parseTradeMarkerPanelPreferences, parseWorkspace } from './persistence'
 
 const workspace = {
   symbol: 'XAUUSD',
@@ -134,5 +134,25 @@ describe('decision chart status preferences', () => {
   it('ignores malformed PnL panel layout data', () => {
     expect(parseDecisionChartStatusPreferences('{broken')).toEqual({ position: null })
     expect(parseDecisionChartStatusPreferences(JSON.stringify({ position: { left: 360, top: 'bad' } }))).toEqual({ position: null })
+  })
+})
+
+describe('decision replay center preferences', () => {
+  it('restores the last symbols, sizing modes and trade count', () => {
+    expect(parseDecisionReplayCenterPreferences(JSON.stringify({
+      count: 50,
+      selectedSymbols: ['XAUUSD', 'BTCUSDT.P', 'XAUUSD'],
+      selectedModes: ['fixed-notional', 'fixed-notional'],
+    }))).toEqual({
+      count: 50,
+      selectedSymbols: ['XAUUSD', 'BTCUSDT.P'],
+      selectedModes: ['fixed-notional'],
+    })
+  })
+
+  it('rejects malformed replay center preferences', () => {
+    expect(parseDecisionReplayCenterPreferences('{broken')).toBeNull()
+    expect(parseDecisionReplayCenterPreferences(JSON.stringify({ count: 0, selectedSymbols: [], selectedModes: [] }))).toBeNull()
+    expect(parseDecisionReplayCenterPreferences(JSON.stringify({ count: 30, selectedSymbols: 'XAUUSD', selectedModes: [] }))).toBeNull()
   })
 })

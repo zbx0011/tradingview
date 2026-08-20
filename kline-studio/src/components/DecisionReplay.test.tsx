@@ -72,6 +72,27 @@ describe('decision replay components', () => {
     expect(markup).toContain('aria-pressed="true"')
   })
 
+  it('offers key 2 to cancel a pending order and continue the same exercise', () => {
+    const item = candidate()
+    const attempt = {
+      ...createDecisionAttempt(item),
+      stage: 'order-pending' as const,
+      entryMode: 'signal-extreme' as const,
+      orderKind: 'stop' as const,
+      pendingEntryPrice: 101,
+      initialStopLoss: 95,
+      stopLoss: 95,
+      takeProfit: 107,
+    }
+    const markup = renderToStaticMarkup(<DecisionReplayPanel
+      candidate={item} attempt={attempt} ordinal={1} total={30}
+      onAdvance={noop} onSignalExtreme={noop} onFreePrice={noop} onSkip={noop}
+      onManualClose={noop} onCancelPending={noop} onNextTrade={noop} onStop={noop}
+    />)
+    expect(markup).toContain('<kbd>2</kbd>撤单并进入下一根 K 线')
+    expect(markup).not.toContain('撤销挂单并跳过')
+  })
+
   it('marks causal references and reveals system open/close only after their candles arrive', () => {
     const item = candidate()
     const data = [2400, 2700, 3000, 3300, 3600, 3900, 4200].map((time, index) => ({
@@ -127,6 +148,11 @@ describe('decision replay components', () => {
     expect(markup).toContain('止盈 105.000')
     expect(markup).toContain('挂单 100.000 · 盈亏比 1 : 1.00')
     expect(markup).toContain('止损 95.000')
+    expect(markup).toContain('data-testid="decision-take-profit-line"')
+    expect(markup).toContain('data-testid="decision-stop-loss-line"')
+    expect(markup.match(/decision-risk-hit-area/g)).toHaveLength(2)
+    expect(markup).toContain('title="拖动调整止盈"')
+    expect(markup).toContain('title="拖动调整止损"')
     expect(markup).toContain('拖动上下两个控制点')
   })
 
@@ -183,6 +209,7 @@ describe('decision replay components', () => {
     />)
     expect(markup).toContain('当前笔实时盈亏')
     expect(markup).toContain('本场累计净盈亏')
+    expect(markup).toContain('参与胜率 <strong>—</strong>')
     expect(markup).toContain('本场 AI 累计净盈亏')
     expect(markup).toContain('data-testid="decision-chart-ai-total"')
     expect(markup).toMatch(/data-testid="decision-chart-ai-total"[\s\S]*\$0\.00/)
@@ -191,6 +218,32 @@ describe('decision replay components', () => {
     expect(markup).not.toContain('风险 100U')
     expect(markup).toContain('data-testid="decision-chart-status-drag-handle"')
     expect(markup).toContain('拖动移动本场练习盈亏')
+  })
+
+  it('shows user win rate from settled participated trades and excludes skipped exercises', () => {
+    const tradedCandidate = candidate()
+    const skippedCandidate = { ...candidate(), key: 'XAUUSD:5m:long:6000:6300', trade: { ...candidate().trade, tradeNumber: 13 } }
+    const tradedAttempt = {
+      ...createDecisionAttempt(tradedCandidate), stage: 'complete' as const, entryMode: 'signal-extreme' as const,
+      orderKind: 'stop' as const, pendingEntryPrice: 101, initialStopLoss: 95, stopLoss: 95, takeProfit: 107,
+      fill: { time: 3300, price: 101 },
+    }
+    const skippedAttempt = { ...createDecisionAttempt(skippedCandidate), stage: 'complete' as const }
+    const tradedResult = buildDecisionResult(tradedCandidate, tradedAttempt, { time: 3600, price: 103, reason: 'manual-close' }, [])
+    const skippedResult = buildDecisionResult(skippedCandidate, skippedAttempt, { time: 6300, price: 101, reason: 'skipped' }, [])
+    const session = {
+      ...createDecisionSession([tradedCandidate, skippedCandidate], 2, 1, ['fixed-notional']),
+      currentIndex: 1,
+      attempts: [{ ...tradedAttempt, result: tradedResult }, { ...skippedAttempt, result: skippedResult }],
+    }
+    const markup = renderToStaticMarkup(<DecisionChartStatus
+      session={session}
+      attempt={session.attempts[1]}
+      positionSizingModes={['fixed-notional']}
+    />)
+
+    expect(markup).toContain('参与胜率 <strong>100.0%</strong>')
+    expect(markup).toContain('参与 1 / 未参与 1 / 已结算 2 笔')
   })
 
   it('labels a pending order that reached the data boundary as unfilled', () => {

@@ -7,7 +7,7 @@ import { replayDecisionCandidates } from './replayTradeRegistry'
 import type { Candle } from './market'
 import { parseCompactHistory } from './liveMarket'
 import {
-  advanceDecisionAttempt, buildDecisionResult, candlesKnownAt, compareDecisionHistorySortValues, createDecisionAttempt, createDecisionSession,
+  adjacentDecisionExerciseTarget, advanceDecisionAttempt, buildDecisionResult, cancelPendingOrderAndAdvance, candlesKnownAt, compareDecisionHistorySortValues, createDecisionAttempt, createDecisionSession,
   decisionShortcutAction, defaultDecisionLevels, evaluatePositionBar, fillPendingOrder,
   decisionResultPnl, decisionResultR, historyCoversDecisionCandidate, intervalCutoffTime, parseDecisionReplayStore,
   mergeDecisionReplayStores, pnlForDecision, pnlForDecisionMode, rewardRiskRatio, sampleDecisionCandidates,
@@ -205,18 +205,96 @@ describe('decision replay', () => {
     expect(buildDecisionResult(item, createDecisionAttempt(item), { time: 3000, price: 100, reason: 'skipped' }, []).choice).toBe('skipped')
   })
 
+  it('cancels a pending order and advances one candle without completing the exercise', () => {
+    const item = candidate('a:1')
+    const pending = {
+      ...createDecisionAttempt(item),
+      stage: 'order-pending' as const,
+      entryMode: 'free-price' as const,
+      orderKind: 'limit' as const,
+      pendingEntryPrice: 90,
+      initialStopLoss: 85,
+      stopLoss: 85,
+      takeProfit: 95,
+    }
+    const canceled = cancelPendingOrderAndAdvance(pending, bar(3600, 101, 102, 100, 101.5))
+    expect(canceled).toMatchObject({
+      cursorTime: 3600,
+      stage: 'entry-decision',
+      entryMode: null,
+      orderKind: null,
+      pendingEntryPrice: null,
+      initialStopLoss: null,
+      stopLoss: null,
+      takeProfit: null,
+      fill: null,
+      result: null,
+    })
+    expect(canceled.candidateKey).toBe(pending.candidateKey)
+  })
+
   it('maps numeric shortcuts only in stages where they are valid', () => {
     expect(decisionShortcutAction('entry-decision', '1')).toBe('advance')
     expect(decisionShortcutAction('entry-decision', '2')).toBe('signal-extreme')
     expect(decisionShortcutAction('entry-decision', '3')).toBe('free-price')
     expect(decisionShortcutAction('entry-decision', '4')).toBe('skip')
-    expect(decisionShortcutAction('order-pending', '4')).toBe('cancel-pending')
+    expect(decisionShortcutAction('order-pending', '2')).toBe('cancel-pending')
+    expect(decisionShortcutAction('order-pending', '4')).toBeNull()
     expect(decisionShortcutAction('position-open', '2')).toBe('manual-close')
     expect(decisionShortcutAction('post-exit', '1')).toBe('advance')
     expect(decisionShortcutAction('post-exit', '4')).toBe('next-trade')
     expect(decisionShortcutAction('post-exit', '2')).toBeNull()
     expect(decisionShortcutAction('risk-setup', '1')).toBe('confirm-risk')
     expect(decisionShortcutAction('risk-setup', '2')).toBe('cancel-setup')
+  })
+
+  it('navigates backward through completed exercises and only returns forward to the reached active exercise', () => {
+    const candidates = [candidate('nav:1'), candidate('nav:2'), candidate('nav:3'), candidate('nav:4')]
+    const completedAttempts = candidates.slice(0, 3).map((item) => {
+      const attempt = createDecisionAttempt(item)
+      return {
+        ...attempt,
+        stage: 'complete' as const,
+        result: buildDecisionResult(item, attempt, { time: attempt.cursorTime, price: item.trade.entry.price, reason: 'skipped' }, []),
+      }
+    })
+    const active = {
+      ...createDecisionSession(candidates, candidates.length, 1000),
+      currentIndex: 3,
+      attempts: [...completedAttempts, createDecisionAttempt(candidates[3])],
+    }
+
+    const previous = adjacentDecisionExerciseTarget(active, null, -1)
+    expect(previous).toMatchObject({ kind: 'review', result: { candidateKey: 'nav:3' } })
+    expect(adjacentDecisionExerciseTarget(active, 'nav:3', -1)).toMatchObject({ kind: 'review', result: { candidateKey: 'nav:2' } })
+    expect(adjacentDecisionExerciseTarget(active, 'nav:2', 1)).toMatchObject({ kind: 'review', result: { candidateKey: 'nav:3' } })
+    expect(adjacentDecisionExerciseTarget(active, 'nav:3', 1)).toEqual({ kind: 'active' })
+    expect(adjacentDecisionExerciseTarget(active, null, 1)).toBeNull()
+    expect(adjacentDecisionExerciseTarget(active, 'nav:1', -1)).toBeNull()
+  })
+
+  it('does not navigate past the latest result of a completed exercise session', () => {
+    const candidates = [candidate('done:1'), candidate('done:2'), candidate('done:3')]
+    const attempts = candidates.map((item) => {
+      const attempt = createDecisionAttempt(item)
+      return {
+        ...attempt,
+        stage: 'complete' as const,
+        result: buildDecisionResult(item, attempt, { time: attempt.cursorTime, price: item.trade.entry.price, reason: 'skipped' }, []),
+      }
+    })
+    const completed = {
+      ...createDecisionSession(candidates, candidates.length, 1000),
+      currentIndex: 2,
+      attempts,
+      status: 'completed' as const,
+      finishedAt: 2000,
+    }
+
+    expect(adjacentDecisionExerciseTarget(completed, null, -1)).toMatchObject({ kind: 'review', result: { candidateKey: 'done:2' } })
+    expect(adjacentDecisionExerciseTarget(completed, 'done:2', 1)).toMatchObject({ kind: 'review', result: { candidateKey: 'done:3' } })
+    expect(adjacentDecisionExerciseTarget(completed, 'done:3', 1)).toBeNull()
+    expect(adjacentDecisionExerciseTarget(completed, null, 1)).toBeNull()
   })
 
   it('rejects malformed persisted data', () => {

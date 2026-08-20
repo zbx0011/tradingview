@@ -24,7 +24,7 @@ import {
 } from './lib/chartContext'
 import { ALL_DRAWING_TOOLS, getTool, shouldExitDrawingMode } from './lib/toolCatalog'
 import { clearWorkspace, loadWorkspace, saveWorkspace } from './lib/persistence'
-import { isChartAnnotationVisibilityShortcut, isEditableShortcutTarget, parseIntervalShortcut, resolveHistoryShortcut, TRADINGVIEW_SHORTCUTS } from './lib/shortcuts'
+import { decisionExerciseNavigationDirection, isChartAnnotationVisibilityShortcut, isEditableShortcutTarget, parseIntervalShortcut, resolveHistoryShortcut, TRADINGVIEW_SHORTCUTS } from './lib/shortcuts'
 import { aggregateCandles, formatPrice, generateCandles, INTERVALS, SYMBOLS, type Candle, type IntervalId, type SymbolId } from './lib/market'
 import {
   getSnapshotStatus, loadSnapshotCandles, mergeCandleHistory,
@@ -40,15 +40,18 @@ import {
 } from './lib/replayTradeLayers'
 import { deleteReplayRangeObjectFromLayers, loadReplayRangeLayers, saveReplayRangeLayers, toggleReplayRangeObjectInLayers, type ReplayRangeLayer } from './lib/replayRangeLayers'
 import { loadFavoriteTools, saveFavoriteTools, toggleFavoriteTool } from './lib/favoriteTools'
-import { decisionReplayFavoriteKey, loadDecisionReplayFavorites, saveDecisionReplayFavorites, toggleDecisionReplayFavorite } from './lib/decisionReplayFavorites'
+import {
+  DECISION_REPLAY_FAVORITES_STORAGE_KEY, decisionReplayFavoriteKey, loadDecisionReplayFavorites,
+  parseDecisionReplayFavoritesChecked, saveDecisionReplayFavorites, toggleDecisionReplayFavorite,
+} from './lib/decisionReplayFavorites'
 import { collectPortableWorkspace, downloadPortableWorkspace, loadPortableWorkspaceRecovery, parsePortableWorkspace, restorePortableWorkspaceRecovery, restorePortableWorkspaceSafely } from './lib/portableWorkspace'
 import { mergePortableWorkspaceProgress } from './lib/workspaceProgressSync'
 import { replayDecisionCandidates, type ReplayDecisionCandidate } from './lib/replayTradeRegistry'
 import {
-  advanceDecisionAttempt, buildDecisionResult, candleAtOrBefore, candlesKnownAt, createDecisionAttempt,
+  DECISION_REPLAY_STORAGE_KEY, adjacentDecisionExerciseTarget, advanceDecisionAttempt, buildDecisionResult, cancelPendingOrderAndAdvance, candleAtOrBefore, candlesKnownAt, createDecisionAttempt,
   createDecisionSession, currentDecisionAttempt, currentDecisionCandidate, decisionShortcutAction, defaultDecisionLevels,
-  decisionAttemptInitialStopLoss, decisionSessionPositionSizingModes, historyCoversDecisionCandidate, intervalCutoffTime, intervalSeconds, loadDecisionReplayStore,
-  nextCandleAfter, pnlForDecisionMode, resultReviewCutoff, sampleDecisionCandidates,
+  decisionAttemptInitialStopLoss, decisionSessionPositionSizingModes, emptyDecisionReplayStore, historyCoversDecisionCandidate, intervalCutoffTime, intervalSeconds,
+  loadDecisionReplayStore, mergeDecisionReplayStores, nextCandleAfter, parseDecisionReplayStoreChecked, pnlForDecisionMode, resultReviewCutoff, sampleDecisionCandidates,
   saveDecisionReplayStore, sessionResults, validDecisionLevels, validOpenPositionLevels,
   type DecisionAttempt, type DecisionExit, type DecisionPositionSizingMode, type DecisionReplaySession, type DecisionTradeResult,
 } from './lib/decisionReplay'
@@ -438,6 +441,33 @@ function App() {
     decisionFavoriteKeysRef.current = decisionFavoriteKeys
     saveDecisionReplayFavorites(decisionFavoriteKeys)
   }, [decisionFavoriteKeys])
+  useEffect(() => {
+    const syncDecisionProgressFromAnotherTab = (event: StorageEvent) => {
+      if (event.storageArea && event.storageArea !== localStorage) return
+      if (event.key === DECISION_REPLAY_STORAGE_KEY) {
+        const incoming = event.newValue === null
+          ? emptyDecisionReplayStore()
+          : parseDecisionReplayStoreChecked(event.newValue)
+        if (!incoming) return
+        const current = decisionStoreRef.current
+        // Imported progress is additive. Keep any in-flight work from this tab while
+        // adopting sessions that were merged by another same-origin Edge tab.
+        const next = event.newValue === null ? incoming : mergeDecisionReplayStores(current, incoming)
+        if (JSON.stringify(next) === JSON.stringify(current)) return
+        decisionStoreRef.current = next
+        setDecisionStore(next)
+        return
+      }
+      if (event.key === DECISION_REPLAY_FAVORITES_STORAGE_KEY) {
+        const incoming = event.newValue === null ? [] : parseDecisionReplayFavoritesChecked(event.newValue)
+        if (!incoming || JSON.stringify(incoming) === JSON.stringify(decisionFavoriteKeysRef.current)) return
+        decisionFavoriteKeysRef.current = incoming
+        setDecisionFavoriteKeys(incoming)
+      }
+    }
+    window.addEventListener('storage', syncDecisionProgressFromAnotherTab)
+    return () => window.removeEventListener('storage', syncDecisionProgressFromAnotherTab)
+  }, [])
   useEffect(() => {
     const flushDecisionProgress = () => {
       saveDecisionReplayStore(decisionStoreRef.current)
@@ -877,6 +907,23 @@ function App() {
     completeDecisionTrade(activeDecisionAttempt, { time: activeDecisionAttempt.cursorTime, price: current?.close ?? activeDecisionCandidate.trade.entry.price, reason }, true)
   }, [activeDecisionAttempt, activeDecisionCandidate, completeDecisionTrade, decisionSourceData])
 
+  const cancelPendingDecisionAndAdvance = useCallback(() => {
+    if (!activeDecisionAttempt || activeDecisionAttempt.stage !== 'order-pending') return
+    const next = nextCandleAfter(decisionSourceData, activeDecisionAttempt.cursorTime)
+    if (!next) {
+      notify('已经到达可用行情末尾，无法撤单并进入下一根 K 线')
+      return
+    }
+    setDecisionPriceDraft(null)
+    setDecisionRiskDraft(null)
+    setHoverCandle(null)
+    updateActiveDecisionAttempt((attempt) => ({
+      ...cancelPendingOrderAndAdvance(attempt, next),
+      drawings: withoutTransientMeasurements(decisionDrawings.present),
+    }))
+    notify('已撤单并进入下一根 K 线')
+  }, [activeDecisionAttempt, decisionDrawings.present, decisionSourceData, notify, updateActiveDecisionAttempt])
+
   const closeActiveDecisionAtMarket = useCallback(() => {
     if (!activeDecisionAttempt?.fill || activeDecisionAttempt.stage !== 'position-open') return
     const current = candleAtOrBefore(decisionSourceData, activeDecisionAttempt.cursorTime)
@@ -897,6 +944,33 @@ function App() {
     const session = decisionStore.sessions.find((item) => item.attempts.some((attempt) => attempt.result?.candidateKey === result.candidateKey))
     if (session) setDecisionResultsSessionId(session.id)
   }, [decisionReviewResult, decisionStore.sessions])
+  const navigateDecisionExercise = useCallback((direction: -1 | 1) => {
+    const session = decisionReviewSession ?? activeDecisionSession ?? decisionResultsSession
+    if (!session) {
+      notify('当前没有可回看的练习')
+      return
+    }
+    const target = adjacentDecisionExerciseTarget(session, decisionReviewResult?.candidateKey ?? null, direction)
+    if (!target) {
+      notify(direction < 0 ? '已经是本场最早可回看的练习' : '当前已经是最新练习，不能向后跳题')
+      return
+    }
+    setDecisionCenterOpen(false)
+    setDecisionHistoryOpen(false)
+    setDecisionResultsSessionId(null)
+    setDecisionPriceDraft(null)
+    setDecisionRiskDraft(null)
+    setHoverCandle(null)
+    if (target.kind === 'active') {
+      setDecisionReviewResult(null)
+      setDecisionFocusTick((value) => value + 1)
+      focusDecisionChartLatest()
+      notify('已返回当前最新练习')
+      return
+    }
+    setDecisionReviewResult(target.result)
+    notify(direction < 0 ? '已回到上一笔练习' : '已向前返回下一笔练习')
+  }, [activeDecisionSession, decisionResultsSession, decisionReviewResult?.candidateKey, decisionReviewSession, focusDecisionChartLatest, notify])
   const exportWorkspace = useCallback(() => {
     const snapshot = collectPortableWorkspace()
     downloadPortableWorkspace(snapshot, workspaceBackupFileName('sync'))
@@ -1167,6 +1241,13 @@ function App() {
       }
       if (isEditableShortcutTarget(event.target)) return
 
+      const decisionNavigationDirection = decisionExerciseNavigationDirection(event)
+      if (decisionNavigationDirection && (activeDecisionSession || decisionReviewSession || decisionResultsSession)) {
+        event.preventDefault()
+        navigateDecisionExercise(decisionNavigationDirection)
+        return
+      }
+
       if (isChartAnnotationVisibilityShortcut(event)) {
         event.preventDefault()
         setChartAnnotationsHidden((hidden) => !hidden)
@@ -1184,7 +1265,8 @@ function App() {
         else if (action === 'free-price') chooseFreePriceOrder()
         else if (action === 'confirm-risk') confirmDecisionRisk()
         else if (action === 'cancel-setup') cancelDecisionSetup()
-        else if (action === 'skip' || action === 'cancel-pending') skipActiveDecision('skipped')
+        else if (action === 'skip') skipActiveDecision('skipped')
+        else if (action === 'cancel-pending') cancelPendingDecisionAndAdvance()
         else if (action === 'manual-close') closeActiveDecisionAtMarket()
         else if (action === 'next-trade') goToNextDecisionTrade()
         return
@@ -1334,7 +1416,7 @@ function App() {
     }
     window.addEventListener('keydown', keyHandler)
     return () => window.removeEventListener('keydown', keyHandler)
-  }, [activeDecisionAttempt, activeSelectedReplayRangeId, activeTool, advanceActiveDecision, baseData, candle.close, cancelDecisionSetup, chartSeconds, chooseFreePriceOrder, chooseSignalExtremeOrder, closeActiveDecisionAtMarket, confirmDecisionRisk, decisionReviewResult, deleteReplayRangeObject, dispatchUiDrawing, effectiveReplayResolution, goToNextDecisionTrade, interval, loadSavedLayout, normalizedReplayCursor, notify, openAlertAt, openOrderAt, priceScaleAuto, priceScaleInverted, priceScaleLog, priceScalePercent, replayAtEnd, saveCurrentLayout, selectedDrawing, selectedDrawingIds, skipActiveDecision, symbol, takeSnapshotShortcut, uiDrawings.present, uiDrawings.selectedId, uiDrawings.selectedIds, watchlistOpen])
+  }, [activeDecisionAttempt, activeDecisionSession, activeSelectedReplayRangeId, activeTool, advanceActiveDecision, baseData, candle.close, cancelDecisionSetup, cancelPendingDecisionAndAdvance, chartSeconds, chooseFreePriceOrder, chooseSignalExtremeOrder, closeActiveDecisionAtMarket, confirmDecisionRisk, decisionResultsSession, decisionReviewResult, decisionReviewSession, deleteReplayRangeObject, dispatchUiDrawing, effectiveReplayResolution, goToNextDecisionTrade, interval, loadSavedLayout, navigateDecisionExercise, normalizedReplayCursor, notify, openAlertAt, openOrderAt, priceScaleAuto, priceScaleInverted, priceScaleLog, priceScalePercent, replayAtEnd, saveCurrentLayout, selectedDrawing, selectedDrawingIds, skipActiveDecision, symbol, takeSnapshotShortcut, uiDrawings.present, uiDrawings.selectedId, uiDrawings.selectedIds, watchlistOpen])
 
   useEffect(() => {
     const cancelMeasure = () => {
@@ -1602,7 +1684,7 @@ function App() {
               onFreePrice={chooseFreePriceOrder}
               onSkip={() => skipActiveDecision('skipped')}
               onManualClose={closeActiveDecisionAtMarket}
-              onCancelPending={() => skipActiveDecision('skipped')}
+              onCancelPending={cancelPendingDecisionAndAdvance}
               onNextTrade={goToNextDecisionTrade}
               onStop={stopDecisionSession}
             />}

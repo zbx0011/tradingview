@@ -47,6 +47,8 @@ export const TRADINGVIEW_SHORTCUTS: ShortcutDefinition[] = [
   { id: 'angle-constraint', section: '绘图', label: '水平 / 45° 约束', keys: '趋势线或通道 + Shift' },
   { id: 'replay-toggle', section: '回放', label: '播放 / 暂停', keys: 'Shift+↓' },
   { id: 'replay-step', section: '回放', label: '前进一格', keys: 'Shift+→' },
+  { id: 'decision-previous', section: '回放', label: '回到上一笔练习', keys: '-' },
+  { id: 'decision-next', section: '回放', label: '向前返回已到达的练习', keys: '=' },
   { id: 'maximize', section: '交易平台', label: '最大化图表', keys: 'Alt+Enter' },
   { id: 'watchlist', section: '交易平台', label: '加入自选', keys: 'Alt+W' },
   { id: 'alert', section: '交易平台', label: '在当前价格创建警报', keys: 'Alt+A' },
@@ -89,6 +91,15 @@ export function resolveHistoryShortcut(
 export function isEditableShortcutTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
   return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
+}
+
+export function decisionExerciseNavigationDirection(
+  event: Pick<KeyboardEvent, 'altKey' | 'code' | 'ctrlKey' | 'key' | 'metaKey' | 'repeat' | 'shiftKey'>,
+): -1 | 1 | null {
+  if (event.repeat || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return null
+  if (event.key === 'ArrowLeft' || event.code === 'ArrowLeft') return -1
+  if (event.key === 'ArrowRight' || event.code === 'ArrowRight') return 1
+  return null
 }
 
 export function isChartAnnotationVisibilityShortcut(

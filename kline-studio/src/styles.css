@@ -638,7 +638,8 @@ button:disabled { opacity: .32; cursor: not-allowed; }
 .decision-price-confirm .primary { color: white; background: #296cff; }
 
 .decision-risk-overlay { position: absolute; inset: 0; z-index: 42; pointer-events: none; }
-.decision-risk-line { border-top-style: solid; pointer-events: auto; cursor: ns-resize; }
+.decision-risk-line { border-top-style: solid; pointer-events: auto; cursor: ns-resize; touch-action: none; user-select: none; }
+.decision-risk-hit-area { position: absolute; z-index: 0; left: 0; right: 0; top: -24px; height: 48px; background: transparent; pointer-events: auto; cursor: ns-resize; }
 .decision-risk-line i { position: absolute; left: 23%; top: -7px; width: 14px; height: 14px; border: 3px solid #296cff; border-radius: 50%; background: #111722; box-shadow: 0 0 0 2px rgba(255,255,255,.45); }
 .decision-risk-line.target { border-color: #22ab94; }
 .decision-risk-line.target span { display: flex; align-items: center; gap: 5px; background: #168d79; }
