@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { ReplayDecisionCandidate } from '../lib/replayTradeRegistry'
 import {
-  buildDecisionResult, createDecisionAttempt, createDecisionSession,
+  buildDecisionResult, createDecisionAttempt, createDecisionSession, toggleDecisionHistorySymbolSelection,
 } from '../lib/decisionReplay'
 import { decisionReplayFavoriteKey } from '../lib/decisionReplayFavorites'
 import {
@@ -86,11 +86,25 @@ describe('decision replay components', () => {
       toY={(price) => price}
     />)
     expect((markup.match(/decision-reason-candle-marker/g) ?? []).length).toBe(2)
+    expect((markup.match(/class="decision-reason-anchor-line/g) ?? []).length).toBe(2)
+    expect(markup).toContain('x1="24" y1="101"')
+    expect(markup).toContain('x1="30" y1="103"')
     expect(markup).toContain('>K8</span>')
     expect(markup).toContain('>K10</span>')
     expect(markup).toContain('系统开 101.000')
     expect(markup).toContain('系统平 103.000')
     expect(markup).not.toContain('K14')
+
+    const hiddenMarkup = renderToStaticMarkup(<DecisionChartAnnotations
+      candidate={item}
+      attempt={createDecisionAttempt(item)}
+      result={null}
+      data={data}
+      toX={(time) => time / 100}
+      toY={(price) => price}
+      hidden
+    />)
+    expect(hiddenMarkup).toContain('class="decision-chart-annotations is-hidden"')
 
     const beforeSystemExit = renderToStaticMarkup(<DecisionChartAnnotations
       candidate={item}
@@ -262,11 +276,12 @@ describe('decision replay components', () => {
     expect(markup).toContain('<span>总笔数</span><b>1</b>')
     expect(markup).not.toContain('练习场次')
     expect(markup).toContain('你的累计净盈亏')
-    expect(markup).toContain('系统累计净盈亏')
-    expect(markup).toContain('XAUUSD · 决策练习')
-    expect(markup).toContain('查看全部已收藏记录')
+    expect(markup).toContain('系统参与部分净盈亏')
+    expect(markup).toContain('系统总净盈亏')
+    expect(markup).toContain('XAUUSD · 5分 · 多头 · 第 12 笔')
+    expect(markup).toContain('查看已收藏记录')
     expect(markup).toContain('1 笔')
-    expect(markup).toContain('查看本场每笔决策、收益对比及独立画图')
+    expect(markup).toContain('点击直接打开这一笔的 K 线复盘与独立画图')
   })
 
   it('renders every favorite trade as its own history card instead of grouping by session', () => {
@@ -312,7 +327,7 @@ describe('decision replay components', () => {
     />)
 
     expect(markup).toContain('收藏笔数')
-    expect(markup).toContain('每笔收藏交易独立展示')
+    expect(markup).toContain('逐笔收藏交易')
     expect(markup).toContain('XAUUSD · 5分 · 多头 · 第 12 笔')
     expect(markup).toContain('XAUUSD · 5分 · 空头 · 第 13 笔')
     expect(markup).toContain('本场第 1 / 2 笔')
@@ -340,7 +355,7 @@ describe('decision replay components', () => {
     expect(markup).toContain('disabled=""')
   })
 
-  it('filters history cards to the active symbol', () => {
+  it('opens history on all symbols instead of silently filtering to the active symbol', () => {
     const item = candidate()
     const filled = {
       ...createDecisionAttempt(item), stage: 'position-open' as const, entryMode: 'signal-extreme' as const,
@@ -351,8 +366,72 @@ describe('decision replay components', () => {
     const markup = renderToStaticMarkup(<DecisionHistoryDialog
       open currentSymbol="BTCUSDT.P" sessions={[session]} onClose={noop} onOpenSession={noop}
     />)
-    expect(markup).toContain('当前标的还没有已保存的练习记录')
-    expect(markup).not.toContain('XAUUSD · 决策练习')
+    expect(markup).toContain('全部标的 · 逐笔交易记录')
+    expect(markup).toContain('<span>总笔数</span><b>1</b><small>全部标的</small>')
+    expect(markup).toContain('aria-label="历史记录标的筛选"')
+    expect(markup).toContain('<input type="checkbox" checked=""/>全部标的')
+    expect(markup).toContain('<input type="checkbox"/>XAUUSD')
+    expect(markup).toContain('<input type="checkbox"/>BTCUSDT.P')
+    expect(markup).not.toContain('aria-label="历史记录范围"')
+    expect(markup).toContain('aria-label="历史记录仓位显示方式"')
+    expect(markup).toContain('class="active" aria-pressed="true">固定仓位 10,000U</button>')
+    expect(markup).toContain('aria-pressed="false">固定风险 100U</button>')
+    expect(markup).toContain('参与胜率 <strong>100.0%</strong> · 盈利 1 / 1 笔')
+    expect(markup).toContain('系统参与部分净盈亏')
+    expect(markup).toContain('参与部分胜率 <strong>100.0%</strong> · 盈利 1 / 1 笔')
+    expect(markup).toContain('系统总净盈亏')
+    expect(markup).toContain('总胜率 <strong>100.0%</strong> · 盈利 1 / 1 笔')
+    expect(markup).toContain('aria-label="历史记录排序"')
+    expect(markup).toContain('时间降序（最新优先）')
+    expect(markup).toContain('时间升序（最早优先）')
+    expect(markup).toContain('盈利降序（最高优先）')
+    expect(markup).toContain('盈利升序（最低优先）')
+    expect(markup).toContain('XAUUSD · 5分 · 多头 · 第 12 笔')
+  })
+
+  it('supports switching from all symbols to one or multiple checked symbols', () => {
+    expect(toggleDecisionHistorySymbolSelection([], 'XAUUSD')).toEqual(['XAUUSD'])
+    expect(toggleDecisionHistorySymbolSelection(['XAUUSD'], 'BTCUSDT.P')).toEqual(['XAUUSD', 'BTCUSDT.P'])
+    expect(toggleDecisionHistorySymbolSelection(['XAUUSD', 'BTCUSDT.P'], 'XAUUSD')).toEqual(['BTCUSDT.P'])
+    expect(toggleDecisionHistorySymbolSelection(['BTCUSDT.P'], 'BTCUSDT.P')).toEqual([])
+  })
+
+  it('keeps skipped questions out of the user rate while including them in the system rate', () => {
+    const first = candidate()
+    const second = {
+      ...candidate(),
+      key: 'XAUUSD:5m:long:6000:6300',
+      trade: { ...candidate().trade, tradeNumber: 13 },
+    }
+    const filled = {
+      ...createDecisionAttempt(first), stage: 'position-open' as const, entryMode: 'signal-extreme' as const,
+      orderKind: 'stop' as const, pendingEntryPrice: 101, stopLoss: 95, takeProfit: 107, fill: { time: 3300, price: 101 },
+    }
+    const won = buildDecisionResult(first, filled, { time: 3600, price: 103, reason: 'manual-close' }, [])
+    const skippedAttempt = createDecisionAttempt(second)
+    const skipped = buildDecisionResult(second, skippedAttempt, { time: 6300, price: 0, reason: 'skipped' }, [])
+    const session = {
+      ...createDecisionSession([first, second], 2, 1),
+      status: 'completed' as const,
+      attempts: [
+        { ...filled, stage: 'post-exit' as const, result: won },
+        { ...skippedAttempt, stage: 'complete' as const, result: skipped },
+      ],
+      finishedAt: 2,
+    }
+    const markup = renderToStaticMarkup(<DecisionHistoryDialog
+      open currentSymbol="XAUUSD" sessions={[session]} onClose={noop} onOpenSession={noop}
+    />)
+
+    expect(markup).toContain('参与胜率 <strong>100.0%</strong> · 盈利 1 / 1 笔 · 未参与 1 笔交易')
+    expect(markup).toContain('系统参与部分净盈亏')
+    expect(markup).toContain('参与部分胜率 <strong>100.0%</strong> · 盈利 1 / 1 笔')
+    expect(markup).toContain('系统总净盈亏')
+    expect(markup).toContain('总胜率 <strong>100.0%</strong> · 盈利 2 / 2 笔')
+    expect(markup).not.toContain('盈利 1 / 2 笔')
+    expect(markup).toContain('未参与')
+    expect(markup).toContain('未参与不计入你的胜率')
+    expect(markup).toContain('全部 2 笔')
   })
 
   it('keeps an active session visible after partial progress', () => {
@@ -365,9 +444,9 @@ describe('decision replay components', () => {
       open currentSymbol="XAUUSD" sessions={[session]} onClose={noop} onOpenSession={noop}
     />)
     expect(markup).toContain('进行中')
-    expect(markup).toContain('完成 ')
-    expect(markup).toContain('0 / 1')
-    expect(markup).toContain('XAUUSD · 决策练习')
+    expect(markup).toContain('尚未结算')
+    expect(markup).toContain('本场第 1 / 1 笔')
+    expect(markup).toContain('XAUUSD · 5分 · 多头 · 第 12 笔')
   })
 
   it('keeps an observe-only step visible after the cursor advances', () => {
@@ -380,7 +459,7 @@ describe('decision replay components', () => {
       open currentSymbol="XAUUSD" sessions={[session]} onClose={noop} onOpenSession={noop}
     />)
     expect(markup).toContain('进行中')
-    expect(markup).toContain('0 / 1')
+    expect(markup).toContain('本场第 1 / 1 笔')
   })
 
   it('keeps a closed trade on screen until the user explicitly chooses the next trade', () => {

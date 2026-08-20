@@ -24,11 +24,10 @@ import {
 } from './lib/chartContext'
 import { ALL_DRAWING_TOOLS, getTool, shouldExitDrawingMode } from './lib/toolCatalog'
 import { clearWorkspace, loadWorkspace, saveWorkspace } from './lib/persistence'
-import { isEditableShortcutTarget, parseIntervalShortcut, resolveHistoryShortcut, TRADINGVIEW_SHORTCUTS } from './lib/shortcuts'
+import { isChartAnnotationVisibilityShortcut, isEditableShortcutTarget, parseIntervalShortcut, resolveHistoryShortcut, TRADINGVIEW_SHORTCUTS } from './lib/shortcuts'
 import { aggregateCandles, formatPrice, generateCandles, INTERVALS, SYMBOLS, type Candle, type IntervalId, type SymbolId } from './lib/market'
 import {
-  fetchBybitMinuteCandles, fetchBybitMonthCandles, fetchXauMonthCandles, getSnapshotCandles, getSnapshotStatus,
-  MARKET_HISTORY_SECONDS, mergeCandleHistory, readCandleCache, writeCandleCache,
+  getSnapshotStatus, loadSnapshotCandles, mergeCandleHistory,
   type MarketDataStatus,
 } from './lib/liveMarket'
 import {
@@ -41,14 +40,15 @@ import {
 } from './lib/replayTradeLayers'
 import { deleteReplayRangeObjectFromLayers, loadReplayRangeLayers, saveReplayRangeLayers, toggleReplayRangeObjectInLayers, type ReplayRangeLayer } from './lib/replayRangeLayers'
 import { loadFavoriteTools, saveFavoriteTools, toggleFavoriteTool } from './lib/favoriteTools'
-import { DECISION_REPLAY_FAVORITES_STORAGE_KEY, decisionReplayFavoriteKey, loadDecisionReplayFavorites, parseDecisionReplayFavorites, saveDecisionReplayFavorites, toggleDecisionReplayFavorite } from './lib/decisionReplayFavorites'
-import { collectPortableWorkspace, downloadPortableWorkspace, parsePortableWorkspace, restorePortableWorkspace } from './lib/portableWorkspace'
+import { decisionReplayFavoriteKey, loadDecisionReplayFavorites, saveDecisionReplayFavorites, toggleDecisionReplayFavorite } from './lib/decisionReplayFavorites'
+import { collectPortableWorkspace, downloadPortableWorkspace, loadPortableWorkspaceRecovery, parsePortableWorkspace, restorePortableWorkspaceRecovery, restorePortableWorkspaceSafely } from './lib/portableWorkspace'
+import { mergePortableWorkspaceProgress } from './lib/workspaceProgressSync'
 import { replayDecisionCandidates, type ReplayDecisionCandidate } from './lib/replayTradeRegistry'
 import {
   advanceDecisionAttempt, buildDecisionResult, candleAtOrBefore, candlesKnownAt, createDecisionAttempt,
   createDecisionSession, currentDecisionAttempt, currentDecisionCandidate, decisionShortcutAction, defaultDecisionLevels,
-  DECISION_REPLAY_STORAGE_KEY, decisionSessionPositionSizingModes, historyCoversDecisionCandidate, intervalCutoffTime, intervalSeconds, loadDecisionReplayStore,
-  mergeDecisionReplayStores, nextCandleAfter, parseDecisionReplayStore, pnlForDecisionMode, resultReviewCutoff, sampleDecisionCandidates,
+  decisionAttemptInitialStopLoss, decisionSessionPositionSizingModes, historyCoversDecisionCandidate, intervalCutoffTime, intervalSeconds, loadDecisionReplayStore,
+  nextCandleAfter, pnlForDecisionMode, resultReviewCutoff, sampleDecisionCandidates,
   saveDecisionReplayStore, sessionResults, validDecisionLevels, validOpenPositionLevels,
   type DecisionAttempt, type DecisionExit, type DecisionPositionSizingMode, type DecisionReplaySession, type DecisionTradeResult,
 } from './lib/decisionReplay'
@@ -61,6 +61,11 @@ const DEFAULT_INDICATORS: IndicatorSettings = {
   maPeriod: 20, emaPeriod: 20, bollPeriod: 20, bollDeviation: 2,
 }
 const DEFAULT_INTERVAL: IntervalId = '5m'
+
+function workspaceBackupFileName(kind: 'sync' | 'before-merge' | 'before-import' | 'before-undo') {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').replace('Z', '')
+  return `kline-studio-${kind}-${timestamp}.json`
+}
 
 const CHART_TYPES: { id: ChartType; label: string; icon: typeof ChartCandlestick }[] = [
   { id: 'candles', label: 'K 线', icon: ChartCandlestick },
@@ -134,8 +139,7 @@ function App() {
   const [indicatorsHidden, setIndicatorsHidden] = useState(false)
   const [syncDrawings, setSyncDrawings] = useState(false)
   const [hoverCandle, setHoverCandle] = useState<Candle | null>(null)
-  const [chartMarkerHovering, setChartMarkerHovering] = useState(false)
-  const [decisionAnnotationHovering, setDecisionAnnotationHovering] = useState(false)
+  const [chartAnnotationsHidden, setChartAnnotationsHidden] = useState(false)
   const [symbolPickerOpen, setSymbolPickerOpen] = useState(false)
   const [symbolQuery, setSymbolQuery] = useState('')
   const [indicatorPanelOpen, setIndicatorPanelOpen] = useState(false)
@@ -182,9 +186,7 @@ function App() {
   const [clock, setClock] = useState(() => new Date())
   const [toast, setToast] = useState('')
   const [remoteMarket, setRemoteMarket] = useState<{ symbol: SymbolId; bars: Candle[]; status: MarketDataStatus } | null>(null)
-  const [decisionHistoryBySymbol, setDecisionHistoryBySymbol] = useState<Partial<Record<SymbolId, Candle[]>>>(() => Object.fromEntries(
-    SYMBOLS.map(({ id }) => [id, getSnapshotCandles(id, '1m') ?? []]),
-  ) as Partial<Record<SymbolId, Candle[]>>)
+  const [decisionHistoryBySymbol, setDecisionHistoryBySymbol] = useState<Partial<Record<SymbolId, Candle[]>>>({})
   const [marketLoading, setMarketLoading] = useState<{ symbol: SymbolId; label: string } | null>(null)
   const [marketRefreshTick, setMarketRefreshTick] = useState(0)
   const [marketHydrationKey, setMarketHydrationKey] = useState(0)
@@ -200,6 +202,7 @@ function App() {
   const decisionDrawingContextRef = useRef<string | null>(null)
   const decisionDrawingLoadingRef = useRef(false)
   const decisionStoreRef = useRef(decisionStore)
+  const decisionFavoriteKeysRef = useRef(decisionFavoriteKeys)
   const decisionReviewRef = useRef(decisionReviewResult)
   const chartRef = useRef<ChartSurfaceHandle>(null)
   const workspaceRef = useRef<HTMLDivElement>(null)
@@ -243,11 +246,14 @@ function App() {
     ...ALL_DRAWING_TOOLS.map((tool) => ({ id: `tool-${tool.id}`, label: tool.label, detail: `${tool.section} · ${tool.description}`, shortcut: tool.shortcut, toolId: tool.id })),
   ], [])
   const visibleIndicators = useMemo(() => indicatorsHidden ? { ...indicators, ma: false, ema: false, boll: false, volume: false } : indicators, [indicators, indicatorsHidden])
-  const minuteHistory = useMemo(() => remoteMarket?.symbol === symbol ? remoteMarket.bars : getSnapshotCandles(symbol, '1m'), [remoteMarket, symbol])
-  const availableDecisionHistoryBySymbol = useMemo(() => remoteMarket?.bars.length ? {
-    ...decisionHistoryBySymbol,
-    [remoteMarket.symbol]: mergeCandleHistory([decisionHistoryBySymbol[remoteMarket.symbol] ?? [], remoteMarket.bars]),
-  } : decisionHistoryBySymbol, [decisionHistoryBySymbol, remoteMarket])
+  const minuteHistory = useMemo(() => remoteMarket?.symbol === symbol ? remoteMarket.bars : decisionHistoryBySymbol[symbol] ?? null, [decisionHistoryBySymbol, remoteMarket, symbol])
+  const availableDecisionHistoryBySymbol = useMemo(() => {
+    if (!remoteMarket?.bars.length || decisionHistoryBySymbol[remoteMarket.symbol] === remoteMarket.bars) return decisionHistoryBySymbol
+    return {
+      ...decisionHistoryBySymbol,
+      [remoteMarket.symbol]: mergeCandleHistory([decisionHistoryBySymbol[remoteMarket.symbol] ?? [], remoteMarket.bars]),
+    }
+  }, [decisionHistoryBySymbol, remoteMarket])
   const marketStatus = remoteMarket?.symbol === symbol ? remoteMarket.status : getSnapshotStatus(symbol)
   const marketStatusLabel = marketLoading?.symbol === symbol ? marketLoading.label : marketStatus.label
   const baseData = useMemo(() => {
@@ -302,7 +308,7 @@ function App() {
   const decisionPositionCandle = activeDecisionAttempt?.stage === 'position-open' ? data.at(-1) ?? null : null
   const decisionPositionPnlByMode = activeDecisionCandidate?.trade.side && activeDecisionAttempt?.stage === 'position-open' && activeDecisionAttempt.fill && activeDecisionAttempt.stopLoss !== null && decisionPositionCandle
     ? {
-        'fixed-risk': pnlForDecisionMode('fixed-risk', activeDecisionCandidate.trade.side, activeDecisionAttempt.fill.price, decisionPositionCandle.close, activeDecisionAttempt.initialStopLoss ?? activeDecisionAttempt.stopLoss),
+        'fixed-risk': pnlForDecisionMode('fixed-risk', activeDecisionCandidate.trade.side, activeDecisionAttempt.fill.price, decisionPositionCandle.close, decisionAttemptInitialStopLoss(activeDecisionCandidate, activeDecisionAttempt) ?? activeDecisionAttempt.stopLoss),
         'fixed-notional': pnlForDecisionMode('fixed-notional', activeDecisionCandidate.trade.side, activeDecisionAttempt.fill.price, decisionPositionCandle.close, activeDecisionAttempt.stopLoss),
       }
     : null
@@ -366,131 +372,53 @@ function App() {
   useEffect(() => {
     const controller = new AbortController()
     let active = true
-    // Decision exercises can be shuffled across symbols. Hydrate the shipped
-    // XAU month even when another symbol is currently open, then eligibility
-    // filtering guarantees every sampled question has complete chart history.
-    void fetchXauMonthCandles(controller.signal).then((bars) => {
+    const loadingTimer = window.setTimeout(() => {
       if (!active) return
-      setDecisionHistoryBySymbol((current) => ({
-        ...current,
-        XAUUSD: mergeCandleHistory([bars, current.XAUUSD ?? []]),
-      }))
-    }).catch(() => undefined)
-    return () => { active = false; controller.abort() }
-  }, [marketRefreshTick])
-
-  useEffect(() => {
-    if (symbol !== 'XAUUSD') return
-    const controller = new AbortController()
-    let active = true
-    void fetchXauMonthCandles(controller.signal).then((bars) => {
+      setRemoteMarket((current) => current?.symbol === symbol ? current : null)
+      setMarketLoading({ symbol, label: '行情加载中…' })
+    }, 0)
+    void loadSnapshotCandles(symbol, '1m', controller.signal).then((bars) => {
       if (!active) return
-      // Keep the shipped 30-day history while overlaying the bundled DUKASCOPY
-      // snapshot. This prevents async hydration from replacing a freshly
-      // updated tail with the older public file.
-      const merged = mergeCandleHistory([bars, getSnapshotCandles('XAUUSD', '1m') ?? []])
-      setRemoteMarket({ symbol, bars: merged, status: {
-        kind: 'snapshot', label: 'DUKASCOPY 最新', vendor: 'DUKASCOPY', fetchedAt: merged.at(-1)!.time,
-        detail: `DUKASCOPY:XAUUSD · 2026-06-01 至最新 · ${merged.length.toLocaleString('zh-CN')} 根 1 分钟 K 线`,
-      } })
+      if (!bars?.length) {
+        setRemoteMarket(null)
+        return
+      }
+      setDecisionHistoryBySymbol((current) => current[symbol] === bars ? current : { ...current, [symbol]: bars })
+      setRemoteMarket({ symbol, bars, status: getSnapshotStatus(symbol) })
       setMarketHydrationKey((value) => value + 1)
     }).catch((error) => {
       if (!active || (error instanceof DOMException && error.name === 'AbortError')) return
-      setToast(error instanceof Error ? error.message : 'XAUUSD 历史数据加载失败')
+      setToast(error instanceof Error ? error.message : `${symbol} 历史数据加载失败`)
     }).finally(() => {
+      window.clearTimeout(loadingTimer)
       if (active) setMarketLoading(null)
     })
-    return () => { active = false; controller.abort() }
+    return () => { active = false; window.clearTimeout(loadingTimer); controller.abort() }
   }, [marketRefreshTick, symbol])
 
   useEffect(() => {
-    if (symbol !== 'BTCUSDT.P') return
     const controller = new AbortController()
     let active = true
-    let history: Candle[] = []
-    let initialViewPending = true
-    const cacheKey = 'BYBIT:BTCUSDT.P:1m:30d'
-    // Keep the shipped TradingView tail available when the browser cannot reach
-    // Bybit (for example, a transient CORS/network failure).  A stale IndexedDB
-    // cache must never hide newer candles that are already bundled with the app.
-    const snapshot = getSnapshotCandles('BTCUSDT.P', '1m') ?? []
-
-    const mergeRecentHistory = (bars: Candle[]) => {
-      const combined = mergeCandleHistory([bars, snapshot])
-      const latestTime = combined.at(-1)?.time
-      return latestTime === undefined
-        ? combined
-        : mergeCandleHistory([combined], latestTime - MARKET_HISTORY_SECONDS, latestTime)
-    }
-
-    const applyHistory = (bars: Candle[]) => {
-      if (!active || bars.length === 0) return
-      history = bars
-      setRemoteMarket({ symbol, bars, status: {
-        kind: 'snapshot', label: 'KUCOIN 已加载', vendor: 'KUCOIN', fetchedAt: bars.at(-1)!.time,
-        detail: `KUCOIN:XBTUSDTM · BTCUSDT.P 近30天 · ${bars.length.toLocaleString('zh-CN')} 根 1 分钟 K 线 · 自动刷新已暂停`,
-      } })
-      if (initialViewPending) {
-        initialViewPending = false
-        setMarketHydrationKey((value) => value + 1)
+    const hydrateDecisionHistory = async () => {
+      // Do not parse every market before the first paint. Loading the remaining
+      // snapshots in short, separated tasks keeps the chart responsive while
+      // preserving cross-symbol decision replay once hydration completes.
+      await new Promise((resolve) => window.setTimeout(resolve, 1200))
+      for (const { id } of SYMBOLS) {
+        if (!active) return
+        const bars = await loadSnapshotCandles(id, '1m', controller.signal)
+        if (active && bars?.length) {
+          setDecisionHistoryBySymbol((current) => current[id] === bars ? current : { ...current, [id]: bars })
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 150))
       }
     }
-
-    const refreshLatest = async () => {
-      const latest = await fetchBybitMinuteCandles(controller.signal)
-      const latestTime = Math.max(latest.at(-1)!.time, history.at(-1)?.time ?? 0)
-      const merged = mergeCandleHistory([history, latest], latestTime - MARKET_HISTORY_SECONDS, latestTime)
-      applyHistory(merged)
-      void writeCandleCache(cacheKey, merged).catch(() => undefined)
-    }
-
-    const initialize = async () => {
-      try {
-        // BTC 更新已暂时暂停：优先使用随站点发布的完整 KuCoin 月度快照，
-        // 避免页面打开时再次请求受地区限制的 Bybit 接口或改变当前视图。
-        if (snapshot.length) {
-          applyHistory(snapshot)
-          setMarketLoading(null)
-          return
-        }
-        const cached = await readCandleCache(cacheKey).catch(() => null)
-        if (!active) return
-        if (cached?.bars.length) applyHistory(mergeRecentHistory(cached.bars))
-        else if (snapshot.length) applyHistory(snapshot)
-        const cacheIsFresh = Boolean(cached && Date.now() - cached.fetchedAt < 10 * 60_000)
-        if (cacheIsFresh) {
-          setMarketLoading({ symbol, label: 'BYBIT 更新最新…' })
-          await refreshLatest()
-        } else {
-          setMarketLoading({ symbol, label: 'BYBIT 加载 0/44' })
-          const bars = await fetchBybitMonthCandles({
-            signal: controller.signal,
-            onProgress: ({ page, totalPages }) => {
-              if (active) setMarketLoading({ symbol, label: `BYBIT 加载 ${Math.min(page, totalPages)}/${totalPages}` })
-            },
-          })
-          const merged = mergeRecentHistory(bars)
-          applyHistory(merged)
-          void writeCandleCache(cacheKey, merged).catch(() => undefined)
-        }
-        if (!active) return
-        setMarketLoading(null)
-      } catch (error) {
-        if (!active || (error instanceof DOMException && error.name === 'AbortError')) return
-        setMarketLoading(null)
-        if (history.length > 0) {
-          setToast(`BYBIT 暂时无法更新，已保留 ${history.length.toLocaleString('zh-CN')} 根历史K线`)
-        } else {
-          setToast(error instanceof Error ? error.message : 'BTCUSDT.P 历史数据加载失败')
-        }
-      }
-    }
-    void initialize()
-    return () => {
-      active = false
-      controller.abort()
-    }
-  }, [marketRefreshTick, symbol])
+    void hydrateDecisionHistory().catch((error) => {
+      if (!active || (error instanceof DOMException && error.name === 'AbortError')) return
+      console.warn('决策回放行情后台加载失败', error)
+    })
+    return () => { active = false; controller.abort() }
+  }, [marketRefreshTick])
 
   useEffect(() => {
     const timer = window.setInterval(() => setClock(new Date()), 1000)
@@ -502,9 +430,27 @@ function App() {
   useEffect(() => saveReplayTradeLayers(replayTradeLayers), [replayTradeLayers])
   useEffect(() => saveReplayRangeLayers(replayRangeLayers), [replayRangeLayers])
   useEffect(() => saveFavoriteTools(favoriteTools), [favoriteTools])
-  useEffect(() => saveDecisionReplayStore(decisionStore), [decisionStore])
-  useEffect(() => saveDecisionReplayFavorites(decisionFavoriteKeys), [decisionFavoriteKeys])
-  useEffect(() => { decisionStoreRef.current = decisionStore }, [decisionStore])
+  useEffect(() => {
+    decisionStoreRef.current = decisionStore
+    saveDecisionReplayStore(decisionStore)
+  }, [decisionStore])
+  useEffect(() => {
+    decisionFavoriteKeysRef.current = decisionFavoriteKeys
+    saveDecisionReplayFavorites(decisionFavoriteKeys)
+  }, [decisionFavoriteKeys])
+  useEffect(() => {
+    const flushDecisionProgress = () => {
+      saveDecisionReplayStore(decisionStoreRef.current)
+      saveDecisionReplayFavorites(decisionFavoriteKeysRef.current)
+    }
+    const flushWhenHidden = () => { if (document.visibilityState === 'hidden') flushDecisionProgress() }
+    window.addEventListener('pagehide', flushDecisionProgress)
+    document.addEventListener('visibilitychange', flushWhenHidden)
+    return () => {
+      window.removeEventListener('pagehide', flushDecisionProgress)
+      document.removeEventListener('visibilitychange', flushWhenHidden)
+    }
+  }, [])
   useEffect(() => { decisionReviewRef.current = decisionReviewResult }, [decisionReviewResult])
 
   // Candidate changes replace the causal data set. Wait until that data has
@@ -953,41 +899,52 @@ function App() {
   }, [decisionReviewResult, decisionStore.sessions])
   const exportWorkspace = useCallback(() => {
     const snapshot = collectPortableWorkspace()
-    const date = new Date().toISOString().slice(0, 10)
-    downloadPortableWorkspace(snapshot, `kline-studio-workspace-${date}.json`)
-    notify(`已导出完整工作区（${Object.keys(snapshot.entries).length} 项）`)
+    downloadPortableWorkspace(snapshot, workspaceBackupFileName('sync'))
+    notify(`同步备份已下载（${Object.keys(snapshot.entries).length} 项）`)
   }, [notify])
   const importWorkspace = useCallback((file: File) => {
+    const before = collectPortableWorkspace()
+    downloadPortableWorkspace(before, workspaceBackupFileName('before-import'))
     void file.text().then((raw) => {
       const snapshot = parsePortableWorkspace(raw)
       if (!snapshot) {
         notify('导入失败：文件不是有效的 K 线工作区备份')
         return
       }
-      const count = restorePortableWorkspace(snapshot)
-      notify(`已导入 ${count} 项设置，正在刷新页面`)
+      const count = restorePortableWorkspaceSafely(snapshot)
+      notify(`已完整导入 ${count} 项；本机原数据已自动备份，正在刷新页面`)
       window.setTimeout(() => window.location.reload(), 250)
-    }).catch(() => notify('导入失败：无法读取备份文件'))
+    }).catch((error) => notify(`导入失败，未覆盖本机记录：${error instanceof Error ? error.message : '无法读取备份文件'}`))
   }, [notify])
-  const mergeWorkspaceProgress = useCallback((file: File) => {
-    void file.text().then((raw) => {
-      const snapshot = parsePortableWorkspace(raw)
-      if (!snapshot) {
-        notify('合并失败：文件不是有效的 K 线工作区备份')
-        return
-      }
-      const localStore = loadDecisionReplayStore()
-      const importedStore = parseDecisionReplayStore(snapshot.entries[DECISION_REPLAY_STORAGE_KEY] ?? null)
-      const mergedStore = mergeDecisionReplayStores(localStore, importedStore)
-      const mergedFavorites = [...new Set([
-        ...loadDecisionReplayFavorites(),
-        ...parseDecisionReplayFavorites(snapshot.entries[DECISION_REPLAY_FAVORITES_STORAGE_KEY] ?? null),
-      ])]
-      saveDecisionReplayStore(mergedStore)
-      saveDecisionReplayFavorites(mergedFavorites)
-      notify(`已合并做题进度：共 ${mergedStore.sessions.length} 场，正在刷新页面`)
+  const mergeWorkspaceProgress = useCallback((files: readonly File[]) => {
+    if (files.length === 0) return
+    const before = collectPortableWorkspace()
+    downloadPortableWorkspace(before, workspaceBackupFileName('before-merge'))
+    void Promise.all(files.map((file) => file.text())).then((rawSnapshots) => {
+      const snapshots = rawSnapshots.map((raw, index) => {
+        const snapshot = parsePortableWorkspace(raw)
+        if (!snapshot) throw new Error(`第 ${index + 1} 个文件不是有效的 K 线工作区备份`)
+        return snapshot
+      })
+      const summary = mergePortableWorkspaceProgress(snapshots, localStorage)
+      notify(`已安全合并 ${summary.sourceCount} 份备份：${summary.sessionCount} 场、${summary.resultCount} 笔、${summary.favoriteCount} 个收藏，正在刷新页面`)
       window.setTimeout(() => window.location.reload(), 250)
-    }).catch(() => notify('合并失败：无法读取备份文件'))
+    }).catch((error) => notify(`合并失败，本机记录未被覆盖：${error instanceof Error ? error.message : '无法读取备份文件'}`))
+  }, [notify])
+  const restoreLastWorkspaceImport = useCallback(() => {
+    const recovery = loadPortableWorkspaceRecovery()
+    if (!recovery) {
+      notify('没有可恢复的导入前记录')
+      return
+    }
+    downloadPortableWorkspace(collectPortableWorkspace(), workspaceBackupFileName('before-undo'))
+    try {
+      const count = restorePortableWorkspaceRecovery()
+      notify(`已恢复导入/合并前的 ${count} 项本机数据，正在刷新页面`)
+      window.setTimeout(() => window.location.reload(), 250)
+    } catch (error) {
+      notify(`恢复失败，当前记录保持不变：${error instanceof Error ? error.message : '浏览器存储写入失败'}`)
+    }
   }, [notify])
   const deleteReplayRangeObject = useCallback((objectId: string) => {
     setReplayRangeLayers((current) => deleteReplayRangeObjectFromLayers(current, objectId))
@@ -1209,6 +1166,12 @@ function App() {
         return
       }
       if (isEditableShortcutTarget(event.target)) return
+
+      if (isChartAnnotationVisibilityShortcut(event)) {
+        event.preventDefault()
+        setChartAnnotationsHidden((hidden) => !hidden)
+        return
+      }
 
       if (activeDecisionAttempt && !decisionReviewResult && !mod && !event.altKey && !event.shiftKey && /^[1-4]$/.test(event.key)) {
         const action = decisionShortcutAction(activeDecisionAttempt.stage, event.key)
@@ -1530,8 +1493,7 @@ function App() {
               focusLatestKey={marketHydrationKey + (decisionMode ? 10_000 + decisionFocusTick : 0)}
               suppressAutoFocus={Boolean(decisionReviewResult)}
               centerLatestByDefault={decisionMode}
-              forceFadeMarkers={decisionAnnotationHovering}
-              onMarkerHoverChange={setChartMarkerHovering}
+              markersHidden={chartAnnotationsHidden}
               onHover={setHoverCandle}
               onViewportChange={refreshDrawingProjection}
               onPriceScaleStateChange={(autoScale, logarithmic, percentage, inverted) => {
@@ -1620,8 +1582,7 @@ function App() {
               data={data}
               toX={(time) => chartRef.current?.timeToCoordinate(time) ?? null}
               toY={(price) => chartRef.current?.priceToCoordinate(price) ?? null}
-              dimmed={chartMarkerHovering || decisionAnnotationHovering}
-              onHoverChange={setDecisionAnnotationHovering}
+              hidden={chartAnnotationsHidden}
             />}
             {activeDecisionCandidate && activeDecisionAttempt && !decisionReviewResult && <DecisionReplayPanel
               candidate={activeDecisionCandidate}
@@ -1880,7 +1841,7 @@ function App() {
       />}
 
       {indicatorPanelOpen && <IndicatorPanel value={indicators} onChange={setIndicators} onClose={() => setIndicatorPanelOpen(false)} />}
-      {settingsOpen && <SettingsPanel theme={theme} onTheme={setTheme} onReset={resetWorkspace} onExportWorkspace={exportWorkspace} onMergeProgress={mergeWorkspaceProgress} onImportWorkspace={importWorkspace} onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <SettingsPanel theme={theme} onTheme={setTheme} onReset={resetWorkspace} onExportWorkspace={exportWorkspace} onMergeProgress={mergeWorkspaceProgress} onImportWorkspace={importWorkspace} onRestoreLastImport={restoreLastWorkspaceImport} canRestoreWorkspace={Boolean(loadPortableWorkspaceRecovery())} onClose={() => setSettingsOpen(false)} />}
       {quickSearchOpen && <QuickSearchDialog items={quickSearchItems} query={quickSearchQuery} onQuery={setQuickSearchQuery} onSelect={runQuickSearchItem} onClose={() => setQuickSearchOpen(false)} />}
       {intervalDialogOpen && <IntervalShortcutDialog value={intervalDraft} onChange={setIntervalDraft} onApply={applyIntervalInput} onClose={() => setIntervalDialogOpen(false)} />}
       {goToDateOpen && <GoToDateDialog initialTime={data.at(-1)?.time ?? 0} onSelect={(time) => { chartRef.current?.goToTime(time); setGoToDateOpen(false); notify('已转到指定日期') }} onClose={() => setGoToDateOpen(false)} />}
@@ -1897,6 +1858,7 @@ function App() {
         onClose={() => setDrawingSettingsId(null)}
       />}
       <DecisionReplayCenter
+        key={decisionSymbolStats.map((item) => `${item.symbol}:${item.total}:${item.remaining}`).join('|')}
         open={decisionCenterOpen}
         availableCount={availableDecisionCount}
         totalCount={allDecisionCandidates.length}
@@ -1967,13 +1929,15 @@ function IndicatorPanel({ value, onChange, onClose }: { value: IndicatorSettings
   return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section className="modal indicator-modal" role="dialog" aria-modal="true" aria-label="指标设置"><div className="modal-header"><div><b>技术指标</b><small>叠加到主图的本地计算指标</small></div><button onClick={onClose} aria-label="关闭"><X size={18} /></button></div><div className="indicator-list">{rows.map((row) => <div className="indicator-row" key={row.key}><span className="indicator-color" style={{ background: row.color }} /><div><b>{row.name}</b><small>{row.detail}</small></div><label className="switch" aria-label={`${row.name}开关`} title={`${row.name}开关`}><input type="checkbox" checked={value[row.key]} onChange={(event) => onChange({ ...value, [row.key]: event.target.checked })} /><span /></label></div>)}</div><div className="parameter-grid"><label>MA 周期<input type="number" min="2" max="200" value={value.maPeriod} onChange={(event) => onChange({ ...value, maPeriod: Number(event.target.value) })} /></label><label>EMA 周期<input type="number" min="2" max="200" value={value.emaPeriod} onChange={(event) => onChange({ ...value, emaPeriod: Number(event.target.value) })} /></label><label>BOLL 周期<input type="number" min="2" max="200" value={value.bollPeriod} onChange={(event) => onChange({ ...value, bollPeriod: Number(event.target.value) })} /></label><label>标准差<input type="number" step="0.1" min="0.1" max="5" value={value.bollDeviation} onChange={(event) => onChange({ ...value, bollDeviation: Number(event.target.value) })} /></label></div><div className="modal-footer"><button onClick={() => onChange(DEFAULT_INDICATORS)}>恢复指标默认</button><button className="primary" onClick={onClose}>完成</button></div></section></div>
 }
 
-function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProgress, onImportWorkspace, onClose }: {
+function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProgress, onImportWorkspace, onRestoreLastImport, canRestoreWorkspace, onClose }: {
   theme: Theme
   onTheme: (theme: Theme) => void
   onReset: () => void
   onExportWorkspace: () => void
-  onMergeProgress: (file: File) => void
+  onMergeProgress: (files: readonly File[]) => void
   onImportWorkspace: (file: File) => void
+  onRestoreLastImport: () => void
+  canRestoreWorkspace: boolean
   onClose: () => void
 }) {
   const mergeInputRef = useRef<HTMLInputElement>(null)
@@ -1982,11 +1946,12 @@ function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProg
     <div className="panel-heading"><div><b>图表设置</b><small>外观与工作区</small></div><button onClick={onClose} aria-label="关闭"><X size={18} /></button></div>
     <section><h3>外观</h3><div className="theme-options"><button className={theme === 'dark' ? 'active' : ''} onClick={() => onTheme('dark')}><Moon size={18} />深色</button><button className={theme === 'light' ? 'active' : ''} onClick={() => onTheme('light')}><Sun size={18} />亮色</button></div></section>
     <section><h3>交互说明</h3><ul><li>鼠标滚轮：水平缩放</li><li>拖拽主图：平移时间轴</li><li>底部“适应”：显示全部数据</li><li>Shift+↓：播放 / 暂停回放</li><li>Shift+→：回放前进一格</li><li>Delete：删除选中绘图</li><li>Ctrl+Z：撤销</li><li>Ctrl+Y / Ctrl+Shift+Z：重做</li></ul></section>
-    <section><h3>跨电脑同步</h3><p>先导出完整工作区。在另一台电脑选择“合并做题进度”，会合并两边的练习场次、已做题目和收藏，不覆盖另一台已有历史；“完整覆盖导入”仅用于整机恢复。</p><div className="workspace-transfer-actions">
-      <button type="button" onClick={onExportWorkspace}><Download size={16} />导出完整工作区</button>
-      <button type="button" className="merge-progress" onClick={() => mergeInputRef.current?.click()}><Upload size={16} />合并做题进度</button>
+    <section><h3>跨电脑同步</h3><p>每次做题都会立即保存在当前浏览器。离开电脑前一键下载同步备份；在任意电脑可一次选择一份或多份备份，自动去重合并场次、已做题目和收藏。合并或完整覆盖前会自动下载并保留本机恢复副本。</p><div className="workspace-transfer-actions">
+      <button type="button" onClick={onExportWorkspace}><Download size={16} />下载同步备份</button>
+      <button type="button" className="merge-progress" onClick={() => mergeInputRef.current?.click()}><Upload size={16} />上传并合并备份</button>
+      <button type="button" disabled={!canRestoreWorkspace} onClick={onRestoreLastImport}><History size={16} />撤销上次导入</button>
       <button type="button" onClick={() => importInputRef.current?.click()}><Upload size={16} />完整覆盖导入</button>
-      <input ref={mergeInputRef} type="file" accept="application/json,.json" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) onMergeProgress(file); event.currentTarget.value = '' }} />
+      <input ref={mergeInputRef} type="file" accept="application/json,.json" multiple hidden onChange={(event) => { const files = Array.from(event.target.files ?? []); if (files.length) onMergeProgress(files); event.currentTarget.value = '' }} />
       <input ref={importInputRef} type="file" accept="application/json,.json" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) onImportWorkspace(file); event.currentTarget.value = '' }} />
     </div></section>
     <section className="danger-section"><h3>工作区</h3><p>品种、周期、指标、绘图和回放进度会自动保存在当前浏览器。</p><button onClick={() => { onReset(); onClose() }}><RefreshCcw size={16} />恢复所有默认设置</button></section>

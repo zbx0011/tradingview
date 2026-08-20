@@ -21,11 +21,16 @@ export function normalizeDecisionReplayFavorites(value: unknown) {
 }
 
 export function parseDecisionReplayFavorites(raw: string | null) {
-  if (!raw) return []
+  return parseDecisionReplayFavoritesChecked(raw) ?? []
+}
+
+export function parseDecisionReplayFavoritesChecked(raw: string | null): string[] | null {
+  if (!raw) return null
   try {
-    return normalizeDecisionReplayFavorites(JSON.parse(raw))
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? normalizeDecisionReplayFavorites(parsed) : null
   } catch {
-    return []
+    return null
   }
 }
 

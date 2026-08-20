@@ -1,25 +1,24 @@
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { describe, expect, it } from 'vitest'
+import snapshotManifest from '../data/marketSnapshotManifest.json'
 import {
-  fetchBybitMonthCandles, getSnapshotCandles, getSnapshotStatus, mergeCandleHistory,
+  fetchBybitMonthCandles, getSnapshotStatus, hasMarketSnapshot, mergeCandleHistory,
   parseBybitKlines, parseCompactHistory,
 } from './liveMarket'
 
 describe('real market history', () => {
   it('ships chronological one-minute TradingView snapshots for the four live symbols', () => {
     for (const symbol of ['XAUUSD', 'XAGUSD', 'US500', 'BTCUSDT.P'] as const) {
-      const bars = getSnapshotCandles(symbol, '1m')!
-      expect(bars.length).toBeGreaterThan(10_000)
-      expect(bars[1].time - bars[0].time).toBe(60)
-      expect(bars.at(-1)!.time).toBeGreaterThan(bars[0].time)
+      const metadata = snapshotManifest.series[symbol]
+      const payload = JSON.parse(readFileSync(path.join(process.cwd(), 'public', metadata.file), 'utf8')) as { rows: number[][] }
+      expect(payload.rows.length).toBe(metadata.count)
+      expect(payload.rows.length).toBeGreaterThan(10_000)
+      expect(payload.rows[1][0] - payload.rows[0][0]).toBe(60)
+      expect(payload.rows.at(-1)![0]).toBeGreaterThan(payload.rows[0][0])
+      expect(hasMarketSnapshot(symbol)).toBe(true)
       expect(getSnapshotStatus(symbol).kind).toBe('snapshot')
     }
-  })
-
-  it('aggregates the one-minute source when another chart interval is selected', () => {
-    const minute = getSnapshotCandles('XAUUSD', '1m')!
-    const fiveMinute = getSnapshotCandles('XAUUSD', '5m')!
-    expect(fiveMinute.length).toBeLessThan(minute.length)
-    expect(fiveMinute[0].time % 300).toBe(0)
   })
 
   it('parses and sorts the Bybit reverse chronological response', () => {

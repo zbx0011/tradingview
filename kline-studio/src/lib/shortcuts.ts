@@ -26,6 +26,7 @@ export const TRADINGVIEW_SHORTCUTS: ShortcutDefinition[] = [
   { id: 'log', section: '图表', label: '对数坐标', keys: 'Alt+L' },
   { id: 'percent', section: '图表', label: '百分比坐标', keys: 'Alt+P' },
   { id: 'keyboard-nav', section: '图表', label: '键盘导航', keys: 'Alt+Z' },
+  { id: 'toggle-chart-annotations', section: '图表', label: '隐藏 / 显示全部标注', keys: '·' },
   { id: 'copy-paste', section: '绘图', label: '复制 / 粘贴对象', keys: 'Ctrl+C / Ctrl+V' },
   { id: 'hide-drawings', section: '绘图', label: '隐藏全部绘图', keys: 'Ctrl+Alt+H' },
   { id: 'measure-temporary', section: '绘图', label: '临时测量工具', keys: '按住 Shift + 点击' },
@@ -88,4 +89,11 @@ export function resolveHistoryShortcut(
 export function isEditableShortcutTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
   return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
+}
+
+export function isChartAnnotationVisibilityShortcut(
+  event: Pick<KeyboardEvent, 'altKey' | 'code' | 'ctrlKey' | 'key' | 'metaKey' | 'repeat' | 'shiftKey'>,
+): boolean {
+  if (event.repeat || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return false
+  return event.key === '·' || event.key === '`' || event.code === 'Backquote'
 }

@@ -1,17 +1,20 @@
-import snapshotJson from '../data/marketSnapshots.json'
+import snapshotManifestJson from '../data/marketSnapshotManifest.json'
 import { aggregateCandles, INTERVALS, type Candle, type IntervalId, type SymbolId } from './market'
 
-interface SnapshotSeries {
+interface SnapshotManifestSeries {
   symbol: string
   vendor: string
   resolution: string
-  bars: Candle[]
+  file: string
+  count: number
+  firstTime: number
+  lastTime: number
 }
 
-interface SnapshotFile {
+interface SnapshotManifest {
   fetchedAt: string
   timezone: string
-  series: Partial<Record<SymbolId, SnapshotSeries>>
+  series: Partial<Record<SymbolId, SnapshotManifestSeries>>
 }
 
 interface CompactHistoryFile {
@@ -49,8 +52,10 @@ export interface BybitHistoryOptions {
   fetcher?: typeof fetch
 }
 
-const snapshots = snapshotJson as SnapshotFile
+const snapshotManifest = snapshotManifestJson as SnapshotManifest
+const snapshotSourceCache = new Map<SymbolId, Candle[]>()
 const snapshotCandleCache = new Map<string, Candle[]>()
+const snapshotLoadCache = new Map<SymbolId, Promise<Candle[] | null>>()
 const BYBIT_KLINE_ENDPOINT = 'https://api.bybit.com/v5/market/kline'
 const XAU_MONTH_URL = `${import.meta.env.BASE_URL}data/xauusd-1m-30d.json`
 const CACHE_DB_NAME = 'kline-studio-market-v1'
@@ -59,31 +64,56 @@ export const MARKET_HISTORY_DAYS = 30
 export const MARKET_HISTORY_SECONDS = MARKET_HISTORY_DAYS * 24 * 60 * 60
 
 export function hasMarketSnapshot(symbol: SymbolId): boolean {
-  return Boolean(snapshots.series[symbol]?.bars.length)
+  return Boolean(snapshotManifest.series[symbol]?.count)
 }
 
 export function getSnapshotCandles(symbol: SymbolId, interval: IntervalId = '1m'): Candle[] | null {
-  const bars = snapshots.series[symbol]?.bars
+  const bars = snapshotSourceCache.get(symbol)
   if (!bars?.length) return null
   const cacheKey = `${symbol}:${interval}`
   const cached = snapshotCandleCache.get(cacheKey)
   if (cached) return cached
-  const copied = bars.map((bar) => ({ ...bar }))
-  const result = interval === '1m' ? copied : aggregateCandles(copied, INTERVALS[interval].seconds)
+  const result = interval === '1m' ? bars : aggregateCandles(bars, INTERVALS[interval].seconds)
   snapshotCandleCache.set(cacheKey, result)
   return result
 }
 
+export async function loadSnapshotCandles(symbol: SymbolId, interval: IntervalId = '1m', signal?: AbortSignal): Promise<Candle[] | null> {
+  const cached = getSnapshotCandles(symbol, interval)
+  if (cached) return cached
+  const series = snapshotManifest.series[symbol]
+  if (!series) return null
+
+  let pending = snapshotLoadCache.get(symbol)
+  if (!pending) {
+    pending = (async () => {
+      // Keep the shared request independent from a component's AbortSignal.
+      // React development mode intentionally mounts and cleans effects twice;
+      // aborting that first subscriber must not cancel the cached request used
+      // by the second mount or by decision-history hydration.
+      const response = await fetch(`${import.meta.env.BASE_URL}${series.file}`, { cache: 'force-cache' })
+      if (!response.ok) throw new Error(`${symbol} 历史数据 HTTP ${response.status}`)
+      const bars = parseCompactHistory(await response.json())
+      snapshotSourceCache.set(symbol, bars)
+      snapshotCandleCache.set(`${symbol}:1m`, bars)
+      return bars
+    })().finally(() => snapshotLoadCache.delete(symbol))
+    snapshotLoadCache.set(symbol, pending)
+  }
+  await pending
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+  return getSnapshotCandles(symbol, interval)
+}
+
 export function getSnapshotStatus(symbol: SymbolId): MarketDataStatus {
-  const series = snapshots.series[symbol]
+  const series = snapshotManifest.series[symbol]
   if (!series) return { kind: 'simulated', label: '模拟数据', vendor: 'LOCAL', fetchedAt: null, detail: '本地确定性模拟行情' }
-  const last = series.bars.at(-1)?.time ?? null
   return {
     kind: 'snapshot',
     label: `${series.vendor} 最新`,
     vendor: series.vendor,
-    fetchedAt: last,
-    detail: `${series.symbol} · ${series.vendor} 静态快照 · ${series.bars.length.toLocaleString('zh-CN')} 根 1 分钟 K 线 · UTC`,
+    fetchedAt: series.lastTime,
+    detail: `${series.symbol} · ${series.vendor} 静态快照 · ${series.count.toLocaleString('zh-CN')} 根 1 分钟 K 线 · UTC`,
   }
 }
 
@@ -224,5 +254,5 @@ export async function writeCandleCache(key: string, bars: Candle[], fetchedAt = 
 }
 
 export function marketSnapshotMetadata() {
-  return { fetchedAt: snapshots.fetchedAt, timezone: snapshots.timezone }
+  return { fetchedAt: snapshotManifest.fetchedAt, timezone: snapshotManifest.timezone }
 }

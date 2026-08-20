@@ -10,6 +10,7 @@
     "lint": "eslint . --max-warnings 0",
     "fetch:market": "node scripts/fetch-tradingview-market-snapshots.mjs",
     "fetch:btc": "node scripts/fetch-btc-kucoin-month.mjs",
+    "export:market-snapshots": "node scripts/export-market-snapshots.mjs",
     "import:replay": "node scripts/import-replay-layer.mjs",
     "import:signals": "node scripts/import-replay-signals.mjs",
     "import:ranges": "node scripts/import-replay-ranges.mjs"

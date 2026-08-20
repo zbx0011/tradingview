@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { collectPortableWorkspace, parsePortableWorkspace, restorePortableWorkspace, serializePortableWorkspace } from './portableWorkspace'
+import {
+  PORTABLE_WORKSPACE_RECOVERY_STORAGE_KEY,
+  collectPortableWorkspace,
+  loadPortableWorkspaceRecovery,
+  parsePortableWorkspace,
+  restorePortableWorkspace,
+  restorePortableWorkspaceRecovery,
+  restorePortableWorkspaceSafely,
+  serializePortableWorkspace,
+} from './portableWorkspace'
 
 function createStorage(initial: Record<string, string> = {}) {
   const values = new Map(Object.entries(initial))
@@ -43,5 +52,30 @@ describe('portable workspace', () => {
       'kline-studio-added': 'yes',
       unrelated: 'keep',
     })
+  })
+
+  it('keeps internal recovery data out of exported backups', () => {
+    const storage = createStorage({
+      'kline-studio-workspace-v1': 'current',
+      [PORTABLE_WORKSPACE_RECOVERY_STORAGE_KEY]: 'internal rollback data',
+    })
+    expect(collectPortableWorkspace(storage).entries).toEqual({ 'kline-studio-workspace-v1': 'current' })
+  })
+
+  it('creates a reversible rollback point before a full restore', () => {
+    const storage = createStorage({ 'kline-studio-workspace-v1': 'local', unrelated: 'keep' })
+    const imported = parsePortableWorkspace(JSON.stringify({
+      app: 'kline-studio', version: 1, exportedAt: '2026-08-20T00:00:00.000Z',
+      entries: { 'kline-studio-workspace-v1': 'imported' },
+    }))!
+
+    expect(restorePortableWorkspaceSafely(imported, storage)).toBe(1)
+    expect(storage.getItem('kline-studio-workspace-v1')).toBe('imported')
+    expect(loadPortableWorkspaceRecovery(storage)?.entries['kline-studio-workspace-v1']).toBe('local')
+
+    expect(restorePortableWorkspaceRecovery(storage)).toBe(1)
+    expect(storage.getItem('kline-studio-workspace-v1')).toBe('local')
+    expect(loadPortableWorkspaceRecovery(storage)?.entries['kline-studio-workspace-v1']).toBe('imported')
+    expect(storage.getItem('unrelated')).toBe('keep')
   })
 })

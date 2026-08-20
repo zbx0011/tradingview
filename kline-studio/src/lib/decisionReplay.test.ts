@@ -1,12 +1,15 @@
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { describe, expect, it } from 'vitest'
+import snapshotManifest from '../data/marketSnapshotManifest.json'
 import type { ReplayDecisionCandidate } from './replayTradeRegistry'
 import { replayDecisionCandidates } from './replayTradeRegistry'
 import type { Candle } from './market'
-import { getSnapshotCandles } from './liveMarket'
+import { parseCompactHistory } from './liveMarket'
 import {
-  advanceDecisionAttempt, buildDecisionResult, candlesKnownAt, createDecisionAttempt, createDecisionSession,
+  advanceDecisionAttempt, buildDecisionResult, candlesKnownAt, compareDecisionHistorySortValues, createDecisionAttempt, createDecisionSession,
   decisionShortcutAction, defaultDecisionLevels, evaluatePositionBar, fillPendingOrder,
-  decisionResultPnl, historyCoversDecisionCandidate, intervalCutoffTime, parseDecisionReplayStore,
+  decisionResultPnl, decisionResultR, historyCoversDecisionCandidate, intervalCutoffTime, parseDecisionReplayStore,
   mergeDecisionReplayStores, pnlForDecision, pnlForDecisionMode, rewardRiskRatio, sampleDecisionCandidates,
   validDecisionLevels, validOpenPositionLevels,
 } from './decisionReplay'
@@ -35,6 +38,18 @@ function candidate(key: string, side: 'long' | 'short' = 'long'): ReplayDecision
 const bar = (time: number, open: number, high: number, low: number, close: number): Candle => ({ time, open, high, low, close, volume: 1 })
 
 describe('decision replay', () => {
+  it('sorts per-trade history by time or selected-position PnL in either direction', () => {
+    const olderLoss = { startedAt: 100, ordinal: 1, pnlUsd: -20 }
+    const newerWin = { startedAt: 200, ordinal: 1, pnlUsd: 30 }
+    const newestPending = { startedAt: 300, ordinal: 1, pnlUsd: null }
+    const values = [olderLoss, newestPending, newerWin]
+
+    expect([...values].sort((left, right) => compareDecisionHistorySortValues(left, right, 'time-desc'))).toEqual([newestPending, newerWin, olderLoss])
+    expect([...values].sort((left, right) => compareDecisionHistorySortValues(left, right, 'time-asc'))).toEqual([olderLoss, newerWin, newestPending])
+    expect([...values].sort((left, right) => compareDecisionHistorySortValues(left, right, 'pnl-desc'))).toEqual([newerWin, olderLoss, newestPending])
+    expect([...values].sort((left, right) => compareDecisionHistorySortValues(left, right, 'pnl-asc'))).toEqual([olderLoss, newerWin, newestPending])
+  })
+
   it('samples only unseen unique trades', () => {
     const selected = sampleDecisionCandidates([candidate('a:1'), candidate('a:2'), candidate('b:1')], ['a:2'], 10)
     expect(selected).toHaveLength(2)
@@ -70,7 +85,11 @@ describe('decision replay', () => {
   it('has fully backed decision questions across the four imported markets', () => {
     const historyBySymbol = new Map<string, Candle[] | null>()
     const eligible = replayDecisionCandidates().filter((item) => {
-      if (!historyBySymbol.has(item.symbol)) historyBySymbol.set(item.symbol, getSnapshotCandles(item.symbol, '1m'))
+      if (!historyBySymbol.has(item.symbol)) {
+        const metadata = snapshotManifest.series[item.symbol as keyof typeof snapshotManifest.series]
+        const payload = metadata ? JSON.parse(readFileSync(path.join(process.cwd(), 'public', metadata.file), 'utf8')) : null
+        historyBySymbol.set(item.symbol, payload ? parseCompactHistory(payload) : null)
+      }
       return historyCoversDecisionCandidate(item, historyBySymbol.get(item.symbol))
     })
     const symbols = new Set(eligible.map((item) => item.symbol))
@@ -105,6 +124,62 @@ describe('decision replay', () => {
     const result = buildDecisionResult(item, attempt, { time: 3600, price: 103, reason: 'manual-close' }, [])
     expect(result.userPnlUsd).toBe(60)
     expect(result.userR).toBeCloseTo(0.6)
+    expect(result.initialStopLoss).toBe(95)
+    expect(decisionResultPnl(result, 'fixed-risk', 'user')).toBe(60)
+  })
+
+  it('repairs legacy fixed-risk results that mistakenly sized from a trailing stop', () => {
+    const base = candidate('legacy:26', 'short')
+    const item: ReplayDecisionCandidate = {
+      ...base,
+      symbol: 'XAGUSD',
+      interval: '15m',
+      trade: {
+        ...base.trade,
+        tradeNumber: 26,
+        entry: { ...base.trade.entry, price: 62.393, stopLoss: 62.776 },
+      },
+    }
+    const legacyAttempt = {
+      ...createDecisionAttempt(item),
+      stage: 'position-open' as const,
+      entryMode: 'signal-extreme' as const,
+      orderKind: 'stop' as const,
+      pendingEntryPrice: 62.393,
+      initialStopLoss: null,
+      stopLoss: 62.393677938506215,
+      takeProfit: 61.13704526327354,
+      fill: { time: 3300, price: 62.393 },
+    }
+    const correct = buildDecisionResult(item, legacyAttempt, { time: 3600, price: 62.095, reason: 'manual-close' }, [])
+    const legacyResult = {
+      ...correct,
+      initialStopLoss: undefined,
+      userPnlUsd: 43_956.78918785127,
+      userR: 439.5678918785127,
+      differenceUsd: 43_892.82051985127,
+    }
+    const legacySession = {
+      ...createDecisionSession([item], 1, 1),
+      status: 'completed' as const,
+      attempts: [{ ...legacyAttempt, initialStopLoss: undefined, stage: 'post-exit' as const, result: legacyResult }],
+      finishedAt: 2,
+    }
+    const parsed = parseDecisionReplayStore(JSON.stringify({
+      version: 1,
+      seenTradeKeys: [item.key],
+      activeSessionId: null,
+      sessions: [legacySession],
+    }))
+    const repairedAttempt = parsed.sessions[0].attempts[0]
+    const repaired = repairedAttempt.result!
+
+    expect(repairedAttempt.initialStopLoss).toBe(62.776)
+    expect(repaired.initialStopLoss).toBe(62.776)
+    expect(decisionResultR(repaired, 'user')).toBeCloseTo(0.7780678851)
+    expect(decisionResultPnl(repaired, 'fixed-risk', 'user')).toBeCloseTo(77.80678851)
+    expect(repaired.userPnlUsd).toBeCloseTo(77.80678851)
+    expect(repaired.userR).toBeCloseTo(0.7780678851)
   })
 
   it('advances pending orders and finalizes comparable results without future data', () => {

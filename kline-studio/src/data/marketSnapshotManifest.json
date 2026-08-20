@@ -1,0 +1,42 @@
+{
+  "fetchedAt": "2026-08-19T08:42:16.247Z",
+  "timezone": "UTC",
+  "series": {
+    "XAUUSD": {
+      "symbol": "DUKASCOPY:XAUUSD",
+      "vendor": "DUKASCOPY",
+      "resolution": "1",
+      "file": "data/market-snapshots/xauusd-1m.json",
+      "count": 95974,
+      "firstTime": 1780272000,
+      "lastTime": 1787128800
+    },
+    "XAGUSD": {
+      "symbol": "DUKASCOPY:XAGUSD",
+      "vendor": "DUKASCOPY",
+      "resolution": "1",
+      "file": "data/market-snapshots/xagusd-1m.json",
+      "count": 95457,
+      "firstTime": 1780272000,
+      "lastTime": 1787097540
+    },
+    "US500": {
+      "symbol": "DUKASCOPY:USA500IDXUSD",
+      "vendor": "DUKASCOPY",
+      "resolution": "1",
+      "file": "data/market-snapshots/us500-1m.json",
+      "count": 95572,
+      "firstTime": 1780272000,
+      "lastTime": 1787128740
+    },
+    "BTCUSDT.P": {
+      "symbol": "KUCOIN:XBTUSDTM",
+      "vendor": "KUCOIN",
+      "resolution": "1",
+      "file": "data/market-snapshots/btcusdt-p-1m.json",
+      "count": 127287,
+      "firstTime": 1779352920,
+      "lastTime": 1787128800
+    }
+  }
+}

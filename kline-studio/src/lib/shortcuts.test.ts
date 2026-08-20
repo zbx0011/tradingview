@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseIntervalShortcut, resolveHistoryShortcut, TRADINGVIEW_SHORTCUTS } from './shortcuts'
+import { isChartAnnotationVisibilityShortcut, parseIntervalShortcut, resolveHistoryShortcut, TRADINGVIEW_SHORTCUTS } from './shortcuts'
 
 const historyKey = (overrides: Partial<KeyboardEvent>) => resolveHistoryShortcut({
   altKey: false,
@@ -24,9 +24,18 @@ describe('TradingView shortcut catalog', () => {
 
   it('contains the official chart, drawing and replay key groups', () => {
     const keys = new Set(TRADINGVIEW_SHORTCUTS.map((item) => item.keys))
-    for (const shortcut of ['Ctrl+K', 'Ctrl+Z', 'Ctrl+Y / Ctrl+Shift+Z', 'Alt+G', 'Alt+T', 'Ctrl+Alt+H', 'Shift+↓', 'Shift+→']) {
+    for (const shortcut of ['Ctrl+K', 'Ctrl+Z', 'Ctrl+Y / Ctrl+Shift+Z', 'Alt+G', 'Alt+T', 'Ctrl+Alt+H', '·', 'Shift+↓', 'Shift+→']) {
       expect(keys.has(shortcut)).toBe(true)
     }
+  })
+
+  it('maps the middle-dot/backquote key to the chart annotation visibility toggle', () => {
+    const base = { altKey: false, code: '', ctrlKey: false, key: '', metaKey: false, repeat: false, shiftKey: false }
+    expect(isChartAnnotationVisibilityShortcut({ ...base, key: '·' })).toBe(true)
+    expect(isChartAnnotationVisibilityShortcut({ ...base, key: '`' })).toBe(true)
+    expect(isChartAnnotationVisibilityShortcut({ ...base, code: 'Backquote', key: 'Process' })).toBe(true)
+    expect(isChartAnnotationVisibilityShortcut({ ...base, code: 'Backquote', key: '~', shiftKey: true })).toBe(false)
+    expect(isChartAnnotationVisibilityShortcut({ ...base, code: 'Backquote', key: '`', repeat: true })).toBe(false)
   })
 
   it('maps Ctrl+Z to undo and common redo shortcuts to redo', () => {

@@ -46,7 +46,7 @@ import {
 import { hasReplayRangeDataset, shouldRenderReplayRangeSpec, toReplayRangeSpecs, type ReplayRangeSpec } from '../lib/replayRangeRegistry'
 import { extractReasonCandleIndexes, resolveTradeCandleReferences } from '../lib/tradeCandleReferences'
 import { labelLayoutObstacle, tradeEndpointLabelLayout, type TradeLabelObstacle } from '../lib/tradeEndpointLabelLayout'
-import { fadeChartMarkersOnHover } from '../lib/chartMarkerVisibility'
+import { chartMarkersForVisibility } from '../lib/chartMarkerVisibility'
 
 export interface IndicatorSettings {
   ma: boolean
@@ -99,8 +99,7 @@ interface Props {
   /** Keep the current viewport while a historical review is opened. */
   suppressAutoFocus?: boolean
   centerLatestByDefault?: boolean
-  forceFadeMarkers?: boolean
-  onMarkerHoverChange?: (hovering: boolean) => void
+  markersHidden?: boolean
   onHover: (candle: Candle | null) => void
   onPriceScaleStateChange: (autoScale: boolean, logarithmic: boolean, percentage: boolean, inverted: boolean) => void
   onViewportChange?: () => void
@@ -299,9 +298,11 @@ function tradeMarkerPanelStyle(position: TradeMarkerPanelPosition | null, size: 
 const toLine = (points: { time: number; value: number }[]) => points.map((point) => ({ time: point.time as UTCTimestamp, value: point.value }))
 
 function updateSeries(series: SeriesState, data: Candle[], chartType: Props['chartType'], indicators: IndicatorSettings) {
-  const candleData = data.map(({ time, open, high, low, close }) => ({ time: time as UTCTimestamp, open, high, low, close }))
-  const lineData = data.map(({ time, close }) => ({ time: time as UTCTimestamp, value: close }))
-  series.main.setData(chartType === 'line' || chartType === 'area' ? lineData : candleData)
+  if (chartType === 'line' || chartType === 'area') {
+    series.main.setData(data.map(({ time, close }) => ({ time: time as UTCTimestamp, value: close })))
+  } else {
+    series.main.setData(data.map(({ time, open, high, low, close }) => ({ time: time as UTCTimestamp, open, high, low, close })))
+  }
   if (series.volume) {
     series.volume.setData(data.map((item) => ({
       time: item.time as UTCTimestamp,
@@ -318,6 +319,19 @@ function updateSeries(series: SeriesState, data: Candle[], chartType: Props['cha
     series.bollMiddle.setData(toLine(points.map((point) => ({ time: point.time, value: point.middle }))))
     series.bollLower.setData(toLine(points.map((point) => ({ time: point.time, value: point.lower }))))
   }
+}
+
+function candleTimeExists(data: readonly Candle[], time: number): boolean {
+  let low = 0
+  let high = data.length - 1
+  while (low <= high) {
+    const middle = (low + high) >> 1
+    const candidate = data[middle].time
+    if (candidate === time) return true
+    if (candidate < time) low = middle + 1
+    else high = middle - 1
+  }
+  return false
 }
 
 function tradeReferenceSeriesMarkers(selection: ReplayTradeMarkerSelection, data: readonly Candle[]): SeriesMarker<UTCTimestamp>[] {
@@ -344,7 +358,7 @@ function visibleTradeMarkers(
   referenceMarkers: readonly SeriesMarker<UTCTimestamp>[] = [],
   decisionSignalSourceIds: readonly string[] = [],
   decisionSignalAfterTime: number | null = null,
-  hoveredMarkerId: string | null = null,
+  markersHidden = false,
 ) {
   const revealedThrough = data.at(-1)?.time
   if (revealedThrough === undefined) return []
@@ -355,15 +369,14 @@ function visibleTradeMarkers(
   // the nearest loaded bar (usually the last bar).  That is what produced the
   // vertical column of labels at the right edge of the chart.  Keep replay
   // annotations causal, but never move them to another candle as a fallback.
-  const candleTimes = new Set(data.map((candle) => candle.time))
   const markers = [
     ...toReplayTradeSeriesMarkers(symbol, interval, sourceIds, revealedThrough, active),
     ...toReplaySignalSeriesMarkers(symbol, interval, revealedThrough),
     ...toReplayDecisionSignalSeriesMarkers(symbol, interval, decisionSignalSourceIds, revealedThrough, decisionSignalAfterTime),
     ...referenceMarkers,
-  ].filter((marker) => candleTimes.has(Number(marker.time)))
+  ].filter((marker) => candleTimeExists(data, Number(marker.time)))
     .sort((left, right) => Number(left.time) - Number(right.time) || String(left.id).localeCompare(String(right.id)))
-  return fadeChartMarkersOnHover(markers, hoveredMarkerId)
+  return chartMarkersForVisibility(markers, markersHidden)
 }
 
 export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function ChartSurface(
@@ -371,7 +384,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     data, symbol, interval, chartType, theme, indicators, priceScaleAuto, priceScaleLog, priceScalePercent, priceScaleInverted,
     visibleTradeLayerSourceIds = [], decisionSignalSourceIds = [], decisionSignalAfterTime = null,
     visibleRangeLayerSourceIds = [], suppressedRangeObjectIds = [], selectedRangeObjectId = null, onSelectRangeObject,
-    followLatest = false, focusLatestKey = 0, suppressAutoFocus = false, centerLatestByDefault = false, forceFadeMarkers = false, onMarkerHoverChange, onHover, onPriceScaleStateChange, onViewportChange,
+    followLatest = false, focusLatestKey = 0, suppressAutoFocus = false, centerLatestByDefault = false, markersHidden = false, onHover, onPriceScaleStateChange, onViewportChange,
   },
   forwardedRef,
 ) {
@@ -396,7 +409,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
   const visibleTradeLayerSourceIdsRef = useRef<readonly string[]>(visibleTradeLayerSourceIds)
   const decisionSignalSourceIdsRef = useRef<readonly string[]>(decisionSignalSourceIds)
   const decisionSignalAfterTimeRef = useRef<number | null>(decisionSignalAfterTime)
-  const forceFadeMarkersRef = useRef(forceFadeMarkers)
+  const markersHiddenRef = useRef(markersHidden)
   const visibleRangeLayerSourceIdsRef = useRef<readonly string[]>(visibleRangeLayerSourceIds)
   const suppressedRangeObjectIdsRef = useRef<ReadonlySet<string>>(new Set(suppressedRangeObjectIds))
   const [selectedTradeMarkerId, setSelectedTradeMarkerId] = useState<string | null>(null)
@@ -668,14 +681,10 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     visibleTradeLayerSourceIdsRef.current = visibleTradeLayerSourceIds
     decisionSignalSourceIdsRef.current = decisionSignalSourceIds
     decisionSignalAfterTimeRef.current = decisionSignalAfterTime
-    forceFadeMarkersRef.current = forceFadeMarkers
+    markersHiddenRef.current = markersHidden
     visibleRangeLayerSourceIdsRef.current = visibleRangeLayerSourceIds
     suppressedRangeObjectIdsRef.current = new Set(suppressedRangeObjectIds)
-  }, [data, decisionSignalAfterTime, decisionSignalSourceIds, followLatest, forceFadeMarkers, interval, onHover, onPriceScaleStateChange, onSelectRangeObject, onViewportChange, priceScaleAuto, priceScaleInverted, priceScaleLog, priceScalePercent, suppressedRangeObjectIds, symbol, visibleRangeLayerSourceIds, visibleTradeLayerSourceIds])
-
-  useEffect(() => {
-    onMarkerHoverChange?.(hoveredMarkerId !== null)
-  }, [hoveredMarkerId, onMarkerHoverChange])
+  }, [data, decisionSignalAfterTime, decisionSignalSourceIds, followLatest, interval, markersHidden, onHover, onPriceScaleStateChange, onSelectRangeObject, onViewportChange, priceScaleAuto, priceScaleInverted, priceScaleLog, priceScalePercent, suppressedRangeObjectIds, symbol, visibleRangeLayerSourceIds, visibleTradeLayerSourceIds])
 
   useEffect(() => {
     selectedTradeMarkerIdRef.current = selectedTradeMarkerId
@@ -710,7 +719,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
   useEffect(() => {
     const markerApi = seriesRef.current?.markers
     if (!markerApi) return
-    const markers = visibleTradeMarkers(symbol, interval, dataRef.current, visibleTradeLayerSourceIds, activeTrade, tradeReferenceMarkers, decisionSignalSourceIds, decisionSignalAfterTime, hoveredMarkerId ?? (forceFadeMarkers ? 'annotation-hover' : null))
+    const markers = visibleTradeMarkers(symbol, interval, dataRef.current, visibleTradeLayerSourceIds, activeTrade, tradeReferenceMarkers, decisionSignalSourceIds, decisionSignalAfterTime, markersHidden)
     markerApi.setMarkers(markers)
     let clearSelectionTimer: number | undefined
     if (visibleTradeLayerSourceIds.length === 0) {
@@ -732,7 +741,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     return () => {
       if (clearSelectionTimer !== undefined) window.clearTimeout(clearSelectionTimer)
     }
-  }, [activeTrade, decisionSignalAfterTime, decisionSignalSourceIds, forceFadeMarkers, hoveredMarkerId, interval, requestTradeConnectionSync, symbol, tradeReferenceMarkers, visibleTradeLayerSourceIds])
+  }, [activeTrade, decisionSignalAfterTime, decisionSignalSourceIds, interval, markersHidden, requestTradeConnectionSync, symbol, tradeReferenceMarkers, visibleTradeLayerSourceIds])
 
   useImperativeHandle(forwardedRef, () => ({
     fitContent: () => chartRef.current?.timeScale().fitContent(),
@@ -981,7 +990,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       tradeReferenceMarkersRef.current,
       decisionSignalSourceIdsRef.current,
       decisionSignalAfterTimeRef.current,
-      hoveredMarkerIdRef.current ?? (forceFadeMarkersRef.current ? 'annotation-hover' : null),
+      markersHiddenRef.current,
     ))
     const timeScale = chart.timeScale()
     let wheelZoomBurstActive = false
@@ -1392,18 +1401,18 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     // from the actual trade being entered.
     const focusReady = shouldFocusLatest && dataChanged && data.length > 0
     const wasAtRealtime = isRealtimeScrollPosition(timeScale.scrollPosition())
-    updateSeries(series, data, chartType, indicators)
-    const revealedMarkers = visibleTradeMarkers(symbol, interval, data, visibleTradeLayerSourceIds, activeTradeRef.current, tradeReferenceMarkers, decisionSignalSourceIds, decisionSignalAfterTime, hoveredMarkerIdRef.current ?? (forceFadeMarkers ? 'annotation-hover' : null))
+    if (dataChanged) updateSeries(series, data, chartType, indicators)
+    const revealedMarkers = visibleTradeMarkers(symbol, interval, data, visibleTradeLayerSourceIds, activeTradeRef.current, tradeReferenceMarkers, decisionSignalSourceIds, decisionSignalAfterTime, markersHidden)
     series.markers?.setMarkers(revealedMarkers)
-    if (selectedTradeMarkerIdRef.current && !revealedMarkers.some((marker) => marker.id === selectedTradeMarkerIdRef.current)) {
+    if (!markersHidden && selectedTradeMarkerIdRef.current && !revealedMarkers.some((marker) => marker.id === selectedTradeMarkerIdRef.current)) {
       selectedTradeMarkerIdRef.current = null
       setSelectedTradeMarkerId(null)
     }
-    if (selectedSignalMarkerIdRef.current && !revealedMarkers.some((marker) => marker.id === selectedSignalMarkerIdRef.current)) {
+    if (!markersHidden && selectedSignalMarkerIdRef.current && !revealedMarkers.some((marker) => marker.id === selectedSignalMarkerIdRef.current)) {
       selectedSignalMarkerIdRef.current = null
       setSelectedSignalMarkerId(null)
     }
-    if (selectedDecisionSignalMarkerIdRef.current && !revealedMarkers.some((marker) => marker.id === selectedDecisionSignalMarkerIdRef.current)) {
+    if (!markersHidden && selectedDecisionSignalMarkerIdRef.current && !revealedMarkers.some((marker) => marker.id === selectedDecisionSignalMarkerIdRef.current)) {
       selectedDecisionSignalMarkerIdRef.current = null
       setSelectedDecisionSignalMarkerId(null)
     }
@@ -1431,7 +1440,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     if (!shouldFocusLatest || focusReady) focusLatestKeyRef.current = focusLatestKey
     requestTradeConnectionSync()
     requestSignalRangeSync()
-  }, [chartType, data, decisionSignalAfterTime, decisionSignalSourceIds, focusLatestKey, forceFadeMarkers, indicators, interval, requestSignalRangeSync, requestTradeConnectionSync, suppressAutoFocus, suppressedRangeObjectIds, symbol, tradeReferenceMarkers, visibleRangeLayerSourceIds, visibleTradeLayerSourceIds])
+  }, [chartType, data, decisionSignalAfterTime, decisionSignalSourceIds, focusLatestKey, indicators, interval, markersHidden, requestSignalRangeSync, requestTradeConnectionSync, suppressAutoFocus, suppressedRangeObjectIds, symbol, tradeReferenceMarkers, visibleRangeLayerSourceIds, visibleTradeLayerSourceIds])
 
   useEffect(() => {
     saveTradeMarkerPanelPreferences({
@@ -1466,7 +1475,8 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     data-vertical-pan="always"
     data-active-trade-number={activeTradeNumber ?? undefined}
     data-hovered-trade-number={hoveredTradeNumber ?? undefined}
-    data-marker-hover-active={hoveredMarkerId !== null || forceFadeMarkers ? 'true' : undefined}
+    data-marker-hover-active={hoveredMarkerId !== null ? 'true' : undefined}
+    data-markers-hidden={markersHidden ? 'true' : undefined}
     data-replay-signal-marker-count={replaySignalMarkerCount}
     data-replay-signal-range-count={signalRangeSegments.length}
     data-trade-reference-count={tradeReferenceMarkers.length}

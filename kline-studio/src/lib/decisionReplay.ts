@@ -9,7 +9,14 @@ export const DECISION_PLANNED_RISK_USD = 100
 export const DECISION_FIXED_NOTIONAL_USD = 10_000
 
 export type DecisionPositionSizingMode = 'fixed-risk' | 'fixed-notional'
+export type DecisionHistorySort = 'time-desc' | 'time-asc' | 'pnl-desc' | 'pnl-asc'
 export const DEFAULT_DECISION_POSITION_SIZING_MODES: readonly DecisionPositionSizingMode[] = ['fixed-risk', 'fixed-notional']
+
+export interface DecisionHistorySortValue {
+  startedAt: number
+  ordinal: number
+  pnlUsd: number | null
+}
 
 export type DecisionEntryMode = 'signal-extreme' | 'free-price'
 export type DecisionOrderKind = 'stop' | 'limit'
@@ -38,6 +45,8 @@ export interface DecisionTradeResult {
   cursorTime: number
   userEntry: DecisionFill | null
   userExit: DecisionExit
+  /** Initial protective stop used to size the fixed-risk position. Legacy results may omit it. */
+  initialStopLoss?: number | null
   stopLoss: number | null
   takeProfit: number | null
   plannedRiskUsd: number
@@ -109,25 +118,56 @@ export function decisionPositionSizingLabel(mode: DecisionPositionSizingMode, co
   return compact ? '风险 100U' : '固定风险 100U'
 }
 
+export function toggleDecisionHistorySymbolSelection(selected: readonly SymbolId[], symbol: SymbolId): SymbolId[] {
+  if (selected.length === 0) return [symbol]
+  if (!selected.includes(symbol)) return [...selected, symbol]
+  const next = selected.filter((item) => item !== symbol)
+  return next.length > 0 ? next : []
+}
+
+export function compareDecisionHistorySortValues(left: DecisionHistorySortValue, right: DecisionHistorySortValue, sort: DecisionHistorySort) {
+  const timeDifference = left.startedAt - right.startedAt || left.ordinal - right.ordinal
+  if (sort === 'time-asc') return timeDifference
+  if (sort === 'time-desc') return -timeDifference
+  if (left.pnlUsd === null && right.pnlUsd === null) return -timeDifference
+  if (left.pnlUsd === null) return 1
+  if (right.pnlUsd === null) return -1
+  const pnlDifference = left.pnlUsd - right.pnlUsd
+  return sort === 'pnl-asc' ? pnlDifference || -timeDifference : -pnlDifference || -timeDifference
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object'
 }
 
-export function parseDecisionReplayStore(raw: string | null): DecisionReplayStore {
-  if (!raw) return emptyDecisionReplayStore()
+export function parseDecisionReplayStoreChecked(raw: string | null): DecisionReplayStore | null {
+  if (!raw) return null
   try {
     const value = JSON.parse(raw) as Partial<DecisionReplayStore>
-    if (value.version !== DECISION_REPLAY_VERSION || !Array.isArray(value.sessions) || !Array.isArray(value.seenTradeKeys)) return emptyDecisionReplayStore()
+    if (value.version !== DECISION_REPLAY_VERSION || !Array.isArray(value.sessions) || !Array.isArray(value.seenTradeKeys)) return null
     const sessions = value.sessions.filter((session): session is DecisionReplaySession => (
       isObject(session)
       && typeof session.id === 'string'
       && Array.isArray(session.candidates)
       && Array.isArray(session.attempts)
       && ['active', 'completed', 'stopped'].includes(String(session.status))
-    )).map((session) => ({
-      ...session,
-      positionSizingModes: normalizeDecisionPositionSizingModes(session.positionSizingModes),
-    }))
+    )).map((session) => {
+      const candidatesByKey = new Map(session.candidates.map((candidate) => [candidate.key, candidate]))
+      return {
+        ...session,
+        attempts: session.attempts.map((attempt) => {
+          const candidate = candidatesByKey.get(attempt.candidateKey)
+          if (!candidate) return attempt
+          const initialStopLoss = decisionAttemptInitialStopLoss(candidate, attempt)
+          return {
+            ...attempt,
+            initialStopLoss,
+            result: attempt.result ? normalizeDecisionTradeResult(attempt.result) : null,
+          }
+        }),
+        positionSizingModes: normalizeDecisionPositionSizingModes(session.positionSizingModes),
+      }
+    })
     const activeSessionId = typeof value.activeSessionId === 'string'
       && sessions.some((session) => session.id === value.activeSessionId && session.status === 'active')
       ? value.activeSessionId
@@ -139,8 +179,12 @@ export function parseDecisionReplayStore(raw: string | null): DecisionReplayStor
       sessions,
     }
   } catch {
-    return emptyDecisionReplayStore()
+    return null
   }
+}
+
+export function parseDecisionReplayStore(raw: string | null): DecisionReplayStore {
+  return parseDecisionReplayStoreChecked(raw) ?? emptyDecisionReplayStore()
 }
 
 function sessionProgressRank(session: DecisionReplaySession) {
@@ -410,12 +454,68 @@ export function pnlForDecisionMode(
     : pnlForFixedNotional(side, entryPrice, exitPrice).pnlUsd
 }
 
+function isValidInitialStopLoss(side: TradeSide, entryPrice: number, stopLoss: number | null | undefined): stopLoss is number {
+  if (stopLoss === null || stopLoss === undefined || !Number.isFinite(stopLoss)) return false
+  return side === 'long' ? stopLoss < entryPrice : stopLoss > entryPrice
+}
+
+export function decisionAttemptInitialStopLoss(candidate: ReplayDecisionCandidate, attempt: DecisionAttempt) {
+  const entryPrice = attempt.fill?.price ?? attempt.pendingEntryPrice ?? candidate.trade.entry.price
+  if (isValidInitialStopLoss(candidate.trade.side, entryPrice, attempt.initialStopLoss)) return attempt.initialStopLoss
+  // A legacy pending order has not had a chance to trail yet, so its current stop is still its initial stop.
+  if (attempt.stage === 'order-pending' && isValidInitialStopLoss(candidate.trade.side, entryPrice, attempt.stopLoss)) return attempt.stopLoss
+  // Legacy open/completed attempts did not preserve the initial stop. The causal trade definition is the
+  // only immutable pre-entry stop available; never resize from a later trailing stop.
+  if (isValidInitialStopLoss(candidate.trade.side, entryPrice, candidate.trade.entry.stopLoss)) return candidate.trade.entry.stopLoss
+  return isValidInitialStopLoss(candidate.trade.side, entryPrice, attempt.stopLoss) ? attempt.stopLoss : null
+}
+
+export function decisionResultInitialStopLoss(result: DecisionTradeResult) {
+  if (!result.userEntry) return null
+  const entryPrice = result.userEntry.price
+  if (isValidInitialStopLoss(result.candidate.trade.side, entryPrice, result.initialStopLoss)) return result.initialStopLoss
+  // Results created before initialStopLoss existed may contain the final trailing stop in result.stopLoss.
+  // Recover their sizing from the immutable structural stop that was known before entry.
+  if (isValidInitialStopLoss(result.candidate.trade.side, entryPrice, result.candidate.trade.entry.stopLoss)) return result.candidate.trade.entry.stopLoss
+  return isValidInitialStopLoss(result.candidate.trade.side, entryPrice, result.stopLoss) ? result.stopLoss : null
+}
+
+export function decisionResultR(result: DecisionTradeResult, actor: 'user' | 'system') {
+  if (actor === 'system') return result.systemR
+  if (result.choice !== 'traded' || !result.userEntry) return 0
+  const initialStopLoss = decisionResultInitialStopLoss(result)
+  if (initialStopLoss === null) return result.userR
+  return pnlForDecision(result.candidate.trade.side, result.userEntry.price, result.userExit.price, initialStopLoss, 1).rMultiple
+}
+
+export function normalizeDecisionTradeResult(result: DecisionTradeResult): DecisionTradeResult {
+  const initialStopLoss = decisionResultInitialStopLoss(result)
+  if (result.choice !== 'traded' || !result.userEntry || initialStopLoss === null) return { ...result, initialStopLoss }
+  const plannedRiskUsd = Number.isFinite(result.plannedRiskUsd) && result.plannedRiskUsd > 0 ? result.plannedRiskUsd : DECISION_PLANNED_RISK_USD
+  const user = pnlForDecision(result.candidate.trade.side, result.userEntry.price, result.userExit.price, initialStopLoss, plannedRiskUsd)
+  return {
+    ...result,
+    initialStopLoss,
+    plannedRiskUsd,
+    userPnlUsd: user.pnlUsd,
+    userR: user.rMultiple,
+    differenceUsd: user.pnlUsd - result.systemPnlUsd,
+  }
+}
+
 export function decisionResultPnl(
   result: DecisionTradeResult,
   mode: DecisionPositionSizingMode,
   actor: 'user' | 'system',
 ) {
-  if (mode === 'fixed-risk') return actor === 'user' ? result.userPnlUsd : result.systemPnlUsd
+  if (mode === 'fixed-risk') {
+    if (actor === 'system') return result.systemPnlUsd
+    if (result.choice !== 'traded' || !result.userEntry) return 0
+    const initialStopLoss = decisionResultInitialStopLoss(result)
+    if (initialStopLoss === null) return result.userPnlUsd
+    const plannedRiskUsd = Number.isFinite(result.plannedRiskUsd) && result.plannedRiskUsd > 0 ? result.plannedRiskUsd : DECISION_PLANNED_RISK_USD
+    return pnlForDecision(result.candidate.trade.side, result.userEntry.price, result.userExit.price, initialStopLoss, plannedRiskUsd).pnlUsd
+  }
   if (actor === 'user') {
     if (result.choice !== 'traded' || !result.userEntry) return 0
     return pnlForDecisionMode('fixed-notional', result.candidate.trade.side, result.userEntry.price, result.userExit.price, result.stopLoss ?? result.userEntry.price)
@@ -440,7 +540,7 @@ export function buildDecisionResult(candidate: ReplayDecisionCandidate, attempt:
   const choice: DecisionTradeResult['choice'] = traded
     ? 'traded'
     : exit.reason === 'skipped' || attempt.pendingEntryPrice === null ? 'skipped' : 'unfilled'
-  const riskStopLoss = attempt.initialStopLoss ?? attempt.stopLoss
+  const riskStopLoss = decisionAttemptInitialStopLoss(candidate, attempt) ?? attempt.stopLoss
   const user = traded
     ? pnlForDecision(candidate.trade.side, attempt.fill!.price, exit.price, riskStopLoss!, DECISION_PLANNED_RISK_USD)
     : { pnlUsd: 0, rMultiple: 0 }
@@ -453,6 +553,7 @@ export function buildDecisionResult(candidate: ReplayDecisionCandidate, attempt:
     cursorTime: attempt.cursorTime,
     userEntry: attempt.fill,
     userExit: exit,
+    initialStopLoss: riskStopLoss,
     stopLoss: attempt.stopLoss,
     takeProfit: attempt.takeProfit,
     plannedRiskUsd: DECISION_PLANNED_RISK_USD,

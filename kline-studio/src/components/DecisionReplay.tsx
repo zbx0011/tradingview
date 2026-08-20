@@ -6,12 +6,12 @@ import {
 } from 'lucide-react'
 import type { ReplayDecisionCandidate } from '../lib/replayTradeRegistry'
 import type {
-  DecisionAttempt, DecisionPositionSizingMode, DecisionReplaySession, DecisionTradeResult,
+  DecisionAttempt, DecisionHistorySort, DecisionPositionSizingMode, DecisionReplaySession, DecisionTradeResult,
 } from '../lib/decisionReplay'
 import {
-  aggregateDecisionResults, decisionPositionSizingLabel, decisionResultPnl,
+  aggregateDecisionResults, compareDecisionHistorySortValues, decisionPositionSizingLabel, decisionResultInitialStopLoss, decisionResultPnl, decisionResultR,
   decisionSessionPositionSizingModes, DEFAULT_DECISION_POSITION_SIZING_MODES,
-  formatDecisionDate, rewardRiskRatio, sessionResults, symbolPrecision,
+  formatDecisionDate, rewardRiskRatio, sessionResults, symbolPrecision, toggleDecisionHistorySymbolSelection,
 } from '../lib/decisionReplay'
 import { formatPrice, INTERVALS, SYMBOLS, type Candle, type SymbolId } from '../lib/market'
 import { extractReasonCandleIndexes, resolveTradeCandleReferences } from '../lib/tradeCandleReferences'
@@ -21,7 +21,7 @@ import {
   type DecisionChartStatusPreferences, type DecisionReplayMenuPreferences, type DecisionReplayPanelPreferences,
   type TradeMarkerPanelPosition, type TradeMarkerPanelSize,
 } from '../lib/persistence'
-import { decisionReplayFavoriteKey, decisionReplaySessionHasFavorite } from '../lib/decisionReplayFavorites'
+import { decisionReplayFavoriteKey } from '../lib/decisionReplayFavorites'
 
 const DECISION_PANEL_EDGE = 8
 const DECISION_PANEL_MIN_WIDTH = 390
@@ -105,6 +105,15 @@ function DecisionModeMoneyStack({ modes, valueFor, className = '', compact = tru
 
 function decisionModeMetricText(modes: readonly DecisionPositionSizingMode[], valueFor: (mode: DecisionPositionSizingMode) => string) {
   return modes.map((mode) => `${decisionPositionSizingLabel(mode, true)} ${valueFor(mode)}`).join(' · ')
+}
+
+function decisionWinStats(results: readonly DecisionTradeResult[], mode: DecisionPositionSizingMode, actor: 'user' | 'system') {
+  const wins = results.filter((result) => decisionResultPnl(result, mode, actor) > 0).length
+  return { wins, total: results.length, rate: results.length > 0 ? wins / results.length * 100 : null }
+}
+
+function decisionWinRateText(stats: ReturnType<typeof decisionWinStats>) {
+  return stats.rate === null ? '—' : `${stats.rate.toFixed(1)}%`
 }
 
 function decisionSizingLabels(modes: readonly DecisionPositionSizingMode[]) {
@@ -312,11 +321,27 @@ export function DecisionReplayCenter({ open, availableCount, totalCount, symbolS
 }
 
 /**
- * A compact, symbol-scoped index of completed decision exercises.
+ * A compact, symbol-filterable index of completed decision exercises.
  * Opening a card delegates to the existing results dialog, whose individual
  * rows restore the original drawing snapshot and decision review view.
  */
-export function DecisionHistoryDialog({ open, currentSymbol, sessions, onClose, onOpenSession, onOpenFavoriteTrade, favoriteKeys = [], onToggleFavorite = () => undefined, defaultView = 'history' }: {
+function decisionAttemptHasHistoryProgress(candidate: ReplayDecisionCandidate, attempt: DecisionAttempt | null) {
+  return Boolean(attempt && (
+    attempt.result
+    || attempt.stage !== 'entry-decision'
+    || attempt.drawings.length > 0
+    || attempt.cursorTime !== candidate.trade.entry.signalTime
+  ))
+}
+
+function decisionHistoryTradeStatus(result: DecisionTradeResult | null, session: DecisionReplaySession) {
+  if (!result) return statusLabel(session.status)
+  if (result.choice === 'skipped') return '未参与'
+  if (result.choice === 'unfilled') return '未成交'
+  return '已完成'
+}
+
+export function DecisionHistoryDialog({ open, sessions, onClose, onOpenSession, onOpenFavoriteTrade, favoriteKeys = [], onToggleFavorite = () => undefined, defaultView = 'history' }: {
   open: boolean
   currentSymbol: SymbolId
   sessions: DecisionReplaySession[]
@@ -327,61 +352,56 @@ export function DecisionHistoryDialog({ open, currentSymbol, sessions, onClose, 
   onToggleFavorite?: (key: string) => void
   defaultView?: 'history' | 'favorites'
 }) {
-  const [historyScope, setHistoryScope] = useState<'all' | SymbolId>(defaultView === 'favorites' ? 'all' : currentSymbol)
+  const [selectedHistorySymbols, setSelectedHistorySymbols] = useState<SymbolId[]>([])
   const [favoritesOnly, setFavoritesOnly] = useState(defaultView === 'favorites')
-  const showAllSymbols = historyScope === 'all'
-  const historyScopeLabel = favoritesOnly ? '已收藏' : showAllSymbols ? '全部标的' : historyScope === currentSymbol ? '当前标的' : historyScope
-  const historyScopeTitle = favoritesOnly ? '全部标的的收藏记录' : showAllSymbols ? '全部标的' : historyScope === currentSymbol ? currentSymbol : historyScope
-  const historyScopeOptions: Array<{ value: 'all' | SymbolId; label: string }> = [
-    { value: 'all', label: '全部' },
-    { value: currentSymbol, label: '当前标的' },
-    ...SYMBOLS
-      .filter((item) => item.id !== currentSymbol)
-      .map((item) => ({ value: item.id, label: item.id })),
-  ]
+  const [historyPositionMode, setHistoryPositionMode] = useState<DecisionPositionSizingMode>('fixed-notional')
+  const [historySort, setHistorySort] = useState<DecisionHistorySort>('time-desc')
+  const showAllSymbols = selectedHistorySymbols.length === 0
+  const selectedHistorySymbolSet = new Set(selectedHistorySymbols)
+  const selectedSymbolLabel = showAllSymbols ? '全部标的' : selectedHistorySymbols.join(' / ')
+  const historyScopeLabel = favoritesOnly ? `已收藏 · ${selectedSymbolLabel}` : selectedSymbolLabel
+  const historyScopeTitle = favoritesOnly ? `${selectedSymbolLabel}的收藏记录` : selectedSymbolLabel
+  const matchesSelectedSymbol = (symbol: SymbolId) => showAllSymbols || selectedHistorySymbolSet.has(symbol)
 
-  const scopedEntries = sessions.map((session) => {
-    const candidates = session.candidates.filter((candidate) => showAllSymbols || candidate.symbol === historyScope)
-    const results = sessionResults(session).filter((result) => showAllSymbols || result.candidate.symbol === historyScope)
-    // A session is useful history as soon as it has real progress.  Previously
-    // the list required at least one result, which made a partially completed
-    // exercise look as if it had never been saved.
-    const hasProgress = session.status !== 'active'
-      || session.currentIndex > 0
-      || session.attempts.some((attempt) => {
-        const candidate = session.candidates.find((item) => item.key === attempt.candidateKey)
-        return attempt.stage !== 'entry-decision'
-          || attempt.drawings.length > 0
-          || Boolean(attempt.result)
-          || (candidate ? attempt.cursorTime !== candidate.trade.entry.signalTime : false)
-      })
-    const modes = decisionSessionPositionSizingModes(session)
-    const intervals = [...new Set(candidates.map((candidate) => INTERVALS[candidate.interval].label))]
-    const symbols = [...new Set(candidates.map((candidate) => candidate.symbol))]
-    const favoriteTradeCount = candidates.filter((candidate) => favoriteKeys.includes(decisionReplayFavoriteKey('trade', candidate.key))).length
-    const favorite = decisionReplaySessionHasFavorite(favoriteKeys, session.id, candidates.map((candidate) => candidate.key))
-    return { session, candidates, results, modes, intervals, symbols, symbolLabel: symbols.join(' / '), hasProgress, favorite, favoriteTradeCount }
-  }).filter((entry) => entry.candidates.length > 0 && entry.hasProgress)
-  const entries = scopedEntries
-  const favoriteTradeEntries = sessions.flatMap((session) => {
-    const modes = decisionSessionPositionSizingModes(session)
-    return session.candidates.flatMap((candidate, index) => {
-      const favoriteKey = decisionReplayFavoriteKey('trade', candidate.key)
-      if (!favoriteKeys.includes(favoriteKey)) return []
-      const attempt = session.attempts.find((item) => item.candidateKey === candidate.key) ?? null
-      return [{ session, candidate, attempt, result: attempt?.result ?? null, modes, favoriteKey, ordinal: index + 1 }]
-    })
+  const tradeEntries = sessions.flatMap((session) => session.candidates.flatMap((candidate, index) => {
+    if (!matchesSelectedSymbol(candidate.symbol)) return []
+    const attempt = session.attempts.find((item) => item.candidateKey === candidate.key) ?? null
+    if (!decisionAttemptHasHistoryProgress(candidate, attempt)) return []
+    const favoriteKey = decisionReplayFavoriteKey('trade', candidate.key)
+    return [{
+      session,
+      candidate,
+      attempt,
+      result: attempt?.result ?? null,
+      favoriteKey,
+      favorite: favoriteKeys.includes(favoriteKey),
+      ordinal: index + 1,
+    }]
+  }))
+  const visibleTradeEntries = favoritesOnly ? tradeEntries.filter((entry) => entry.favorite) : tradeEntries
+  const sortedTradeEntries = [...visibleTradeEntries].sort((left, right) => {
+    return compareDecisionHistorySortValues({
+      startedAt: left.session.startedAt,
+      ordinal: left.ordinal,
+      pnlUsd: left.result?.choice === 'traded' ? decisionResultPnl(left.result, historyPositionMode, 'user') : null,
+    }, {
+      startedAt: right.session.startedAt,
+      ordinal: right.ordinal,
+      pnlUsd: right.result?.choice === 'traded' ? decisionResultPnl(right.result, historyPositionMode, 'user') : null,
+    }, historySort)
   })
 
   if (!open) return null
-  const summaryResults = favoritesOnly
-    ? favoriteTradeEntries.flatMap((entry) => entry.result ? [entry.result] : [])
-    : entries.flatMap((entry) => entry.results)
-  const visibleTradeCount = favoritesOnly ? favoriteTradeEntries.length : summaryResults.length
-  const hasVisibleHistory = favoritesOnly ? favoriteTradeEntries.length > 0 : entries.length > 0
-  const historyModes = [...new Set(favoritesOnly
-    ? favoriteTradeEntries.flatMap((entry) => entry.modes)
-    : entries.flatMap((entry) => entry.modes))]
+  const summaryResults = visibleTradeEntries.flatMap((entry) => entry.result ? [entry.result] : [])
+  const visibleTradeCount = summaryResults.length
+  const hasVisibleHistory = visibleTradeEntries.length > 0
+  const historyModes: readonly DecisionPositionSizingMode[] = [historyPositionMode]
+  const participatedResults = summaryResults.filter((result) => result.choice === 'traded')
+  const skippedTradeCount = summaryResults.filter((result) => result.choice === 'skipped').length
+  const unfilledTradeCount = summaryResults.filter((result) => result.choice === 'unfilled').length
+  const userWinStats = decisionWinStats(participatedResults, historyPositionMode, 'user')
+  const systemParticipatedWinStats = decisionWinStats(participatedResults, historyPositionMode, 'system')
+  const systemOverallWinStats = decisionWinStats(summaryResults, historyPositionMode, 'system')
   const openFavoriteTrade = (sessionId: string, candidateKey: string) => {
     if (onOpenFavoriteTrade) onOpenFavoriteTrade(sessionId, candidateKey)
     else onOpenSession(sessionId)
@@ -390,46 +410,70 @@ export function DecisionHistoryDialog({ open, currentSymbol, sessions, onClose, 
     <section className="decision-history" role="dialog" aria-modal="true" aria-label="决策历史记录" data-testid="decision-history-dialog">
       <header>
         <span className="decision-history-icon"><History size={25} /></span>
-        <div><h2>历史记录</h2><small>{historyScopeTitle} · {favoritesOnly ? '每笔收藏交易独立展示' : '已保存的决策练习'}</small></div>
+        <div><h2>历史记录</h2><small>{historyScopeTitle} · {favoritesOnly ? '逐笔收藏交易' : '逐笔交易记录'}</small></div>
         <div className="decision-history-filters">
-          <div className="decision-history-scope" role="group" aria-label="历史记录范围">
-            {historyScopeOptions.map((option) => <button
-              type="button"
-              key={option.value}
-              className={!favoritesOnly && historyScope === option.value ? 'active' : ''}
-              aria-pressed={!favoritesOnly && historyScope === option.value}
-              onClick={() => { setFavoritesOnly(false); setHistoryScope(option.value) }}
-            >{option.label}</button>)}
-          </div>
           <button
             type="button"
             className={`decision-history-favorites-filter${favoritesOnly ? ' active' : ''}`}
             aria-pressed={favoritesOnly}
-            aria-label="查看全部已收藏记录"
-            onClick={() => {
-              if (favoritesOnly) {
-                setFavoritesOnly(false)
-                setHistoryScope(currentSymbol)
-              } else {
-                setHistoryScope('all')
-                setFavoritesOnly(true)
-              }
-            }}
+            aria-label="查看已收藏记录"
+            onClick={() => setFavoritesOnly((value) => !value)}
           ><Star size={14} fill={favoritesOnly ? 'currentColor' : 'none'} />已收藏</button>
         </div>
         <button aria-label="关闭历史记录" onClick={onClose}><X size={21} /></button>
       </header>
+      <div className="decision-history-symbol-controls" role="group" aria-label="历史记录标的筛选">
+        <span>标的筛选</span>
+        <label className={showAllSymbols ? 'active' : ''}>
+          <input type="checkbox" checked={showAllSymbols} onChange={() => setSelectedHistorySymbols([])} />
+          全部标的
+        </label>
+        {SYMBOLS.map((item) => {
+          const checked = selectedHistorySymbolSet.has(item.id)
+          return <label className={checked ? 'active' : ''} key={item.id}>
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={() => setSelectedHistorySymbols((selected) => toggleDecisionHistorySymbolSelection(selected, item.id))}
+            />
+            {item.id}
+          </label>
+        })}
+        <small>{showAllSymbols ? '默认显示全部；勾选任一标的进入单选' : `已选择 ${selectedHistorySymbols.length} 个标的；可继续勾选进行多选`}</small>
+      </div>
+      <div className="decision-history-display-controls">
+        <span>仓位显示</span>
+        <div className="decision-history-position-modes" role="group" aria-label="历史记录仓位显示方式">
+          {(['fixed-notional', 'fixed-risk'] as const).map((mode) => <button
+            type="button"
+            key={mode}
+            className={historyPositionMode === mode ? 'active' : ''}
+            aria-pressed={historyPositionMode === mode}
+            onClick={() => setHistoryPositionMode(mode)}
+          >{decisionPositionSizingLabel(mode)}</button>)}
+        </div>
+        <label className="decision-history-sort-control">
+          <span>记录排序</span>
+          <select aria-label="历史记录排序" value={historySort} onChange={(event) => setHistorySort(event.target.value as DecisionHistorySort)}>
+            <option value="time-desc">时间降序（最新优先）</option>
+            <option value="time-asc">时间升序（最早优先）</option>
+            <option value="pnl-desc">盈利降序（最高优先）</option>
+            <option value="pnl-asc">盈利升序（最低优先）</option>
+          </select>
+        </label>
+        <small>盈利排序按当前仓位口径计算</small>
+      </div>
       <div className="decision-history-overview">
         <article><span>{favoritesOnly ? '收藏笔数' : '总笔数'}</span><b>{visibleTradeCount}</b><small>{historyScopeLabel}</small></article>
-        <article><span>你的累计净盈亏</span><DecisionModeMoneyStack modes={historyModes} compact={false} valueFor={(mode) => aggregateDecisionResults(summaryResults, mode).userPnlUsd} /><small>{favoritesOnly ? '仅统计已收藏且已完成的交易' : '已保存练习中的完成结果'}</small></article>
-        <article><span>系统累计净盈亏</span><DecisionModeMoneyStack modes={historyModes} compact={false} valueFor={(mode) => aggregateDecisionResults(summaryResults, mode).systemPnlUsd} /><small>{favoritesOnly ? '收藏交易对应的 V5 结果' : 'V5 原始结果'}</small></article>
-        <article><span>相对系统</span><DecisionModeMoneyStack modes={historyModes} compact={false} valueFor={(mode) => aggregateDecisionResults(summaryResults, mode).differenceUsd} /><small>你的净盈亏 − 系统净盈亏</small></article>
+        <article><span>你的累计净盈亏</span><DecisionModeMoneyStack modes={historyModes} compact={false} valueFor={(mode) => aggregateDecisionResults(summaryResults, mode).userPnlUsd} /><small>参与胜率 <strong>{decisionWinRateText(userWinStats)}</strong> · 盈利 {userWinStats.wins} / {userWinStats.total} 笔 · 未参与 {skippedTradeCount} 笔交易{unfilledTradeCount > 0 ? ` · 未成交 ${unfilledTradeCount} 笔` : ''}</small></article>
+        <article className="decision-system-summary"><span>系统参与部分净盈亏</span><DecisionModeMoneyStack modes={historyModes} compact={false} valueFor={(mode) => aggregateDecisionResults(participatedResults, mode).systemPnlUsd} /><small>参与部分胜率 <strong>{decisionWinRateText(systemParticipatedWinStats)}</strong> · 盈利 {systemParticipatedWinStats.wins} / {systemParticipatedWinStats.total} 笔</small><span className="decision-system-total-label">系统总净盈亏</span><DecisionModeMoneyStack modes={historyModes} compact={false} valueFor={(mode) => aggregateDecisionResults(summaryResults, mode).systemPnlUsd} /><small>总胜率 <strong>{decisionWinRateText(systemOverallWinStats)}</strong> · 盈利 {systemOverallWinStats.wins} / {systemOverallWinStats.total} 笔</small></article>
+        <article><span>相对系统</span><DecisionModeMoneyStack modes={historyModes} compact={false} valueFor={(mode) => aggregateDecisionResults(summaryResults, mode).differenceUsd} /><small>{decisionPositionSizingLabel(historyPositionMode)} · 全部 {summaryResults.length} 笔</small></article>
       </div>
       <div className="decision-history-body">
-        {!hasVisibleHistory ? <div className="decision-empty">{favoritesOnly ? '还没有收藏任何一笔交易。' : showAllSymbols ? '全部标的还没有已保存的练习记录。' : '当前标的还没有已保存的练习记录。'}</div> : favoritesOnly ? <div className="decision-history-list">
-          {favoriteTradeEntries.map(({ session, candidate, attempt, result, modes, favoriteKey, ordinal }) => <div
+        {!hasVisibleHistory ? <div className="decision-empty">{favoritesOnly ? '所选标的还没有收藏记录。' : showAllSymbols ? '全部标的还没有交易记录。' : '所选标的还没有交易记录。'}</div> : <div className="decision-history-list">
+          {sortedTradeEntries.map(({ session, candidate, attempt, result, favoriteKey, favorite, ordinal }) => <div
             key={`${session.id}:${candidate.key}`}
-            className="decision-history-card decision-history-trade-card favorite"
+            className={`decision-history-card decision-history-trade-card${favorite ? ' favorite' : ''}`}
             role="button"
             tabIndex={0}
             onClick={() => openFavoriteTrade(session.id, candidate.key)}
@@ -439,61 +483,36 @@ export function DecisionHistoryDialog({ open, currentSymbol, sessions, onClose, 
                 openFavoriteTrade(session.id, candidate.key)
               }
             }}
-            aria-label={`查看收藏交易 ${candidate.symbol} 第 ${candidate.trade.tradeNumber} 笔`}
+            aria-label={`查看交易 ${candidate.symbol} 第 ${candidate.trade.tradeNumber} 笔`}
           >
             <div className="decision-history-card-head decision-history-trade-card-head">
-              <span className={`decision-session-status ${result ? 'completed' : session.status}`}>{result ? '已完成' : statusLabel(session.status)}</span>
+              <span className={`decision-session-status ${result ? 'completed' : session.status}`}>{decisionHistoryTradeStatus(result, session)}</span>
               <span>
                 <b>{candidate.symbol} · {INTERVALS[candidate.interval].label} · {candidate.trade.side === 'long' ? '多头' : '空头'} · 第 {candidate.trade.tradeNumber} 笔</b>
-                <small>信号 K {formatDecisionDate(candidate.trade.entry.signalTime)} · 本场第 {ordinal} / {session.candidates.length} 笔</small>
+                <small>练习 {new Date(session.startedAt).toLocaleString('zh-CN')} · 信号 K {formatDecisionDate(candidate.trade.entry.signalTime)} · 本场第 {ordinal} / {session.candidates.length} 笔</small>
               </span>
-              <DecisionFavoriteButton favorite onToggle={() => onToggleFavorite(favoriteKey)} label="取消收藏本笔交易" />
+              <DecisionFavoriteButton favorite={favorite} onToggle={() => onToggleFavorite(favoriteKey)} label={favorite ? '取消收藏本笔交易' : '收藏本笔交易'} />
               <ChevronRight size={19} />
             </div>
             {result ? <div className="decision-history-card-stats">
               <span>你的选择 <b>{choiceLabel(result)}</b></span>
-              <span>你的 <DecisionModeMoneyStack modes={modes} valueFor={(mode) => decisionResultPnl(result, mode, 'user')} /></span>
-              <span>系统 <DecisionModeMoneyStack modes={modes} valueFor={(mode) => decisionResultPnl(result, mode, 'system')} /></span>
-              <span>差额 <DecisionModeMoneyStack modes={modes} valueFor={(mode) => decisionResultPnl(result, mode, 'user') - decisionResultPnl(result, mode, 'system')} /></span>
+              {result.choice === 'traded' ? <>
+                <span>你的 <DecisionModeMoneyStack modes={historyModes} valueFor={(mode) => decisionResultPnl(result, mode, 'user')} /><small>{historyPositionMode === 'fixed-risk'
+                  ? `初始止损 ${formatPrice(decisionResultInitialStopLoss(result) ?? 0, candidate.symbol)} · ${decisionResultR(result, 'user').toFixed(2)}R × 100U`
+                  : `收益率 ${(decisionResultPnl(result, 'fixed-notional', 'user') / 100).toFixed(2)}% × 10,000U`}</small></span>
+                <span>本题系统 <DecisionModeMoneyStack modes={historyModes} valueFor={(mode) => decisionResultPnl(result, mode, 'system')} /></span>
+                <span>差额 <DecisionModeMoneyStack modes={historyModes} valueFor={(mode) => decisionResultPnl(result, mode, 'user') - decisionResultPnl(result, mode, 'system')} /></span>
+              </> : <>
+                <span>你的盈亏 <b>$0.00</b></span>
+                <span>本题系统 <DecisionModeMoneyStack modes={historyModes} valueFor={(mode) => decisionResultPnl(result, mode, 'system')} /></span>
+                <span>相对系统 <DecisionModeMoneyStack modes={historyModes} valueFor={(mode) => -decisionResultPnl(result, mode, 'system')} /><small>未参与不计入你的胜率</small></span>
+              </>}
             </div> : <div className="decision-history-card-stats decision-history-trade-pending">
               <span>交易状态 <b>{attempt ? '进行中，尚未结算' : '等待开始'}</b></span>
               <span>点击后继续这笔交易；结算后会在这里显示本笔盈亏与系统对比。</span>
             </div>}
             <small className="decision-history-card-hint">{result ? '点击直接打开这一笔的 K 线复盘与独立画图' : '点击返回这一笔尚未完成的决策练习'}</small>
           </div>)}
-        </div> : <div className="decision-history-list">
-          {entries.map(({ session, candidates, results, modes, intervals, symbolLabel, favorite, favoriteTradeCount }) => {
-            const favoriteKey = decisionReplayFavoriteKey('session', session.id)
-            return <div
-              key={session.id}
-              className={`decision-history-card${favorite ? ' favorite' : ''}`}
-              role="button"
-              tabIndex={0}
-              onClick={() => onOpenSession(session.id)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault()
-                  onOpenSession(session.id)
-                }
-              }}
-               aria-label={`查看 ${symbolLabel} 的决策练习`}
-            >
-              <div className="decision-history-card-head">
-                <span className={`decision-session-status ${session.status}`}>{statusLabel(session.status)}</span>
-                <span><b>{symbolLabel} · 决策练习</b><small>{new Date(session.startedAt).toLocaleString('zh-CN')} · {intervals.join(' / ') || '多周期'}</small></span>
-                {favoriteTradeCount > 0 && <span className="decision-history-favorite-count"><Star size={12} fill="currentColor" />{favoriteTradeCount} 笔</span>}
-                <DecisionFavoriteButton favorite={favoriteKeys.includes(favoriteKey)} onToggle={() => onToggleFavorite(favoriteKey)} label={favoriteKeys.includes(favoriteKey) ? '取消收藏本场练习' : '收藏本场练习'} />
-                <ChevronRight size={19} />
-              </div>
-              <div className="decision-history-card-stats">
-                <span>完成 <b>{results.length} / {candidates.length}</b> 笔</span>
-                <span>你的 <DecisionModeMoneyStack modes={modes} valueFor={(mode) => aggregateDecisionResults(results, mode).userPnlUsd} /></span>
-                <span>系统 <DecisionModeMoneyStack modes={modes} valueFor={(mode) => aggregateDecisionResults(results, mode).systemPnlUsd} /></span>
-                <span>差额 <DecisionModeMoneyStack modes={modes} valueFor={(mode) => aggregateDecisionResults(results, mode).differenceUsd} /></span>
-              </div>
-              <small className="decision-history-card-hint">{session.status === 'active' ? '点击继续本场练习；已完成的笔数会立即保留' : '点击查看本场每笔决策、收益对比及独立画图'}</small>
-            </div>
-          })}
         </div>}
       </div>
     </section>
@@ -511,6 +530,8 @@ export function DecisionChartStatus({ session, attempt, currentPnlByMode = null,
   const [statusPreferences, setStatusPreferences] = useState(loadDecisionChartStatusPreferences)
   const [statusDragging, setStatusDragging] = useState(false)
   const results = sessionResults(session)
+  const participatedResults = results.filter((result) => result.choice === 'traded')
+  const skippedTradeCount = results.filter((result) => result.choice === 'skipped').length
   const positionOpen = attempt.stage === 'position-open' && currentPnlByMode !== null
   const hasCurrentResult = Boolean(attempt.result)
   const hasCurrentPnl = positionOpen || hasCurrentResult
@@ -635,11 +656,11 @@ export function DecisionChartStatus({ session, attempt, currentPnlByMode = null,
           : <b className="decision-chart-status-empty">—</b>}
       </article>
       <article className="user-total has-value">
-        <div><span>本场累计净盈亏</span><small>{positionOpen ? '已结算结果 + 当前浮盈' : `${results.length} 笔已结算`}</small></div>
+        <div><span>本场累计净盈亏</span><small>{positionOpen ? '已参与结果 + 当前浮盈' : `参与 ${participatedResults.length} / 未参与 ${skippedTradeCount} / 已结算 ${results.length} 笔`}</small></div>
         <DecisionModeMoneyStack modes={positionSizingModes} valueFor={totalValueFor} compact />
       </article>
       <article className="ai-total has-value" data-testid="decision-chart-ai-total">
-        <div><span>本场 AI 累计净盈亏</span><small>{results.length} 笔已结算</small></div>
+        <div><span>本场 AI 累计净盈亏</span><small>全部已结算 {results.length} 笔题目</small></div>
         <DecisionModeMoneyStack modes={positionSizingModes} valueFor={aiTotalValueFor} compact />
       </article>
     </div>
@@ -752,6 +773,19 @@ function layoutDecisionAnnotations(specs: readonly DecisionAnnotationSpec[]) {
     reserved.push(bestRect)
   })
   return placements
+}
+
+function decisionReasonConnectorEndpoint(x: number, y: number, placement: DecisionAnnotationPlacement | undefined) {
+  switch (placement) {
+    case 'placement-above-left': return { x: x - 8, y: y - DECISION_ANNOTATION_GAP }
+    case 'placement-above-right': return { x: x + 8, y: y - DECISION_ANNOTATION_GAP }
+    case 'placement-below-left': return { x: x - 8, y: y + DECISION_ANNOTATION_GAP }
+    case 'placement-below-right': return { x: x + 8, y: y + DECISION_ANNOTATION_GAP }
+    case 'placement-below': return { x, y: y + DECISION_ANNOTATION_GAP }
+    case 'placement-above':
+    default:
+      return { x, y: y - DECISION_ANNOTATION_GAP }
+  }
 }
 
 export function DecisionReplayPanel({ candidate, attempt, ordinal, total, currentClose = null, currentPnlUsd = null, currentPnlByMode = null, positionSizingModes = ['fixed-risk'], favorite = false, onToggleFavorite = () => undefined, onAdvance, onSignalExtreme, onFreePrice, onSkip, onManualClose, onCancelPending, onNextTrade, onStop }: {
@@ -1218,15 +1252,14 @@ export function DecisionRiskOverlay({ candidate, entryPrice, entryLabel = '挂�
   </div>
 }
 
-export function DecisionChartAnnotations({ candidate, attempt, result, data, toX, toY, dimmed = false, onHoverChange }: {
+export function DecisionChartAnnotations({ candidate, attempt, result, data, toX, toY, hidden = false }: {
   candidate: ReplayDecisionCandidate
   attempt?: DecisionAttempt | null
   result?: DecisionTradeResult | null
   data: readonly Candle[]
   toX: (time: number) => number | null
   toY: (price: number) => number | null
-  dimmed?: boolean
-  onHoverChange?: (hovering: boolean) => void
+  hidden?: boolean
 }) {
   const reasonReferences = useMemo(() => {
     const references = resolveTradeCandleReferences(candidate.trade, data)
@@ -1272,12 +1305,28 @@ export function DecisionChartAnnotations({ candidate, attempt, result, data, toX
   const annotationPlacements = layoutDecisionAnnotations([...pointSpecs, ...reasonSpecs])
   const placementFor = (id: string) => annotationPlacements.get(id)?.placement
   return <div
-    className={`decision-chart-annotations${dimmed ? ' is-dimmed' : ''}`}
+    className={`decision-chart-annotations${hidden ? ' is-hidden' : ''}`}
     aria-hidden="true"
-    onPointerEnter={() => onHoverChange?.(true)}
-    onPointerLeave={() => onHoverChange?.(false)}
   >
     {signalX !== null && candidate.trade.entry.signalTime <= revealedThrough && <div className="decision-signal-cursor" style={{ left: signalX }}><span>信号 K</span></div>}
+    {reasonReferences.length > 0 && <svg className="decision-reason-connectors" width="100%" height="100%" preserveAspectRatio="none">
+      {reasonReferences.map((reference) => {
+        const exitOnly = reference.sections.length === 1 && reference.sections[0] === 'exit'
+        const x = toX(reference.time)
+        const y = toY(exitOnly ? reference.candle.low : reference.candle.high)
+        if (x === null || y === null) return null
+        const id = `reason-${reference.index}-${reference.time}`
+        const endpoint = decisionReasonConnectorEndpoint(x, y, placementFor(id))
+        return <line
+          key={`decision-reason-anchor-${reference.index}-${reference.time}`}
+          className={`decision-reason-anchor-line${exitOnly ? ' exit' : ''}`}
+          x1={x}
+          y1={y}
+          x2={endpoint.x}
+          y2={endpoint.y}
+        />
+      })}
+    </svg>}
     {reasonReferences.map((reference) => {
       const exitOnly = reference.sections.length === 1 && reference.sections[0] === 'exit'
       const x = toX(reference.time)
@@ -1314,15 +1363,17 @@ export function DecisionResultsDialog({ session, onClose, onReview, onNew, favor
   const results = sessionResults(session)
   const modes = decisionSessionPositionSizingModes(session)
   const userTrades = results.filter((result) => result.choice === 'traded')
-  const userWinRateText = decisionModeMetricText(modes, (mode) => `${userTrades.length ? (userTrades.filter((result) => decisionResultPnl(result, mode, 'user') > 0).length / userTrades.length * 100).toFixed(1) : '0.0'}%`)
-  const systemWinRateText = decisionModeMetricText(modes, (mode) => `${results.length ? (results.filter((result) => decisionResultPnl(result, mode, 'system') > 0).length / results.length * 100).toFixed(1) : '0.0'}%`)
+  const skippedTradeCount = results.filter((result) => result.choice === 'skipped').length
+  const userWinRateText = decisionModeMetricText(modes, (mode) => decisionWinRateText(decisionWinStats(userTrades, mode, 'user')))
+  const systemParticipatedWinRateText = decisionModeMetricText(modes, (mode) => decisionWinRateText(decisionWinStats(userTrades, mode, 'system')))
+  const systemOverallWinRateText = decisionModeMetricText(modes, (mode) => decisionWinRateText(decisionWinStats(results, mode, 'system')))
   return <div className="modal-backdrop decision-results-backdrop">
     <section className="decision-results" role="dialog" aria-modal="true" aria-label="决策回放盈亏对比">
       <header><BarChart3 size={25} /><div><h2>本场决策对比</h2><small>{statusLabel(session.status)} · 完成 {results.length} / {session.candidates.length} 笔</small></div><button aria-label="关闭结果" onClick={onClose}><X size={21} /></button></header>
       <div className="decision-result-summary">
-        <article><span>你的净盈亏</span><DecisionModeMoneyStack modes={modes} compact={false} valueFor={(mode) => aggregateDecisionResults(results, mode).userPnlUsd} /><small>胜率 {userWinRateText} · 参与 {userTrades.length} 笔</small></article>
-        <article><span>V5 系统净盈亏</span><DecisionModeMoneyStack modes={modes} compact={false} valueFor={(mode) => aggregateDecisionResults(results, mode).systemPnlUsd} /><small>胜率 {systemWinRateText} · {results.length} 笔</small></article>
-        <article><span>相对系统</span><DecisionModeMoneyStack modes={modes} compact={false} valueFor={(mode) => aggregateDecisionResults(results, mode).differenceUsd} /><small>按所选仓位口径与系统结果对比</small></article>
+        <article><span>你的净盈亏</span><DecisionModeMoneyStack modes={modes} compact={false} valueFor={(mode) => aggregateDecisionResults(results, mode).userPnlUsd} /><small>参与胜率 {userWinRateText} · 参与 {userTrades.length} 笔 · 未参与 {skippedTradeCount} 笔交易</small></article>
+        <article className="decision-system-summary"><span>V5 系统参与部分净盈亏</span><DecisionModeMoneyStack modes={modes} compact={false} valueFor={(mode) => aggregateDecisionResults(userTrades, mode).systemPnlUsd} /><small>参与部分胜率 {systemParticipatedWinRateText} · {userTrades.length} 笔</small><span className="decision-system-total-label">V5 系统总净盈亏</span><DecisionModeMoneyStack modes={modes} compact={false} valueFor={(mode) => aggregateDecisionResults(results, mode).systemPnlUsd} /><small>总胜率 {systemOverallWinRateText} · 全部 {results.length} 笔</small></article>
+        <article><span>相对系统</span><DecisionModeMoneyStack modes={modes} compact={false} valueFor={(mode) => aggregateDecisionResults(results, mode).differenceUsd} /><small>你的全部题目结果与系统全部题目结果相比</small></article>
       </div>
       <div className="decision-result-table">
         <div className="decision-result-row heading"><span># / 标的</span><span>你的选择</span><span>你的盈亏</span><span>系统盈亏</span><span>差额</span><span /></div>
@@ -1357,16 +1408,18 @@ export function DecisionResultsDialog({ session, onClose, onReview, onNew, favor
 }
 
 export function DecisionReviewPanel({ result, positionSizingModes = ['fixed-risk'], onBack }: { result: DecisionTradeResult; positionSizingModes?: readonly DecisionPositionSizingMode[]; onBack: () => void }) {
+  const initialStopLoss = decisionResultInitialStopLoss(result)
+  const fixedRiskExplanation = positionSizingModes.includes('fixed-risk') ? `；固定风险按 ${decisionResultR(result, 'user').toFixed(2)}R × 100U 计算` : ''
   return <aside className="decision-review-panel">
     <header><Flag size={20} /><div><h2>{result.candidate.symbol} · {INTERVALS[result.candidate.interval].label} · 第 {result.candidate.trade.tradeNumber} 笔</h2><small>复盘视图已恢复该笔练习的独立绘图</small></div><button onClick={onBack}><X size={19} /></button></header>
     <div className="decision-review-compare">
-      <article><span>你的结果</span><DecisionModeMoneyStack modes={positionSizingModes} compact={false} valueFor={(mode) => decisionResultPnl(result, mode, 'user')} /><small>{result.choice === 'traded' ? `${result.userR >= 0 ? '+' : ''}${result.userR.toFixed(2)}R` : choiceLabel(result)}</small></article>
-      <article><span>V5 系统结果</span><DecisionModeMoneyStack modes={positionSizingModes} compact={false} valueFor={(mode) => decisionResultPnl(result, mode, 'system')} /><small>{result.systemR >= 0 ? '+' : ''}{result.systemR.toFixed(2)}R</small></article>
+      <article><span>你的结果</span><DecisionModeMoneyStack modes={positionSizingModes} compact={false} valueFor={(mode) => decisionResultPnl(result, mode, 'user')} /><small>{result.choice === 'traded' ? `${decisionResultR(result, 'user') >= 0 ? '+' : ''}${decisionResultR(result, 'user').toFixed(2)}R` : choiceLabel(result)}</small></article>
+      <article><span>V5 系统结果</span><DecisionModeMoneyStack modes={positionSizingModes} compact={false} valueFor={(mode) => decisionResultPnl(result, mode, 'system')} /><small>{decisionResultR(result, 'system') >= 0 ? '+' : ''}{decisionResultR(result, 'system').toFixed(2)}R</small></article>
     </div>
     <div className="decision-review-details">
       <section><h3>系统开仓信号 · {result.candidate.trade.entry.setup}</h3><p>{result.candidate.trade.entry.reason}</p></section>
       <section><h3>系统平仓 · {result.candidate.trade.exit.setup || result.candidate.trade.exit.reasonCode}</h3><p>{result.candidate.trade.exit.reason || `系统离场原因：${result.candidate.trade.exit.reasonCode}`}</p></section>
-      <section><h3>你的执行</h3><p>{result.choice === 'skipped' ? '本次选择不参与。' : result.choice === 'unfilled' ? `${choiceLabel(result)}，截至可用行情结束仍未成交。` : `${choiceLabel(result)}；开仓 ${formatPrice(result.userEntry?.price ?? 0, result.candidate.symbol)}，平仓 ${formatPrice(result.userExit.price, result.candidate.symbol)}，离场方式：${exitReasonLabel(result.userExit.reason)}。`}</p></section>
+      <section><h3>你的执行</h3><p>{result.choice === 'skipped' ? '本次选择不参与。' : result.choice === 'unfilled' ? `${choiceLabel(result)}，截至可用行情结束仍未成交。` : `${choiceLabel(result)}；开仓 ${formatPrice(result.userEntry?.price ?? 0, result.candidate.symbol)}，初始止损 ${formatPrice(initialStopLoss ?? 0, result.candidate.symbol)}，平仓 ${formatPrice(result.userExit.price, result.candidate.symbol)}${fixedRiskExplanation}，离场方式：${exitReasonLabel(result.userExit.reason)}。`}</p></section>
     </div>
     <button className="decision-review-back" onClick={onBack}><ChevronRight size={17} />返回本场对比</button>
   </aside>
