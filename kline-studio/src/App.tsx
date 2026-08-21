@@ -27,7 +27,7 @@ import { clearWorkspace, loadWorkspace, saveWorkspace } from './lib/persistence'
 import { decisionExerciseNavigationDirection, isChartAnnotationVisibilityShortcut, isEditableShortcutTarget, parseIntervalShortcut, resolveHistoryShortcut, TRADINGVIEW_SHORTCUTS } from './lib/shortcuts'
 import { aggregateCandles, formatPrice, generateCandles, INTERVALS, SYMBOLS, type Candle, type IntervalId, type SymbolId } from './lib/market'
 import {
-  getSnapshotStatus, loadSnapshotCandles, mergeCandleHistory,
+  getDecisionReplayCandles, getSnapshotStatus, loadSnapshotCandles, mergeCandleHistory,
   type MarketDataStatus,
 } from './lib/liveMarket'
 import {
@@ -269,13 +269,17 @@ function App() {
   const visibleIndicators = useMemo(() => indicatorsHidden ? { ...indicators, ma: false, ema: false, boll: false, volume: false } : indicators, [indicators, indicatorsHidden])
   const minuteHistory = useMemo(() => remoteMarket?.symbol === symbol ? remoteMarket.bars : decisionHistoryBySymbol[symbol] ?? null, [decisionHistoryBySymbol, remoteMarket, symbol])
   const availableDecisionHistoryBySymbol = useMemo(() => {
-    if (!remoteMarket?.bars.length || decisionHistoryBySymbol[remoteMarket.symbol] === remoteMarket.bars) return decisionHistoryBySymbol
-    return {
-      ...decisionHistoryBySymbol,
-      [remoteMarket.symbol]: mergeCandleHistory([decisionHistoryBySymbol[remoteMarket.symbol] ?? [], remoteMarket.bars]),
+    const histories = { ...decisionHistoryBySymbol }
+    if (remoteMarket?.bars.length && decisionHistoryBySymbol[remoteMarket.symbol] !== remoteMarket.bars) {
+      histories[remoteMarket.symbol] = mergeCandleHistory([decisionHistoryBySymbol[remoteMarket.symbol] ?? [], remoteMarket.bars])
     }
+    const oandaXagusdBars = getDecisionReplayCandles('XAGUSD')
+    if (oandaXagusdBars?.length) histories.XAGUSD = oandaXagusdBars
+    return histories
   }, [decisionHistoryBySymbol, remoteMarket])
-  const marketStatus = remoteMarket?.symbol === symbol ? remoteMarket.status : getSnapshotStatus(symbol)
+  const marketStatus = decisionMode && symbol === 'XAGUSD'
+    ? { kind: 'snapshot', label: 'OANDA 最新', vendor: 'OANDA', fetchedAt: null, detail: 'OANDA:XAGUSD · 决策回放冻结 5 分钟数据' } satisfies MarketDataStatus
+    : remoteMarket?.symbol === symbol ? remoteMarket.status : getSnapshotStatus(symbol)
   const marketStatusLabel = marketLoading?.symbol === symbol ? marketLoading.label : marketStatus.label
   const baseData = useMemo(() => {
     if (minuteHistory?.length) return interval === '1m' ? minuteHistory : aggregateCandles(minuteHistory, INTERVALS[interval].seconds)
@@ -1592,7 +1596,7 @@ function App() {
                   </button>
                 ))}
               </div>
-              <div className="data-disclaimer">XAUUSD/XAGUSD/US500：DUKASCOPY 2026-06-01 至最新 1 分钟快照；BTCUSDT.P：KUCOIN XBTUSDTM 近90天快照；ETHUSD：本地模拟</div>
+              <div className="data-disclaimer">XAUUSD/XAGUSD/US500：DUKASCOPY 普通 1 分钟快照；XAGUSD 决策回放：OANDA:XAGUSD 冻结 5 分钟数据；BTCUSDT.P：KUCOIN XBTUSDTM 近90天快照；ETHUSD：本地模拟</div>
             </div>
           )}
         </div>

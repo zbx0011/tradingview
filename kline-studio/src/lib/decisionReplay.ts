@@ -483,21 +483,30 @@ function candleIndexAtOrAfter(candles: readonly Candle[], time: number) {
   return low
 }
 
+function candleResolutionSeconds(candles: readonly Candle[]) {
+  for (let index = 1; index < candles.length; index += 1) {
+    const difference = candles[index].time - candles[index - 1].time
+    if (difference > 0) return difference
+  }
+  return 60
+}
+
 /**
- * A random exercise is eligible only when the bundled minute history can
+ * A random exercise is eligible only when the bundled source history can
  * reconstruct the complete signal, entry and system-exit source candles.
  * This prevents a valid trade record from opening as an empty chart merely
  * because its older market window is not shipped with the site.
  */
-export function historyCoversDecisionCandidate(candidate: ReplayDecisionCandidate, minuteCandles: readonly Candle[] | null | undefined) {
-  if (!minuteCandles?.length) return false
+export function historyCoversDecisionCandidate(candidate: ReplayDecisionCandidate, sourceCandles: readonly Candle[] | null | undefined) {
+  if (!sourceCandles?.length) return false
   const seconds = intervalSeconds(candidate.interval)
+  const candleSeconds = candleResolutionSeconds(sourceCandles)
   const sourceTimes = [candidate.trade.entry.signalTime, candidate.trade.entry.time, candidate.trade.exit.time]
   return sourceTimes.every((sourceTime) => {
-    const firstIndex = candleIndexAtOrAfter(minuteCandles, sourceTime)
-    const lastTime = sourceTime + seconds - 60
-    const lastIndex = candleIndexAtOrAfter(minuteCandles, lastTime)
-    return minuteCandles[firstIndex]?.time === sourceTime && minuteCandles[lastIndex]?.time === lastTime
+    const firstIndex = candleIndexAtOrAfter(sourceCandles, sourceTime)
+    const lastTime = sourceTime + seconds - candleSeconds
+    const lastIndex = candleIndexAtOrAfter(sourceCandles, lastTime)
+    return sourceCandles[firstIndex]?.time === sourceTime && sourceCandles[lastIndex]?.time === lastTime
   })
 }
 

@@ -1,4 +1,5 @@
 import snapshotManifestJson from '../data/marketSnapshotManifest.json'
+import oandaXagusdReplayJson from '../data/oandaXagusdReplay5m.json'
 import { aggregateCandles, INTERVALS, type Candle, type IntervalId, type SymbolId } from './market'
 
 interface SnapshotManifestSeries {
@@ -53,6 +54,7 @@ export interface BybitHistoryOptions {
 }
 
 const snapshotManifest = snapshotManifestJson as SnapshotManifest
+const oandaXagusdReplay = oandaXagusdReplayJson as { symbol: string; vendor: string; resolution: string; bars: Candle[] }
 const snapshotSourceCache = new Map<SymbolId, Candle[]>()
 const snapshotCandleCache = new Map<string, Candle[]>()
 const snapshotLoadCache = new Map<SymbolId, Promise<Candle[] | null>>()
@@ -65,6 +67,15 @@ export const MARKET_HISTORY_SECONDS = MARKET_HISTORY_DAYS * 24 * 60 * 60
 
 export function hasMarketSnapshot(symbol: SymbolId): boolean {
   return Boolean(snapshotManifest.series[symbol]?.count)
+}
+
+/**
+ * Decision replay uses the exact frozen OANDA 5-minute tape for XAGUSD.
+ * The normal market snapshot can be refreshed independently, but replay
+ * answers and the candles shown while answering must share one source.
+ */
+export function getDecisionReplayCandles(symbol: SymbolId): Candle[] | null {
+  return symbol === 'XAGUSD' ? oandaXagusdReplay.bars : null
 }
 
 export function getSnapshotCandles(symbol: SymbolId, interval: IntervalId = '1m'): Candle[] | null {

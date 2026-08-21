@@ -7,7 +7,6 @@ const BAR_SECONDS = 60
 
 const series = [
   { id: 'XAUUSD', instrument: 'xauusd', symbol: 'DUKASCOPY:XAUUSD' },
-  { id: 'XAGUSD', instrument: 'xagusd', symbol: 'DUKASCOPY:XAGUSD' },
   { id: 'US500', instrument: 'usa500idxusd', symbol: 'DUKASCOPY:USA500IDXUSD' },
 ]
 

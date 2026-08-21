@@ -91,6 +91,13 @@ describe('decision replay', () => {
     expect(historyCoversDecisionCandidate(item, minutes.filter((candle) => candle.time !== 4440))).toBe(false)
   })
 
+  it('accepts a native 5-minute replay tape without pretending it is one-minute data', () => {
+    const nativeFiveMinuteBars: Candle[] = []
+    for (let time = 3000; time <= 4440; time += 300) nativeFiveMinuteBars.push(bar(time, 1, 1, 1, 1))
+    expect(historyCoversDecisionCandidate(candidate('a:1'), nativeFiveMinuteBars)).toBe(true)
+    expect(historyCoversDecisionCandidate(candidate('a:1'), nativeFiveMinuteBars.filter((item) => item.time !== 4200))).toBe(false)
+  })
+
   it('has fully backed decision questions across the four imported markets', () => {
     const historyBySymbol = new Map<string, Candle[] | null>()
     const eligible = replayDecisionCandidates().filter((item) => {

@@ -1,4 +1,4 @@
-import { writeFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 
 const OUTPUT = new URL('../src/data/marketSnapshots.json', import.meta.url)
 // Fetch enough history to cover the requested July-August window, then keep
@@ -9,6 +9,10 @@ const REQUEST_BATCH = 5_000
 const SOCKET_URL = 'wss://prodata.tradingview.com/socket.io/websocket'
 const RANGE_START = Math.floor(Date.parse(process.env.MARKET_RANGE_START ?? '2026-07-01T00:00:00Z') / 1000)
 const RANGE_END = Math.floor(Date.parse(process.env.MARKET_RANGE_END ?? '2026-09-01T00:00:00Z') / 1000)
+const requestedSeries = new Set((process.env.MARKET_SERIES ?? '')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean))
 
 if (!Number.isInteger(TARGET_BARS) || TARGET_BARS <= 0) throw new Error('MARKET_TARGET_BARS 必须是正整数')
 if (!Number.isFinite(RANGE_START) || !Number.isFinite(RANGE_END) || RANGE_START >= RANGE_END) throw new Error('MARKET_RANGE_START/END 必须是有效的时间范围')
@@ -25,6 +29,17 @@ const SERIES = [
   { id: 'US500', symbol: 'ICMARKETS:US500', vendor: 'ICMARKETS' },
   { id: 'BTCUSDT.P', symbol: 'BYBIT:BTCUSDT.P', vendor: 'BYBIT' },
 ]
+const selectedSeries = SERIES.filter((series) => requestedSeries.size === 0 || requestedSeries.has(series.id))
+if (selectedSeries.length === 0) throw new Error(`MARKET_SERIES 未匹配任何可用标的: ${[...requestedSeries].join(', ')}`)
+
+let existingSnapshot = null
+if (requestedSeries.size > 0) {
+  try {
+    existingSnapshot = JSON.parse(await readFile(OUTPUT, 'utf8'))
+  } catch {
+    // A filtered fetch can also initialise a new snapshot when no previous file exists.
+  }
+}
 
 function frame(method, params) {
   const body = JSON.stringify({ m: method, p: params })
@@ -155,8 +170,10 @@ function fetchSeries(series) {
   })
 }
 
-const fetched = {}
-for (const series of SERIES) {
+const fetched = requestedSeries.size > 0 && existingSnapshot?.series && typeof existingSnapshot.series === 'object'
+  ? { ...existingSnapshot.series }
+  : {}
+for (const series of selectedSeries) {
   const result = await fetchSeries(series)
   fetched[series.id] = {
     symbol: result.symbol,

@@ -3,11 +3,19 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import snapshotManifest from '../data/marketSnapshotManifest.json'
 import {
-  fetchBybitMonthCandles, getSnapshotStatus, hasMarketSnapshot, mergeCandleHistory,
+  fetchBybitMonthCandles, getDecisionReplayCandles, getSnapshotStatus, hasMarketSnapshot, mergeCandleHistory,
   parseBybitKlines, parseCompactHistory,
 } from './liveMarket'
 
 describe('real market history', () => {
+  it('ships the frozen OANDA XAGUSD replay tape separately from refreshable market snapshots', () => {
+    const bars = getDecisionReplayCandles('XAGUSD')
+    expect(bars?.length).toBeGreaterThan(1_000)
+    expect(bars?.[0]).toMatchObject({ time: 1784822400 })
+    expect(bars?.at(-1)).toMatchObject({ time: 1786740900 })
+    expect(getDecisionReplayCandles('XAUUSD')).toBeNull()
+  })
+
   it('ships chronological one-minute TradingView snapshots for the four live symbols', () => {
     for (const symbol of ['XAUUSD', 'XAGUSD', 'US500', 'BTCUSDT.P'] as const) {
       const metadata = snapshotManifest.series[symbol]
