@@ -1041,6 +1041,11 @@ function App() {
     const executeSync = async () => {
       const before = collectPortableWorkspace()
       const prepared = await prepareLocalPrivateSync(before, syncMode)
+      if (prepared.deduplicated) {
+        privateSyncLastFingerprintRef.current = currentFingerprint
+        setPrivateSyncStatus('synced')
+        return
+      }
       let summary = mergePortableWorkspaceProgress(prepared.snapshots, localStorage, { persistRecovery: false })
       let expectedHead = prepared.head
       let merged = collectPortableWorkspace()

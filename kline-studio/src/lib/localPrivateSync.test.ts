@@ -51,10 +51,30 @@ describe('local private repository sync client', () => {
 
     await expect(prepareLocalPrivateSync(workspace)).resolves.toMatchObject({
       private: true,
+      deduplicated: false,
       head: 'abc123',
       snapshots: [workspace],
     })
     expect(fetch).toHaveBeenCalledWith('/__kline_studio_sync', expect.objectContaining({ method: 'POST' }))
+    vi.unstubAllGlobals()
+  })
+
+  it('accepts a server-side deduplicated background response without requiring another upload', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      ok: true,
+      private: true,
+      deduplicated: true,
+      head: 'already-running',
+      premerge: null,
+      snapshots: [],
+      sourcePaths: [],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })))
+
+    await expect(prepareLocalPrivateSync(workspace, 'background')).resolves.toMatchObject({
+      deduplicated: true,
+      premerge: null,
+      snapshots: [],
+    })
     vi.unstubAllGlobals()
   })
 

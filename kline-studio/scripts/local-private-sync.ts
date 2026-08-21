@@ -35,6 +35,8 @@ interface PrivateRepositoryState {
 
 type SyncMode = 'manual' | 'background'
 
+let recentBackgroundLease: { fingerprint: string; expiresAt: number } | null = null
+
 class HttpError extends Error {
   constructor(public readonly status: number, message: string, public readonly details?: Record<string, unknown>) {
     super(message)
@@ -95,6 +97,13 @@ function serializeWorkspace(workspace: PortableWorkspace) {
 
 function sha256(value: string | Buffer) {
   return createHash('sha256').update(value).digest('hex')
+}
+
+function progressFingerprint(workspace: PortableWorkspace) {
+  return sha256(JSON.stringify([
+    workspace.entries[REPLAY_KEY] ?? null,
+    workspace.entries[FAVORITES_KEY] ?? null,
+  ]))
 }
 
 async function readJsonRequest(request: IncomingMessage) {
@@ -265,6 +274,19 @@ function safeMachineName() {
 
 async function prepareSync(snapshot: PortableWorkspace, mode: SyncMode) {
   const state = await ensureRepositoryUpdated()
+  const fingerprint = progressFingerprint(snapshot)
+  if (mode === 'background' && recentBackgroundLease
+    && recentBackgroundLease.fingerprint === fingerprint && recentBackgroundLease.expiresAt > Date.now()) {
+    return {
+      ok: true,
+      private: true,
+      deduplicated: true,
+      head: state.head,
+      premerge: null,
+      snapshots: [],
+      sourcePaths: [],
+    }
+  }
   await verifyPrivateVisibility()
   const relativePath = mode === 'background'
     ? `backups/devices/${safeMachineName()}/before-sync/kline-studio-sync-before-latest.json`
@@ -276,10 +298,12 @@ async function prepareSync(snapshot: PortableWorkspace, mode: SyncMode) {
   const commit = await commitAndPush(state.repositoryPath, [relativePath], mode === 'background'
     ? 'backup: preserve latest workspace before background sync'
     : 'backup: preserve workspace before private sync')
+  if (mode === 'background') recentBackgroundLease = { fingerprint, expiresAt: Date.now() + 60_000 }
   const collected = await collectProgressSnapshots(state.repositoryPath)
   return {
     ok: true,
     private: true,
+    deduplicated: false,
     head: commit,
     premerge: { path: relativePath, commit, sha256: sha256(raw) },
     ...collected,

@@ -54,8 +54,9 @@ export async function localPrivateSyncAvailable() {
 export interface LocalSyncPrepareResult {
   ok: true
   private: true
+  deduplicated: boolean
   head: string
-  premerge: { path: string; commit: string; sha256: string }
+  premerge: { path: string; commit: string; sha256: string } | null
   snapshots: PortableWorkspace[]
   sourcePaths: string[]
 }
@@ -113,9 +114,13 @@ async function request(body: Record<string, unknown>) {
 
 export async function prepareLocalPrivateSync(snapshot: PortableWorkspace, mode: LocalSyncMode = 'manual'): Promise<LocalSyncPrepareResult> {
   const payload = await request({ action: 'prepare', mode, snapshot })
-  if (payload.private !== true || typeof payload.head !== 'string' || !payload.premerge || typeof payload.premerge !== 'object') {
+  if (payload.private !== true || typeof payload.head !== 'string') {
     throw new Error('私有仓库校验结果缺失，已停止同步')
   }
+  if (payload.deduplicated === true) {
+    return { ok: true, private: true, deduplicated: true, head: payload.head, premerge: null, snapshots: [], sourcePaths: [] }
+  }
+  if (!payload.premerge || typeof payload.premerge !== 'object') throw new Error('合并前保护备份校验结果缺失，已停止同步')
   const premerge = payload.premerge as Record<string, unknown>
   if (typeof premerge.path !== 'string' || typeof premerge.commit !== 'string' || typeof premerge.sha256 !== 'string') {
     throw new Error('合并前保护备份校验结果缺失，已停止同步')
@@ -123,6 +128,7 @@ export async function prepareLocalPrivateSync(snapshot: PortableWorkspace, mode:
   return {
     ok: true,
     private: true,
+    deduplicated: false,
     head: payload.head,
     premerge: { path: premerge.path, commit: premerge.commit, sha256: premerge.sha256 },
     snapshots: checkedSnapshots(payload.snapshots),
