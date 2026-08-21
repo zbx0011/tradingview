@@ -25,6 +25,15 @@ export interface WorkspaceProgressMergeSummary {
   favoriteCount: number
 }
 
+export interface WorkspaceProgressMergeOptions {
+  /**
+   * File-based imports keep a browser-local undo snapshot. Background private-repository sync
+   * already persisted the same pre-merge snapshot remotely, so it can avoid doubling large
+   * histories inside localStorage while retaining in-memory rollback on write failure.
+   */
+  persistRecovery?: boolean
+}
+
 function readDecisionStore(raw: string | null, label: string): DecisionReplayStore {
   if (raw === null) return emptyDecisionReplayStore()
   const store = parseDecisionReplayStoreChecked(raw)
@@ -47,6 +56,7 @@ function readFavorites(raw: string | null, label: string) {
 export function mergePortableWorkspaceProgress(
   snapshots: readonly PortableWorkspace[],
   storage: StorageLike,
+  options: WorkspaceProgressMergeOptions = {},
 ): WorkspaceProgressMergeSummary {
   if (snapshots.length === 0) throw new Error('没有选择可合并的工作区备份')
 
@@ -62,8 +72,10 @@ export function mergePortableWorkspaceProgress(
     mergedFavorites = [...new Set([...mergedFavorites, ...importedFavorites])]
   })
 
-  // If the browser cannot retain a rollback point (for example because storage is full), do not mutate anything.
-  savePortableWorkspaceRecovery(before, storage)
+  const persistRecovery = options.persistRecovery !== false
+  // File imports require a durable browser rollback point. Background sync stores this snapshot
+  // in the verified private repository before calling us and therefore avoids a second large copy.
+  if (persistRecovery) savePortableWorkspaceRecovery(before, storage)
   try {
     storage.setItem(DECISION_REPLAY_STORAGE_KEY, JSON.stringify(mergedStore))
     storage.setItem(DECISION_REPLAY_FAVORITES_STORAGE_KEY, JSON.stringify(mergedFavorites))
@@ -74,7 +86,7 @@ export function mergePortableWorkspaceProgress(
     if (!verifiedFavorites || JSON.stringify(verifiedFavorites) !== JSON.stringify(mergedFavorites)) throw new Error('写入后的收藏记录校验失败')
   } catch (error) {
     restorePortableWorkspace(before, storage)
-    savePortableWorkspaceRecovery(before, storage)
+    if (persistRecovery) savePortableWorkspaceRecovery(before, storage)
     throw error
   }
 

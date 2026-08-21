@@ -16,4 +16,4 @@ if (-not (Test-Path -LiteralPath (Join-Path $projectRoot 'node_modules'))) {
 }
 
 Write-Host "K 线网站启动中：http://127.0.0.1:$Port/" -ForegroundColor Green
-npm run dev -- --host 0.0.0.0 --port $Port
+npm run dev -- --host 127.0.0.1 --port $Port --strictPort

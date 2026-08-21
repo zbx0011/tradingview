@@ -11,7 +11,7 @@ import {
   decisionShortcutAction, defaultDecisionLevels, evaluatePositionBar, fillPendingOrder,
   decisionResultPnl, decisionResultR, historyCoversDecisionCandidate, intervalCutoffTime, parseDecisionReplayStore,
   mergeDecisionReplayStores, pnlForDecision, pnlForDecisionMode, rewardRiskRatio, sampleDecisionCandidates,
-  validDecisionLevels, validOpenPositionLevels,
+  validDecisionLevels, validOpenPositionLevels, type DecisionReplaySession,
 } from './decisionReplay'
 
 function candidate(key: string, side: 'long' | 'short' = 'long'): ReplayDecisionCandidate {
@@ -32,6 +32,15 @@ function candidate(key: string, side: 'long' | 'short' = 'long'): ReplayDecision
       },
       result: { barsHeld: 3, rMultiple: .4, pnlUsd: 40 },
     },
+  }
+}
+
+function storeWithSessions(...sessions: DecisionReplaySession[]) {
+  return {
+    version: 1 as const,
+    seenTradeKeys: [...new Set(sessions.flatMap((session) => session.candidates.map((item) => item.key)))],
+    activeSessionId: sessions.find((session) => session.status === 'active')?.id ?? null,
+    sessions,
   }
 }
 
@@ -314,5 +323,50 @@ describe('decision replay', () => {
     expect(merged.sessions.find((session) => session.id === 'shared')).toMatchObject({ status: 'completed', updatedAt: 3000 })
     expect(merged.seenTradeKeys).toEqual(['local:1', 'shared:1', 'imported:1'])
     expect(merged.activeSessionId).toBe('local')
+  })
+
+  it('unions non-conflicting attempts when the same session continued on two computers', () => {
+    const candidates = [candidate('shared:1'), candidate('shared:2')]
+    const base = { ...createDecisionSession(candidates, 2, 1000), id: 'shared' }
+    const secondBaseAttempt = createDecisionAttempt(candidates[1])
+    const firstAttempt = {
+      ...base.attempts[0], stage: 'complete' as const,
+      result: buildDecisionResult(candidates[0], base.attempts[0], { time: 1001, price: candidates[0].trade.entry.price, reason: 'skipped' }, []),
+    }
+    const secondAttempt = {
+      ...secondBaseAttempt, stage: 'complete' as const,
+      result: buildDecisionResult(candidates[1], secondBaseAttempt, { time: 1002, price: candidates[1].trade.entry.price, reason: 'skipped' }, []),
+    }
+    const left = { ...base, attempts: [firstAttempt], currentIndex: 1, updatedAt: 2000 }
+    const right = { ...base, attempts: [base.attempts[0], secondAttempt], currentIndex: 1, updatedAt: 3000 }
+
+    const merged = mergeDecisionReplayStores(storeWithSessions(left), storeWithSessions(right))
+
+    expect(merged.sessions).toHaveLength(1)
+    expect(merged.sessions[0].attempts.filter((attempt) => attempt.result)).toHaveLength(2)
+    expect(merged.sessions[0]).toMatchObject({ status: 'completed', currentIndex: 2 })
+  })
+
+  it('preserves two different answers to the same question in a deterministic branch session', () => {
+    const item = candidate('shared:conflict')
+    const base = { ...createDecisionSession([item], 1, 1000), id: 'shared-conflict' }
+    const skipped = {
+      ...base.attempts[0], stage: 'complete' as const,
+      result: buildDecisionResult(item, base.attempts[0], { time: 1001, price: item.trade.entry.price, reason: 'skipped' }, []),
+    }
+    const stopped = {
+      ...base.attempts[0], stage: 'complete' as const,
+      result: { ...skipped.result!, choice: 'traded' as const, userPnlUsd: -100 },
+    }
+    const left = { ...base, attempts: [skipped], currentIndex: 1, status: 'completed' as const, updatedAt: 2000, finishedAt: 2000 }
+    const right = { ...base, attempts: [stopped], currentIndex: 1, status: 'completed' as const, updatedAt: 3000, finishedAt: 3000 }
+
+    const firstMerge = mergeDecisionReplayStores(storeWithSessions(left), storeWithSessions(right))
+    const secondMerge = mergeDecisionReplayStores(firstMerge, storeWithSessions(right))
+
+    expect(firstMerge.sessions).toHaveLength(2)
+    expect(firstMerge.sessions.flatMap((session) => session.attempts).filter((attempt) => attempt.result)).toHaveLength(2)
+    expect(firstMerge.sessions.some((session) => session.id.startsWith('shared-conflict-sync-'))).toBe(true)
+    expect(secondMerge.sessions.map((session) => session.id)).toEqual(firstMerge.sessions.map((session) => session.id))
   })
 })

@@ -205,12 +205,107 @@ function newerDecisionSession(left: DecisionReplaySession, right: DecisionReplay
   return left
 }
 
+function sameDecisionResult(left: DecisionTradeResult, right: DecisionTradeResult) {
+  return JSON.stringify(left) === JSON.stringify(right)
+}
+
+function stableBranchHash(value: string) {
+  let hash = 0x811c9dc5
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return (hash >>> 0).toString(36)
+}
+
+/**
+ * Merge a session that was continued independently on two computers.
+ * Non-conflicting attempts are unioned into the original session. If the same question was
+ * answered differently on both computers, the alternative answer is retained in a small,
+ * deterministic branch session instead of silently discarding either result.
+ */
+function mergeDecisionReplaySession(left: DecisionReplaySession, right: DecisionReplaySession) {
+  const base = newerDecisionSession(left, right)
+  const alternative = base === left ? right : left
+  const leftAttempts = new Map(left.attempts.map((attempt) => [attempt.candidateKey, attempt]))
+  const rightAttempts = new Map(right.attempts.map((attempt) => [attempt.candidateKey, attempt]))
+  const candidates = [...new Map([...base.candidates, ...alternative.candidates].map((candidate) => [candidate.key, candidate])).values()]
+  const baseAttempts = new Map(base.attempts.map((attempt) => [attempt.candidateKey, attempt]))
+  const alternativeAttempts = new Map(alternative.attempts.map((attempt) => [attempt.candidateKey, attempt]))
+  const conflictingAlternatives: DecisionAttempt[] = []
+
+  const attempts = candidates.flatMap((candidate) => {
+    const leftAttempt = leftAttempts.get(candidate.key)
+    const rightAttempt = rightAttempts.get(candidate.key)
+    if (!leftAttempt) return rightAttempt ? [rightAttempt] : []
+    if (!rightAttempt) return [leftAttempt]
+    if (leftAttempt.result && rightAttempt.result && !sameDecisionResult(leftAttempt.result, rightAttempt.result)) {
+      const alternativeAttempt = alternativeAttempts.get(candidate.key)
+      if (alternativeAttempt?.result) conflictingAlternatives.push(alternativeAttempt)
+      return [baseAttempts.get(candidate.key) ?? leftAttempt]
+    }
+    if (leftAttempt.result && !rightAttempt.result) return [leftAttempt]
+    if (rightAttempt.result && !leftAttempt.result) return [rightAttempt]
+    return [baseAttempts.get(candidate.key) ?? leftAttempt]
+  })
+
+  const requestedCount = Math.max(left.requestedCount, right.requestedCount, attempts.length)
+  const completedCount = attempts.filter((attempt) => attempt.result).length
+  const firstIncomplete = attempts.findIndex((attempt) => !attempt.result)
+  const status: DecisionSessionStatus = completedCount >= requestedCount
+    ? 'completed'
+    : base.status
+  const merged: DecisionReplaySession = {
+    ...base,
+    requestedCount,
+    candidates,
+    attempts,
+    currentIndex: status === 'active' && firstIncomplete >= 0
+      ? firstIncomplete
+      : Math.max(left.currentIndex, right.currentIndex, completedCount),
+    status,
+    updatedAt: Math.max(left.updatedAt, right.updatedAt),
+    finishedAt: status === 'completed'
+      ? Math.max(left.finishedAt ?? 0, right.finishedAt ?? 0, left.updatedAt, right.updatedAt)
+      : base.finishedAt,
+    positionSizingModes: [...new Set([
+      ...decisionSessionPositionSizingModes(left),
+      ...decisionSessionPositionSizingModes(right),
+    ])],
+  }
+
+  if (conflictingAlternatives.length === 0) return { merged, branch: null }
+  const conflictKeys = new Set(conflictingAlternatives.map((attempt) => attempt.candidateKey))
+  const branchCandidates = alternative.candidates.filter((candidate) => conflictKeys.has(candidate.key))
+  const branchSignature = JSON.stringify(conflictingAlternatives.map((attempt) => attempt.result))
+  const branch: DecisionReplaySession = {
+    ...alternative,
+    id: `${alternative.id}-sync-${stableBranchHash(branchSignature)}`,
+    requestedCount: conflictingAlternatives.length,
+    candidates: branchCandidates,
+    attempts: conflictingAlternatives,
+    currentIndex: conflictingAlternatives.length,
+    status: 'completed',
+    finishedAt: alternative.finishedAt ?? alternative.updatedAt,
+  }
+  return { merged, branch }
+}
+
 /** Merge independently-created exercise histories without discarding either computer's progress. */
 export function mergeDecisionReplayStores(local: DecisionReplayStore, imported: DecisionReplayStore): DecisionReplayStore {
   const sessionsById = new Map(local.sessions.map((session) => [session.id, session]))
   for (const session of imported.sessions) {
     const existing = sessionsById.get(session.id)
-    sessionsById.set(session.id, existing ? newerDecisionSession(existing, session) : session)
+    if (!existing) {
+      sessionsById.set(session.id, session)
+      continue
+    }
+    const { merged, branch } = mergeDecisionReplaySession(existing, session)
+    sessionsById.set(session.id, merged)
+    if (branch) {
+      const existingBranch = sessionsById.get(branch.id)
+      sessionsById.set(branch.id, existingBranch ? newerDecisionSession(existingBranch, branch) : branch)
+    }
   }
   const sessions = [...sessionsById.values()].sort((left, right) => right.startedAt - left.startedAt)
   const activeSessionId = [local.activeSessionId, imported.activeSessionId]

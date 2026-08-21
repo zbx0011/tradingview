@@ -113,4 +113,18 @@ describe('workspace progress sync', () => {
     expect(storage.getItem('kline-studio-workspace-v1')).toBe('keep-local-settings')
     expect(storage.getItem(PORTABLE_WORKSPACE_RECOVERY_STORAGE_KEY)).not.toBeNull()
   })
+
+  it('uses in-memory rollback without duplicating a large recovery snapshot during verified background sync', () => {
+    const localRaw = JSON.stringify(store(session('local', 1000)))
+    const storage = createStorage({
+      [DECISION_REPLAY_STORAGE_KEY]: localRaw,
+      'kline-studio-workspace-v1': 'keep-local-settings',
+    }, PORTABLE_WORKSPACE_RECOVERY_STORAGE_KEY)
+
+    expect(mergePortableWorkspaceProgress([
+      snapshot(store(session('imported', 2000)), ['trade:imported']),
+    ], storage, { persistRecovery: false })).toMatchObject({ sessionCount: 2, resultCount: 2 })
+    expect(storage.getItem(PORTABLE_WORKSPACE_RECOVERY_STORAGE_KEY)).toBeNull()
+    expect(storage.getItem('kline-studio-workspace-v1')).toBe('keep-local-settings')
+  })
 })
