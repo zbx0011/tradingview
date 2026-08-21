@@ -294,10 +294,27 @@ async function prepareSync(snapshot: PortableWorkspace, mode: SyncMode) {
   const fullPath = path.join(state.repositoryPath, ...relativePath.split('/'))
   await fs.mkdir(path.dirname(fullPath), { recursive: true })
   const raw = serializeWorkspace(snapshot)
-  await fs.writeFile(fullPath, raw, mode === 'background' ? 'utf8' : { encoding: 'utf8', flag: 'wx' })
-  const commit = await commitAndPush(state.repositoryPath, [relativePath], mode === 'background'
-    ? 'backup: preserve latest workspace before background sync'
-    : 'backup: preserve workspace before private sync')
+  let commit = state.head
+  let backupRaw = raw
+  let writeBackup = true
+  if (mode === 'background') {
+    try {
+      const existingRaw = await fs.readFile(fullPath, 'utf8')
+      const existing = workspaceFromUnknown(JSON.parse(existingRaw))
+      if (progressFingerprint(existing) === fingerprint) {
+        writeBackup = false
+        backupRaw = existingRaw
+      }
+    } catch {
+      // A missing or invalid rotating backup is replaced by the verified current snapshot below.
+    }
+  }
+  if (writeBackup) {
+    await fs.writeFile(fullPath, raw, mode === 'background' ? 'utf8' : { encoding: 'utf8', flag: 'wx' })
+    commit = await commitAndPush(state.repositoryPath, [relativePath], mode === 'background'
+      ? 'backup: preserve latest workspace before background sync'
+      : 'backup: preserve workspace before private sync')
+  }
   if (mode === 'background') recentBackgroundLease = { fingerprint, expiresAt: Date.now() + 60_000 }
   const collected = await collectProgressSnapshots(state.repositoryPath)
   return {
@@ -305,7 +322,7 @@ async function prepareSync(snapshot: PortableWorkspace, mode: SyncMode) {
     private: true,
     deduplicated: false,
     head: commit,
-    premerge: { path: relativePath, commit, sha256: sha256(raw) },
+    premerge: { path: relativePath, commit, sha256: sha256(backupRaw) },
     ...collected,
   }
 }

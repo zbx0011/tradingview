@@ -1045,6 +1045,21 @@ function App() {
         return
       }
       let summary = mergePortableWorkspaceProgress(prepared.snapshots, localStorage, { persistRecovery: false })
+      const afterMergeFingerprint = JSON.stringify([loadDecisionReplayStore(), loadDecisionReplayFavorites()])
+      if (syncMode === 'background' && afterMergeFingerprint === currentFingerprint) {
+        privateSyncLastFingerprintRef.current = afterMergeFingerprint
+        try {
+          localStorage.setItem(LOCAL_SYNC_AUTO_MARKER_KEY, JSON.stringify({
+            fingerprint: afterMergeFingerprint,
+            commit: prepared.head,
+            savedAt: Date.now(),
+          }))
+        } catch {
+          // The marker is only a cross-tab optimization; there was no new progress to publish.
+        }
+        setPrivateSyncStatus('synced')
+        return
+      }
       let expectedHead = prepared.head
       let merged = collectPortableWorkspace()
       let published = null
