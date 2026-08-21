@@ -139,6 +139,36 @@ describe('decision replay components', () => {
     expect(beforeSystemExit).not.toContain('系统平 103.000')
   })
 
+  it('keeps the user open/close visible when reviewing a completed trade', () => {
+    const item = candidate()
+    const attempt = {
+      ...createDecisionAttempt(item),
+      stage: 'position-open' as const,
+      entryMode: 'signal-extreme' as const,
+      orderKind: 'stop' as const,
+      pendingEntryPrice: 101,
+      initialStopLoss: 95,
+      stopLoss: 95,
+      takeProfit: 107,
+      fill: { time: 3300, price: 101 },
+    }
+    const result = buildDecisionResult(item, attempt, { time: 3900, price: 102, reason: 'manual-close' }, [])
+    const data = [2400, 2700, 3000, 3300, 3600, 3900, 4200].map((time, index) => ({
+      time, open: 100 + index, high: 101 + index, low: 99 + index, close: 100.5 + index, volume: 10,
+    }))
+    const markup = renderToStaticMarkup(<DecisionChartAnnotations
+      candidate={item}
+      attempt={attempt}
+      result={result}
+      data={data}
+      toX={(time) => time / 100}
+      toY={(price) => price}
+    />)
+    expect(markup).toContain('你的开仓 101.000')
+    expect(markup).toContain('你的平仓 102.000')
+    expect(markup).toContain('class="user-path"')
+  })
+
   it('renders three price levels, a draggable setup hint and the one-R default', () => {
     const markup = renderToStaticMarkup(<DecisionRiskOverlay
       candidate={candidate()} entryPrice={100} stopLoss={95} takeProfit={105}

@@ -1289,20 +1289,40 @@ export function DecisionChartAnnotations({ candidate, attempt, result, data, toX
   // A decision chart is a causal tape. The system's fill and exit may be
   // known from the replay data before the user has made the corresponding
   // decision, but they must not appear until their own candles arrive.
-  const revealedThrough = data.at(-1)?.time ?? Number.NEGATIVE_INFINITY
+  const latestCandle = data.at(-1)
+  // A filled/closed order can carry a timestamp inside the last aggregated
+  // candle. Treat the whole candle as revealed, then project that timestamp
+  // back to its visible candle instead of dropping the user's marker.
+  const revealedThrough = latestCandle
+    ? latestCandle.time + INTERVALS[candidate.interval].seconds - 1
+    : Number.NEGATIVE_INFINITY
+  const projectTime = (time: number) => {
+    const first = data[0]?.time
+    if (first === undefined || time < first || time > revealedThrough) return null
+    let projected = first
+    for (const candle of data) {
+      if (candle.time > time) break
+      projected = candle.time
+    }
+    return projected
+  }
+  const projectX = (time: number) => {
+    const projected = projectTime(time)
+    return projected === null ? null : toX(projected)
+  }
   const systemEntryVisible = candidate.trade.entry.time <= revealedThrough
   const systemExitVisible = candidate.trade.exit.time <= revealedThrough
-  const signalX = toX(candidate.trade.entry.signalTime)
-  const systemEntryX = systemEntryVisible ? toX(candidate.trade.entry.time) : null
+  const signalX = projectX(candidate.trade.entry.signalTime)
+  const systemEntryX = systemEntryVisible ? projectX(candidate.trade.entry.time) : null
   const systemEntryY = systemEntryVisible ? toY(candidate.trade.entry.price) : null
-  const systemExitX = systemExitVisible ? toX(candidate.trade.exit.time) : null
+  const systemExitX = systemExitVisible ? projectX(candidate.trade.exit.time) : null
   const systemExitY = systemExitVisible ? toY(candidate.trade.exit.price) : null
   const userEntry = result?.userEntry ?? attempt?.fill ?? null
   const userExit = result?.userExit ?? null
-  const userEntryX = userEntry ? toX(userEntry.time) : null
-  const userEntryY = userEntry ? toY(userEntry.price) : null
-  const userExitX = userExit ? toX(userExit.time) : null
-  const userExitY = userExit ? toY(userExit.price) : null
+  const userEntryX = userEntry && userEntry.time <= revealedThrough ? projectX(userEntry.time) : null
+  const userEntryY = userEntry === null || userEntryX === null ? null : toY(userEntry.price)
+  const userExitX = userExit && userExit.time <= revealedThrough ? projectX(userExit.time) : null
+  const userExitY = userExit === null || userExitX === null ? null : toY(userExit.price)
   const pointSpecs = [
     systemEntryX !== null && systemEntryY !== null ? { id: 'system-entry', x: systemEntryX, y: systemEntryY, kind: 'point' as const, preference: 'placement-above-right' as const } : null,
     systemExitX !== null && systemExitY !== null ? { id: 'system-exit', x: systemExitX, y: systemExitY, kind: 'point' as const, preference: 'placement-above-left' as const } : null,
@@ -1311,7 +1331,7 @@ export function DecisionChartAnnotations({ candidate, attempt, result, data, toX
   ].filter((spec): spec is NonNullable<typeof spec> => spec !== null)
   const reasonSpecs = reasonReferences.flatMap((reference) => {
     const exitOnly = reference.sections.length === 1 && reference.sections[0] === 'exit'
-    const x = toX(reference.time)
+    const x = projectX(reference.time)
     const y = toY(exitOnly ? reference.candle.low : reference.candle.high)
     return x === null || y === null ? [] : [{
       id: `reason-${reference.index}-${reference.time}`,
@@ -1331,7 +1351,7 @@ export function DecisionChartAnnotations({ candidate, attempt, result, data, toX
     {reasonReferences.length > 0 && <svg className="decision-reason-connectors" width="100%" height="100%" preserveAspectRatio="none">
       {reasonReferences.map((reference) => {
         const exitOnly = reference.sections.length === 1 && reference.sections[0] === 'exit'
-        const x = toX(reference.time)
+        const x = projectX(reference.time)
         const y = toY(exitOnly ? reference.candle.low : reference.candle.high)
         if (x === null || y === null) return null
         const id = `reason-${reference.index}-${reference.time}`
@@ -1348,7 +1368,7 @@ export function DecisionChartAnnotations({ candidate, attempt, result, data, toX
     </svg>}
     {reasonReferences.map((reference) => {
       const exitOnly = reference.sections.length === 1 && reference.sections[0] === 'exit'
-      const x = toX(reference.time)
+      const x = projectX(reference.time)
       const y = toY(exitOnly ? reference.candle.low : reference.candle.high)
       if (x === null || y === null) return null
       return <span

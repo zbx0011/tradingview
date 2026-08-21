@@ -47,6 +47,8 @@ export const TRADINGVIEW_SHORTCUTS: ShortcutDefinition[] = [
   { id: 'angle-constraint', section: '绘图', label: '水平 / 45° 约束', keys: '趋势线或通道 + Shift' },
   { id: 'replay-toggle', section: '回放', label: '播放 / 暂停', keys: 'Shift+↓' },
   { id: 'replay-step', section: '回放', label: '前进一格', keys: 'Shift+→' },
+  { id: 'decision-review-previous-bar', section: '回放', label: '历史回看上一根 K 线', keys: '1（历史回看时）' },
+  { id: 'decision-review-next-bar', section: '回放', label: '历史回看下一根 K 线', keys: '2（历史回看时）' },
   { id: 'decision-previous', section: '回放', label: '回到上一笔练习', keys: '-' },
   { id: 'decision-next', section: '回放', label: '向前返回已到达的练习', keys: '=' },
   { id: 'maximize', section: '交易平台', label: '最大化图表', keys: 'Alt+Enter' },

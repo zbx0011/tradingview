@@ -207,6 +207,7 @@ function App() {
   const [decisionHistoryOpen, setDecisionHistoryOpen] = useState(false)
   const [decisionResultsSessionId, setDecisionResultsSessionId] = useState<string | null>(null)
   const [decisionReviewResult, setDecisionReviewResult] = useState<DecisionTradeResult | null>(null)
+  const [decisionReviewCursor, setDecisionReviewCursor] = useState<number | null>(null)
   const [decisionFocusTick, setDecisionFocusTick] = useState(0)
   const [decisionPriceDraft, setDecisionPriceDraft] = useState<number | null>(null)
   const [decisionRiskDraft, setDecisionRiskDraft] = useState<{ stopLoss: number; takeProfit: number } | null>(null)
@@ -237,6 +238,10 @@ function App() {
   const decisionReviewSession = useMemo(() => decisionReviewResult
     ? decisionStore.sessions.find((session) => session.attempts.some((attempt) => attempt.result?.candidateKey === decisionReviewResult.candidateKey)) ?? null
     : null, [decisionReviewResult, decisionStore.sessions])
+  const decisionDisplayAttempt = useMemo(() => {
+    if (!decisionReviewResult) return activeDecisionAttempt
+    return decisionReviewSession?.attempts.find((attempt) => attempt.candidateKey === decisionReviewResult.candidateKey) ?? null
+  }, [activeDecisionAttempt, decisionReviewResult, decisionReviewSession])
   const privateSyncFingerprint = useMemo(
     () => JSON.stringify([decisionStore, decisionFavoriteKeys]),
     [decisionFavoriteKeys, decisionStore],
@@ -314,11 +319,17 @@ function App() {
     ? chartSeconds
     : replayResolutionSeconds
   const normalizedReplayCursor = replayCursor === null ? null : Math.min(baseData.at(-1)!.time + chartSeconds, Math.max(baseData[0].time, replayCursor))
-  const decisionCutoff = useMemo(() => decisionReviewResult
+  const decisionReviewLimit = useMemo(() => decisionReviewResult
     ? intervalCutoffTime(resultReviewCutoff(decisionReviewResult), intervalSeconds(decisionReviewResult.candidate.interval))
-    : activeDecisionAttempt && activeDecisionCandidate
+    : null, [decisionReviewResult])
+  const decisionCutoff = useMemo(() => {
+    if (decisionReviewResult && decisionReviewLimit !== null) {
+      return Math.min(decisionReviewCursor ?? decisionReviewLimit, decisionReviewLimit)
+    }
+    return activeDecisionAttempt && activeDecisionCandidate
       ? intervalCutoffTime(activeDecisionAttempt.cursorTime, intervalSeconds(activeDecisionCandidate.interval))
-      : null, [activeDecisionAttempt, activeDecisionCandidate, decisionReviewResult])
+      : null
+  }, [activeDecisionAttempt, activeDecisionCandidate, decisionReviewCursor, decisionReviewLimit, decisionReviewResult])
   const decisionData = useMemo(() => {
     if (!decisionSubject || !decisionMinuteHistory?.length || decisionCutoff === null) return []
     const knownMinutes = candlesKnownAt(decisionMinuteHistory, decisionCutoff)
@@ -954,16 +965,31 @@ function App() {
   const reviewDecisionResult = useCallback((result: DecisionTradeResult) => {
     setDecisionResultsSessionId(null)
     setDecisionCenterOpen(false)
+    setDecisionReviewCursor(null)
     setDecisionReviewResult(result)
   }, [])
 
   const backFromDecisionReview = useCallback(() => {
     const result = decisionReviewResult
+    setDecisionReviewCursor(null)
     setDecisionReviewResult(null)
     if (!result) return
     const session = decisionStore.sessions.find((item) => item.attempts.some((attempt) => attempt.result?.candidateKey === result.candidateKey))
     if (session) setDecisionResultsSessionId(session.id)
   }, [decisionReviewResult, decisionStore.sessions])
+  const stepDecisionReview = useCallback((direction: -1 | 1) => {
+    if (!decisionReviewResult || decisionReviewLimit === null || decisionSourceData.length === 0) return
+    const step = intervalSeconds(decisionReviewResult.candidate.interval)
+    const current = decisionReviewCursor ?? decisionReviewLimit
+    const first = decisionSourceData[0].time
+    const next = Math.min(decisionReviewLimit, Math.max(first, current + direction * step))
+    if (next === current) {
+      notify(direction < 0 ? '已经是本笔最早可回看的 K 线' : '已经是本笔最后可回看的 K 线')
+      return
+    }
+    setDecisionReviewCursor(next)
+    notify(direction < 0 ? '已回看上一根 K 线' : '已回看下一根 K 线')
+  }, [decisionReviewCursor, decisionReviewLimit, decisionReviewResult, decisionSourceData, notify])
   const navigateDecisionExercise = useCallback((direction: -1 | 1) => {
     const session = decisionReviewSession ?? activeDecisionSession ?? decisionResultsSession
     if (!session) {
@@ -980,6 +1006,7 @@ function App() {
     setDecisionResultsSessionId(null)
     setDecisionPriceDraft(null)
     setDecisionRiskDraft(null)
+    setDecisionReviewCursor(null)
     setHoverCandle(null)
     if (target.kind === 'active') {
       setDecisionReviewResult(null)
@@ -1388,6 +1415,12 @@ function App() {
         return
       }
 
+      if (decisionReviewResult && !mod && !event.altKey && !event.shiftKey && !event.repeat && (event.key === '1' || event.key === '2')) {
+        event.preventDefault()
+        stepDecisionReview(event.key === '1' ? -1 : 1)
+        return
+      }
+
       if (activeDecisionAttempt && !decisionReviewResult && !mod && !event.altKey && !event.shiftKey && /^[1-4]$/.test(event.key)) {
         const action = decisionShortcutAction(activeDecisionAttempt.stage, event.key)
         // Numeric keys belong exclusively to the decision flow while a
@@ -1550,7 +1583,7 @@ function App() {
     }
     window.addEventListener('keydown', keyHandler)
     return () => window.removeEventListener('keydown', keyHandler)
-  }, [activeDecisionAttempt, activeDecisionSession, activeSelectedReplayRangeId, activeTool, advanceActiveDecision, baseData, candle.close, cancelDecisionSetup, cancelPendingDecisionAndAdvance, chartSeconds, chooseFreePriceOrder, chooseSignalExtremeOrder, closeActiveDecisionAtMarket, confirmDecisionRisk, decisionResultsSession, decisionReviewResult, decisionReviewSession, deleteReplayRangeObject, dispatchUiDrawing, effectiveReplayResolution, goToNextDecisionTrade, interval, loadSavedLayout, navigateDecisionExercise, normalizedReplayCursor, notify, openAlertAt, openOrderAt, priceScaleAuto, priceScaleInverted, priceScaleLog, priceScalePercent, replayAtEnd, saveCurrentLayout, selectedDrawing, selectedDrawingIds, skipActiveDecision, symbol, takeSnapshotShortcut, uiDrawings.present, uiDrawings.selectedId, uiDrawings.selectedIds, watchlistOpen])
+  }, [activeDecisionAttempt, activeDecisionSession, activeSelectedReplayRangeId, activeTool, advanceActiveDecision, baseData, candle.close, cancelDecisionSetup, cancelPendingDecisionAndAdvance, chartSeconds, chooseFreePriceOrder, chooseSignalExtremeOrder, closeActiveDecisionAtMarket, confirmDecisionRisk, decisionResultsSession, decisionReviewResult, decisionReviewSession, deleteReplayRangeObject, dispatchUiDrawing, effectiveReplayResolution, goToNextDecisionTrade, interval, loadSavedLayout, navigateDecisionExercise, normalizedReplayCursor, notify, openAlertAt, openOrderAt, priceScaleAuto, priceScaleInverted, priceScaleLog, priceScalePercent, replayAtEnd, saveCurrentLayout, selectedDrawing, selectedDrawingIds, skipActiveDecision, stepDecisionReview, symbol, takeSnapshotShortcut, uiDrawings.present, uiDrawings.selectedId, uiDrawings.selectedIds, watchlistOpen])
 
   useEffect(() => {
     const cancelMeasure = () => {
@@ -1793,8 +1826,8 @@ function App() {
             />
             {decisionSubject && <DecisionChartAnnotations
               candidate={decisionSubject}
-              attempt={activeDecisionAttempt}
-              result={decisionReviewResult ?? activeDecisionAttempt?.result ?? null}
+              attempt={decisionDisplayAttempt}
+              result={decisionReviewResult ?? decisionDisplayAttempt?.result ?? null}
               data={data}
               toX={(time) => chartRef.current?.timeToCoordinate(time) ?? null}
               toY={(price) => chartRef.current?.priceToCoordinate(price) ?? null}
