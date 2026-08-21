@@ -16,7 +16,7 @@ describe('real market history', () => {
     expect(getDecisionReplayCandles('XAUUSD')).toBeNull()
   })
 
-  it('ships chronological one-minute TradingView snapshots for the four live symbols', () => {
+  it('ships chronological one-minute snapshots for the four live symbols', () => {
     for (const symbol of ['XAUUSD', 'XAGUSD', 'US500', 'BTCUSDT.P'] as const) {
       const metadata = snapshotManifest.series[symbol]
       const payload = JSON.parse(readFileSync(path.join(process.cwd(), 'public', metadata.file), 'utf8')) as { rows: number[][] }
