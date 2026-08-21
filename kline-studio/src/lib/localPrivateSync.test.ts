@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import { LocalSyncConflictError, localPrivateSyncAvailable, prepareLocalPrivateSync, publishLocalPrivateSync } from './localPrivateSync'
+import {
+  LocalSyncConflictError, localPrivateSyncAvailable, parseLocalSyncAutoMarker,
+  prepareLocalPrivateSync, publishLocalPrivateSync, shouldSkipRecentBackgroundSync,
+} from './localPrivateSync'
 import type { PortableWorkspace } from './portableWorkspace'
 
 const workspace: PortableWorkspace = {
@@ -10,6 +13,15 @@ const workspace: PortableWorkspace = {
 }
 
 describe('local private repository sync client', () => {
+  it('deduplicates the same background snapshot across tabs for one minute', () => {
+    const marker = JSON.stringify({ fingerprint: 'same', commit: 'abc', savedAt: 1000 })
+    expect(parseLocalSyncAutoMarker(marker)).toMatchObject({ fingerprint: 'same', commit: 'abc' })
+    expect(shouldSkipRecentBackgroundSync(marker, 'same', 60_999)).toBe(true)
+    expect(shouldSkipRecentBackgroundSync(marker, 'same', 61_000)).toBe(false)
+    expect(shouldSkipRecentBackgroundSync(marker, 'changed', 2000)).toBe(false)
+    expect(shouldSkipRecentBackgroundSync('{bad', 'same', 2000)).toBe(false)
+  })
+
   it('detects whether the same-origin background sync service is available', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ ok: true, available: true }), {
       status: 200,

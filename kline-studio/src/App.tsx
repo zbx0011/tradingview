@@ -46,7 +46,10 @@ import {
 } from './lib/decisionReplayFavorites'
 import { collectPortableWorkspace, downloadPortableWorkspace, loadPortableWorkspaceRecovery, parsePortableWorkspace, restorePortableWorkspaceRecovery, restorePortableWorkspaceSafely } from './lib/portableWorkspace'
 import { mergePortableWorkspaceProgress } from './lib/workspaceProgressSync'
-import { LocalSyncConflictError, localPrivateSyncAvailable, prepareLocalPrivateSync, publishLocalPrivateSync, sha256PortableWorkspace } from './lib/localPrivateSync'
+import {
+  LOCAL_SYNC_AUTO_MARKER_KEY, LocalSyncConflictError, localPrivateSyncAvailable,
+  prepareLocalPrivateSync, publishLocalPrivateSync, sha256PortableWorkspace, shouldSkipRecentBackgroundSync,
+} from './lib/localPrivateSync'
 import { replayDecisionCandidates, type ReplayDecisionCandidate } from './lib/replayTradeRegistry'
 import {
   DECISION_REPLAY_STORAGE_KEY, adjacentDecisionExerciseTarget, advanceDecisionAttempt, buildDecisionResult, cancelPendingOrderAndAdvance, candleAtOrBefore, candlesKnownAt, createDecisionAttempt,
@@ -1020,6 +1023,12 @@ function App() {
     }).catch((error) => notify(`合并失败，本机记录未被覆盖：${error instanceof Error ? error.message : '无法读取备份文件'}`))
   }, [notify])
   const syncPrivateRepository = useCallback((manual = true) => {
+    const currentFingerprint = JSON.stringify([loadDecisionReplayStore(), loadDecisionReplayFavorites()])
+    if (!manual && shouldSkipRecentBackgroundSync(localStorage.getItem(LOCAL_SYNC_AUTO_MARKER_KEY), currentFingerprint)) {
+      privateSyncLastFingerprintRef.current = currentFingerprint
+      setPrivateSyncStatus('synced')
+      return
+    }
     if (privateSyncInFlightRef.current) {
       privateSyncQueuedRef.current = true
       return
@@ -1051,6 +1060,15 @@ function App() {
       const syncedStore = loadDecisionReplayStore()
       const syncedFavorites = loadDecisionReplayFavorites()
       privateSyncLastFingerprintRef.current = JSON.stringify([syncedStore, syncedFavorites])
+      try {
+        localStorage.setItem(LOCAL_SYNC_AUTO_MARKER_KEY, JSON.stringify({
+          fingerprint: privateSyncLastFingerprintRef.current,
+          commit: published.commit,
+          savedAt: Date.now(),
+        }))
+      } catch {
+        // The marker is only a cross-tab optimization; verified history sync has already succeeded.
+      }
       setDecisionStore(syncedStore)
       setDecisionFavoriteKeys(syncedFavorites)
       setPrivateSyncStatus('synced')

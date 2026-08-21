@@ -1,7 +1,32 @@
 import { parsePortableWorkspace, serializePortableWorkspace, type PortableWorkspace } from './portableWorkspace'
 
 const LOCAL_SYNC_ENDPOINT = '/__kline_studio_sync'
+export const LOCAL_SYNC_AUTO_MARKER_KEY = 'kline-studio-private-sync-auto-marker-v1'
+const BACKGROUND_SYNC_DEDUP_WINDOW_MS = 60_000
 export type LocalSyncMode = 'manual' | 'background'
+
+export interface LocalSyncAutoMarker {
+  fingerprint: string
+  commit: string
+  savedAt: number
+}
+
+export function parseLocalSyncAutoMarker(raw: string | null): LocalSyncAutoMarker | null {
+  if (!raw) return null
+  try {
+    const value = JSON.parse(raw) as Partial<LocalSyncAutoMarker>
+    return typeof value.fingerprint === 'string' && typeof value.commit === 'string' && typeof value.savedAt === 'number'
+      ? { fingerprint: value.fingerprint, commit: value.commit, savedAt: value.savedAt }
+      : null
+  } catch {
+    return null
+  }
+}
+
+export function shouldSkipRecentBackgroundSync(rawMarker: string | null, fingerprint: string, now = Date.now()) {
+  const marker = parseLocalSyncAutoMarker(rawMarker)
+  return Boolean(marker && marker.fingerprint === fingerprint && now - marker.savedAt >= 0 && now - marker.savedAt < BACKGROUND_SYNC_DEDUP_WINDOW_MS)
+}
 
 export async function localPrivateSyncAvailable() {
   try {

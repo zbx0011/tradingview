@@ -313,6 +313,12 @@ async function publishSync(expectedHead: string, snapshot: PortableWorkspace, mo
 }
 
 export function localPrivateSyncPlugin(): Plugin {
+  let operationQueue: Promise<void> = Promise.resolve()
+  function enqueue<T>(operation: () => Promise<T>) {
+    const result = operationQueue.then(operation, operation)
+    operationQueue = result.then(() => undefined, () => undefined)
+    return result
+  }
   return {
     name: 'kline-studio-local-private-sync',
     apply: 'serve',
@@ -329,11 +335,11 @@ export function localPrivateSyncPlugin(): Plugin {
           const snapshot = workspaceFromUnknown(body.snapshot)
           const mode: SyncMode = body.mode === 'background' ? 'background' : 'manual'
           if (body.action === 'prepare') {
-            sendJson(response, 200, await prepareSync(snapshot, mode))
+            sendJson(response, 200, await enqueue(() => prepareSync(snapshot, mode)))
             return
           }
           if (body.action === 'publish' && typeof body.expectedHead === 'string') {
-            sendJson(response, 200, await publishSync(body.expectedHead, snapshot, mode))
+            sendJson(response, 200, await enqueue(() => publishSync(body.expectedHead as string, snapshot, mode)))
             return
           }
           throw new HttpError(400, '未知同步操作')
