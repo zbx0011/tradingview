@@ -310,6 +310,29 @@ describe('decision replay', () => {
     expect(parseDecisionReplayStore('{bad json')).toMatchObject({ sessions: [], seenTradeKeys: [] })
   })
 
+  it('repairs an active session whose current candidate lost its attempt during sync', () => {
+    const candidates = [candidate('repair:1'), candidate('repair:2')]
+    const firstAttempt = createDecisionAttempt(candidates[0])
+    const completedFirst = {
+      ...firstAttempt,
+      stage: 'complete' as const,
+      result: buildDecisionResult(candidates[0], firstAttempt, { time: 1001, price: candidates[0].trade.entry.price, reason: 'skipped' }, []),
+    }
+    const broken = {
+      ...createDecisionSession(candidates, 2, 1000),
+      id: 'repair',
+      currentIndex: 1,
+      attempts: [completedFirst],
+    }
+
+    const repaired = parseDecisionReplayStore(JSON.stringify(storeWithSessions(broken)))
+    const session = repaired.sessions[0]
+    const currentAttempt = session.attempts.find((attempt) => attempt.candidateKey === candidates[1].key)
+
+    expect(session.currentIndex).toBe(1)
+    expect(currentAttempt).toMatchObject({ candidateKey: candidates[1].key, stage: 'entry-decision', result: null })
+  })
+
   it('merges histories from two computers and keeps the more advanced duplicate session', () => {
     const shared = { ...createDecisionSession([candidate('shared:1')], 1, 1000), id: 'shared' }
     const advanced = { ...shared, currentIndex: 1, status: 'completed' as const, updatedAt: 3000, finishedAt: 3000 }

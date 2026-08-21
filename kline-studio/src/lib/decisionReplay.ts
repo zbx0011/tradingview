@@ -173,12 +173,12 @@ export function parseDecisionReplayStoreChecked(raw: string | null): DecisionRep
       && sessions.some((session) => session.id === value.activeSessionId && session.status === 'active')
       ? value.activeSessionId
       : null
-    return {
+    return repairDecisionReplayStore({
       version: DECISION_REPLAY_VERSION,
       seenTradeKeys: [...new Set(value.seenTradeKeys.filter((key): key is string => typeof key === 'string'))],
       activeSessionId,
       sessions,
-    }
+    })
   } catch {
     return null
   }
@@ -186,6 +186,48 @@ export function parseDecisionReplayStoreChecked(raw: string | null): DecisionRep
 
 export function parseDecisionReplayStore(raw: string | null): DecisionReplayStore {
   return parseDecisionReplayStoreChecked(raw) ?? emptyDecisionReplayStore()
+}
+
+/**
+ * Repair sessions written by older sync merges that advanced currentIndex but
+ * did not append the next candidate's in-progress attempt. Without that
+ * attempt the causal cutoff is null and the chart renders an empty data set.
+ * This only adds a fresh, unanswered attempt; existing answers and drawings
+ * are left untouched.
+ */
+function repairDecisionReplaySession(session: DecisionReplaySession): DecisionReplaySession {
+  if (session.status !== 'active' || session.candidates.length === 0) return session
+
+  const rawIndex = Number.isFinite(session.currentIndex) ? Math.trunc(session.currentIndex) : 0
+  let currentIndex = Math.max(0, Math.min(session.candidates.length - 1, rawIndex))
+  const attemptsByKey = new Map(session.attempts.map((attempt) => [attempt.candidateKey, attempt]))
+
+  // If a corrupt/legacy session points at a completed attempt, advance only
+  // across fully completed candidates. Keep post-exit attempts in place: they
+  // still need the user's explicit "下一笔" action.
+  while (currentIndex < session.candidates.length) {
+    const attempt = attemptsByKey.get(session.candidates[currentIndex].key)
+    if (!attempt || attempt.stage !== 'complete') break
+    currentIndex += 1
+  }
+
+  if (currentIndex >= session.candidates.length) return { ...session, currentIndex: session.candidates.length - 1 }
+  const currentCandidate = session.candidates[currentIndex]
+  if (attemptsByKey.has(currentCandidate.key) && currentIndex === rawIndex) return session
+
+  const attempts = attemptsByKey.has(currentCandidate.key)
+    ? session.attempts
+    : [...session.attempts, createDecisionAttempt(currentCandidate)]
+  return { ...session, currentIndex, attempts }
+}
+
+function repairDecisionReplayStore(store: DecisionReplayStore): DecisionReplayStore {
+  const sessions = store.sessions.map(repairDecisionReplaySession)
+  const activeSessionId = store.activeSessionId
+    && sessions.some((session) => session.id === store.activeSessionId && session.status === 'active')
+    ? store.activeSessionId
+    : null
+  return { ...store, sessions, activeSessionId }
 }
 
 function sessionProgressRank(session: DecisionReplaySession) {
@@ -311,12 +353,12 @@ export function mergeDecisionReplayStores(local: DecisionReplayStore, imported: 
   const activeSessionId = [local.activeSessionId, imported.activeSessionId]
     .flatMap((id) => id ? sessions.filter((session) => session.id === id && session.status === 'active') : [])
     .sort((left, right) => right.updatedAt - left.updatedAt)[0]?.id ?? null
-  return {
+  return repairDecisionReplayStore({
     version: DECISION_REPLAY_VERSION,
     seenTradeKeys: [...new Set([...local.seenTradeKeys, ...imported.seenTradeKeys])],
     activeSessionId,
     sessions,
-  }
+  })
 }
 
 export function loadDecisionReplayStore(): DecisionReplayStore {
