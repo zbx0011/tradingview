@@ -48,7 +48,8 @@ import { collectPortableWorkspace, downloadPortableWorkspace, loadPortableWorksp
 import { mergePortableWorkspaceProgress } from './lib/workspaceProgressSync'
 import {
   LOCAL_SYNC_AUTO_MARKER_KEY, LocalSyncConflictError, localPrivateSyncAvailable,
-  prepareLocalPrivateSync, publishLocalPrivateSync, sha256PortableWorkspace, shouldSkipRecentBackgroundSync,
+  prepareLocalPrivateSync, publishLocalPrivateSync, runWithLocalPrivateSyncLock,
+  sha256PortableWorkspace, shouldSkipRecentBackgroundSync,
 } from './lib/localPrivateSync'
 import { replayDecisionCandidates, type ReplayDecisionCandidate } from './lib/replayTradeRegistry'
 import {
@@ -1036,9 +1037,10 @@ function App() {
     privateSyncInFlightRef.current = true
     setPrivateSyncBusy(true)
     setPrivateSyncStatus('syncing')
-    const before = collectPortableWorkspace()
     const syncMode = manual ? 'manual' : 'background'
-    void prepareLocalPrivateSync(before, syncMode).then(async (prepared) => {
+    const executeSync = async () => {
+      const before = collectPortableWorkspace()
+      const prepared = await prepareLocalPrivateSync(before, syncMode)
       let summary = mergePortableWorkspaceProgress(prepared.snapshots, localStorage, { persistRecovery: false })
       let expectedHead = prepared.head
       let merged = collectPortableWorkspace()
@@ -1073,6 +1075,9 @@ function App() {
       setDecisionFavoriteKeys(syncedFavorites)
       setPrivateSyncStatus('synced')
       if (manual) notify(`私有仓库同步成功：${summary.sessionCount} 场、${summary.resultCount} 笔、${summary.favoriteCount} 个收藏；远端已回下载校验`)
+    }
+    void runWithLocalPrivateSyncLock(executeSync, manual).then((result) => {
+      if (!result.acquired) setPrivateSyncStatus('ready')
     }).catch((error) => {
       setPrivateSyncStatus('error')
       notify(`私有仓库同步失败：${error instanceof Error ? error.message : '未知错误'}；本机记录没有被完整覆盖`)

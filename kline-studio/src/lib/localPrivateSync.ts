@@ -28,6 +28,18 @@ export function shouldSkipRecentBackgroundSync(rawMarker: string | null, fingerp
   return Boolean(marker && marker.fingerprint === fingerprint && now - marker.savedAt >= 0 && now - marker.savedAt < BACKGROUND_SYNC_DEDUP_WINDOW_MS)
 }
 
+export async function runWithLocalPrivateSyncLock<T>(operation: () => Promise<T>, waitForLock = false) {
+  if (typeof navigator === 'undefined' || !navigator.locks) {
+    return { acquired: true as const, value: await operation() }
+  }
+  return navigator.locks.request('kline-studio-private-repository-sync', {
+    mode: 'exclusive',
+    ifAvailable: !waitForLock,
+  }, async (lock) => lock
+    ? { acquired: true as const, value: await operation() }
+    : { acquired: false as const })
+}
+
 export async function localPrivateSyncAvailable() {
   try {
     const response = await fetch(LOCAL_SYNC_ENDPOINT, { headers: { Accept: 'application/json' } })

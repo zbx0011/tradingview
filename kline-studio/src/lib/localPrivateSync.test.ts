@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   LocalSyncConflictError, localPrivateSyncAvailable, parseLocalSyncAutoMarker,
-  prepareLocalPrivateSync, publishLocalPrivateSync, shouldSkipRecentBackgroundSync,
+  prepareLocalPrivateSync, publishLocalPrivateSync, runWithLocalPrivateSyncLock, shouldSkipRecentBackgroundSync,
 } from './localPrivateSync'
 import type { PortableWorkspace } from './portableWorkspace'
 
@@ -20,6 +20,14 @@ describe('local private repository sync client', () => {
     expect(shouldSkipRecentBackgroundSync(marker, 'same', 61_000)).toBe(false)
     expect(shouldSkipRecentBackgroundSync(marker, 'changed', 2000)).toBe(false)
     expect(shouldSkipRecentBackgroundSync('{bad', 'same', 2000)).toBe(false)
+  })
+
+  it('lets another Edge tab skip when the cross-tab background lock is already held', async () => {
+    const operation = vi.fn(async () => 'done')
+    vi.stubGlobal('navigator', { locks: { request: vi.fn(async (_name, _options, callback) => callback(null)) } })
+    await expect(runWithLocalPrivateSyncLock(operation)).resolves.toEqual({ acquired: false })
+    expect(operation).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
   })
 
   it('detects whether the same-origin background sync service is available', async () => {
