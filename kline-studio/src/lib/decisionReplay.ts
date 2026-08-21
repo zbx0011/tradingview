@@ -399,6 +399,29 @@ export function currentDecisionAttempt(session: DecisionReplaySession | null | u
   return candidate ? session?.attempts.find((attempt) => attempt.candidateKey === candidate.key) ?? null : null
 }
 
+/** Keep session timestamps stable when loading an unchanged drawing snapshot. */
+export function updateDecisionSessionDrawings(
+  session: DecisionReplaySession,
+  candidateKey: string,
+  drawings: Drawing[],
+  now = Date.now(),
+) {
+  const attempt = session.attempts.find((item) => item.candidateKey === candidateKey)
+  if (!attempt) return session
+  const drawingsJson = JSON.stringify(drawings)
+  if (JSON.stringify(attempt.drawings) === drawingsJson
+    && (!attempt.result || JSON.stringify(attempt.result.drawings) === drawingsJson)) return session
+  return {
+    ...session,
+    updatedAt: now,
+    attempts: session.attempts.map((item) => item.candidateKey === candidateKey ? {
+      ...item,
+      drawings,
+      result: item.result ? { ...item.result, drawings } : null,
+    } : item),
+  }
+}
+
 export function intervalCutoffTime(cursorTime: number, sourceIntervalSeconds: number) {
   return cursorTime + Math.max(60, sourceIntervalSeconds) - 60
 }

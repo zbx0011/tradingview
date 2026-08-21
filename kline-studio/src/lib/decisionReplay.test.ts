@@ -11,7 +11,7 @@ import {
   decisionShortcutAction, defaultDecisionLevels, evaluatePositionBar, fillPendingOrder,
   decisionResultPnl, decisionResultR, historyCoversDecisionCandidate, intervalCutoffTime, parseDecisionReplayStore,
   mergeDecisionReplayStores, pnlForDecision, pnlForDecisionMode, rewardRiskRatio, sampleDecisionCandidates,
-  validDecisionLevels, validOpenPositionLevels, type DecisionReplaySession,
+  updateDecisionSessionDrawings, validDecisionLevels, validOpenPositionLevels, type DecisionReplaySession,
 } from './decisionReplay'
 
 function candidate(key: string, side: 'long' | 'short' = 'long'): ReplayDecisionCandidate {
@@ -323,6 +323,13 @@ describe('decision replay', () => {
     expect(merged.sessions.find((session) => session.id === 'shared')).toMatchObject({ status: 'completed', updatedAt: 3000 })
     expect(merged.seenTradeKeys).toEqual(['local:1', 'shared:1', 'imported:1'])
     expect(merged.activeSessionId).toBe('local')
+  })
+
+  it('does not change an active session timestamp when its loaded drawings are unchanged', () => {
+    const item = candidate('drawings:1')
+    const session = createDecisionSession([item], 1, 1000)
+    expect(updateDecisionSessionDrawings(session, item.key, [], 2000)).toBe(session)
+    expect(updateDecisionSessionDrawings(session, 'missing', [], 2000)).toBe(session)
   })
 
   it('unions non-conflicting attempts when the same session continued on two computers', () => {

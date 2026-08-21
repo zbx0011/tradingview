@@ -57,7 +57,7 @@ import {
   createDecisionSession, currentDecisionAttempt, currentDecisionCandidate, decisionShortcutAction, defaultDecisionLevels,
   decisionAttemptInitialStopLoss, decisionSessionPositionSizingModes, emptyDecisionReplayStore, historyCoversDecisionCandidate, intervalCutoffTime, intervalSeconds,
   loadDecisionReplayStore, mergeDecisionReplayStores, nextCandleAfter, parseDecisionReplayStoreChecked, pnlForDecisionMode, resultReviewCutoff, sampleDecisionCandidates,
-  saveDecisionReplayStore, sessionResults, validDecisionLevels, validOpenPositionLevels,
+  saveDecisionReplayStore, sessionResults, updateDecisionSessionDrawings, validDecisionLevels, validOpenPositionLevels,
   type DecisionAttempt, type DecisionExit, type DecisionPositionSizingMode, type DecisionReplaySession, type DecisionTradeResult,
 } from './lib/decisionReplay'
 
@@ -584,18 +584,16 @@ function App() {
     if (!candidateKey || decisionDrawingLoadingRef.current || decisionReviewResult) return
     const timer = window.setTimeout(() => {
       const snapshot = withoutTransientMeasurements(decisionDrawings.present)
-      setDecisionStore((current) => ({
-        ...current,
-        sessions: current.sessions.map((session) => session.id !== current.activeSessionId ? session : {
-          ...session,
-          updatedAt: Date.now(),
-          attempts: session.attempts.map((attempt) => attempt.candidateKey === candidateKey ? {
-            ...attempt,
-            drawings: snapshot,
-            result: attempt.result ? { ...attempt.result, drawings: snapshot } : null,
-          } : attempt),
-        }),
-      }))
+      setDecisionStore((current) => {
+        let changed = false
+        const sessions = current.sessions.map((session) => {
+          if (session.id !== current.activeSessionId) return session
+          const next = updateDecisionSessionDrawings(session, candidateKey, snapshot)
+          if (next !== session) changed = true
+          return next
+        })
+        return changed ? { ...current, sessions } : current
+      })
     }, 140)
     return () => window.clearTimeout(timer)
   }, [decisionDrawings.present, decisionReviewResult])
