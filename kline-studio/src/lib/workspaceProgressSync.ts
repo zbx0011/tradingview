@@ -3,6 +3,7 @@ import {
   emptyDecisionReplayStore,
   mergeDecisionReplayStores,
   parseDecisionReplayStoreChecked,
+  serializeDecisionReplayStore,
   sessionResults,
   type DecisionReplayStore,
 } from './decisionReplay'
@@ -77,12 +78,12 @@ export function mergePortableWorkspaceProgress(
   // in the verified private repository before calling us and therefore avoids a second large copy.
   if (persistRecovery) savePortableWorkspaceRecovery(before, storage)
   try {
-    storage.setItem(DECISION_REPLAY_STORAGE_KEY, JSON.stringify(mergedStore))
+    storage.setItem(DECISION_REPLAY_STORAGE_KEY, serializeDecisionReplayStore(mergedStore))
     storage.setItem(DECISION_REPLAY_FAVORITES_STORAGE_KEY, JSON.stringify(mergedFavorites))
 
     const verifiedStore = parseDecisionReplayStoreChecked(storage.getItem(DECISION_REPLAY_STORAGE_KEY))
     const verifiedFavorites = parseDecisionReplayFavoritesChecked(storage.getItem(DECISION_REPLAY_FAVORITES_STORAGE_KEY))
-    if (!verifiedStore || JSON.stringify(verifiedStore) !== JSON.stringify(mergedStore)) throw new Error('写入后的做题记录校验失败')
+    if (!verifiedStore || serializeDecisionReplayStore(verifiedStore) !== serializeDecisionReplayStore(mergedStore)) throw new Error('写入后的做题记录校验失败')
     if (!verifiedFavorites || JSON.stringify(verifiedFavorites) !== JSON.stringify(mergedFavorites)) throw new Error('写入后的收藏记录校验失败')
   } catch (error) {
     restorePortableWorkspace(before, storage)

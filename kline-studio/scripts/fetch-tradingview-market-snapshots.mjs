@@ -6,6 +6,7 @@ const OUTPUT = new URL('../src/data/marketSnapshots.json', import.meta.url)
 // bound when this script is reused.
 const TARGET_BARS = Number(process.env.MARKET_TARGET_BARS ?? 80_000)
 const REQUEST_BATCH = 5_000
+const MARKET_RESOLUTION = process.env.MARKET_RESOLUTION ?? '1'
 const SOCKET_URL = 'wss://prodata.tradingview.com/socket.io/websocket'
 const RANGE_START = Math.floor(Date.parse(process.env.MARKET_RANGE_START ?? '2026-07-01T00:00:00Z') / 1000)
 const RANGE_END = Math.floor(Date.parse(process.env.MARKET_RANGE_END ?? '2026-09-01T00:00:00Z') / 1000)
@@ -16,6 +17,7 @@ const requestedSeries = new Set((process.env.MARKET_SERIES ?? '')
 
 if (!Number.isInteger(TARGET_BARS) || TARGET_BARS <= 0) throw new Error('MARKET_TARGET_BARS 必须是正整数')
 if (!Number.isFinite(RANGE_START) || !Number.isFinite(RANGE_END) || RANGE_START >= RANGE_END) throw new Error('MARKET_RANGE_START/END 必须是有效的时间范围')
+if (!/^\d+$/.test(MARKET_RESOLUTION)) throw new Error('MARKET_RESOLUTION 必须是分钟数')
 const SOCKET_OPTIONS = {
   headers: {
     Origin: 'https://prodata.tradingview.com',
@@ -26,8 +28,9 @@ const SOCKET_OPTIONS = {
 const SERIES = [
   { id: 'XAUUSD', symbol: 'OANDA:XAUUSD', vendor: 'OANDA' },
   { id: 'XAGUSD', symbol: 'OANDA:XAGUSD', vendor: 'OANDA' },
-  { id: 'US500', symbol: 'ICMARKETS:US500', vendor: 'ICMARKETS' },
+  { id: 'US500', symbol: 'OANDA:SPX500USD', vendor: 'OANDA' },
   { id: 'BTCUSDT.P', symbol: 'BYBIT:BTCUSDT.P', vendor: 'BYBIT' },
+  { id: 'ETHUSDT.P', symbol: 'BYBIT:ETHUSDT.P', vendor: 'BYBIT' },
 ]
 const selectedSeries = SERIES.filter((series) => requestedSeries.size === 0 || requestedSeries.has(series.id))
 if (selectedSeries.length === 0) throw new Error(`MARKET_SERIES 未匹配任何可用标的: ${[...requestedSeries].join(', ')}`)
@@ -118,7 +121,7 @@ function fetchSeries(series) {
       send('chart_create_session', [session, ''])
       send('set_auth_token', ['unauthorized_user_token'])
       send('resolve_symbol', [session, 'symbol_1', `=${JSON.stringify({ symbol: series.symbol, adjustment: 'splits' })}`])
-      send('create_series', [session, seriesId, 's0', 'symbol_1', '1', REQUEST_BATCH, ''])
+      send('create_series', [session, seriesId, 's0', 'symbol_1', MARKET_RESOLUTION, REQUEST_BATCH, ''])
     })
 
     ws.addEventListener('message', (event) => {
@@ -178,7 +181,7 @@ for (const series of selectedSeries) {
   fetched[series.id] = {
     symbol: result.symbol,
     vendor: result.vendor,
-    resolution: '1',
+    resolution: MARKET_RESOLUTION,
     bars: result.bars,
   }
   console.log(`${series.id}: ${result.bars.length} bars, ${new Date(result.bars[0]?.time * 1000).toISOString()} → ${new Date(result.bars.at(-1)?.time * 1000).toISOString()}`)

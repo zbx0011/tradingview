@@ -57,6 +57,6 @@ npm run lint
 
 ## 数据说明
 
-仓库内的 `public/data` 和 `src/data` 包含功能验证所需的静态 K 线、回放交易、回放信号及震荡区间数据。XAUUSD、XAGUSD、US500 的 1 分钟快照取自 Dukascopy 公开历史数据，覆盖 2026-06-01 至最近同步时间；BTCUSDT.P 的 1 分钟快照取自 KuCoin XBTUSDTM 永续合约，覆盖最近 90 天并保留交易所真实无成交空档，文件为 `public/data/btcusdt-p-1m-30d.json`。在线行情只在用户主动请求时读取公开市场接口；应用不会自动把图表跳回最新位置。数据仅用于软件功能验证，不构成交易建议。
+仓库内的 `public/data` 和 `src/data` 包含功能验证所需的静态 K 线、回放交易、回放信号及震荡区间数据。XAUUSD、XAGUSD、US500 的 5 分钟快照均取自 OANDA；BTCUSDT.P 的 1 分钟快照取自 KuCoin XBTUSDTM 永续合约，覆盖最近 90 天并保留交易所真实无成交空档，文件为 `public/data/btcusdt-p-1m-30d.json`。在线行情只在用户主动请求时读取公开市场接口；应用不会自动把图表跳回最新位置。数据仅用于软件功能验证，不构成交易建议。
 
 图表底层使用 Apache-2.0 授权的 [TradingView Lightweight Charts](https://github.com/tradingview/lightweight-charts)，页面保留库的归属标识。

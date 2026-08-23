@@ -29,8 +29,8 @@ describe('replay trade layers', () => {
       endTime: 1786136100,
       startedAt: 1786264147,
       finishedAt: null,
-      tradeCount: 94,
-      markerCount: 188,
+      tradeCount: 92,
+      markerCount: 184,
     })
   })
 

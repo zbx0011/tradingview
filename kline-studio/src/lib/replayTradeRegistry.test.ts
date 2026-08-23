@@ -14,17 +14,17 @@ describe('replay trade dataset registry', () => {
       name: 'XAUUSD 回放交易',
       symbol: 'XAUUSD',
       interval: '5m',
-      tradeCount: 94,
-      markerCount: 188,
+      tradeCount: 92,
+      markerCount: 184,
     }))
   })
 
   it('renders only requested layers with source-unique marker and connection IDs', () => {
     const markers = toReplayTradeSeriesMarkers('XAUUSD', '5m', [sourceId])
     const connections = toReplayTradeConnectionSpecs('XAUUSD', '5m', [sourceId])
-    expect(markers).toHaveLength(188)
-    expect(connections).toHaveLength(94)
-    expect(new Set(markers.map((marker) => marker.id)).size).toBe(188)
+    expect(markers).toHaveLength(184)
+    expect(connections).toHaveLength(92)
+    expect(new Set(markers.map((marker) => marker.id)).size).toBe(184)
     expect(markers[0].id).toContain(sourceId)
     expect(connections[0].sourceId).toBe(sourceId)
     expect(toReplayTradeSeriesMarkers('XAUUSD', '5m', [])).toEqual([])

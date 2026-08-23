@@ -2,6 +2,7 @@ import type { Drawing } from './drawings'
 import type { Candle, IntervalId, SymbolId } from './market'
 import type { ReplayDecisionCandidate } from './replayTradeRegistry'
 import type { TradeSide } from './tradeMarkers'
+import { isExcludedCommodityTrade } from './tradeEligibility'
 
 export const DECISION_REPLAY_STORAGE_KEY = 'kline-studio-decision-replay-v1'
 export const DECISION_REPLAY_VERSION = 1 as const
@@ -11,6 +12,8 @@ export const DECISION_FIXED_NOTIONAL_USD = 10_000
 export type DecisionPositionSizingMode = 'fixed-risk' | 'fixed-notional'
 export type DecisionHistorySort = 'time-desc' | 'time-asc' | 'pnl-desc' | 'pnl-asc'
 export const DEFAULT_DECISION_POSITION_SIZING_MODES: readonly DecisionPositionSizingMode[] = ['fixed-risk', 'fixed-notional']
+export const DECISION_REPLAY_INTERVALS = ['5m', '15m', '1h'] as const
+export type DecisionReplayInterval = (typeof DECISION_REPLAY_INTERVALS)[number]
 
 export interface DecisionHistorySortValue {
   startedAt: number
@@ -22,6 +25,7 @@ export type DecisionEntryMode = 'signal-extreme' | 'free-price'
 export type DecisionOrderKind = 'stop' | 'limit'
 export type DecisionAttemptStage = 'entry-decision' | 'entry-price' | 'risk-setup' | 'order-pending' | 'position-open' | 'post-exit' | 'complete'
 export type DecisionSessionStatus = 'active' | 'completed' | 'stopped'
+export type DecisionSessionOrigin = 'practice' | 'review'
 export type DecisionExitReason = 'skipped' | 'manual-close' | 'stop-loss' | 'take-profit' | 'end-of-data'
 export type DecisionShortcutAction = 'advance' | 'signal-extreme' | 'free-price' | 'skip' | 'cancel-pending' | 'manual-close' | 'next-trade' | 'confirm-risk' | 'cancel-setup'
 export type DecisionExerciseNavigationTarget = { kind: 'review'; result: DecisionTradeResult } | { kind: 'active' }
@@ -86,6 +90,15 @@ export interface DecisionReplaySession {
   updatedAt: number
   finishedAt: number | null
   positionSizingModes?: DecisionPositionSizingMode[]
+  /**
+   * Review sessions are independent attempts created from an immutable historical result.
+   * This field is optional so backups written before review sessions remain valid.
+   */
+  origin?: DecisionSessionOrigin
+  sourceSessionId?: string | null
+  sourceCandidateKey?: string | null
+  /** Monotonic marker for an explicit authoritative correction that may move progress backward. */
+  correctionRevision?: number
 }
 
 export interface DecisionReplayStore {
@@ -93,6 +106,27 @@ export interface DecisionReplayStore {
   seenTradeKeys: string[]
   activeSessionId: string | null
   sessions: DecisionReplaySession[]
+}
+
+const DECISION_REPLAY_COMPACT_FORMAT = 'compact-v1' as const
+
+interface CompactDecisionReplaySession extends Omit<DecisionReplaySession, 'candidates' | 'attempts'> {
+  candidateKeys: string[]
+  attempts: Array<Omit<DecisionAttempt, 'result'> & {
+    result: (Omit<DecisionTradeResult, 'candidate' | 'drawings'> & {
+      candidate?: ReplayDecisionCandidate
+      drawings?: Drawing[]
+    }) | null
+  }>
+}
+
+interface CompactDecisionReplayStore {
+  version: typeof DECISION_REPLAY_VERSION
+  storageFormat: typeof DECISION_REPLAY_COMPACT_FORMAT
+  seenTradeKeys: string[]
+  activeSessionId: string | null
+  candidateCatalog: ReplayDecisionCandidate[]
+  sessions: CompactDecisionReplaySession[]
 }
 
 export interface DecisionBarEvaluation {
@@ -112,6 +146,90 @@ export function normalizeDecisionPositionSizingModes(value: unknown): DecisionPo
 
 export function decisionSessionPositionSizingModes(session: Pick<DecisionReplaySession, 'positionSizingModes'> | null | undefined) {
   return normalizeDecisionPositionSizingModes(session?.positionSizingModes)
+}
+
+function isDecisionSyncBranch(session: Pick<DecisionReplaySession, 'id'>) {
+  return session.id.includes('-sync-')
+}
+
+function safeDecisionResultPnl(result: DecisionTradeResult, mode: DecisionPositionSizingMode, actor: 'user' | 'system') {
+  try {
+    return decisionResultPnl(result, mode, actor)
+  } catch {
+    // Keep legacy/imported records with a minimal result object readable. They
+    // cannot be recalculated without a candidate, so use their stored value.
+    const storedValue = actor === 'user' ? result.userPnlUsd : result.systemPnlUsd
+    return Number.isFinite(storedValue) ? storedValue : 0
+  }
+}
+
+/**
+ * A session id is intentionally random, so it cannot identify duplicated copies
+ * created by a rapid double click, another tab, or a repeated workspace merge.
+ * These fields describe the exercise itself and stay stable while it progresses.
+ */
+function decisionSessionResultSignature(session: DecisionReplaySession) {
+  const results = session.attempts.flatMap((attempt) => attempt.result ? [attempt.result] : [])
+  const participated = results.filter((result) => result.choice === 'traded')
+  return decisionSessionPositionSizingModes(session).map((mode) => {
+    const userPnlUsd = results.reduce((sum, result) => sum + safeDecisionResultPnl(result, mode, 'user'), 0)
+    const systemPnlUsd = results.reduce((sum, result) => sum + safeDecisionResultPnl(result, mode, 'system'), 0)
+    const systemWins = results.filter((result) => safeDecisionResultPnl(result, mode, 'system') > 0).length
+    const userWins = participated.filter((result) => safeDecisionResultPnl(result, mode, 'user') > 0).length
+    return {
+      mode,
+      resultCount: results.length,
+      participatedCount: participated.length,
+      skippedCount: results.filter((result) => result.choice === 'skipped').length,
+      unfilledCount: results.filter((result) => result.choice === 'unfilled').length,
+      userWins,
+      userTotal: participated.length,
+      systemWins,
+      systemTotal: results.length,
+      userPnl: userPnlUsd.toFixed(2),
+      systemPnl: systemPnlUsd.toFixed(2),
+      differencePnl: (userPnlUsd - systemPnlUsd).toFixed(2),
+    }
+  })
+}
+
+function decisionSessionMergeKey(session: DecisionReplaySession) {
+  // Conflict branches are deliberately separate historical records. They have
+  // the same source exercise geometry as the main session, so never fold them
+  // back into the main record during duplicate cleanup.
+  if (isDecisionSyncBranch(session)) return `sync-branch:${session.id}`
+  return JSON.stringify({
+    origin: session.origin ?? 'practice',
+    sourceSessionId: session.sourceSessionId ?? null,
+    sourceCandidateKey: session.sourceCandidateKey ?? null,
+    startedAt: session.startedAt,
+    requestedCount: session.requestedCount,
+    positionSizingModes: decisionSessionPositionSizingModes(session),
+    candidateKeys: session.candidates.map((candidate) => candidate.key),
+  })
+}
+
+/**
+ * Some legacy copies regenerated candidate keys while keeping the same visible
+ * exercise. This fallback is used only after the strict candidate-key grouping;
+ * when it matches, the more complete session is retained rather than unioning
+ * two unrelated candidate lists.
+ */
+function decisionSessionContentMergeKey(session: DecisionReplaySession) {
+  if (isDecisionSyncBranch(session)) return `sync-branch:${session.id}`
+  return JSON.stringify({
+    origin: session.origin ?? 'practice',
+    sourceSessionId: session.sourceSessionId ?? null,
+    sourceCandidateKey: session.sourceCandidateKey ?? null,
+    startedAt: session.startedAt,
+    finishedAt: session.finishedAt ?? null,
+    requestedCount: session.requestedCount,
+    status: session.status,
+    candidateCount: session.candidates.length,
+    attemptCount: session.attempts.length,
+    positionSizingModes: decisionSessionPositionSizingModes(session),
+    results: decisionSessionResultSignature(session),
+  })
 }
 
 export function decisionPositionSizingLabel(mode: DecisionPositionSizingMode, compact = false) {
@@ -141,12 +259,69 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object'
 }
 
+function removeExcludedCommodityTradesFromSession(session: DecisionReplaySession): DecisionReplaySession | null {
+  const excludedKeys = new Set(session.candidates
+    .filter((candidate) => isExcludedCommodityTrade(candidate.symbol, candidate.trade))
+    .map((candidate) => candidate.key))
+  if (excludedKeys.size === 0) return session
+
+  const candidates = session.candidates.filter((candidate) => !excludedKeys.has(candidate.key))
+  if (candidates.length === 0) return null
+  const attempts = session.attempts.filter((attempt) => !excludedKeys.has(attempt.candidateKey))
+  const rawCurrentIndex = Number.isFinite(session.currentIndex) ? Math.trunc(session.currentIndex) : 0
+  const currentKey = session.candidates[Math.max(0, Math.min(session.candidates.length - 1, rawCurrentIndex))]?.key
+  const preservedIndex = currentKey ? candidates.findIndex((candidate) => candidate.key === currentKey) : -1
+  const firstIncomplete = candidates.findIndex((candidate) => !attempts.find((attempt) => attempt.candidateKey === candidate.key)?.result)
+  const requestedCount = Math.min(Math.max(0, session.requestedCount), candidates.length)
+  const completedCount = attempts.filter((attempt) => attempt.result).length
+  const status: DecisionSessionStatus = session.status === 'active' && completedCount >= requestedCount
+    ? 'completed'
+    : session.status
+  const currentIndex = status === 'active' && firstIncomplete >= 0
+    ? firstIncomplete
+    : preservedIndex >= 0 ? preservedIndex : Math.max(0, Math.min(candidates.length - 1, rawCurrentIndex))
+
+  return {
+    ...session,
+    requestedCount,
+    candidates,
+    attempts,
+    currentIndex,
+    status,
+    finishedAt: status === 'completed' ? session.finishedAt ?? session.updatedAt : session.finishedAt,
+  }
+}
+
+function removeExcludedCommodityTradesFromStore(store: DecisionReplayStore): DecisionReplayStore {
+  const sessions = store.sessions.flatMap((session) => {
+    const filtered = removeExcludedCommodityTradesFromSession(session)
+    return filtered ? [filtered] : []
+  })
+  const excludedKeys = new Set(store.sessions
+    .flatMap((session) => session.candidates)
+    .filter((candidate) => isExcludedCommodityTrade(candidate.symbol, candidate.trade))
+    .map((candidate) => candidate.key))
+  const activeSessionId = store.activeSessionId && sessions.some((session) => session.id === store.activeSessionId && session.status === 'active')
+    ? store.activeSessionId
+    : null
+  return {
+    ...store,
+    seenTradeKeys: store.seenTradeKeys.filter((key) => !excludedKeys.has(key)),
+    activeSessionId,
+    sessions,
+  }
+}
+
 export function parseDecisionReplayStoreChecked(raw: string | null): DecisionReplayStore | null {
   if (!raw) return null
   try {
-    const value = JSON.parse(raw) as Partial<DecisionReplayStore>
+    const parsed = JSON.parse(raw) as Partial<DecisionReplayStore> & Partial<CompactDecisionReplayStore>
+    const value = parsed.storageFormat === DECISION_REPLAY_COMPACT_FORMAT
+      ? expandCompactDecisionReplayStore(parsed)
+      : parsed
+    if (!value) return null
     if (value.version !== DECISION_REPLAY_VERSION || !Array.isArray(value.sessions) || !Array.isArray(value.seenTradeKeys)) return null
-    const sessions = value.sessions.filter((session): session is DecisionReplaySession => (
+    const normalizedSessions = value.sessions.filter((session): session is DecisionReplaySession => (
       isObject(session)
       && typeof session.id === 'string'
       && Array.isArray(session.candidates)
@@ -167,7 +342,16 @@ export function parseDecisionReplayStoreChecked(raw: string | null): DecisionRep
           }
         }),
         positionSizingModes: normalizeDecisionPositionSizingModes(session.positionSizingModes),
+        origin: (session.origin === 'review' ? 'review' : 'practice') as DecisionSessionOrigin,
       }
+    })
+    const excludedKeys = new Set(normalizedSessions
+      .flatMap((session) => session.candidates)
+      .filter((candidate) => isExcludedCommodityTrade(candidate.symbol, candidate.trade))
+      .map((candidate) => candidate.key))
+    const sessions = normalizedSessions.flatMap((session) => {
+      const filtered = removeExcludedCommodityTradesFromSession(session)
+      return filtered ? [filtered] : []
     })
     const activeSessionId = typeof value.activeSessionId === 'string'
       && sessions.some((session) => session.id === value.activeSessionId && session.status === 'active')
@@ -175,7 +359,7 @@ export function parseDecisionReplayStoreChecked(raw: string | null): DecisionRep
       : null
     return repairDecisionReplayStore({
       version: DECISION_REPLAY_VERSION,
-      seenTradeKeys: [...new Set(value.seenTradeKeys.filter((key): key is string => typeof key === 'string'))],
+      seenTradeKeys: [...new Set(value.seenTradeKeys.filter((key): key is string => typeof key === 'string' && !excludedKeys.has(key)))],
       activeSessionId,
       sessions,
     })
@@ -222,12 +406,20 @@ function repairDecisionReplaySession(session: DecisionReplaySession): DecisionRe
 }
 
 function repairDecisionReplayStore(store: DecisionReplayStore): DecisionReplayStore {
-  const sessions = store.sessions.map(repairDecisionReplaySession)
-  const activeSessionId = store.activeSessionId
-    && sessions.some((session) => session.id === store.activeSessionId && session.status === 'active')
-    ? store.activeSessionId
+  const repairedSessions = store.sessions.map(repairDecisionReplaySession)
+  const normalized = mergeDecisionReplaySessionCollection(repairedSessions)
+  const normalizedActiveSessionId = store.activeSessionId
+    ? normalized.idMap.get(store.activeSessionId) ?? null
     : null
-  return { ...store, sessions, activeSessionId }
+  const activeSessionId = normalizedActiveSessionId
+    && normalized.sessions.some((session) => session.id === normalizedActiveSessionId && session.status === 'active')
+    ? normalizedActiveSessionId
+    : null
+  return { ...store, sessions: normalized.sessions, activeSessionId }
+}
+
+export function normalizeDecisionReplayStore(store: DecisionReplayStore) {
+  return repairDecisionReplayStore(store)
 }
 
 function sessionProgressRank(session: DecisionReplaySession) {
@@ -267,6 +459,11 @@ function stableBranchHash(value: string) {
  * deterministic branch session instead of silently discarding either result.
  */
 function mergeDecisionReplaySession(left: DecisionReplaySession, right: DecisionReplaySession) {
+  const leftCorrection = Number.isFinite(left.correctionRevision) ? left.correctionRevision! : 0
+  const rightCorrection = Number.isFinite(right.correctionRevision) ? right.correctionRevision! : 0
+  if (leftCorrection !== rightCorrection) {
+    return { merged: leftCorrection > rightCorrection ? left : right, branch: null }
+  }
   const base = newerDecisionSession(left, right)
   const alternative = base === left ? right : left
   const leftAttempts = new Map(left.attempts.map((attempt) => [attempt.candidateKey, attempt]))
@@ -333,10 +530,15 @@ function mergeDecisionReplaySession(left: DecisionReplaySession, right: Decision
   return { merged, branch }
 }
 
-/** Merge independently-created exercise histories without discarding either computer's progress. */
-export function mergeDecisionReplayStores(local: DecisionReplayStore, imported: DecisionReplayStore): DecisionReplayStore {
-  const sessionsById = new Map(local.sessions.map((session) => [session.id, session]))
-  for (const session of imported.sessions) {
+interface NormalizedDecisionReplaySessions {
+  sessions: DecisionReplaySession[]
+  idMap: Map<string, string>
+}
+
+/** Merge duplicate ids first, then merge independently-created copies of one exercise. */
+function mergeDecisionReplaySessionCollection(input: readonly DecisionReplaySession[]): NormalizedDecisionReplaySessions {
+  const sessionsById = new Map<string, DecisionReplaySession>()
+  for (const session of input) {
     const existing = sessionsById.get(session.id)
     if (!existing) {
       sessionsById.set(session.id, session)
@@ -349,16 +551,74 @@ export function mergeDecisionReplayStores(local: DecisionReplayStore, imported: 
       sessionsById.set(branch.id, existingBranch ? newerDecisionSession(existingBranch, branch) : branch)
     }
   }
-  const sessions = [...sessionsById.values()].sort((left, right) => right.startedAt - left.startedAt)
-  const activeSessionId = [local.activeSessionId, imported.activeSessionId]
-    .flatMap((id) => id ? sessions.filter((session) => session.id === id && session.status === 'active') : [])
-    .sort((left, right) => right.updatedAt - left.updatedAt)[0]?.id ?? null
-  return repairDecisionReplayStore({
+
+  const primaryGroups = new Map<string, { session: DecisionReplaySession; sourceIds: string[] }>()
+  const branches = new Map<string, DecisionReplaySession>()
+  for (const session of sessionsById.values()) {
+    if (isDecisionSyncBranch(session)) {
+      const existingBranch = branches.get(session.id)
+      branches.set(session.id, existingBranch ? newerDecisionSession(existingBranch, session) : session)
+      continue
+    }
+
+    const mergeKey = decisionSessionMergeKey(session)
+    const group = primaryGroups.get(mergeKey)
+    if (!group) {
+      primaryGroups.set(mergeKey, { session, sourceIds: [session.id] })
+      continue
+    }
+
+    const { merged, branch } = mergeDecisionReplaySession(group.session, session)
+    group.session = merged
+    group.sourceIds.push(session.id)
+    if (branch) {
+      const existingBranch = branches.get(branch.id)
+      branches.set(branch.id, existingBranch ? newerDecisionSession(existingBranch, branch) : branch)
+    }
+  }
+
+  const contentGroups = new Map<string, { session: DecisionReplaySession; sourceIds: string[] }>()
+  for (const group of primaryGroups.values()) {
+    const contentKey = decisionSessionContentMergeKey(group.session)
+    const existing = contentGroups.get(contentKey)
+    if (!existing) {
+      contentGroups.set(contentKey, { ...group, sourceIds: [...group.sourceIds] })
+      continue
+    }
+    const winner = newerDecisionSession(existing.session, group.session)
+    existing.session = winner
+    existing.sourceIds.push(...group.sourceIds)
+  }
+
+  const idMap = new Map<string, string>()
+  const sessions: DecisionReplaySession[] = []
+  for (const group of contentGroups.values()) {
+    sessions.push(group.session)
+    group.sourceIds.forEach((sourceId) => idMap.set(sourceId, group.session.id))
+  }
+  for (const branch of branches.values()) {
+    sessions.push(branch)
+    idMap.set(branch.id, branch.id)
+  }
+  return { sessions, idMap }
+}
+
+/** Merge independently-created exercise histories without discarding either computer's progress. */
+export function mergeDecisionReplayStores(local: DecisionReplayStore, imported: DecisionReplayStore): DecisionReplayStore {
+  const safeLocal = removeExcludedCommodityTradesFromStore(local)
+  const safeImported = removeExcludedCommodityTradesFromStore(imported)
+  const normalized = normalizeDecisionReplayStore({
     version: DECISION_REPLAY_VERSION,
-    seenTradeKeys: [...new Set([...local.seenTradeKeys, ...imported.seenTradeKeys])],
-    activeSessionId,
-    sessions,
+    seenTradeKeys: [...new Set([...safeLocal.seenTradeKeys, ...safeImported.seenTradeKeys])],
+    // repairDecisionReplayStore maps this id to the surviving canonical copy
+    // when a local active session is merged with an imported duplicate.
+    activeSessionId: safeLocal.activeSessionId,
+    sessions: [...safeLocal.sessions, ...safeImported.sessions],
   })
+  return {
+    ...normalized,
+    sessions: [...normalized.sessions].sort((left, right) => right.startedAt - left.startedAt),
+  }
 }
 
 export function loadDecisionReplayStore(): DecisionReplayStore {
@@ -366,8 +626,18 @@ export function loadDecisionReplayStore(): DecisionReplayStore {
   return parseDecisionReplayStore(localStorage.getItem(DECISION_REPLAY_STORAGE_KEY))
 }
 
-export function saveDecisionReplayStore(store: DecisionReplayStore) {
-  if (typeof localStorage !== 'undefined') localStorage.setItem(DECISION_REPLAY_STORAGE_KEY, JSON.stringify(store))
+export function saveDecisionReplayStore(
+  store: DecisionReplayStore,
+  storage: Pick<Storage, 'setItem'> | undefined = typeof localStorage === 'undefined' ? undefined : localStorage,
+) {
+  if (!storage) return false
+  try {
+    storage.setItem(DECISION_REPLAY_STORAGE_KEY, serializeDecisionReplayStore(normalizeDecisionReplayStore(store)))
+    return true
+  } catch {
+    // Storage quota or privacy-mode failures must never unmount the entire React application.
+    return false
+  }
 }
 
 function randomIndex(upperExclusive: number) {
@@ -393,6 +663,16 @@ export function sampleDecisionCandidates(candidates: readonly ReplayDecisionCand
   return pool.slice(0, count)
 }
 
+export function filterDecisionCandidatesByScope(
+  candidates: readonly ReplayDecisionCandidate[],
+  selectedSymbols: readonly SymbolId[],
+  selectedIntervals: readonly DecisionReplayInterval[],
+) {
+  const symbols = new Set(selectedSymbols)
+  const intervals = new Set<IntervalId>(selectedIntervals)
+  return candidates.filter((candidate) => symbols.has(candidate.symbol) && intervals.has(candidate.interval))
+}
+
 export function createDecisionAttempt(candidate: ReplayDecisionCandidate): DecisionAttempt {
   return {
     candidateKey: candidate.key,
@@ -415,6 +695,11 @@ export function createDecisionSession(
   requestedCount: number,
   now = Date.now(),
   positionSizingModes: readonly DecisionPositionSizingMode[] = DEFAULT_DECISION_POSITION_SIZING_MODES,
+  options: {
+    origin?: DecisionSessionOrigin
+    sourceSessionId?: string
+    sourceCandidateKey?: string
+  } = {},
 ): DecisionReplaySession {
   if (candidates.length === 0) throw new Error('没有可用于决策回放的未完成交易')
   const id = `decision-${now}-${Math.random().toString(36).slice(2, 9)}`
@@ -429,7 +714,120 @@ export function createDecisionSession(
     updatedAt: now,
     finishedAt: null,
     positionSizingModes: normalizeDecisionPositionSizingModes(positionSizingModes),
+    origin: options.origin ?? 'practice',
+    ...(options.sourceSessionId ? { sourceSessionId: options.sourceSessionId } : {}),
+    ...(options.sourceCandidateKey ? { sourceCandidateKey: options.sourceCandidateKey } : {}),
   }
+}
+
+function expandCompactDecisionReplayStore(value: Partial<CompactDecisionReplayStore>): Partial<DecisionReplayStore> | null {
+  if (!Array.isArray(value.candidateCatalog) || !Array.isArray(value.sessions)) return null
+  const candidateCatalog = new Map(value.candidateCatalog
+    .filter((candidate): candidate is ReplayDecisionCandidate => isObject(candidate) && typeof candidate.key === 'string')
+    .map((candidate) => [candidate.key, candidate]))
+  return {
+    version: value.version,
+    seenTradeKeys: value.seenTradeKeys,
+    activeSessionId: value.activeSessionId,
+    sessions: value.sessions.map((session) => {
+      if (!isObject(session)) return session as unknown as DecisionReplaySession
+      const compactCandidateKeys = Array.isArray(session.candidateKeys)
+        ? session.candidateKeys.filter((key): key is string => typeof key === 'string')
+        : []
+      const candidates = compactCandidateKeys.flatMap((key) => {
+        const candidate = candidateCatalog.get(key)
+        return candidate ? [candidate] : []
+      })
+      const candidatesByKey = new Map(candidates.map((candidate) => [candidate.key, candidate]))
+      const attempts = Array.isArray(session.attempts) ? session.attempts.map((attempt) => {
+        if (!isObject(attempt) || !isObject(attempt.result)) return attempt as unknown as DecisionAttempt
+        const candidateKey = typeof attempt.candidateKey === 'string' ? attempt.candidateKey : ''
+        const candidate = candidatesByKey.get(candidateKey) ?? candidateCatalog.get(candidateKey)
+        if (!candidate) return attempt as unknown as DecisionAttempt
+        return {
+          ...attempt,
+          result: {
+            ...attempt.result,
+            candidate,
+            drawings: Array.isArray(attempt.result.drawings)
+              ? attempt.result.drawings
+              : Array.isArray(attempt.drawings) ? attempt.drawings : [],
+          },
+        } as DecisionAttempt
+      }) : []
+      const { candidateKeys, ...rest } = session
+      void candidateKeys
+      return { ...rest, candidates, attempts } as DecisionReplaySession
+    }),
+  }
+}
+
+/**
+ * Persist a lossless normalized representation. Candidates are stored once and completed
+ * results reuse their attempt drawing snapshot, avoiding the two largest sources of duplication.
+ */
+export function serializeDecisionReplayStore(store: DecisionReplayStore) {
+  const candidateCatalog = new Map<string, ReplayDecisionCandidate>()
+  store.sessions.forEach((session) => {
+    session.candidates.forEach((candidate) => candidateCatalog.set(candidate.key, candidate))
+    session.attempts.forEach((attempt) => {
+      if (attempt.result?.candidate && !candidateCatalog.has(attempt.result.candidate.key)) {
+        candidateCatalog.set(attempt.result.candidate.key, attempt.result.candidate)
+      }
+    })
+  })
+  const compact: CompactDecisionReplayStore = {
+    version: DECISION_REPLAY_VERSION,
+    storageFormat: DECISION_REPLAY_COMPACT_FORMAT,
+    seenTradeKeys: store.seenTradeKeys,
+    activeSessionId: store.activeSessionId,
+    candidateCatalog: [...candidateCatalog.values()],
+    sessions: store.sessions.map((session) => {
+      const { candidates, attempts, ...rest } = session
+      return {
+        ...rest,
+        candidateKeys: candidates.map((candidate) => candidate.key),
+        attempts: attempts.map((attempt) => {
+          if (!attempt.result) return { ...attempt, result: null }
+          const { candidate, drawings, ...result } = attempt.result
+          const drawingsMatchAttempt = JSON.stringify(drawings) === JSON.stringify(attempt.drawings)
+          return {
+            ...attempt,
+            result: {
+              ...result,
+              ...(!candidateCatalog.has(candidate?.key) && candidate ? { candidate } : {}),
+              ...(!drawingsMatchAttempt ? { drawings } : {}),
+            },
+          }
+        }),
+      }
+    }),
+  }
+  return JSON.stringify(compact)
+}
+
+/**
+ * Create a fresh, one-question session for redoing a historical result.
+ * The source session/result are only metadata inputs; the new attempt starts
+ * unanswered at the signal candle and therefore cannot overwrite the source.
+ */
+export function createDecisionReviewSession(
+  sourceSession: DecisionReplaySession,
+  result: DecisionTradeResult,
+  now = Date.now(),
+): DecisionReplaySession {
+  const candidate = sourceSession.candidates.find((item) => item.key === result.candidateKey) ?? result.candidate
+  return createDecisionSession(
+    [candidate],
+    1,
+    now,
+    decisionSessionPositionSizingModes(sourceSession),
+    {
+      origin: 'review',
+      sourceSessionId: sourceSession.id,
+      sourceCandidateKey: result.candidateKey,
+    },
+  )
 }
 
 export function currentDecisionCandidate(session: DecisionReplaySession | null | undefined) {
@@ -556,8 +954,8 @@ export function rewardRiskRatio(entryPrice: number, stopLoss: number, takeProfit
 }
 
 export function fillPendingOrder(side: TradeSide, orderKind: DecisionOrderKind, entryPrice: number, candle: Candle): DecisionFill | null {
-  if (orderKind === 'stop' && side === 'long' && candle.high >= entryPrice) return { time: candle.time, price: candle.open > entryPrice ? candle.open : entryPrice }
-  if (orderKind === 'stop' && side === 'short' && candle.low <= entryPrice) return { time: candle.time, price: candle.open < entryPrice ? candle.open : entryPrice }
+  if (orderKind === 'stop' && side === 'long' && candle.high > entryPrice) return { time: candle.time, price: candle.open > entryPrice ? candle.open : entryPrice }
+  if (orderKind === 'stop' && side === 'short' && candle.low < entryPrice) return { time: candle.time, price: candle.open < entryPrice ? candle.open : entryPrice }
   if (orderKind === 'limit' && side === 'long' && candle.low <= entryPrice) return { time: candle.time, price: candle.open < entryPrice ? candle.open : entryPrice }
   if (orderKind === 'limit' && side === 'short' && candle.high >= entryPrice) return { time: candle.time, price: candle.open > entryPrice ? candle.open : entryPrice }
   return null
@@ -829,6 +1227,42 @@ export function adjacentDecisionExerciseTarget(
 
 export function sessionResults(session: DecisionReplaySession) {
   return session.attempts.flatMap((attempt) => attempt.result ? [attempt.result] : [])
+}
+
+export interface DecisionSessionUserRStats {
+  participatedTradeCount: number
+  measuredTradeCount: number
+  averageInitialStopDistance: number | null
+  totalR: number | null
+  averageR: number | null
+}
+
+/** Use the average initial stop distance of filled user orders as one shared R for the round. */
+export function decisionSessionUserRStats(session: DecisionReplaySession): DecisionSessionUserRStats {
+  const participated = sessionResults(session).filter((result) => result.choice === 'traded' && result.userEntry)
+  const measurements = participated.flatMap((result) => {
+    const entryPrice = result.userEntry?.price
+    const initialStopLoss = decisionResultInitialStopLoss(result)
+    if (entryPrice === undefined || initialStopLoss === null) return []
+    const stopDistance = Math.abs(entryPrice - initialStopLoss)
+    const signedMove = result.candidate.trade.side === 'long'
+      ? result.userExit.price - entryPrice
+      : entryPrice - result.userExit.price
+    if (!Number.isFinite(stopDistance) || stopDistance <= 0 || !Number.isFinite(signedMove)) return []
+    return [{ stopDistance, signedMove }]
+  })
+  if (measurements.length === 0) {
+    return { participatedTradeCount: participated.length, measuredTradeCount: 0, averageInitialStopDistance: null, totalR: null, averageR: null }
+  }
+  const averageInitialStopDistance = measurements.reduce((sum, item) => sum + item.stopDistance, 0) / measurements.length
+  const totalR = measurements.reduce((sum, item) => sum + item.signedMove, 0) / averageInitialStopDistance
+  return {
+    participatedTradeCount: participated.length,
+    measuredTradeCount: measurements.length,
+    averageInitialStopDistance,
+    totalR,
+    averageR: totalR / measurements.length,
+  }
 }
 
 export function formatDecisionDate(epochSeconds: number) {

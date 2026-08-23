@@ -5,6 +5,7 @@ import type {
   TradeMarkerKind, XauTradeMarker, XauTradeMarkerSelection, XauTradeConnectionOutcome,
 } from './tradeMarkers'
 import { XAU_TRADE_CONNECTION_COLORS } from './tradeMarkers'
+import { isExcludedCommodityTrade } from './tradeEligibility'
 
 interface ReplayDatasetPayload {
   schemaVersion: number
@@ -129,6 +130,8 @@ function validatePayload(value: unknown, origin: string): RegisteredReplayTradeD
     if (!trade.result || !finite(trade.result.barsHeld) || !finite(trade.result.rMultiple) || !finite(trade.result.pnlUsd)) throw new Error(`回放图层结果无效：${origin} #${trade.tradeNumber}`)
   }
   if (payload.trades.length === 0) throw new Error(`回放图层没有交易：${origin}`)
+  const trades = payload.trades.filter((trade) => !isExcludedCommodityTrade(payload.symbol, trade))
+  if (trades.length === 0) throw new Error(`回放图层没有日内完成交易：${origin}`)
   const sourceId = nonEmpty(payload.layer?.sourceId) ? payload.layer.sourceId : fallbackSourceId(payload)
   const name = nonEmpty(payload.layer?.name) ? payload.layer.name : `${payload.symbol} 回放交易`
   const replayStartedAtEpoch = payload.provenance.replayStartedAtEpoch
@@ -143,13 +146,13 @@ function validatePayload(value: unknown, origin: string): RegisteredReplayTradeD
     scenario: payload.provenance.scenario,
     backtestFile: payload.provenance.backtestFile,
     backtestSha256: payload.provenance.backtestSha256,
-    startTime: Math.min(...payload.trades.map((trade) => trade.entry.time)),
-    endTime: Math.max(...payload.trades.map((trade) => trade.exit.time)),
+    startTime: Math.min(...trades.map((trade) => trade.entry.time)),
+    endTime: Math.max(...trades.map((trade) => trade.exit.time)),
     startedAt,
     finishedAt,
-    tradeCount: payload.trades.length,
-    markerCount: payload.trades.length * 2,
-    trades: payload.trades,
+    tradeCount: trades.length,
+    markerCount: trades.length * 2,
+    trades,
   }
 }
 

@@ -66,6 +66,9 @@ export function viewportActionAfterDataUpdate({
   previousLength,
   nextLength,
 }: DataUpdateViewportDecision): DataUpdateViewportAction {
+  // Candidate switches can transiently publish an empty causal window.
+  // Never ask lightweight-charts to apply a logical range with no bars.
+  if (nextLength <= 0) return 'none'
   if (focusReady) return 'center'
   if (shouldFollowRealtime({
     shouldFocusLatest: false,

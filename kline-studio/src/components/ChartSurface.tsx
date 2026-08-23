@@ -1008,11 +1008,14 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     // to both only duplicates projection work.
     timeScale.subscribeVisibleLogicalRangeChange(onTimeScaleChange)
     timeScale.subscribeSizeChange(onTimeScaleChange)
-    const cachedRange = viewportRangeCache.get(viewportRangeCacheKey(symbol, interval))
-    chart.timeScale().setVisibleLogicalRange(initialChartLogicalRange(dataRef.current.length, cachedRange, centerLatestByDefault))
-    previousLengthRef.current = dataRef.current.length
-    cacheVisibleViewport()
-    requestViewportProjectionSync()
+    const initialDataLength = dataRef.current.length
+    previousLengthRef.current = initialDataLength
+    if (initialDataLength > 0) {
+      const cachedRange = viewportRangeCache.get(viewportRangeCacheKey(symbol, interval))
+      chart.timeScale().setVisibleLogicalRange(initialChartLogicalRange(initialDataLength, cachedRange, centerLatestByDefault))
+      cacheVisibleViewport()
+      requestViewportProjectionSync()
+    }
 
     chart.subscribeCrosshairMove((param) => {
       // Panning already updates the native canvas directly. Crosshair work is

@@ -1,6 +1,7 @@
 import markerData from '../data/xauusd-entry-markers.json'
 import type { SeriesMarker, UTCTimestamp } from 'lightweight-charts'
 import type { IntervalId, SymbolId } from './market'
+import { isExcludedCommodityTrade } from './tradeEligibility'
 
 export type TradeSide = 'long' | 'short'
 export type TradeMarkerKind = 'entry' | 'exit'
@@ -188,7 +189,21 @@ function validateDataset(value: TradeMarkerDataset): XauTradeMarker[] {
   return value.trades
 }
 
-const xauTradeMarkers = validateDataset(dataset)
+const xauTradeMarkers = validateDataset(dataset).filter((trade) => !isExcludedCommodityTrade('XAUUSD', trade))
+
+const xauTradeMarkerSummaryValue = {
+  trades: xauTradeMarkers.length,
+  long: xauTradeMarkers.filter((trade) => trade.side === 'long').length,
+  short: xauTradeMarkers.filter((trade) => trade.side === 'short').length,
+  entryMarkers: xauTradeMarkers.length,
+  exitMarkers: xauTradeMarkers.length,
+  uniqueTimes: new Set(xauTradeMarkers.flatMap((trade) => [trade.entry.time, trade.exit.time])).size,
+  sameBarOpenClose: xauTradeMarkers.filter((trade) => trade.entry.time === trade.exit.time).length,
+  exitReasonCounts: Object.fromEntries(reasonCodes.map((reasonCode) => [
+    reasonCode,
+    xauTradeMarkers.filter((trade) => trade.exit.reasonCode === reasonCode).length,
+  ])) as Record<TradeExitReasonCode, number>,
+}
 
 export const XAU_TRADE_MARKER_SOURCE_ID = `xauusd-replay-${dataset.provenance.backtestSha256.slice(0, 16)}`
 
@@ -204,8 +219,8 @@ export function xauTradeMarkerDatasetInfo(): XauTradeMarkerDatasetInfo {
     backtestSha256: dataset.provenance.backtestSha256,
     startTime: Math.min(...xauTradeMarkers.map((trade) => trade.entry.time)),
     endTime: Math.max(...xauTradeMarkers.map((trade) => trade.exit.time)),
-    tradeCount: dataset.summary.trades,
-    markerCount: dataset.summary.entryMarkers + dataset.summary.exitMarkers,
+    tradeCount: xauTradeMarkerSummaryValue.trades,
+    markerCount: xauTradeMarkerSummaryValue.entryMarkers + xauTradeMarkerSummaryValue.exitMarkers,
   }
 }
 
@@ -310,7 +325,7 @@ export function parseXauTradeMarkerId(value: unknown): { tradeNumber: number; ki
   const match = MARKER_ID_PATTERN.exec(value)
   if (!match) return null
   const tradeNumber = Number(match[1])
-  if (!Number.isInteger(tradeNumber) || tradeNumber < 1 || tradeNumber > xauTradeMarkers.length) return null
+  if (!Number.isInteger(tradeNumber) || tradeNumber < 1 || !xauTradeMarkers.some((trade) => trade.tradeNumber === tradeNumber)) return null
   return { tradeNumber, kind: match[2] as TradeMarkerKind }
 }
 
@@ -318,7 +333,7 @@ export function resolveXauTradeMarker(symbol: SymbolId, interval: IntervalId, id
   if (symbol !== 'XAUUSD' || interval !== '5m') return null
   const parsed = parseXauTradeMarkerId(id)
   if (!parsed) return null
-  const trade = xauTradeMarkers[parsed.tradeNumber - 1]
+  const trade = xauTradeMarkers.find((item) => item.tradeNumber === parsed.tradeNumber)
   return trade ? { id: `xau-trade-${parsed.tradeNumber}-${parsed.kind}`, kind: parsed.kind, trade } : null
 }
 
@@ -392,7 +407,7 @@ export const getXauEntryMarkers = getXauTradeMarkers
 export const toXauEntrySeriesMarkers = toXauTradeSeriesMarkers
 
 export function xauTradeMarkerSummary() {
-  return dataset.summary
+  return xauTradeMarkerSummaryValue
 }
 
 export const xauEntryMarkerSummary = xauTradeMarkerSummary

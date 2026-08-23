@@ -21,6 +21,17 @@ describe('chart viewport default placement', () => {
 })
 
 describe('chart viewport live-follow behavior', () => {
+  it('does not apply a viewport action while a decision candidate switches through empty data', () => {
+    expect(viewportActionAfterDataUpdate({
+      focusReady: true,
+      hasVisibleRange: true,
+      followLatest: true,
+      wasAtRealtime: true,
+      previousLength: 100,
+      nextLength: 0,
+    })).toBe('none')
+  })
+
   it('preserves the complete decision viewport when key 1 reveals one more candle', () => {
     expect(viewportActionAfterDataUpdate({
       focusReady: false,

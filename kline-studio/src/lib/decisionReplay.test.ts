@@ -7,11 +7,11 @@ import { replayDecisionCandidates } from './replayTradeRegistry'
 import type { Candle } from './market'
 import { parseCompactHistory } from './liveMarket'
 import {
-  adjacentDecisionExerciseTarget, advanceDecisionAttempt, buildDecisionResult, cancelPendingOrderAndAdvance, candlesKnownAt, compareDecisionHistorySortValues, createDecisionAttempt, createDecisionSession,
+  adjacentDecisionExerciseTarget, advanceDecisionAttempt, buildDecisionResult, cancelPendingOrderAndAdvance, candlesKnownAt, compareDecisionHistorySortValues, createDecisionAttempt, createDecisionReviewSession, createDecisionSession,
   decisionShortcutAction, defaultDecisionLevels, evaluatePositionBar, fillPendingOrder,
-  decisionResultPnl, decisionResultR, historyCoversDecisionCandidate, intervalCutoffTime, parseDecisionReplayStore,
+  decisionResultPnl, decisionResultR, decisionSessionUserRStats, filterDecisionCandidatesByScope, historyCoversDecisionCandidate, intervalCutoffTime, parseDecisionReplayStore,
   mergeDecisionReplayStores, pnlForDecision, pnlForDecisionMode, rewardRiskRatio, sampleDecisionCandidates,
-  updateDecisionSessionDrawings, validDecisionLevels, validOpenPositionLevels, type DecisionReplaySession,
+  saveDecisionReplayStore, serializeDecisionReplayStore, updateDecisionSessionDrawings, validDecisionLevels, validOpenPositionLevels, type DecisionReplaySession,
 } from './decisionReplay'
 
 function candidate(key: string, side: 'long' | 'short' = 'long'): ReplayDecisionCandidate {
@@ -66,6 +66,17 @@ describe('decision replay', () => {
     expect(selected.some((item) => item.key === 'a:2')).toBe(false)
   })
 
+  it('filters random exercises by both selected symbol and timeframe', () => {
+    const fiveMinute = candidate('five:1')
+    const fifteenMinute = { ...candidate('fifteen:1'), interval: '15m' as const }
+    const oneHour = { ...candidate('hour:1'), symbol: 'XAGUSD' as const, interval: '1h' as const }
+    const candidates = [fiveMinute, fifteenMinute, oneHour]
+
+    expect(filterDecisionCandidatesByScope(candidates, ['XAUUSD'], ['15m']).map((item) => item.key)).toEqual(['fifteen:1'])
+    expect(filterDecisionCandidatesByScope(candidates, ['XAUUSD', 'XAGUSD'], ['5m', '1h']).map((item) => item.key)).toEqual(['five:1', 'hour:1'])
+    expect(filterDecisionCandidatesByScope(candidates, ['XAGUSD'], ['15m'])).toEqual([])
+  })
+
   it('cuts minute history at the end of the currently revealed source bar', () => {
     expect(intervalCutoffTime(3000, 300)).toBe(3240)
     const minutes = [bar(3000, 1, 1, 1, 1), bar(3060, 1, 1, 1, 1), bar(3240, 1, 1, 1, 1), bar(3300, 1, 1, 1, 1)]
@@ -75,6 +86,8 @@ describe('decision replay', () => {
   it('uses gap-aware stop and limit fills with conservative stop-first exits', () => {
     expect(fillPendingOrder('long', 'stop', 100, bar(0, 103, 105, 102, 104))).toEqual({ time: 0, price: 103 })
     expect(fillPendingOrder('short', 'stop', 100, bar(0, 97, 99, 95, 96))).toEqual({ time: 0, price: 97 })
+    expect(fillPendingOrder('long', 'stop', 100, bar(0, 99, 100, 98, 99))).toBeNull()
+    expect(fillPendingOrder('short', 'stop', 100, bar(0, 101, 102, 100, 101))).toBeNull()
     expect(fillPendingOrder('long', 'limit', 100, bar(0, 97, 101, 96, 99))).toEqual({ time: 0, price: 97 })
     expect(fillPendingOrder('short', 'limit', 100, bar(0, 103, 104, 99, 101))).toEqual({ time: 0, price: 103 })
     expect(evaluatePositionBar('long', 95, 105, bar(0, 100, 106, 94, 102))).toEqual({ time: 0, price: 95, reason: 'stop-loss' })
@@ -198,6 +211,63 @@ describe('decision replay', () => {
     expect(repaired.userR).toBeCloseTo(0.7780678851)
   })
 
+  it('uses the average initial stop distance as one shared R for a round', () => {
+    const first = candidate('a:1', 'long')
+    const second = candidate('b:2', 'short')
+    const firstAttempt = {
+      ...createDecisionAttempt(first), stage: 'position-open' as const, entryMode: 'signal-extreme' as const,
+      orderKind: 'stop' as const, pendingEntryPrice: 101, initialStopLoss: 95, stopLoss: 100, takeProfit: 105,
+      fill: { time: 3300, price: 101 },
+    }
+    const secondAttempt = {
+      ...createDecisionAttempt(second), stage: 'position-open' as const, entryMode: 'signal-extreme' as const,
+      orderKind: 'stop' as const, pendingEntryPrice: 101, initialStopLoss: 105, stopLoss: 102, takeProfit: 95,
+      fill: { time: 3300, price: 101 },
+    }
+    const firstResult = buildDecisionResult(first, firstAttempt, { time: 3600, price: 103, reason: 'manual-close' }, [])
+    const secondResult = buildDecisionResult(second, secondAttempt, { time: 3600, price: 99, reason: 'manual-close' }, [])
+    const session = {
+      ...createDecisionSession([first, second], 2, 1),
+      attempts: [
+        { ...firstAttempt, stage: 'post-exit' as const, result: firstResult },
+        { ...secondAttempt, stage: 'post-exit' as const, result: secondResult },
+      ],
+    }
+    const stats = decisionSessionUserRStats(session)
+
+    expect(stats.participatedTradeCount).toBe(2)
+    expect(stats.measuredTradeCount).toBe(2)
+    expect(stats.averageInitialStopDistance).toBe(5)
+    expect(stats.totalR).toBeCloseTo(0.8)
+    expect(stats.averageR).toBeCloseTo(0.4)
+  })
+
+  it('removes overnight commodity questions from previously saved replay sessions', () => {
+    const overnightBase = candidate('overnight:1')
+    const overnight = {
+      ...overnightBase,
+      trade: {
+        ...overnightBase.trade,
+        entry: { ...overnightBase.trade.entry, time: 57_300 },
+        exit: { ...overnightBase.trade.exit, time: 57_900 },
+      },
+    }
+    const kept = candidate('kept:1')
+    const session = {
+      ...createDecisionSession([overnight, kept], 2, 1000),
+      id: 'overnight-session',
+      currentIndex: 1,
+      attempts: [createDecisionAttempt(overnight), createDecisionAttempt(kept)],
+    }
+
+    const parsed = parseDecisionReplayStore(JSON.stringify(storeWithSessions(session)))
+
+    expect(parsed.sessions).toHaveLength(1)
+    expect(parsed.sessions[0].candidates.map((item) => item.key)).toEqual(['kept:1'])
+    expect(parsed.sessions[0].attempts.map((item) => item.candidateKey)).toEqual(['kept:1'])
+    expect(parsed.seenTradeKeys).toEqual(['kept:1'])
+  })
+
   it('advances pending orders and finalizes comparable results without future data', () => {
     const item = candidate('a:1')
     const attempt = { ...createDecisionAttempt(item), stage: 'order-pending' as const, entryMode: 'signal-extreme' as const, orderKind: 'stop' as const, pendingEntryPrice: 100, stopLoss: 95, takeProfit: 105 }
@@ -317,6 +387,107 @@ describe('decision replay', () => {
     expect(parseDecisionReplayStore('{bad json')).toMatchObject({ sessions: [], seenTradeKeys: [] })
   })
 
+  it('round-trips compact storage without duplicating result candidates or drawing snapshots', () => {
+    const item = candidate('compact:1')
+    const attempt = createDecisionAttempt(item)
+    const completed = {
+      ...attempt,
+      stage: 'complete' as const,
+      result: buildDecisionResult(item, attempt, { time: 3600, price: 103, reason: 'skipped' }, []),
+    }
+    const session = {
+      ...createDecisionSession([item], 1, 1000),
+      attempts: [completed],
+      status: 'completed' as const,
+      finishedAt: 2000,
+    }
+
+    const normalizedStore = parseDecisionReplayStore(JSON.stringify(storeWithSessions(session)))
+    const serialized = serializeDecisionReplayStore(normalizedStore)
+    const raw = JSON.parse(serialized)
+    expect(raw.storageFormat).toBe('compact-v1')
+    expect(raw.candidateCatalog).toHaveLength(1)
+    expect(raw.sessions[0].candidates).toBeUndefined()
+    expect(raw.sessions[0].attempts[0].result.candidate).toBeUndefined()
+    expect(raw.sessions[0].attempts[0].result.drawings).toBeUndefined()
+    expect(parseDecisionReplayStore(serialized)).toEqual(normalizedStore)
+  })
+
+  it('deduplicates one persisted exercise that was saved under two session ids', () => {
+    const item = candidate('duplicate:1')
+    const original = { ...createDecisionSession([item], 1, 1000), id: 'duplicate-original' }
+    const copy = { ...original, id: 'duplicate-copy' }
+
+    const parsed = parseDecisionReplayStore(JSON.stringify({
+      ...storeWithSessions(original, copy),
+      activeSessionId: copy.id,
+    }))
+
+    expect(parsed.sessions).toHaveLength(1)
+    expect(parsed.sessions[0].id).toBe(original.id)
+    expect(parsed.activeSessionId).toBe(original.id)
+  })
+
+  it('deduplicates identical completed exercises when workspace histories are merged', () => {
+    const item = candidate('duplicate-completed:1')
+    const base = createDecisionSession([item], 1, 1000)
+    const attempt = {
+      ...base.attempts[0],
+      stage: 'complete' as const,
+      result: buildDecisionResult(item, base.attempts[0], { time: 3600, price: item.trade.entry.price, reason: 'skipped' }, []),
+    }
+    const original = {
+      ...base,
+      id: 'duplicate-completed-original',
+      attempts: [attempt],
+      currentIndex: 1,
+      status: 'completed' as const,
+      finishedAt: 4000,
+    }
+    const copy = { ...original, id: 'duplicate-completed-copy' }
+
+    const merged = mergeDecisionReplayStores(storeWithSessions(original), storeWithSessions(copy))
+
+    expect(merged.sessions).toHaveLength(1)
+    expect(merged.sessions[0].id).toBe(original.id)
+    expect(merged.sessions[0].attempts[0].result?.choice).toBe('skipped')
+  })
+
+  it('keeps one completed copy when a legacy import regenerated its candidate key', () => {
+    const originalCandidate = candidate('duplicate-regenerated:1')
+    const regeneratedCandidate = { ...originalCandidate, key: 'duplicate-regenerated-copy:1' }
+    const completed = (item: ReplayDecisionCandidate, id: string) => {
+      const base = createDecisionSession([item], 1, 1000)
+      const attempt = {
+        ...base.attempts[0],
+        stage: 'complete' as const,
+        result: buildDecisionResult(item, base.attempts[0], { time: 3600, price: item.trade.entry.price, reason: 'skipped' }, []),
+      }
+      return {
+        ...base,
+        id,
+        attempts: [attempt],
+        currentIndex: 1,
+        status: 'completed' as const,
+        finishedAt: 4000,
+      }
+    }
+
+    const merged = mergeDecisionReplayStores(
+      storeWithSessions(completed(originalCandidate, 'regenerated-original')),
+      storeWithSessions(completed(regeneratedCandidate, 'regenerated-copy')),
+    )
+
+    expect(merged.sessions).toHaveLength(1)
+    expect(merged.sessions[0].candidates).toHaveLength(1)
+    expect(merged.sessions[0].attempts).toHaveLength(1)
+  })
+
+  it('does not throw or blank the app when browser storage rejects a write', () => {
+    const storage = { setItem: () => { throw new DOMException('quota exceeded', 'QuotaExceededError') } }
+    expect(saveDecisionReplayStore(storeWithSessions(), storage)).toBe(false)
+  })
+
   it('repairs an active session whose current candidate lost its attempt during sync', () => {
     const candidates = [candidate('repair:1'), candidate('repair:2')]
     const firstAttempt = createDecisionAttempt(candidates[0])
@@ -353,6 +524,84 @@ describe('decision replay', () => {
     expect(merged.sessions.find((session) => session.id === 'shared')).toMatchObject({ status: 'completed', updatedAt: 3000 })
     expect(merged.seenTradeKeys).toEqual(['local:1', 'shared:1', 'imported:1'])
     expect(merged.activeSessionId).toBe('local')
+  })
+
+  it('keeps an explicit newer correction when sync contains stale deeper progress', () => {
+    const candidates = [candidate('corrected:1'), candidate('corrected:2')]
+    const base = { ...createDecisionSession(candidates, 2, 1000), id: 'corrected-session' }
+    const firstAttempt = base.attempts[0]
+    const staleAdvanced = {
+      ...base,
+      currentIndex: 1,
+      attempts: [
+        { ...firstAttempt, stage: 'complete' as const, result: buildDecisionResult(candidates[0], firstAttempt, { time: 1001, price: 101, reason: 'skipped' }, []) },
+        createDecisionAttempt(candidates[1]),
+      ],
+      updatedAt: 3000,
+    }
+    const corrected = { ...base, correctionRevision: 4000, updatedAt: 4000 }
+
+    const merged = mergeDecisionReplayStores(storeWithSessions(corrected), storeWithSessions(staleAdvanced))
+
+    expect(merged.sessions[0]).toMatchObject({ id: 'corrected-session', currentIndex: 0, correctionRevision: 4000 })
+    expect(merged.sessions[0].attempts).toHaveLength(1)
+    expect(merged.sessions[0].attempts[0].result).toBeNull()
+  })
+
+  it('starts an independent interactive review without changing the saved result', () => {
+    const item = candidate('review:1')
+    const sourceAttempt = {
+      ...createDecisionAttempt(item),
+      stage: 'position-open' as const,
+      entryMode: 'signal-extreme' as const,
+      orderKind: 'stop' as const,
+      pendingEntryPrice: 101,
+      initialStopLoss: 95,
+      stopLoss: 95,
+      takeProfit: 107,
+      fill: { time: 3300, price: 101 },
+    }
+    const sourceResult = buildDecisionResult(item, sourceAttempt, { time: 3900, price: 102, reason: 'manual-close' }, [])
+    const source = {
+      ...createDecisionSession([item], 1, 1000, ['fixed-notional']),
+      id: 'source-session',
+      attempts: [{ ...sourceAttempt, stage: 'complete' as const, result: sourceResult }],
+      currentIndex: 0,
+      status: 'completed' as const,
+      finishedAt: 2000,
+    }
+
+    const review = createDecisionReviewSession(source, sourceResult, 3000)
+    expect(review.origin).toBe('review')
+    expect(review.sourceSessionId).toBe('source-session')
+    expect(review.sourceCandidateKey).toBe(sourceResult.candidateKey)
+    expect(review.positionSizingModes).toEqual(['fixed-notional'])
+    expect(review.attempts[0]).toMatchObject({ candidateKey: item.key, stage: 'entry-decision', cursorTime: item.trade.entry.signalTime, result: null })
+    expect(source.attempts[0].result).toEqual(sourceResult)
+    expect(source.status).toBe('completed')
+  })
+
+  it('keeps an imported active session in history without activating it locally', () => {
+    const importedActive = { ...createDecisionSession([candidate('imported-active:1')], 1, 1200), id: 'imported-active' }
+    const merged = mergeDecisionReplayStores(
+      { version: 1, seenTradeKeys: [], activeSessionId: null, sessions: [] },
+      { version: 1, seenTradeKeys: ['imported-active:1'], activeSessionId: importedActive.id, sessions: [importedActive] },
+    )
+
+    expect(merged.activeSessionId).toBeNull()
+    expect(merged.sessions).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'imported-active', status: 'active' })]))
+  })
+
+  it('keeps the local active session when the imported store also points at an active session', () => {
+    const localActive = { ...createDecisionSession([candidate('local-active:1')], 1, 1000), id: 'local-active' }
+    const importedActive = { ...createDecisionSession([candidate('imported-active:2')], 1, 2000), id: 'imported-active' }
+    const merged = mergeDecisionReplayStores(
+      { version: 1, seenTradeKeys: ['local-active:1'], activeSessionId: localActive.id, sessions: [localActive] },
+      { version: 1, seenTradeKeys: ['imported-active:2'], activeSessionId: importedActive.id, sessions: [importedActive] },
+    )
+
+    expect(merged.activeSessionId).toBe('local-active')
+    expect(merged.sessions.map((session) => session.id)).toEqual(['imported-active', 'local-active'])
   })
 
   it('does not change an active session timestamp when its loaded drawings are unchanged', () => {

@@ -172,12 +172,21 @@ describe('decision replay components', () => {
   it('renders three price levels, a draggable setup hint and the one-R default', () => {
     const markup = renderToStaticMarkup(<DecisionRiskOverlay
       candidate={candidate()} entryPrice={100} stopLoss={95} takeProfit={105}
+      currentCandleX={42}
       toPrice={(y) => y} toY={(price) => price} onStopLoss={noop} onTakeProfit={noop}
       onConfirm={noop} onCancel={noop}
     />)
     expect(markup).toContain('止盈 105.000')
+    expect(markup).toContain('data-testid="decision-take-profit-amount"')
+    expect(markup).toContain('class="decision-risk-amount is-anchored"')
+    expect(markup).toContain('style="left:42px;right:auto"')
+    expect(markup).toContain('止盈金额')
+    expect(markup).toContain('+$100.00')
     expect(markup).toContain('挂单 100.000 · 盈亏比 1 : 1.00')
     expect(markup).toContain('止损 95.000')
+    expect(markup).toContain('data-testid="decision-stop-loss-amount"')
+    expect(markup).toContain('止损金额')
+    expect(markup).toContain('-$100.00')
     expect(markup).toContain('data-testid="decision-take-profit-line"')
     expect(markup).toContain('data-testid="decision-stop-loss-line"')
     expect(markup.match(/decision-risk-hit-area/g)).toHaveLength(2)
@@ -196,6 +205,20 @@ describe('decision replay components', () => {
     expect(markup).not.toContain('decision-risk-confirm')
     expect(markup).toContain('止盈 105.000')
     expect(markup).toContain('止损 95.000')
+  })
+
+  it('reverses amount label placement for short positions', () => {
+    const item = candidate()
+    const shortCandidate = { ...item, trade: { ...item.trade, side: 'short' as const } }
+    const markup = renderToStaticMarkup(<DecisionRiskOverlay
+      candidate={shortCandidate} entryPrice={100} stopLoss={105} takeProfit={95}
+      currentCandleX={42}
+      toPrice={(y) => y} toY={(price) => price} onStopLoss={noop} onTakeProfit={noop}
+      editable showConfirmControls={false}
+    />)
+    expect(markup).toContain('decision-risk-overlay editable short')
+    expect(markup).toContain('止盈 95.000')
+    expect(markup).toContain('止损 105.000')
   })
 
   it('shows the filled entry line and live close-to-close PnL while holding', () => {
@@ -248,6 +271,55 @@ describe('decision replay components', () => {
     expect(markup).not.toContain('风险 100U')
     expect(markup).toContain('data-testid="decision-chart-status-drag-handle"')
     expect(markup).toContain('拖动移动本场练习盈亏')
+  })
+
+  it('keeps the current system result floating until the next question is entered', () => {
+    const item = candidate()
+    const attempt = {
+      ...createDecisionAttempt(item), stage: 'post-exit' as const, entryMode: 'signal-extreme' as const,
+      orderKind: 'stop' as const, pendingEntryPrice: 101, stopLoss: 95, takeProfit: 107,
+      fill: { time: 3300, price: 101 },
+    }
+    const result = buildDecisionResult(item, attempt, { time: 3600, price: 103, reason: 'manual-close' }, [])
+    const session = {
+      ...createDecisionSession([item], 1, 1, ['fixed-notional']),
+      attempts: [{ ...attempt, result }],
+    }
+    const markup = renderToStaticMarkup(<DecisionChartStatus
+      session={session}
+      attempt={session.attempts[0]}
+      systemCurrentPnlByMode={{ 'fixed-notional': 99.009900990099 }}
+      positionSizingModes={['fixed-notional']}
+    />)
+    const aiSection = markup.match(/<article class="ai-total[\s\S]*?<\/article>/)?.[0] ?? ''
+    expect(aiSection).toContain('已结算 0 笔 + 当前浮动')
+    expect(aiSection).toContain('+$99.01')
+    expect(aiSection).not.toContain('+$198.02')
+  })
+
+  it('locks the current system result once the system exit candle is visible', () => {
+    const item = candidate()
+    const attempt = {
+      ...createDecisionAttempt(item), stage: 'post-exit' as const, entryMode: 'signal-extreme' as const,
+      orderKind: 'stop' as const, pendingEntryPrice: 101, stopLoss: 95, takeProfit: 107,
+      fill: { time: 3300, price: 101 },
+    }
+    const result = buildDecisionResult(item, attempt, { time: 3600, price: 103, reason: 'manual-close' }, [])
+    const session = {
+      ...createDecisionSession([item], 1, 1, ['fixed-notional']),
+      attempts: [{ ...attempt, result }],
+    }
+    const markup = renderToStaticMarkup(<DecisionChartStatus
+      session={session}
+      attempt={session.attempts[0]}
+      systemCurrentPnlByMode={{ 'fixed-notional': 198.019801980198 }}
+      systemCurrentPnlLocked
+      positionSizingModes={['fixed-notional']}
+    />)
+    const aiSection = markup.match(/<article class="ai-total[\s\S]*?<\/article>/)?.[0] ?? ''
+    expect(aiSection).toContain('全部已结算 1 笔题目')
+    expect(aiSection).toContain('+$198.02')
+    expect(aiSection).not.toContain('当前浮动')
   })
 
   it('shows user win rate from settled participated trades and excludes skipped exercises', () => {
@@ -361,6 +433,9 @@ describe('decision replay components', () => {
     expect(markup).toContain('你的累计净盈亏')
     expect(markup).toContain('系统参与部分净盈亏')
     expect(markup).toContain('系统总净盈亏')
+    expect(markup).toContain('aria-label="历史记录展示方式"')
+    expect(markup).toContain('aria-pressed="true">逐笔交易</button>')
+    expect(markup).toContain('aria-pressed="false">按卷子</button>')
     expect(markup).toContain('XAUUSD · 5分 · 多头 · 第 12 笔')
     expect(markup).toContain('查看已收藏记录')
     expect(markup).toContain('1 笔')
@@ -419,13 +494,121 @@ describe('decision replay components', () => {
     expect(markup).not.toContain('XAUUSD · 决策练习')
   })
 
+  it('shows round total R and average R based on the average initial stop distance', () => {
+    const item = candidate()
+    const filled = {
+      ...createDecisionAttempt(item), stage: 'position-open' as const, entryMode: 'signal-extreme' as const,
+      orderKind: 'stop' as const, pendingEntryPrice: 101, initialStopLoss: 95, stopLoss: 100, takeProfit: 107,
+      fill: { time: 3300, price: 103 },
+    }
+    const result = buildDecisionResult(item, filled, { time: 3600, price: 105, reason: 'manual-close' }, [])
+    const session = {
+      ...createDecisionSession([item], 1, 1), status: 'completed' as const,
+      attempts: [{ ...filled, stage: 'post-exit' as const, result }], finishedAt: 2,
+    }
+    const markup = renderToStaticMarkup(<DecisionResultsDialog session={session} onClose={noop} onReview={noop} onNew={noop} />)
+
+    expect(markup).toContain('你的总盈亏（R）')
+    expect(markup).toContain('每笔订单平均盈亏（R）')
+    expect(markup).toContain('data-testid="decision-result-total-r"')
+    expect(markup).toContain('data-testid="decision-result-average-r"')
+    expect(markup).toContain('+0.25R')
+    expect(markup).toContain('R 基准：参与订单初始止损距离平均 8')
+  })
+
+  it('can show one scorecard per practice session and open its trade details', () => {
+    const item = candidate()
+    const filled = {
+      ...createDecisionAttempt(item),
+      stage: 'position-open' as const,
+      entryMode: 'signal-extreme' as const,
+      orderKind: 'stop' as const,
+      pendingEntryPrice: 101,
+      stopLoss: 95,
+      takeProfit: 107,
+      fill: { time: 3300, price: 101 },
+    }
+    const result = buildDecisionResult(item, filled, { time: 3600, price: 103, reason: 'manual-close' }, [])
+    const session = {
+      ...createDecisionSession([item], 1, 1),
+      status: 'completed' as const,
+      attempts: [{ ...filled, stage: 'post-exit' as const, result }],
+      finishedAt: 2,
+    }
+    const markup = renderToStaticMarkup(<DecisionHistoryDialog
+      open currentSymbol="XAUUSD" sessions={[session]} onClose={noop} onOpenSession={noop}
+      defaultHistoryView="sessions"
+    />)
+
+    expect(markup).toContain('全部标的 · 按卷子汇总')
+    expect(markup).toContain('<span>卷子数</span><b>1</b>')
+    expect(markup).toContain('aria-pressed="true">按卷子</button>')
+    expect(markup).toContain('aria-pressed="false">逐笔交易</button>')
+    expect(markup).toContain('XAUUSD · 决策练习')
+    expect(markup).toContain('本场进度')
+    expect(markup).toContain('你的考分 · 净盈亏')
+    expect(markup).toContain('系统考分 · 净盈亏')
+    expect(markup).toContain('相对系统')
+    expect(markup).toContain('点击查看本场每笔交易详情、收益对比和独立画图')
+    expect(markup).toContain('开始：')
+    expect(markup).toContain('完成：')
+    expect(markup).not.toContain('XAUUSD · 5分 · 多头 · 第 12 笔')
+  })
+
+  it('does not render two identical scorecards from duplicated historical copies', () => {
+    const item = candidate()
+    const filled = {
+      ...createDecisionAttempt(item),
+      stage: 'position-open' as const,
+      entryMode: 'signal-extreme' as const,
+      orderKind: 'stop' as const,
+      pendingEntryPrice: 101,
+      stopLoss: 95,
+      takeProfit: 107,
+      fill: { time: 3300, price: 101 },
+    }
+    const result = buildDecisionResult(item, filled, { time: 3600, price: 103, reason: 'manual-close' }, [])
+    const session = {
+      ...createDecisionSession([item], 1, 1),
+      status: 'completed' as const,
+      attempts: [{ ...filled, stage: 'post-exit' as const, result }],
+      finishedAt: 2,
+    }
+    const duplicate = { ...session, id: `${session.id}-copy` }
+    const markup = renderToStaticMarkup(<DecisionHistoryDialog
+      open currentSymbol="XAUUSD" sessions={[session, duplicate]} onClose={noop} onOpenSession={noop}
+      defaultHistoryView="sessions"
+    />)
+
+    expect(markup).toContain('<span>卷子数</span><b>1</b>')
+    expect((markup.match(/XAUUSD · 决策练习/g) ?? []).length).toBe(1)
+  })
+
+  it('shows the last answer time instead of a completion time for an active session card', () => {
+    const item = candidate()
+    const session = {
+      ...createDecisionSession([item], 1, 1000),
+      status: 'active' as const,
+      updatedAt: 3000,
+      finishedAt: null,
+    }
+    const markup = renderToStaticMarkup(<DecisionHistoryDialog
+      open currentSymbol="XAUUSD" sessions={[session]} onClose={noop} onOpenSession={noop}
+      defaultHistoryView="sessions"
+    />)
+
+    expect(markup).toContain('开始：')
+    expect(markup).toContain('最后作答：')
+    expect(markup).not.toContain('完成：')
+  })
+
   it('shows per-symbol total and remaining counts in the new exercise selector', () => {
     const markup = renderToStaticMarkup(<DecisionReplayCenter
       open availableCount={5} totalCount={8}
       symbolStats={[
-        { symbol: 'XAUUSD', total: 4, remaining: 3 },
-        { symbol: 'BTCUSDT.P', total: 4, remaining: 2 },
-        { symbol: 'US500', total: 2, remaining: 0 },
+        { symbol: 'XAUUSD', total: 4, remaining: 3, intervals: [{ interval: '5m', total: 4, remaining: 3 }, { interval: '15m', total: 0, remaining: 0 }, { interval: '1h', total: 0, remaining: 0 }] },
+        { symbol: 'BTCUSDT.P', total: 4, remaining: 2, intervals: [{ interval: '5m', total: 4, remaining: 2 }, { interval: '15m', total: 0, remaining: 0 }, { interval: '1h', total: 0, remaining: 0 }] },
+        { symbol: 'US500', total: 2, remaining: 0, intervals: [{ interval: '5m', total: 2, remaining: 0 }, { interval: '15m', total: 0, remaining: 0 }, { interval: '1h', total: 0, remaining: 0 }] },
       ]}
       sessions={[]} activeSessionId={null} onClose={noop} onStart={noop} onContinue={noop} onResults={noop}
     />)
@@ -435,6 +618,10 @@ describe('decision replay components', () => {
     expect(markup).toContain('BTCUSDT.P')
     expect(markup).toContain('共 4 笔 · 剩余 2 笔')
     expect(markup).toContain('共 2 笔 · 剩余 0 笔')
+    expect(markup).toContain('aria-label="选择练习时间级别"')
+    expect(markup).toContain('<label class="decision-interval-option active"><input type="checkbox" checked=""/><span><b>5min</b>')
+    expect(markup).toContain('<label class="decision-interval-option"><input type="checkbox"/><span><b>15min</b>')
+    expect(markup).toContain('<label class="decision-interval-option"><input type="checkbox"/><span><b>1h</b>')
     expect(markup).toContain('disabled=""')
   })
 

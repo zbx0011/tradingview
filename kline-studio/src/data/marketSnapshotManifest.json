@@ -1,33 +1,33 @@
 {
-  "fetchedAt": "2026-08-19T08:42:16.247Z",
+  "fetchedAt": "2026-08-21T12:31:22.192Z",
   "timezone": "UTC",
   "series": {
     "XAUUSD": {
-      "symbol": "DUKASCOPY:XAUUSD",
-      "vendor": "DUKASCOPY",
-      "resolution": "1",
+      "symbol": "OANDA:XAUUSD",
+      "vendor": "OANDA",
+      "resolution": "5",
       "file": "data/market-snapshots/xauusd-1m.json",
-      "count": 95974,
-      "firstTime": 1780272000,
-      "lastTime": 1787128800
+      "count": 10891,
+      "firstTime": 1782684000,
+      "lastTime": 1787315400
     },
     "XAGUSD": {
-      "symbol": "DUKASCOPY:XAGUSD",
-      "vendor": "DUKASCOPY",
-      "resolution": "1",
+      "symbol": "OANDA:XAGUSD",
+      "vendor": "OANDA",
+      "resolution": "5",
       "file": "data/market-snapshots/xagusd-1m.json",
-      "count": 95457,
-      "firstTime": 1780272000,
-      "lastTime": 1787097540
+      "count": 10891,
+      "firstTime": 1782684000,
+      "lastTime": 1787315400
     },
     "US500": {
-      "symbol": "DUKASCOPY:USA500IDXUSD",
-      "vendor": "DUKASCOPY",
-      "resolution": "1",
+      "symbol": "OANDA:SPX500USD",
+      "vendor": "OANDA",
+      "resolution": "5",
       "file": "data/market-snapshots/us500-1m.json",
-      "count": 95572,
-      "firstTime": 1780272000,
-      "lastTime": 1787128740
+      "count": 10891,
+      "firstTime": 1782684000,
+      "lastTime": 1787315400
     },
     "BTCUSDT.P": {
       "symbol": "KUCOIN:XBTUSDTM",

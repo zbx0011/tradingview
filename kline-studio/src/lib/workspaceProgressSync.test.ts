@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DECISION_REPLAY_STORAGE_KEY, type DecisionReplaySession, type DecisionReplayStore } from './decisionReplay'
+import { DECISION_REPLAY_STORAGE_KEY, parseDecisionReplayStore, type DecisionReplaySession, type DecisionReplayStore } from './decisionReplay'
 import { DECISION_REPLAY_FAVORITES_STORAGE_KEY } from './decisionReplayFavorites'
 import { PORTABLE_WORKSPACE_RECOVERY_STORAGE_KEY, loadPortableWorkspaceRecovery, type PortableWorkspace } from './portableWorkspace'
 import { mergePortableWorkspaceProgress } from './workspaceProgressSync'
@@ -78,7 +78,7 @@ describe('workspace progress sync', () => {
     ], storage)
 
     expect(summary).toEqual({ sourceCount: 2, sessionCount: 3, resultCount: 3, favoriteCount: 3 })
-    expect(JSON.parse(storage.getItem(DECISION_REPLAY_STORAGE_KEY)!).sessions.map((item: DecisionReplaySession) => item.id)).toEqual([
+    expect(parseDecisionReplayStore(storage.getItem(DECISION_REPLAY_STORAGE_KEY)).sessions.map((item) => item.id)).toEqual([
       'computer-b', 'computer-a', 'local',
     ])
     expect(storage.getItem('kline-studio-workspace-v1')).toBe('{"symbol":"XAGUSD"}')

@@ -7,35 +7,36 @@ import {
 } from './tradeMarkers'
 
 describe('XAUUSD conservative trade markers', () => {
-  it('contains 94 no-fixed-target trades with complete entry, exit and result details', () => {
+  it('contains 92 completed intraday trades with complete entry, exit and result details', () => {
     const trades = getXauTradeMarkers('XAUUSD', '5m')
-    expect(trades).toHaveLength(94)
-    expect(trades.filter((trade) => trade.side === 'long')).toHaveLength(44)
-    expect(trades.filter((trade) => trade.side === 'short')).toHaveLength(50)
-    expect(new Set(trades.map((trade) => trade.entry.time)).size).toBe(94)
-    expect(new Set(trades.map((trade) => trade.exit.time)).size).toBe(94)
+    expect(trades).toHaveLength(92)
+    expect(trades.filter((trade) => trade.side === 'long')).toHaveLength(43)
+    expect(trades.filter((trade) => trade.side === 'short')).toHaveLength(49)
+    expect(new Set(trades.map((trade) => trade.entry.time)).size).toBe(92)
+    expect(new Set(trades.map((trade) => trade.exit.time)).size).toBe(92)
     expect(trades.every((trade) => Number.isInteger(trade.entry.time) && Number.isInteger(trade.exit.time))).toBe(true)
     expect(trades.every((trade) => trade.entry.time % 300 === 0 && trade.exit.time % 300 === 0)).toBe(true)
     expect(trades.every((trade) => trade.exit.time >= trade.entry.time)).toBe(true)
     expect(trades.every((trade) => trade.entry.reason.trim() && trade.entry.setup.trim() && trade.exit.beijingTime.trim())).toBe(true)
-    expect(trades.map((trade) => trade.tradeNumber)).toEqual(Array.from({ length: 94 }, (_, index) => index + 1))
+    expect(trades.map((trade) => trade.tradeNumber)).toEqual(Array.from({ length: 94 }, (_, index) => index + 1).filter((number) => number !== 37 && number !== 67))
     expect(trades.filter((trade) => trade.entry.time === trade.exit.time)).toHaveLength(6)
-    expect(new Set(trades.flatMap((trade) => [trade.entry.time, trade.exit.time])).size).toBe(182)
+    expect(new Set(trades.flatMap((trade) => [trade.entry.time, trade.exit.time])).size).toBe(178)
+    expect(trades.some((trade) => trade.tradeNumber === 37 || trade.tradeNumber === 67)).toBe(false)
     expect(trades.every((trade) => trade.entry.takeProfit === null && trade.entry.noFixedTakeProfitAtEntry)).toBe(true)
     expect(trades.filter((trade) => trade.exit.reasonCode === 'INITIAL_STOP_LOSS')).toHaveLength(26)
-    expect(trades.filter((trade) => trade.exit.reasonCode === 'TRAILING_STOP')).toHaveLength(20)
+    expect(trades.filter((trade) => trade.exit.reasonCode === 'TRAILING_STOP')).toHaveLength(19)
     expect(trades.filter((trade) => trade.exit.reasonCode === 'TRAILING_STOP_GAP')).toHaveLength(1)
-    expect(trades.filter((trade) => trade.exit.reasonCode === 'OPPOSITE_SIGNAL_CLOSE')).toHaveLength(47)
+    expect(trades.filter((trade) => trade.exit.reasonCode === 'OPPOSITE_SIGNAL_CLOSE')).toHaveLength(46)
     expect(trades.filter((trade) => trade.exit.reasonCode === 'OPPOSITE_SIGNAL_CLOSE').every((trade) => trade.exit.setup && trade.exit.reason)).toBe(true)
     expect(xauTradeMarkerSummary()).toMatchObject({
-      trades: 94,
-      long: 44,
-      short: 50,
-      entryMarkers: 94,
-      exitMarkers: 94,
-      uniqueTimes: 182,
+      trades: 92,
+      long: 43,
+      short: 49,
+      entryMarkers: 92,
+      exitMarkers: 92,
+      uniqueTimes: 178,
       sameBarOpenClose: 6,
-      exitReasonCounts: { INITIAL_STOP_LOSS: 26, INITIAL_STOP_LOSS_GAP: 0, TRAILING_STOP: 20, TRAILING_STOP_GAP: 1, OPPOSITE_SIGNAL_CLOSE: 47, END_OF_DATA_MARK_TO_MARKET: 0 },
+      exitReasonCounts: { INITIAL_STOP_LOSS: 26, INITIAL_STOP_LOSS_GAP: 0, TRAILING_STOP: 19, TRAILING_STOP_GAP: 1, OPPOSITE_SIGNAL_CLOSE: 46, END_OF_DATA_MARK_TO_MARKET: 0 },
     })
   })
 
@@ -46,13 +47,13 @@ describe('XAUUSD conservative trade markers', () => {
     expect(toXauTradeSeriesMarkers('XAUUSD', '1m')).toEqual([])
   })
 
-  it('emits 94 entry and 94 exit native markers with stable IDs and styles', () => {
+  it('emits 92 entry and 92 exit native markers with stable IDs and styles', () => {
     const trades = getXauTradeMarkers('XAUUSD', '5m')
     const markers = toXauTradeSeriesMarkers('XAUUSD', '5m')
-    expect(markers).toHaveLength(188)
-    expect(markers.filter((marker) => marker.text?.startsWith('开'))).toHaveLength(94)
-    expect(markers.filter((marker) => marker.text?.startsWith('平'))).toHaveLength(94)
-    expect(new Set(markers.map((marker) => marker.id)).size).toBe(188)
+    expect(markers).toHaveLength(184)
+    expect(markers.filter((marker) => marker.text?.startsWith('开'))).toHaveLength(92)
+    expect(markers.filter((marker) => marker.text?.startsWith('平'))).toHaveLength(92)
+    expect(new Set(markers.map((marker) => marker.id)).size).toBe(184)
     expect(markers.map((marker) => Number(marker.time))).toEqual([...markers.map((marker) => Number(marker.time))].sort((a, b) => a - b))
     expect(markers[0]).toMatchObject({ id: 'xau-trade-1-entry', time: 1785709200, position: 'aboveBar', shape: 'arrowDown', text: '开空', color: '#f7525f' })
     expect(markers.find((marker) => marker.text === '开多')).toMatchObject({ position: 'belowBar', shape: 'arrowUp', color: '#22ab94' })
@@ -97,12 +98,12 @@ describe('XAUUSD conservative trade markers', () => {
 
   it('emits one independently colored connection per completed trade', () => {
     const connections = toXauTradeConnectionSpecs('XAUUSD', '5m')
-    expect(connections).toHaveLength(94)
-    expect(new Set(connections.map((connection) => connection.id)).size).toBe(94)
-    expect(connections.filter((connection) => connection.outcome === 'profit')).toHaveLength(39)
+    expect(connections).toHaveLength(92)
+    expect(new Set(connections.map((connection) => connection.id)).size).toBe(92)
+    expect(connections.filter((connection) => connection.outcome === 'profit')).toHaveLength(37)
     expect(connections.filter((connection) => connection.outcome === 'loss')).toHaveLength(55)
     expect(connections.filter((connection) => connection.outcome === 'breakeven')).toHaveLength(0)
-    expect(connections.filter((connection) => connection.color === '#22ab94')).toHaveLength(39)
+    expect(connections.filter((connection) => connection.color === '#22ab94')).toHaveLength(37)
     expect(connections.filter((connection) => connection.color === '#f7525f')).toHaveLength(55)
     expect(connections.filter((connection) => connection.color === '#f59e0b')).toHaveLength(0)
     expect(connections.every((connection) => connection.entryTime <= connection.exitTime)).toBe(true)

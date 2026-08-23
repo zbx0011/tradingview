@@ -1,6 +1,9 @@
 import type { Drawing } from './drawings'
 import type { IntervalId, SymbolId } from './market'
-import type { DecisionPositionSizingMode } from './decisionReplay'
+import {
+  DECISION_REPLAY_INTERVALS,
+  type DecisionPositionSizingMode, type DecisionReplayInterval,
+} from './decisionReplay'
 
 export interface SavedWorkspace {
   symbol: SymbolId
@@ -53,6 +56,7 @@ export interface DecisionChartStatusPreferences {
 export interface DecisionReplayCenterPreferences {
   count: number
   selectedSymbols: SymbolId[]
+  selectedIntervals: DecisionReplayInterval[]
   selectedModes: DecisionPositionSizingMode[]
 }
 
@@ -245,11 +249,14 @@ export function parseDecisionReplayCenterPreferences(raw: string | null): Decisi
   try {
     const value = JSON.parse(raw) as Partial<DecisionReplayCenterPreferences>
     if (!Number.isFinite(value.count) || value.count! < 1 || !Array.isArray(value.selectedSymbols) || !Array.isArray(value.selectedModes)) return null
+    if (value.selectedIntervals !== undefined && !Array.isArray(value.selectedIntervals)) return null
     const selectedSymbols = value.selectedSymbols.filter((symbol): symbol is SymbolId => DECISION_REPLAY_SYMBOLS.includes(symbol as SymbolId))
+    const selectedIntervals = (value.selectedIntervals ?? ['5m']).filter((interval): interval is DecisionReplayInterval => DECISION_REPLAY_INTERVALS.includes(interval as DecisionReplayInterval))
     const selectedModes = value.selectedModes.filter((mode): mode is DecisionPositionSizingMode => DECISION_REPLAY_POSITION_MODES.includes(mode as DecisionPositionSizingMode))
     return {
       count: Math.floor(value.count!),
       selectedSymbols: [...new Set(selectedSymbols)],
+      selectedIntervals: [...new Set(selectedIntervals)],
       selectedModes: [...new Set(selectedModes)],
     }
   } catch {

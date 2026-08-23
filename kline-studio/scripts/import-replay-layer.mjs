@@ -106,6 +106,8 @@ function normalizedSymbol(value) {
   if (symbol.endsWith('XAGUSD')) return 'XAGUSD'
   if (symbol.includes('BTCUSDT.P')) return 'BTCUSDT.P'
   if (symbol.endsWith('US500')) return 'US500'
+  // The website uses ETHUSD as its canonical symbol for the Bybit ETHUSDT.P feed.
+  if (symbol.includes('ETHUSDT.P')) return 'ETHUSD'
   if (symbol.endsWith('ETHUSD')) return 'ETHUSD'
   throw new Error(`Unsupported website symbol: ${value}`)
 }

@@ -14,7 +14,7 @@ import { FibSettingsDialog } from './components/FibSettingsDialog'
 import { ReplayToolbar, type ReplayStartMode } from './components/ReplayToolbar'
 import {
   DecisionChartAnnotations, DecisionChartStatus, DecisionHistoryDialog, DecisionPricePicker, DecisionReplayCenter, DecisionReplayPanel, DecisionResultsDialog,
-  DecisionReviewPanel, DecisionRiskOverlay,
+  DecisionRiskOverlay,
 } from './components/DecisionReplay'
 import type { DecisionSymbolStats } from './components/DecisionReplay'
 import { drawingReducer, duplicateDrawing, hitTestDrawing, initialDrawingHistory, moveDrawing, withoutTransientMeasurements, type Drawing } from './lib/drawings'
@@ -53,12 +53,12 @@ import {
 } from './lib/localPrivateSync'
 import { replayDecisionCandidates, type ReplayDecisionCandidate } from './lib/replayTradeRegistry'
 import {
-  DECISION_REPLAY_STORAGE_KEY, adjacentDecisionExerciseTarget, advanceDecisionAttempt, buildDecisionResult, cancelPendingOrderAndAdvance, candleAtOrBefore, candlesKnownAt, createDecisionAttempt,
-  createDecisionSession, currentDecisionAttempt, currentDecisionCandidate, decisionShortcutAction, defaultDecisionLevels,
-  decisionAttemptInitialStopLoss, decisionSessionPositionSizingModes, emptyDecisionReplayStore, historyCoversDecisionCandidate, intervalCutoffTime, intervalSeconds,
-  loadDecisionReplayStore, mergeDecisionReplayStores, nextCandleAfter, parseDecisionReplayStoreChecked, pnlForDecisionMode, resultReviewCutoff, sampleDecisionCandidates,
+  DECISION_REPLAY_INTERVALS, DECISION_REPLAY_STORAGE_KEY, adjacentDecisionExerciseTarget, advanceDecisionAttempt, buildDecisionResult, cancelPendingOrderAndAdvance, candleAtOrBefore, candlesKnownAt, createDecisionAttempt,
+  createDecisionReviewSession, createDecisionSession, currentDecisionAttempt, currentDecisionCandidate, decisionShortcutAction, defaultDecisionLevels,
+  decisionAttemptInitialStopLoss, decisionSessionPositionSizingModes, emptyDecisionReplayStore, filterDecisionCandidatesByScope, historyCoversDecisionCandidate, intervalCutoffTime, intervalSeconds,
+  loadDecisionReplayStore, mergeDecisionReplayStores, nextCandleAfter, normalizeDecisionReplayStore, parseDecisionReplayStoreChecked, pnlForDecisionMode, sampleDecisionCandidates,
   saveDecisionReplayStore, sessionResults, updateDecisionSessionDrawings, validDecisionLevels, validOpenPositionLevels,
-  type DecisionAttempt, type DecisionExit, type DecisionPositionSizingMode, type DecisionReplaySession, type DecisionTradeResult,
+  type DecisionAttempt, type DecisionExit, type DecisionPositionSizingMode, type DecisionReplayInterval, type DecisionReplaySession, type DecisionTradeResult,
 } from './lib/decisionReplay'
 
 type ChartType = 'candles' | 'hollow' | 'line' | 'area'
@@ -142,7 +142,7 @@ function App() {
   const [shiftMeasureActive, setShiftMeasureActive] = useState(false)
   const [quickMeasurement, setQuickMeasurement] = useState<Drawing | null>(null)
   const shiftMeasureActiveRef = useRef(false)
-  const [, refreshDrawingProjection] = useReducer((value: number) => value + 1, 0)
+  const [drawingProjectionTick, refreshDrawingProjection] = useReducer((value: number) => value + 1, 0)
   const [drawingsLocked, setDrawingsLocked] = useState(false)
   const [drawingsHidden, setDrawingsHidden] = useState(false)
   const [indicatorsHidden, setIndicatorsHidden] = useState(false)
@@ -206,16 +206,18 @@ function App() {
   const [decisionCenterOpen, setDecisionCenterOpen] = useState(false)
   const [decisionHistoryOpen, setDecisionHistoryOpen] = useState(false)
   const [decisionResultsSessionId, setDecisionResultsSessionId] = useState<string | null>(null)
-  const [decisionReviewResult, setDecisionReviewResult] = useState<DecisionTradeResult | null>(null)
-  const [decisionReviewCursor, setDecisionReviewCursor] = useState<number | null>(null)
+  // When an old result is redone, keep the official active exercise resumable
+  // underneath the independent review session.
+  const [decisionReviewReturnSessionId, setDecisionReviewReturnSessionId] = useState<string | null>(null)
   const [decisionFocusTick, setDecisionFocusTick] = useState(0)
   const [decisionPriceDraft, setDecisionPriceDraft] = useState<number | null>(null)
   const [decisionRiskDraft, setDecisionRiskDraft] = useState<{ stopLoss: number; takeProfit: number } | null>(null)
+  const [decisionCurrentCandleX, setDecisionCurrentCandleX] = useState<number | null>(null)
   const decisionDrawingContextRef = useRef<string | null>(null)
   const decisionDrawingLoadingRef = useRef(false)
   const decisionStoreRef = useRef(decisionStore)
+  const decisionSessionStartLockRef = useRef(false)
   const decisionFavoriteKeysRef = useRef(decisionFavoriteKeys)
-  const decisionReviewRef = useRef(decisionReviewResult)
   const privateSyncAvailableRef = useRef(false)
   const privateSyncInFlightRef = useRef(false)
   const privateSyncQueuedRef = useRef(false)
@@ -226,27 +228,36 @@ function App() {
   const workspaceRef = useRef<HTMLDivElement>(null)
   const drawingClipboardRef = useRef<Drawing | null>(null)
 
-  const activeDecisionSession = useMemo(() => decisionStore.activeSessionId
-    ? decisionStore.sessions.find((session) => session.id === decisionStore.activeSessionId && session.status === 'active') ?? null
-    : null, [decisionStore])
+  // Keep the UI and the persisted store on the same canonical session list even
+  // when hot reload leaves an older in-memory duplicate array behind.
+  const normalizedDecisionStore = useMemo(() => normalizeDecisionReplayStore(decisionStore), [decisionStore])
+
+  const activeDecisionSession = useMemo(() => normalizedDecisionStore.activeSessionId
+    ? normalizedDecisionStore.sessions.find((session) => session.id === normalizedDecisionStore.activeSessionId && session.status === 'active') ?? null
+    : null, [normalizedDecisionStore])
   const activeDecisionCandidate = currentDecisionCandidate(activeDecisionSession)
   const activeDecisionAttempt = currentDecisionAttempt(activeDecisionSession)
   const activeDecisionPositionSizingModes = decisionSessionPositionSizingModes(activeDecisionSession)
   const decisionResultsSession = useMemo(() => decisionResultsSessionId
-    ? decisionStore.sessions.find((session) => session.id === decisionResultsSessionId) ?? null
-    : null, [decisionResultsSessionId, decisionStore.sessions])
-  const decisionReviewSession = useMemo(() => decisionReviewResult
-    ? decisionStore.sessions.find((session) => session.attempts.some((attempt) => attempt.result?.candidateKey === decisionReviewResult.candidateKey)) ?? null
-    : null, [decisionReviewResult, decisionStore.sessions])
-  const decisionDisplayAttempt = useMemo(() => {
-    if (!decisionReviewResult) return activeDecisionAttempt
-    return decisionReviewSession?.attempts.find((attempt) => attempt.candidateKey === decisionReviewResult.candidateKey) ?? null
-  }, [activeDecisionAttempt, decisionReviewResult, decisionReviewSession])
+    ? normalizedDecisionStore.sessions.find((session) => session.id === decisionResultsSessionId) ?? null
+    : null, [decisionResultsSessionId, normalizedDecisionStore])
+  const decisionRiskFallback = useMemo(() => {
+    const pendingEntryPrice = activeDecisionAttempt?.stage === 'risk-setup' ? activeDecisionAttempt.pendingEntryPrice : null
+    if (!activeDecisionCandidate || pendingEntryPrice === null) return null
+    return defaultDecisionLevels(
+      activeDecisionCandidate.trade.side,
+      pendingEntryPrice,
+      activeDecisionCandidate.trade.entry.stopLoss,
+    )
+  }, [activeDecisionAttempt, activeDecisionCandidate])
+  // The draft is transient, so fall back to the active attempt's causal setup
+  // after a refresh or hot update while keeping any edits in local state.
+  const effectiveDecisionRiskDraft = decisionRiskDraft ?? decisionRiskFallback
   const privateSyncFingerprint = useMemo(
-    () => JSON.stringify([decisionStore, decisionFavoriteKeys]),
-    [decisionFavoriteKeys, decisionStore],
+    () => JSON.stringify([normalizedDecisionStore, decisionFavoriteKeys]),
+    [decisionFavoriteKeys, normalizedDecisionStore],
   )
-  const decisionMode = Boolean(activeDecisionCandidate || decisionReviewResult)
+  const decisionMode = Boolean(activeDecisionCandidate)
   const uiDrawings = decisionMode ? decisionDrawings : drawings
   const dispatchUiDrawing = decisionMode ? dispatchDecisionDrawing : dispatchDrawing
   const symbolInfo = SYMBOLS.find((item) => item.id === symbol) ?? SYMBOLS[0]
@@ -290,7 +301,7 @@ function App() {
     if (minuteHistory?.length) return interval === '1m' ? minuteHistory : aggregateCandles(minuteHistory, INTERVALS[interval].seconds)
     return generateCandles(symbol, interval, 1800)
   }, [interval, minuteHistory, symbol])
-  const decisionSubject = decisionReviewResult?.candidate ?? activeDecisionCandidate ?? null
+  const decisionSubject = activeDecisionCandidate
   const decisionMinuteHistory = useMemo(() => {
     if (!decisionSubject) return null
     return availableDecisionHistoryBySymbol[decisionSubject.symbol] ?? null
@@ -319,17 +330,11 @@ function App() {
     ? chartSeconds
     : replayResolutionSeconds
   const normalizedReplayCursor = replayCursor === null ? null : Math.min(baseData.at(-1)!.time + chartSeconds, Math.max(baseData[0].time, replayCursor))
-  const decisionReviewLimit = useMemo(() => decisionReviewResult
-    ? intervalCutoffTime(resultReviewCutoff(decisionReviewResult), intervalSeconds(decisionReviewResult.candidate.interval))
-    : null, [decisionReviewResult])
   const decisionCutoff = useMemo(() => {
-    if (decisionReviewResult && decisionReviewLimit !== null) {
-      return Math.min(decisionReviewCursor ?? decisionReviewLimit, decisionReviewLimit)
-    }
     return activeDecisionAttempt && activeDecisionCandidate
       ? intervalCutoffTime(activeDecisionAttempt.cursorTime, intervalSeconds(activeDecisionCandidate.interval))
       : null
-  }, [activeDecisionAttempt, activeDecisionCandidate, decisionReviewCursor, decisionReviewLimit, decisionReviewResult])
+  }, [activeDecisionAttempt, activeDecisionCandidate])
   const decisionData = useMemo(() => {
     if (!decisionSubject || !decisionMinuteHistory?.length || decisionCutoff === null) return []
     const knownMinutes = candlesKnownAt(decisionMinuteHistory, decisionCutoff)
@@ -341,11 +346,44 @@ function App() {
   [baseData, chartSeconds, decisionData, decisionMode, liveData, normalizedReplayCursor, replaySelecting])
   const replayAtEnd = normalizedReplayCursor !== null && normalizedReplayCursor >= baseData.at(-1)!.time + chartSeconds
   const candle = hoverCandle ?? data.at(-1) ?? baseData.at(-1)!
+  const decisionCurrentCandle = decisionMode ? data.at(-1) ?? null : null
   const decisionPositionCandle = activeDecisionAttempt?.stage === 'position-open' ? data.at(-1) ?? null : null
   const decisionPositionPnlByMode = activeDecisionCandidate?.trade.side && activeDecisionAttempt?.stage === 'position-open' && activeDecisionAttempt.fill && activeDecisionAttempt.stopLoss !== null && decisionPositionCandle
     ? {
         'fixed-risk': pnlForDecisionMode('fixed-risk', activeDecisionCandidate.trade.side, activeDecisionAttempt.fill.price, decisionPositionCandle.close, decisionAttemptInitialStopLoss(activeDecisionCandidate, activeDecisionAttempt) ?? activeDecisionAttempt.stopLoss),
         'fixed-notional': pnlForDecisionMode('fixed-notional', activeDecisionCandidate.trade.side, activeDecisionAttempt.fill.price, decisionPositionCandle.close, activeDecisionAttempt.stopLoss),
+      }
+    : null
+  // The system trade is also causal: once its entry candle is visible, show
+  // its mark-to-market PnL from the currently revealed close. Once the candle
+  // containing the system exit is visible, lock to the immutable exit result
+  // instead of continuing to mark the already-closed trade to later candles.
+  const decisionSystemCurrentCandle = activeDecisionAttempt?.stage !== 'complete' ? data.at(-1) ?? null : null
+  const decisionSystemRevealedThrough = decisionSystemCurrentCandle
+    ? decisionSystemCurrentCandle.time + intervalSeconds(activeDecisionCandidate?.interval ?? interval) - 1
+    : Number.NEGATIVE_INFINITY
+  const decisionSystemEntryVisible = Boolean(
+    activeDecisionCandidate
+    && decisionSystemCurrentCandle
+    && activeDecisionCandidate.trade.entry.time <= decisionSystemRevealedThrough,
+  )
+  const decisionSystemPnlLocked = Boolean(
+    activeDecisionCandidate
+    && decisionSystemEntryVisible
+    && activeDecisionCandidate.trade.exit.time <= decisionSystemRevealedThrough,
+  )
+  const decisionSystemPnlByMode = activeDecisionCandidate && decisionSystemCurrentCandle && decisionSystemEntryVisible
+    ? {
+        'fixed-risk': decisionSystemPnlLocked
+          ? activeDecisionCandidate.trade.result.pnlUsd
+          : pnlForDecisionMode('fixed-risk', activeDecisionCandidate.trade.side, activeDecisionCandidate.trade.entry.price, decisionSystemCurrentCandle.close, activeDecisionCandidate.trade.entry.stopLoss),
+        'fixed-notional': pnlForDecisionMode(
+          'fixed-notional',
+          activeDecisionCandidate.trade.side,
+          activeDecisionCandidate.trade.entry.price,
+          decisionSystemPnlLocked ? activeDecisionCandidate.trade.exit.price : decisionSystemCurrentCandle.close,
+          activeDecisionCandidate.trade.entry.stopLoss,
+        ),
       }
     : null
   const change = candle.close - candle.open
@@ -356,34 +394,50 @@ function App() {
     [interval, replayTradeLayers, symbol],
   )
   const decisionSignalSourceIds = useMemo(() => {
-    if (!decisionMode || !activeDecisionCandidate || !activeDecisionAttempt || decisionReviewResult) return []
+    if (!decisionMode || !activeDecisionCandidate || !activeDecisionAttempt) return []
     // Keep the current source's signal-only stream active for the whole causal
     // exercise. This includes repeated observation before entry, an open
     // position, and post-exit watching, while ChartSurface still clips every
     // marker at the currently revealed candle.
     return [activeDecisionCandidate.sourceId]
-  }, [activeDecisionAttempt, activeDecisionCandidate, decisionMode, decisionReviewResult])
+  }, [activeDecisionAttempt, activeDecisionCandidate, decisionMode])
   const registeredDecisionCandidates = useMemo(() => replayDecisionCandidates(replayTradeLayers.map((layer) => layer.sourceId)), [replayTradeLayers])
   const allDecisionCandidates = useMemo(() => registeredDecisionCandidates.filter((candidate) => (
     historyCoversDecisionCandidate(candidate, availableDecisionHistoryBySymbol[candidate.symbol])
   )), [availableDecisionHistoryBySymbol, registeredDecisionCandidates])
   const availableDecisionCount = useMemo(() => {
-    const seen = new Set(decisionStore.seenTradeKeys)
-    return allDecisionCandidates.filter((candidate) => !seen.has(candidate.key)).length
-  }, [allDecisionCandidates, decisionStore.seenTradeKeys])
+    const seen = new Set(normalizedDecisionStore.seenTradeKeys)
+    return allDecisionCandidates.filter((candidate) => (
+      DECISION_REPLAY_INTERVALS.some((interval) => interval === candidate.interval) && !seen.has(candidate.key)
+    )).length
+  }, [allDecisionCandidates, normalizedDecisionStore.seenTradeKeys])
   const decisionSymbolStats = useMemo<DecisionSymbolStats[]>(() => {
-    const seen = new Set(decisionStore.seenTradeKeys)
-    const grouped = new Map<SymbolId, DecisionSymbolStats>()
+    const seen = new Set(normalizedDecisionStore.seenTradeKeys)
+    const grouped = new Map<string, { total: number; remaining: number }>()
     for (const candidate of allDecisionCandidates) {
-      const current = grouped.get(candidate.symbol) ?? { symbol: candidate.symbol, total: 0, remaining: 0 }
+      const replayInterval = DECISION_REPLAY_INTERVALS.find((interval) => interval === candidate.interval)
+      if (!replayInterval) continue
+      const key = `${candidate.symbol}:${replayInterval}`
+      const current = grouped.get(key) ?? { total: 0, remaining: 0 }
       current.total += 1
       if (!seen.has(candidate.key)) current.remaining += 1
-      grouped.set(candidate.symbol, current)
+      grouped.set(key, current)
     }
     return SYMBOLS
-      .map(({ id }) => grouped.get(id))
-      .filter((item): item is DecisionSymbolStats => Boolean(item))
-  }, [allDecisionCandidates, decisionStore.seenTradeKeys])
+      .map(({ id }) => {
+        const intervals = DECISION_REPLAY_INTERVALS.map((interval) => ({
+          interval,
+          ...(grouped.get(`${id}:${interval}`) ?? { total: 0, remaining: 0 }),
+        }))
+        return {
+          symbol: id,
+          total: intervals.reduce((sum, stat) => sum + stat.total, 0),
+          remaining: intervals.reduce((sum, stat) => sum + stat.remaining, 0),
+          intervals,
+        }
+      })
+      .filter((item) => item.total > 0)
+  }, [allDecisionCandidates, normalizedDecisionStore.seenTradeKeys])
   const visibleRangeLayerSourceIds = useMemo(
     () => replayRangeLayers.filter((layer) => layer.symbol === symbol && layer.interval === interval && layer.visible).map((layer) => layer.sourceId),
     [interval, replayRangeLayers, symbol],
@@ -467,9 +521,9 @@ function App() {
   useEffect(() => saveReplayRangeLayers(replayRangeLayers), [replayRangeLayers])
   useEffect(() => saveFavoriteTools(favoriteTools), [favoriteTools])
   useEffect(() => {
-    decisionStoreRef.current = decisionStore
-    saveDecisionReplayStore(decisionStore)
-  }, [decisionStore])
+    decisionStoreRef.current = normalizedDecisionStore
+    saveDecisionReplayStore(normalizedDecisionStore)
+  }, [normalizedDecisionStore])
   useEffect(() => {
     decisionFavoriteKeysRef.current = decisionFavoriteKeys
     saveDecisionReplayFavorites(decisionFavoriteKeys)
@@ -514,16 +568,11 @@ function App() {
       document.removeEventListener('visibilitychange', flushWhenHidden)
     }
   }, [])
-  useEffect(() => { decisionReviewRef.current = decisionReviewResult }, [decisionReviewResult])
-
   // Candidate changes replace the causal data set. Wait until that data has
   // committed to ChartSurface before focusing, otherwise its data-sync effect
   // can restore the previous trade's viewport immediately afterwards.
   const focusDecisionChartLatest = useCallback(() => {
     const focus = () => {
-      // A historical review is intentionally user-positioned. This guard also
-      // cancels a focus callback that was queued before the review opened.
-      if (decisionReviewRef.current) return
       // Keep automatic transitions identical to pressing the bottom-right A
       // button: reset the price scale to automatic before centering the latest
       // visible candles. This runs after the data commit, not synchronously in
@@ -554,9 +603,12 @@ function App() {
     })
   }, [])
 
-  const decisionContextKey = decisionReviewResult
-    ? `review:${decisionReviewResult.candidateKey}`
-    : activeDecisionCandidate ? `active:${activeDecisionCandidate.key}` : null
+  // Include the session id so switching between the source attempt and an
+  // independent review reloads the correct drawing snapshot even when both
+  // attempts use the same candidate.
+  const decisionContextKey = activeDecisionSession && activeDecisionCandidate
+    ? `active:${activeDecisionSession.id}|${activeDecisionCandidate.key}`
+    : null
   const decisionContextSymbol = decisionSubject?.symbol ?? null
   const decisionContextInterval = decisionSubject?.interval ?? null
 
@@ -575,20 +627,18 @@ function App() {
       setQuickMeasurement(null)
       setSelectedReplayRangeId(null)
       setObjectTreeOpen(false)
-      const review = decisionReviewRef.current
       const store = decisionStoreRef.current
       const activeSession = store.activeSessionId ? store.sessions.find((session) => session.id === store.activeSessionId) : null
-      const drawingsForContext = review?.candidateKey === decisionContextKey.slice('review:'.length)
-        ? review.drawings
-        : currentDecisionAttempt(activeSession)?.drawings ?? []
+      const drawingsForContext = currentDecisionAttempt(activeSession)?.drawings ?? []
       decisionDrawingLoadingRef.current = true
-      decisionDrawingContextRef.current = decisionContextKey.startsWith('active:') ? decisionContextKey.slice('active:'.length) : null
+      const separator = decisionContextKey.indexOf('|')
+      decisionDrawingContextRef.current = separator >= 0
+        ? decisionContextKey.slice(separator + 1)
+        : decisionContextKey.slice('active:'.length)
       dispatchDecisionDrawing({ type: 'load', drawings: withoutTransientMeasurements(drawingsForContext) })
       window.setTimeout(() => {
         decisionDrawingLoadingRef.current = false
-        // Historical review preserves the user's current viewport. The A
-        // button remains the explicit way to focus the latest visible candle.
-        if (!decisionReviewRef.current) focusDecisionChartLatest()
+        focusDecisionChartLatest()
       }, 0)
     }, 0)
     return () => window.clearTimeout(timer)
@@ -596,7 +646,7 @@ function App() {
 
   useEffect(() => {
     const candidateKey = decisionDrawingContextRef.current
-    if (!candidateKey || decisionDrawingLoadingRef.current || decisionReviewResult) return
+    if (!candidateKey || decisionDrawingLoadingRef.current) return
     const timer = window.setTimeout(() => {
       const snapshot = withoutTransientMeasurements(decisionDrawings.present)
       setDecisionStore((current) => {
@@ -611,15 +661,19 @@ function App() {
       })
     }, 140)
     return () => window.clearTimeout(timer)
-  }, [decisionDrawings.present, decisionReviewResult])
+  }, [decisionDrawings.present])
 
   useEffect(() => {
-    if (!decisionMode || decisionReviewResult) return
+    if (!decisionMode) return
     focusDecisionChartLatest()
-  }, [decisionMode, decisionReviewResult, focusDecisionChartLatest, interval])
+  }, [decisionMode, focusDecisionChartLatest, interval])
 
   useEffect(() => {
     const chart = chartRef.current
+    const nextDecisionCurrentCandleX = chart && decisionCurrentCandle !== null
+      ? chart.timeToCoordinate(decisionCurrentCandle.time)
+      : null
+    setDecisionCurrentCandleX((current) => current === nextDecisionCurrentCandleX ? current : nextDecisionCurrentCandleX)
     if (!chart) return
     const alertY = Object.fromEntries(chartAlerts.filter((alert) => alert.symbol === symbol).map((alert) => [alert.id, chart.priceToCoordinate(alert.price)]))
     const orderY = Object.fromEntries(paperOrders.filter((order) => order.symbol === symbol).map((order) => [order.id, chart.priceToCoordinate(order.price)]))
@@ -628,7 +682,7 @@ function App() {
       alertY,
       orderY,
     })
-  }, [chartAlerts, clock, lockedCursorTime, paperOrders, symbol])
+  }, [chartAlerts, clock, data, decisionCurrentCandle, decisionMode, drawingProjectionTick, lockedCursorTime, paperOrders, symbol])
 
   useEffect(() => {
     if (!live) return
@@ -681,16 +735,18 @@ function App() {
     })
   }, [])
 
-  const beginDecisionSession = useCallback((requestedCount: number, selectedSymbols: SymbolId[], positionSizingModes: DecisionPositionSizingMode[]) => {
-    const selectedSymbolSet = new Set(selectedSymbols)
-    const candidates = allDecisionCandidates.filter((candidate) => selectedSymbolSet.has(candidate.symbol))
-    const selected = sampleDecisionCandidates(candidates, decisionStore.seenTradeKeys, requestedCount)
+  const beginDecisionSession = useCallback((requestedCount: number, selectedSymbols: SymbolId[], selectedIntervals: DecisionReplayInterval[], positionSizingModes: DecisionPositionSizingMode[]) => {
+    if (decisionSessionStartLockRef.current) return
+    decisionSessionStartLockRef.current = true
+    window.setTimeout(() => { decisionSessionStartLockRef.current = false }, 0)
+    const candidates = filterDecisionCandidatesByScope(allDecisionCandidates, selectedSymbols, selectedIntervals)
+    const selected = sampleDecisionCandidates(candidates, normalizedDecisionStore.seenTradeKeys, requestedCount)
     if (selected.length === 0) {
       notify('没有尚未练习的模拟交易')
       return
     }
     const session = createDecisionSession(selected, requestedCount, Date.now(), positionSizingModes)
-    setDecisionStore((current) => ({
+    setDecisionStore((current) => normalizeDecisionReplayStore({
       ...current,
       activeSessionId: session.id,
       seenTradeKeys: [...new Set([...current.seenTradeKeys, selected[0].key])],
@@ -698,15 +754,16 @@ function App() {
     }))
     setDecisionCenterOpen(false)
     setDecisionResultsSessionId(null)
-    setDecisionReviewResult(null)
+    setDecisionReviewReturnSessionId(null)
     setDecisionPriceDraft(null)
     setDecisionRiskDraft(null)
     setDecisionFocusTick((value) => value + 1)
     notify(`已随机抽取 ${selected.length} 笔，开始严格因果决策回放`)
-  }, [allDecisionCandidates, decisionStore.seenTradeKeys, notify])
+  }, [allDecisionCandidates, normalizedDecisionStore.seenTradeKeys, notify])
 
   const completeDecisionTrade = useCallback((resolvedAttempt: DecisionAttempt, exit: DecisionExit, advanceImmediately = false) => {
     if (!activeDecisionSession || !activeDecisionCandidate) return
+    const expectedCandidateKey = activeDecisionCandidate.key
     const drawingSnapshot = withoutTransientMeasurements(decisionDrawings.present)
     const result = buildDecisionResult(activeDecisionCandidate, resolvedAttempt, exit, drawingSnapshot)
     const isLast = activeDecisionSession.currentIndex >= activeDecisionSession.candidates.length - 1
@@ -714,6 +771,8 @@ function App() {
     setDecisionStore((current) => {
       const session = current.sessions.find((item) => item.id === sessionId)
       if (!session || session.status !== 'active') return current
+      const sessionCandidate = currentDecisionCandidate(session)
+      if (!sessionCandidate || sessionCandidate.key !== expectedCandidateKey || resolvedAttempt.candidateKey !== expectedCandidateKey) return current
       const resolved = { ...resolvedAttempt, stage: advanceImmediately ? 'complete' as const : 'post-exit' as const, result, drawings: result.drawings }
       let attempts = session.attempts.map((attempt) => attempt.candidateKey === resolved.candidateKey ? resolved : attempt)
       let nextIndex = session.currentIndex
@@ -727,14 +786,14 @@ function App() {
           sessions: current.sessions.map((item) => item.id === sessionId ? { ...session, attempts, updatedAt: now } : item),
         }
       }
-      if (!isLast) {
-        nextIndex += 1
-        const nextCandidate = session.candidates[nextIndex]
+      const nextCandidate = session.candidates[session.currentIndex + 1]
+      if (nextCandidate) {
+        nextIndex = session.currentIndex + 1
         if (!attempts.some((attempt) => attempt.candidateKey === nextCandidate.key)) attempts = [...attempts, createDecisionAttempt(nextCandidate)]
         seenTradeKeys = [...new Set([...seenTradeKeys, nextCandidate.key])]
       } else {
         status = 'completed'
-        activeSessionId = null
+        activeSessionId = session.origin === 'review' ? decisionReviewReturnSessionId : null
       }
       const now = Date.now()
       return {
@@ -759,18 +818,21 @@ function App() {
       setDecisionFocusTick((value) => value + 1)
       focusDecisionChartLatest()
     }
-  }, [activeDecisionCandidate, activeDecisionSession, decisionDrawings.present, focusDecisionChartLatest, notify])
+  }, [activeDecisionCandidate, activeDecisionSession, decisionDrawings.present, decisionReviewReturnSessionId, focusDecisionChartLatest, notify])
 
   const goToNextDecisionTrade = useCallback(() => {
-    if (!activeDecisionSession || !activeDecisionAttempt?.result || activeDecisionAttempt.stage !== 'post-exit') return
-    const sessionId = activeDecisionSession.id
+    if (!activeDecisionSession || !activeDecisionCandidate || !activeDecisionAttempt?.result || activeDecisionAttempt.stage !== 'post-exit') return
     const isLast = activeDecisionSession.currentIndex >= activeDecisionSession.candidates.length - 1
+    const sessionId = activeDecisionSession.id
+    const expectedCandidateKey = activeDecisionCandidate.key
     const drawingSnapshot = withoutTransientMeasurements(decisionDrawings.present)
     setDecisionStore((current) => {
       const session = current.sessions.find((item) => item.id === sessionId)
       if (!session || session.status !== 'active') return current
+      const sessionCandidate = currentDecisionCandidate(session)
+      if (!sessionCandidate || sessionCandidate.key !== expectedCandidateKey) return current
       const currentAttempt = currentDecisionAttempt(session)
-      if (!currentAttempt?.result || currentAttempt.stage !== 'post-exit') return current
+      if (!currentAttempt?.result || currentAttempt.stage !== 'post-exit' || currentAttempt.candidateKey !== expectedCandidateKey) return current
       const completedAttempt: DecisionAttempt = {
         ...currentAttempt,
         stage: 'complete',
@@ -782,14 +844,14 @@ function App() {
       let status: DecisionReplaySession['status'] = session.status
       let activeSessionId: string | null = current.activeSessionId
       let seenTradeKeys = current.seenTradeKeys
-      if (!isLast) {
-        nextIndex += 1
-        const nextCandidate = session.candidates[nextIndex]
+      const nextCandidate = session.candidates[session.currentIndex + 1]
+      if (nextCandidate) {
+        nextIndex = session.currentIndex + 1
         if (!attempts.some((attempt) => attempt.candidateKey === nextCandidate.key)) attempts = [...attempts, createDecisionAttempt(nextCandidate)]
         seenTradeKeys = [...new Set([...seenTradeKeys, nextCandidate.key])]
       } else {
         status = 'completed'
-        activeSessionId = null
+        activeSessionId = session.origin === 'review' ? decisionReviewReturnSessionId : null
       }
       const now = Date.now()
       return {
@@ -811,22 +873,23 @@ function App() {
       notify('已进入下一笔交易')
       focusDecisionChartLatest()
     }
-  }, [activeDecisionAttempt, activeDecisionSession, decisionDrawings.present, focusDecisionChartLatest, notify])
+  }, [activeDecisionAttempt, activeDecisionCandidate, activeDecisionSession, decisionDrawings.present, decisionReviewReturnSessionId, focusDecisionChartLatest, notify])
 
   const stopDecisionSession = useCallback(() => {
     if (!activeDecisionSession) return
     const sessionId = activeDecisionSession.id
     const now = Date.now()
+    const restoreSessionId = activeDecisionSession.origin === 'review' ? decisionReviewReturnSessionId : null
     setDecisionStore((current) => ({
       ...current,
-      activeSessionId: current.activeSessionId === sessionId ? null : current.activeSessionId,
+      activeSessionId: current.activeSessionId === sessionId ? restoreSessionId : current.activeSessionId,
       sessions: current.sessions.map((session) => session.id === sessionId ? { ...session, status: 'stopped', updatedAt: now, finishedAt: now } : session),
     }))
     setDecisionResultsSessionId(sessionId)
     setDecisionPriceDraft(null)
     setDecisionRiskDraft(null)
     notify(`已提前退出，保留 ${sessionResults(activeDecisionSession).length} 笔已完成结果`)
-  }, [activeDecisionSession, notify])
+  }, [activeDecisionSession, decisionReviewReturnSessionId, notify])
 
   const advanceActiveDecision = useCallback(() => {
     if (!activeDecisionAttempt || !activeDecisionCandidate) return
@@ -896,15 +959,16 @@ function App() {
   }, [activeDecisionAttempt, activeDecisionCandidate, decisionPriceDraft, decisionSourceData, updateActiveDecisionAttempt])
 
   const confirmDecisionRisk = useCallback(() => {
-    if (!activeDecisionAttempt || !activeDecisionCandidate || activeDecisionAttempt.pendingEntryPrice === null || !decisionRiskDraft) return
+    if (!activeDecisionAttempt || !activeDecisionCandidate || activeDecisionAttempt.pendingEntryPrice === null || !effectiveDecisionRiskDraft) return
+    const riskDraft = effectiveDecisionRiskDraft
     const pendingEntryPrice = activeDecisionAttempt.pendingEntryPrice
-    if (!validDecisionLevels(activeDecisionCandidate.trade.side, pendingEntryPrice, decisionRiskDraft.stopLoss, decisionRiskDraft.takeProfit)) {
+    if (!validDecisionLevels(activeDecisionCandidate.trade.side, pendingEntryPrice, riskDraft.stopLoss, riskDraft.takeProfit)) {
       notify(activeDecisionCandidate.trade.side === 'long' ? '做多时止损必须低于挂单价，止盈必须高于挂单价' : '做空时止损必须高于挂单价，止盈必须低于挂单价')
       return
     }
     const configured: DecisionAttempt = {
-      ...activeDecisionAttempt, stage: 'order-pending', initialStopLoss: decisionRiskDraft.stopLoss, stopLoss: decisionRiskDraft.stopLoss,
-      takeProfit: decisionRiskDraft.takeProfit, drawings: withoutTransientMeasurements(decisionDrawings.present),
+      ...activeDecisionAttempt, stage: 'order-pending', initialStopLoss: riskDraft.stopLoss, stopLoss: riskDraft.stopLoss,
+      takeProfit: riskDraft.takeProfit, drawings: withoutTransientMeasurements(decisionDrawings.present),
     }
     setDecisionRiskDraft(null)
     const next = nextCandleAfter(decisionSourceData, configured.cursorTime)
@@ -915,7 +979,7 @@ function App() {
     const evaluation = advanceDecisionAttempt(activeDecisionCandidate, configured, next)
     if (evaluation.exit) completeDecisionTrade(evaluation.attempt, evaluation.exit)
     else updateActiveDecisionAttempt(() => evaluation.attempt)
-  }, [activeDecisionAttempt, activeDecisionCandidate, completeDecisionTrade, decisionDrawings.present, decisionRiskDraft, decisionSourceData, notify, updateActiveDecisionAttempt])
+  }, [activeDecisionAttempt, activeDecisionCandidate, completeDecisionTrade, decisionDrawings.present, effectiveDecisionRiskDraft, decisionSourceData, notify, updateActiveDecisionAttempt])
 
   const updateActiveDecisionRisk = useCallback((field: 'stopLoss' | 'takeProfit', value: number) => {
     if (!Number.isFinite(value)) return
@@ -962,41 +1026,50 @@ function App() {
     completeDecisionTrade(activeDecisionAttempt, { time: current.time, price: current.close, reason: 'manual-close' })
   }, [activeDecisionAttempt, completeDecisionTrade, decisionSourceData])
 
-  const reviewDecisionResult = useCallback((result: DecisionTradeResult) => {
-    setDecisionResultsSessionId(null)
-    setDecisionCenterOpen(false)
-    setDecisionReviewCursor(null)
-    setDecisionReviewResult(result)
-  }, [])
-
-  const backFromDecisionReview = useCallback(() => {
-    const result = decisionReviewResult
-    setDecisionReviewCursor(null)
-    setDecisionReviewResult(null)
-    if (!result) return
-    const session = decisionStore.sessions.find((item) => item.attempts.some((attempt) => attempt.result?.candidateKey === result.candidateKey))
-    if (session) setDecisionResultsSessionId(session.id)
-  }, [decisionReviewResult, decisionStore.sessions])
-  const stepDecisionReview = useCallback((direction: -1 | 1) => {
-    if (!decisionReviewResult || decisionReviewLimit === null || decisionSourceData.length === 0) return
-    const step = intervalSeconds(decisionReviewResult.candidate.interval)
-    const current = decisionReviewCursor ?? decisionReviewLimit
-    const first = decisionSourceData[0].time
-    const next = Math.min(decisionReviewLimit, Math.max(first, current + direction * step))
-    if (next === current) {
-      notify(direction < 0 ? '已经是本笔最早可回看的 K 线' : '已经是本笔最后可回看的 K 线')
+  const startDecisionReplayFromResult = useCallback((sourceSession: DecisionReplaySession | null, result: DecisionTradeResult) => {
+    if (!sourceSession) {
+      notify('找不到这笔历史结果所属的练习场次')
       return
     }
-    setDecisionReviewCursor(next)
-    notify(direction < 0 ? '已回看上一根 K 线' : '已回看下一根 K 线')
-  }, [decisionReviewCursor, decisionReviewLimit, decisionReviewResult, decisionSourceData, notify])
+    const currentActiveSession = normalizedDecisionStore.activeSessionId
+      ? normalizedDecisionStore.sessions.find((session) => session.id === normalizedDecisionStore.activeSessionId && session.status === 'active') ?? null
+      : null
+    const returnSessionId = currentActiveSession?.origin === 'review'
+      ? decisionReviewReturnSessionId
+      : currentActiveSession?.id ?? null
+    const replaySession = createDecisionReviewSession(sourceSession, result, Date.now())
+    setDecisionStore((current) => ({
+      ...current,
+      // A review is a new active session. The source session and its attempt
+      // remain byte-for-byte untouched, and the candidate is not marked seen.
+      activeSessionId: replaySession.id,
+      sessions: [replaySession, ...current.sessions],
+    }))
+    setDecisionCenterOpen(false)
+    setDecisionHistoryOpen(false)
+    setDecisionResultsSessionId(null)
+    setDecisionReviewReturnSessionId(returnSessionId)
+    setDecisionPriceDraft(null)
+    setDecisionRiskDraft(null)
+    setHoverCandle(null)
+    // A review must never inherit drawings from the source attempt, even when
+    // both attempts happen to use the same candidate key and React keeps the
+    // chart context mounted.
+    decisionDrawingLoadingRef.current = true
+    decisionDrawingContextRef.current = null
+    dispatchDecisionDrawing({ type: 'load', drawings: [] })
+    window.setTimeout(() => { decisionDrawingLoadingRef.current = false }, 0)
+    setDecisionFocusTick((value) => value + 1)
+    notify('已从信号 K 开始独立复盘，可重新进行完整决策')
+  }, [decisionReviewReturnSessionId, normalizedDecisionStore, notify])
+
   const navigateDecisionExercise = useCallback((direction: -1 | 1) => {
-    const session = decisionReviewSession ?? activeDecisionSession ?? decisionResultsSession
+    const session = activeDecisionSession ?? decisionResultsSession
     if (!session) {
       notify('当前没有可回看的练习')
       return
     }
-    const target = adjacentDecisionExerciseTarget(session, decisionReviewResult?.candidateKey ?? null, direction)
+    const target = adjacentDecisionExerciseTarget(session, null, direction)
     if (!target) {
       notify(direction < 0 ? '已经是本场最早可回看的练习' : '当前已经是最新练习，不能向后跳题')
       return
@@ -1006,18 +1079,15 @@ function App() {
     setDecisionResultsSessionId(null)
     setDecisionPriceDraft(null)
     setDecisionRiskDraft(null)
-    setDecisionReviewCursor(null)
     setHoverCandle(null)
     if (target.kind === 'active') {
-      setDecisionReviewResult(null)
       setDecisionFocusTick((value) => value + 1)
       focusDecisionChartLatest()
       notify('已返回当前最新练习')
       return
     }
-    setDecisionReviewResult(target.result)
-    notify(direction < 0 ? '已回到上一笔练习' : '已向前返回下一笔练习')
-  }, [activeDecisionSession, decisionResultsSession, decisionReviewResult?.candidateKey, decisionReviewSession, focusDecisionChartLatest, notify])
+    startDecisionReplayFromResult(session, target.result)
+  }, [activeDecisionSession, decisionResultsSession, focusDecisionChartLatest, notify, startDecisionReplayFromResult])
   const exportWorkspace = useCallback(() => {
     const snapshot = collectPortableWorkspace()
     downloadPortableWorkspace(snapshot, workspaceBackupFileName('sync'))
@@ -1403,7 +1473,7 @@ function App() {
       if (isEditableShortcutTarget(event.target)) return
 
       const decisionNavigationDirection = decisionExerciseNavigationDirection(event)
-      if (decisionNavigationDirection && (activeDecisionSession || decisionReviewSession || decisionResultsSession)) {
+      if (decisionNavigationDirection && (activeDecisionSession || decisionResultsSession)) {
         event.preventDefault()
         navigateDecisionExercise(decisionNavigationDirection)
         return
@@ -1415,13 +1485,7 @@ function App() {
         return
       }
 
-      if (decisionReviewResult && !mod && !event.altKey && !event.shiftKey && !event.repeat && (event.key === '1' || event.key === '2')) {
-        event.preventDefault()
-        stepDecisionReview(event.key === '1' ? -1 : 1)
-        return
-      }
-
-      if (activeDecisionAttempt && !decisionReviewResult && !mod && !event.altKey && !event.shiftKey && /^[1-4]$/.test(event.key)) {
+      if (activeDecisionAttempt && !mod && !event.altKey && !event.shiftKey && /^[1-4]$/.test(event.key)) {
         const action = decisionShortcutAction(activeDecisionAttempt.stage, event.key)
         // Numeric keys belong exclusively to the decision flow while a
         // question is active. During price/risk setup an unsupported number
@@ -1583,7 +1647,7 @@ function App() {
     }
     window.addEventListener('keydown', keyHandler)
     return () => window.removeEventListener('keydown', keyHandler)
-  }, [activeDecisionAttempt, activeDecisionSession, activeSelectedReplayRangeId, activeTool, advanceActiveDecision, baseData, candle.close, cancelDecisionSetup, cancelPendingDecisionAndAdvance, chartSeconds, chooseFreePriceOrder, chooseSignalExtremeOrder, closeActiveDecisionAtMarket, confirmDecisionRisk, decisionResultsSession, decisionReviewResult, decisionReviewSession, deleteReplayRangeObject, dispatchUiDrawing, effectiveReplayResolution, goToNextDecisionTrade, interval, loadSavedLayout, navigateDecisionExercise, normalizedReplayCursor, notify, openAlertAt, openOrderAt, priceScaleAuto, priceScaleInverted, priceScaleLog, priceScalePercent, replayAtEnd, saveCurrentLayout, selectedDrawing, selectedDrawingIds, skipActiveDecision, stepDecisionReview, symbol, takeSnapshotShortcut, uiDrawings.present, uiDrawings.selectedId, uiDrawings.selectedIds, watchlistOpen])
+  }, [activeDecisionAttempt, activeDecisionSession, activeSelectedReplayRangeId, activeTool, advanceActiveDecision, baseData, candle.close, cancelDecisionSetup, cancelPendingDecisionAndAdvance, chartSeconds, chooseFreePriceOrder, chooseSignalExtremeOrder, closeActiveDecisionAtMarket, confirmDecisionRisk, decisionResultsSession, deleteReplayRangeObject, dispatchUiDrawing, effectiveReplayResolution, goToNextDecisionTrade, interval, loadSavedLayout, navigateDecisionExercise, normalizedReplayCursor, notify, openAlertAt, openOrderAt, priceScaleAuto, priceScaleInverted, priceScaleLog, priceScalePercent, replayAtEnd, saveCurrentLayout, selectedDrawing, selectedDrawingIds, skipActiveDecision, symbol, takeSnapshotShortcut, uiDrawings.present, uiDrawings.selectedId, uiDrawings.selectedIds, watchlistOpen])
 
   useEffect(() => {
     const cancelMeasure = () => {
@@ -1629,7 +1693,7 @@ function App() {
                   </button>
                 ))}
               </div>
-              <div className="data-disclaimer">XAUUSD/XAGUSD/US500：DUKASCOPY 普通 1 分钟快照；XAGUSD 决策回放：OANDA:XAGUSD 冻结 5 分钟数据；BTCUSDT.P：KUCOIN XBTUSDTM 近90天快照；ETHUSD：本地模拟</div>
+              <div className="data-disclaimer">XAUUSD/XAGUSD/US500：OANDA 5 分钟快照；XAGUSD 决策回放：OANDA:XAGUSD 冻结 5 分钟数据；BTCUSDT.P：KUCOIN XBTUSDTM 近90天快照；ETHUSD：本地模拟</div>
             </div>
           )}
         </div>
@@ -1740,7 +1804,7 @@ function App() {
               }}
               followLatest={!decisionMode && marketStatus.kind === 'live' && replayCursor === null}
               focusLatestKey={marketHydrationKey + (decisionMode ? 10_000 + decisionFocusTick : 0)}
-              suppressAutoFocus={Boolean(decisionReviewResult)}
+              suppressAutoFocus={false}
               centerLatestByDefault={decisionMode}
               markersHidden={chartAnnotationsHidden}
               onHover={setHoverCandle}
@@ -1752,10 +1816,12 @@ function App() {
                 setPriceScaleInverted(inverted)
               }}
             />
-            {activeDecisionSession && activeDecisionCandidate && activeDecisionAttempt && !decisionReviewResult && <DecisionChartStatus
+            {activeDecisionSession && activeDecisionCandidate && activeDecisionAttempt && <DecisionChartStatus
               session={activeDecisionSession}
               attempt={activeDecisionAttempt}
               currentPnlByMode={decisionPositionPnlByMode}
+              systemCurrentPnlByMode={decisionSystemPnlByMode}
+              systemCurrentPnlLocked={decisionSystemPnlLocked}
               positionSizingModes={activeDecisionPositionSizingModes}
             />}
             {contextOverlayPositions.lockedCursorX !== null && <div className="locked-time-cursor" data-testid="locked-time-cursor" style={{ left: contextOverlayPositions.lockedCursorX }}><span>{new Date(lockedCursorTime! * 1000).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}</span></div>}
@@ -1810,7 +1876,7 @@ function App() {
             <DrawingOverlay
               key={`${decisionContextKey ?? 'normal'}-${effectiveDrawingTool}-${drawingsLocked}-${drawingsHidden}`}
               activeTool={effectiveDrawingTool} history={uiDrawings} dispatch={dispatchUiDrawing} color={drawingColor}
-              magnetMode={magnetMode} drawingsLocked={drawingsLocked || Boolean(decisionReviewResult)} hidden={drawingsHidden}
+              magnetMode={magnetMode} drawingsLocked={drawingsLocked} hidden={drawingsHidden}
               candles={data} symbol={symbol} interval={interval}
               quickMeasurement={quickMeasurement}
               onMeasurePoint={(point) => chartRef.current?.measurementAt(point.x, point.y) ?? null}
@@ -1826,14 +1892,14 @@ function App() {
             />
             {decisionSubject && <DecisionChartAnnotations
               candidate={decisionSubject}
-              attempt={decisionDisplayAttempt}
-              result={decisionReviewResult ?? decisionDisplayAttempt?.result ?? null}
+              attempt={activeDecisionAttempt}
+              result={activeDecisionAttempt?.result ?? null}
               data={data}
               toX={(time) => chartRef.current?.timeToCoordinate(time) ?? null}
               toY={(price) => chartRef.current?.priceToCoordinate(price) ?? null}
               hidden={chartAnnotationsHidden}
             />}
-            {activeDecisionCandidate && activeDecisionAttempt && !decisionReviewResult && <DecisionReplayPanel
+            {activeDecisionCandidate && activeDecisionAttempt && <DecisionReplayPanel
               candidate={activeDecisionCandidate}
               attempt={activeDecisionAttempt}
               ordinal={(activeDecisionSession?.currentIndex ?? 0) + 1}
@@ -1841,6 +1907,7 @@ function App() {
               currentClose={decisionPositionCandle?.close ?? null}
               currentPnlByMode={decisionPositionPnlByMode}
               positionSizingModes={activeDecisionPositionSizingModes}
+              independentReview={activeDecisionSession?.origin === 'review'}
               favorite={decisionFavoriteKeys.includes(decisionReplayFavoriteKey('trade', activeDecisionCandidate.key))}
               onToggleFavorite={() => setDecisionFavoriteKeys((current) => toggleDecisionReplayFavorite(
                 current,
@@ -1864,16 +1931,17 @@ function App() {
               onConfirm={confirmDecisionPrice}
               onCancel={cancelDecisionSetup}
             />}
-            {activeDecisionCandidate && activeDecisionAttempt?.stage === 'risk-setup' && activeDecisionAttempt.pendingEntryPrice !== null && decisionRiskDraft && <DecisionRiskOverlay
+            {activeDecisionCandidate && activeDecisionAttempt?.stage === 'risk-setup' && activeDecisionAttempt.pendingEntryPrice !== null && effectiveDecisionRiskDraft && <DecisionRiskOverlay
               candidate={activeDecisionCandidate}
               entryPrice={activeDecisionAttempt.pendingEntryPrice}
-              stopLoss={decisionRiskDraft.stopLoss}
-              takeProfit={decisionRiskDraft.takeProfit}
+              stopLoss={effectiveDecisionRiskDraft.stopLoss}
+              takeProfit={effectiveDecisionRiskDraft.takeProfit}
+              currentCandleX={decisionCurrentCandleX}
               positionSizingModes={activeDecisionPositionSizingModes}
               toPrice={(y) => chartRef.current?.coordinateToPrice(y) ?? null}
               toY={(price) => chartRef.current?.priceToCoordinate(price) ?? null}
-              onStopLoss={(stopLoss) => setDecisionRiskDraft((current) => current ? { ...current, stopLoss } : current)}
-              onTakeProfit={(takeProfit) => setDecisionRiskDraft((current) => current ? { ...current, takeProfit } : current)}
+              onStopLoss={(stopLoss) => setDecisionRiskDraft((current) => ({ ...(current ?? effectiveDecisionRiskDraft), stopLoss }))}
+              onTakeProfit={(takeProfit) => setDecisionRiskDraft((current) => ({ ...(current ?? effectiveDecisionRiskDraft), takeProfit }))}
               onConfirm={confirmDecisionRisk}
               onCancel={cancelDecisionSetup}
             />}
@@ -1883,6 +1951,8 @@ function App() {
               entryLabel={activeDecisionAttempt.stage === 'position-open' ? '开仓' : '挂单'}
               stopLoss={activeDecisionAttempt.stopLoss}
               takeProfit={activeDecisionAttempt.takeProfit}
+              initialStopLoss={decisionAttemptInitialStopLoss(activeDecisionCandidate, activeDecisionAttempt) ?? activeDecisionAttempt.stopLoss}
+              currentCandleX={decisionCurrentCandleX}
               currentClose={activeDecisionAttempt.stage === 'position-open' ? decisionPositionCandle?.close ?? null : null}
               currentPnlByMode={activeDecisionAttempt.stage === 'position-open' ? decisionPositionPnlByMode : null}
               positionSizingModes={activeDecisionPositionSizingModes}
@@ -1895,7 +1965,6 @@ function App() {
               editable
               showConfirmControls={false}
             />}
-            {decisionReviewResult && <DecisionReviewPanel result={decisionReviewResult} positionSizingModes={decisionSessionPositionSizingModes(decisionReviewSession)} onBack={backFromDecisionReview} />}
             {!decisionMode && replaySelecting && <div
               className="replay-selection-overlay"
               data-testid="replay-selection-overlay"
@@ -2107,56 +2176,65 @@ function App() {
         onClose={() => setDrawingSettingsId(null)}
       />}
       <DecisionReplayCenter
-        key={decisionSymbolStats.map((item) => `${item.symbol}:${item.total}:${item.remaining}`).join('|')}
+        key={decisionSymbolStats.map((item) => `${item.symbol}:${item.intervals.map((stat) => `${stat.interval}:${stat.total}:${stat.remaining}`).join(',')}`).join('|')}
         open={decisionCenterOpen}
         availableCount={availableDecisionCount}
-        totalCount={allDecisionCandidates.length}
+        totalCount={decisionSymbolStats.reduce((sum, item) => sum + item.total, 0)}
         symbolStats={decisionSymbolStats}
-        sessions={decisionStore.sessions}
-        activeSessionId={decisionStore.activeSessionId}
+        sessions={normalizedDecisionStore.sessions}
+        activeSessionId={normalizedDecisionStore.activeSessionId}
         favoriteKeys={decisionFavoriteKeys}
         onToggleFavorite={(key) => setDecisionFavoriteKeys((current) => toggleDecisionReplayFavorite(current, key))}
         onClose={() => setDecisionCenterOpen(false)}
         onStart={beginDecisionSession}
-        onContinue={() => { setDecisionCenterOpen(false); setDecisionResultsSessionId(null); setDecisionReviewResult(null); focusDecisionChartLatest() }}
+        onContinue={() => { setDecisionCenterOpen(false); setDecisionResultsSessionId(null); focusDecisionChartLatest() }}
         onResults={(sessionId) => { setDecisionCenterOpen(false); setDecisionResultsSessionId(sessionId) }}
       />
       <DecisionHistoryDialog
         key={`${symbol}-${decisionHistoryOpen ? 'open' : 'closed'}`}
         open={decisionHistoryOpen}
         currentSymbol={symbol}
-        sessions={decisionStore.sessions}
+        sessions={normalizedDecisionStore.sessions}
         favoriteKeys={decisionFavoriteKeys}
         onToggleFavorite={(key) => setDecisionFavoriteKeys((current) => toggleDecisionReplayFavorite(current, key))}
         onClose={() => setDecisionHistoryOpen(false)}
         onOpenSession={(sessionId) => {
-          const target = decisionStore.sessions.find((session) => session.id === sessionId)
-          setDecisionHistoryOpen(false)
-          setDecisionCenterOpen(false)
-          setDecisionReviewResult(null)
-          setDecisionResultsSessionId(target?.status === 'active' ? null : sessionId)
+           const target = normalizedDecisionStore.sessions.find((session) => session.id === sessionId)
+           setDecisionHistoryOpen(false)
+           setDecisionCenterOpen(false)
+           setDecisionResultsSessionId(target?.status === 'active' ? null : sessionId)
           if (target?.status === 'active') focusDecisionChartLatest()
         }}
         onOpenFavoriteTrade={(sessionId, candidateKey) => {
-          const target = decisionStore.sessions.find((session) => session.id === sessionId)
+          const target = normalizedDecisionStore.sessions.find((session) => session.id === sessionId)
           const result = target?.attempts.find((attempt) => attempt.candidateKey === candidateKey)?.result ?? null
-          setDecisionHistoryOpen(false)
-          setDecisionCenterOpen(false)
-          setDecisionResultsSessionId(null)
-          if (result) reviewDecisionResult(result)
-          else {
-            setDecisionReviewResult(null)
-            if (target?.status === 'active') focusDecisionChartLatest()
-          }
-        }}
+           setDecisionHistoryOpen(false)
+           setDecisionCenterOpen(false)
+           setDecisionResultsSessionId(null)
+           if (result) startDecisionReplayFromResult(target ?? null, result)
+           else if (target?.status === 'active') focusDecisionChartLatest()
+         }}
       />
       <DecisionResultsDialog
         session={decisionResultsSession}
         favoriteKeys={decisionFavoriteKeys}
         onToggleFavorite={(key) => setDecisionFavoriteKeys((current) => toggleDecisionReplayFavorite(current, key))}
-        onClose={() => setDecisionResultsSessionId(null)}
-        onReview={reviewDecisionResult}
-        onNew={() => { setDecisionResultsSessionId(null); setDecisionCenterOpen(true) }}
+        onClose={() => {
+          setDecisionResultsSessionId(null)
+          setDecisionReviewReturnSessionId(null)
+        }}
+        onReview={(result) => startDecisionReplayFromResult(decisionResultsSession, result)}
+        onReturnToSource={() => {
+          const sourceSessionId = decisionResultsSession?.sourceSessionId
+          if (!sourceSessionId) return
+          setDecisionResultsSessionId(sourceSessionId)
+          notify('已返回原本场次对比')
+        }}
+        onNew={() => {
+          setDecisionResultsSessionId(null)
+          setDecisionReviewReturnSessionId(null)
+          setDecisionCenterOpen(true)
+        }}
       />
       {toast && <div className="toast" role="status">{toast}</div>}
     </div>

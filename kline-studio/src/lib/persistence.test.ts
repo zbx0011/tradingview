@@ -146,7 +146,22 @@ describe('decision replay center preferences', () => {
     }))).toEqual({
       count: 50,
       selectedSymbols: ['XAUUSD', 'BTCUSDT.P'],
+      selectedIntervals: ['5m'],
       selectedModes: ['fixed-notional'],
+    })
+  })
+
+  it('restores selected replay intervals and removes unsupported duplicates', () => {
+    expect(parseDecisionReplayCenterPreferences(JSON.stringify({
+      count: 30,
+      selectedSymbols: ['XAUUSD'],
+      selectedIntervals: ['15m', '1h', '15m', '30m'],
+      selectedModes: ['fixed-risk'],
+    }))).toEqual({
+      count: 30,
+      selectedSymbols: ['XAUUSD'],
+      selectedIntervals: ['15m', '1h'],
+      selectedModes: ['fixed-risk'],
     })
   })
 
@@ -154,5 +169,6 @@ describe('decision replay center preferences', () => {
     expect(parseDecisionReplayCenterPreferences('{broken')).toBeNull()
     expect(parseDecisionReplayCenterPreferences(JSON.stringify({ count: 0, selectedSymbols: [], selectedModes: [] }))).toBeNull()
     expect(parseDecisionReplayCenterPreferences(JSON.stringify({ count: 30, selectedSymbols: 'XAUUSD', selectedModes: [] }))).toBeNull()
+    expect(parseDecisionReplayCenterPreferences(JSON.stringify({ count: 30, selectedSymbols: ['XAUUSD'], selectedIntervals: '5m', selectedModes: [] }))).toBeNull()
   })
 })
