@@ -49,6 +49,18 @@ function readFavorites(raw: string | null, label: string) {
   return favorites
 }
 
+function canonicalDecisionReplayStore(store: DecisionReplayStore) {
+  let serialized = serializeDecisionReplayStore(store)
+  for (let pass = 0; pass < 4; pass += 1) {
+    const parsed = parseDecisionReplayStoreChecked(serialized)
+    if (!parsed) throw new Error('合并后的做题记录格式无效，已停止写入')
+    const nextSerialized = serializeDecisionReplayStore(parsed)
+    if (nextSerialized === serialized) return { store: parsed, serialized }
+    serialized = nextSerialized
+  }
+  throw new Error('合并后的做题记录无法稳定校验，已停止写入')
+}
+
 /**
  * Merge one or more computer backups into the current browser.
  * Local settings/drawings remain untouched; only decision history and favorites are merged.
@@ -78,13 +90,16 @@ export function mergePortableWorkspaceProgress(
   // in the verified private repository before calling us and therefore avoids a second large copy.
   if (persistRecovery) savePortableWorkspaceRecovery(before, storage)
   try {
-    storage.setItem(DECISION_REPLAY_STORAGE_KEY, serializeDecisionReplayStore(mergedStore))
+    const canonicalStore = canonicalDecisionReplayStore(mergedStore)
+    storage.setItem(DECISION_REPLAY_STORAGE_KEY, canonicalStore.serialized)
     storage.setItem(DECISION_REPLAY_FAVORITES_STORAGE_KEY, JSON.stringify(mergedFavorites))
 
     const verifiedStore = parseDecisionReplayStoreChecked(storage.getItem(DECISION_REPLAY_STORAGE_KEY))
     const verifiedFavorites = parseDecisionReplayFavoritesChecked(storage.getItem(DECISION_REPLAY_FAVORITES_STORAGE_KEY))
-    if (!verifiedStore || serializeDecisionReplayStore(verifiedStore) !== serializeDecisionReplayStore(mergedStore)) throw new Error('写入后的做题记录校验失败')
+    if (!verifiedStore || serializeDecisionReplayStore(verifiedStore) !== canonicalStore.serialized) throw new Error('写入后的做题记录校验失败')
     if (!verifiedFavorites || JSON.stringify(verifiedFavorites) !== JSON.stringify(mergedFavorites)) throw new Error('写入后的收藏记录校验失败')
+
+    mergedStore = canonicalStore.store
   } catch (error) {
     restorePortableWorkspace(before, storage)
     if (persistRecovery) savePortableWorkspaceRecovery(before, storage)
