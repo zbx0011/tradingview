@@ -28,12 +28,19 @@ interface CommandResult {
   stderr: string
 }
 
+interface CommandOptions {
+  cwd?: string
+  input?: string
+  env?: NodeJS.ProcessEnv
+}
+
 interface PrivateRepositoryState {
   repositoryPath: string
   head: string
 }
 
 type SyncMode = 'manual' | 'background'
+type SyncScope = 'workspace' | 'history'
 
 let recentBackgroundLease: { fingerprint: string; expiresAt: number } | null = null
 
@@ -43,12 +50,12 @@ class HttpError extends Error {
   }
 }
 
-function runFile(command: string, args: readonly string[], options: { cwd?: string; input?: string } = {}) {
+function runFile(command: string, args: readonly string[], options: CommandOptions = {}) {
   return new Promise<CommandResult>((resolve, reject) => {
     const child = spawn(command, [...args], {
       cwd: options.cwd,
       windowsHide: true,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+      env: { ...process.env, ...options.env, GIT_TERMINAL_PROMPT: '0' },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     let stdout = ''
@@ -65,6 +72,59 @@ function runFile(command: string, args: readonly string[], options: { cwd?: stri
     if (options.input) child.stdin.end(options.input)
     else child.stdin.end()
   })
+}
+
+function transientGitNetworkError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error)
+  return /failed to connect|could not resolve host|connection (?:was )?reset|network is unreachable|operation timed out|http (?:5\d\d|429)|rpc failed/i.test(message)
+}
+
+function normalizeProxyUrl(value: string) {
+  const target = value.trim()
+  if (!target) return null
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(target) ? target : `http://${target}`
+}
+
+async function windowsSystemProxy() {
+  if (process.platform !== 'win32') return null
+  try {
+    const registryKey = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings'
+    const enabled = await runFile('reg.exe', ['query', registryKey, '/v', 'ProxyEnable'])
+    if (!/REG_DWORD\s+0x1(?:\s|$)/i.test(enabled.stdout)) return null
+    const configured = await runFile('reg.exe', ['query', registryKey, '/v', 'ProxyServer'])
+    const match = configured.stdout.match(/ProxyServer\s+REG_SZ\s+(.+)$/im)
+    if (!match) return null
+    const raw = match[1].trim()
+    const entries = new Map(raw.split(';').flatMap((entry) => {
+      const separator = entry.indexOf('=')
+      return separator > 0 ? [[entry.slice(0, separator).trim().toLowerCase(), entry.slice(separator + 1).trim()] as const] : []
+    }))
+    return normalizeProxyUrl(entries.get('https') ?? entries.get('http') ?? (entries.size === 0 ? raw : ''))
+  } catch {
+    return null
+  }
+}
+
+async function runGitNetwork(args: readonly string[], options: CommandOptions = {}) {
+  let lastError: unknown
+  let proxy: string | null = null
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const proxyEnvironment = proxy ? {
+        HTTP_PROXY: proxy,
+        HTTPS_PROXY: proxy,
+        http_proxy: proxy,
+        https_proxy: proxy,
+      } : undefined
+      return await runFile('git', args, { ...options, env: { ...options.env, ...proxyEnvironment } })
+    } catch (error) {
+      lastError = error
+      if (!transientGitNetworkError(error) || attempt === 2) throw error
+      if (!proxy) proxy = await windowsSystemProxy()
+      await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)))
+    }
+  }
+  throw lastError
 }
 
 function normalizeRemote(value: string) {
@@ -93,6 +153,13 @@ function workspaceFromUnknown(value: unknown): PortableWorkspace {
 
 function serializeWorkspace(workspace: PortableWorkspace) {
   return JSON.stringify(workspace, null, 2)
+}
+
+function historyWorkspace(workspace: PortableWorkspace): PortableWorkspace {
+  return {
+    ...workspace,
+    entries: Object.fromEntries(Object.entries(workspace.entries).filter(([key]) => key === REPLAY_KEY || key === FAVORITES_KEY)),
+  }
 }
 
 function sha256(value: string | Buffer) {
@@ -164,7 +231,7 @@ async function ensureClone(repositoryPath: string) {
   try {
     await fs.access(path.join(fallback, '.git'))
   } catch {
-    await runFile('git', ['clone', REPOSITORY_URL, fallback])
+    await runGitNetwork(['clone', REPOSITORY_URL, fallback])
   }
   return fallback
 }
@@ -205,7 +272,7 @@ async function ensureRepositoryUpdated(): Promise<PrivateRepositoryState> {
   const dirty = (await runFile('git', ['status', '--porcelain'], { cwd: repositoryPath })).stdout.trim()
   if (dirty) throw new HttpError(409, `私有同步仓库存在本机修改，未覆盖也未上传：${repositoryPath}（${dirty.split(/\r?\n/).slice(0, 5).join('；')}）`)
   await runFile('git', ['switch', 'main'], { cwd: repositoryPath })
-  await runFile('git', ['pull', '--ff-only', 'origin', 'main'], { cwd: repositoryPath })
+  await runGitNetwork(['pull', '--ff-only', 'origin', 'main'], { cwd: repositoryPath })
   const head = (await runFile('git', ['rev-parse', 'HEAD'], { cwd: repositoryPath })).stdout.trim()
   return { repositoryPath, head }
 }
@@ -219,7 +286,7 @@ async function commitAndPush(repositoryPath: string, relativePaths: readonly str
     '-c', 'user.email=kline-studio-sync@users.noreply.github.com',
     'commit', '-m', message,
   ], { cwd: repositoryPath })
-  await runFile('git', ['push', 'origin', 'main'], { cwd: repositoryPath })
+  await runGitNetwork(['push', 'origin', 'main'], { cwd: repositoryPath })
   return (await runFile('git', ['rev-parse', 'HEAD'], { cwd: repositoryPath })).stdout.trim()
 }
 
@@ -272,7 +339,7 @@ function safeMachineName() {
   return os.hostname().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48) || 'windows-pc'
 }
 
-async function prepareSync(snapshot: PortableWorkspace, mode: SyncMode) {
+async function prepareSync(snapshot: PortableWorkspace, mode: SyncMode, scope: SyncScope) {
   const state = await ensureRepositoryUpdated()
   const fingerprint = progressFingerprint(snapshot)
   if (mode === 'background' && recentBackgroundLease
@@ -293,7 +360,8 @@ async function prepareSync(snapshot: PortableWorkspace, mode: SyncMode) {
     : `backups/devices/${safeMachineName()}/before-sync/kline-studio-sync-before-${timestamp()}.json`
   const fullPath = path.join(state.repositoryPath, ...relativePath.split('/'))
   await fs.mkdir(path.dirname(fullPath), { recursive: true })
-  const raw = serializeWorkspace(snapshot)
+  const submittedSnapshot = scope === 'history' ? historyWorkspace(snapshot) : snapshot
+  const raw = serializeWorkspace(submittedSnapshot)
   let commit = state.head
   let backupRaw = raw
   let writeBackup = true
@@ -327,10 +395,22 @@ async function prepareSync(snapshot: PortableWorkspace, mode: SyncMode) {
   }
 }
 
-async function receiveSync() {
+async function latestMergedWorkspace(repositoryPath: string) {
+  const relativePath = 'backups/merged/kline-studio-sync-latest.json'
+  try {
+    const raw = await fs.readFile(path.join(repositoryPath, ...relativePath.split('/')), 'utf8')
+    return { workspace: workspaceFromUnknown(JSON.parse(raw)), relativePath }
+  } catch (error) {
+    throw new HttpError(409, `私有仓库缺少完整工作区基准：${relativePath}（${error instanceof Error ? error.message : '读取失败'}）`)
+  }
+}
+
+async function receiveSync(scope: SyncScope) {
   await verifyPrivateVisibility()
   const state = await ensureRepositoryUpdated()
-  const collected = await collectProgressSnapshots(state.repositoryPath)
+  const collected = scope === 'history'
+    ? await collectProgressSnapshots(state.repositoryPath)
+    : await latestMergedWorkspace(state.repositoryPath).then(({ workspace, relativePath }) => ({ snapshots: [workspace], sourcePaths: [relativePath] }))
   return {
     ok: true,
     private: true,
@@ -339,14 +419,22 @@ async function receiveSync() {
   }
 }
 
-async function publishSync(expectedHead: string, snapshot: PortableWorkspace, mode: SyncMode) {
+async function publishSync(expectedHead: string, snapshot: PortableWorkspace, mode: SyncMode, scope: SyncScope) {
   const state = await ensureRepositoryUpdated()
   if (state.head !== expectedHead) {
     const collected = await collectProgressSnapshots(state.repositoryPath)
     throw new HttpError(409, '远端在同步期间产生了新备份，请合并最新版本后重试', { head: state.head, ...collected })
   }
   await verifyPrivateVisibility()
-  const raw = serializeWorkspace(snapshot)
+  const submittedSnapshot = scope === 'history' ? historyWorkspace(snapshot) : snapshot
+  const finalSnapshot = scope === 'history'
+    ? await latestMergedWorkspace(state.repositoryPath).then(({ workspace }) => ({
+      ...workspace,
+      exportedAt: submittedSnapshot.exportedAt,
+      entries: { ...workspace.entries, ...submittedSnapshot.entries },
+    }))
+    : submittedSnapshot
+  const raw = serializeWorkspace(finalSnapshot)
   const latestPath = 'backups/merged/kline-studio-sync-latest.json'
   const relativePath = mode === 'background'
     ? latestPath
@@ -357,12 +445,26 @@ async function publishSync(expectedHead: string, snapshot: PortableWorkspace, mo
   const commit = await commitAndPush(state.repositoryPath, [...new Set([relativePath, latestPath])], mode === 'background'
     ? 'backup: publish latest background-synced workspace'
     : 'backup: publish merged Kline Studio workspace')
-  await runFile('git', ['fetch', 'origin', 'main'], { cwd: state.repositoryPath })
+  await runGitNetwork(['fetch', 'origin', 'main'], { cwd: state.repositoryPath })
   const downloaded = (await runFile('git', ['show', `origin/main:${relativePath}`], { cwd: state.repositoryPath })).stdout
   const uploadedSha = sha256(raw)
   const downloadedSha = sha256(downloaded)
   if (uploadedSha !== downloadedSha) throw new HttpError(500, '远端回下载 SHA-256 不一致，已停止报告成功')
-  return { ok: true, private: true, path: relativePath, latestPath, commit, sha256: uploadedSha, verifiedSha256: downloadedSha }
+  const downloadedWorkspace = workspaceFromUnknown(JSON.parse(downloaded))
+  const submittedSha = sha256(serializeWorkspace(submittedSnapshot))
+  const downloadedSubmittedSha = sha256(serializeWorkspace(scope === 'history' ? historyWorkspace(downloadedWorkspace) : downloadedWorkspace))
+  if (submittedSha !== downloadedSubmittedSha) throw new HttpError(500, '远端做题历史回下载 SHA-256 不一致，已停止报告成功')
+  return {
+    ok: true,
+    private: true,
+    path: relativePath,
+    latestPath,
+    commit,
+    sha256: uploadedSha,
+    verifiedSha256: downloadedSha,
+    submittedSha256: submittedSha,
+    verifiedSubmittedSha256: downloadedSubmittedSha,
+  }
 }
 
 export function localPrivateSyncPlugin(): Plugin {
@@ -384,19 +486,20 @@ export function localPrivateSyncPlugin(): Plugin {
             return
           }
           if (request.method !== 'POST') throw new HttpError(405, '只支持 GET 和 POST')
-          const body = await readJsonRequest(request) as { action?: unknown; mode?: unknown; snapshot?: unknown; expectedHead?: unknown }
+          const body = await readJsonRequest(request) as { action?: unknown; mode?: unknown; scope?: unknown; snapshot?: unknown; expectedHead?: unknown }
+          const scope: SyncScope = body.scope === 'history' ? 'history' : 'workspace'
           if (body.action === 'receive') {
-            sendJson(response, 200, await enqueue(receiveSync))
+            sendJson(response, 200, await enqueue(() => receiveSync(scope)))
             return
           }
           const snapshot = workspaceFromUnknown(body.snapshot)
           const mode: SyncMode = body.mode === 'background' ? 'background' : 'manual'
           if (body.action === 'prepare') {
-            sendJson(response, 200, await enqueue(() => prepareSync(snapshot, mode)))
+            sendJson(response, 200, await enqueue(() => prepareSync(snapshot, mode, scope)))
             return
           }
           if (body.action === 'publish' && typeof body.expectedHead === 'string') {
-            sendJson(response, 200, await enqueue(() => publishSync(body.expectedHead as string, snapshot, mode)))
+            sendJson(response, 200, await enqueue(() => publishSync(body.expectedHead as string, snapshot, mode, scope)))
             return
           }
           throw new HttpError(400, '未知同步操作')

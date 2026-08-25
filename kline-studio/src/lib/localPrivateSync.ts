@@ -5,6 +5,7 @@ export const LOCAL_SYNC_AUTO_MARKER_KEY = 'kline-studio-private-sync-auto-marker
 export const BACKGROUND_SYNC_INTERVAL_MS = 60 * 60 * 1000
 const BACKGROUND_SYNC_DEDUP_WINDOW_MS = BACKGROUND_SYNC_INTERVAL_MS
 export type LocalSyncMode = 'manual' | 'background'
+export type LocalSyncScope = 'workspace' | 'history'
 
 export interface LocalSyncAutoMarker {
   fingerprint: string
@@ -78,6 +79,8 @@ export interface LocalSyncPublishResult {
   commit: string
   sha256: string
   verifiedSha256: string
+  submittedSha256: string
+  verifiedSubmittedSha256: string
 }
 
 export class LocalSyncConflictError extends Error {
@@ -121,8 +124,8 @@ async function request(body: Record<string, unknown>) {
   return payload
 }
 
-export async function prepareLocalPrivateSync(snapshot: PortableWorkspace, mode: LocalSyncMode = 'manual'): Promise<LocalSyncPrepareResult> {
-  const payload = await request({ action: 'prepare', mode, snapshot })
+export async function prepareLocalPrivateSync(snapshot: PortableWorkspace, mode: LocalSyncMode = 'manual', scope: LocalSyncScope = 'workspace'): Promise<LocalSyncPrepareResult> {
+  const payload = await request({ action: 'prepare', mode, scope, snapshot })
   if (payload.private !== true || typeof payload.head !== 'string') {
     throw new Error('私有仓库校验结果缺失，已停止同步')
   }
@@ -145,8 +148,8 @@ export async function prepareLocalPrivateSync(snapshot: PortableWorkspace, mode:
   }
 }
 
-export async function receiveLocalPrivateSync(): Promise<LocalSyncReceiveResult> {
-  const payload = await request({ action: 'receive' })
+export async function receiveLocalPrivateSync(scope: LocalSyncScope = 'workspace'): Promise<LocalSyncReceiveResult> {
+  const payload = await request({ action: 'receive', scope })
   if (payload.private !== true || typeof payload.head !== 'string') {
     throw new Error('私有仓库接收校验结果缺失，已停止接收')
   }
@@ -159,13 +162,16 @@ export async function receiveLocalPrivateSync(): Promise<LocalSyncReceiveResult>
   }
 }
 
-export async function publishLocalPrivateSync(expectedHead: string, snapshot: PortableWorkspace, mode: LocalSyncMode = 'manual'): Promise<LocalSyncPublishResult> {
-  const payload = await request({ action: 'publish', mode, expectedHead, snapshot })
+export async function publishLocalPrivateSync(expectedHead: string, snapshot: PortableWorkspace, mode: LocalSyncMode = 'manual', scope: LocalSyncScope = 'workspace'): Promise<LocalSyncPublishResult> {
+  const payload = await request({ action: 'publish', mode, scope, expectedHead, snapshot })
   if (payload.private !== true || typeof payload.path !== 'string' || typeof payload.latestPath !== 'string'
     || typeof payload.commit !== 'string' || typeof payload.sha256 !== 'string' || typeof payload.verifiedSha256 !== 'string') {
     throw new Error('远端备份验证结果缺失，未报告同步成功')
   }
   if (payload.sha256 !== payload.verifiedSha256) throw new Error('远端回下载 SHA-256 不一致，未报告同步成功')
+  const submittedSha256 = typeof payload.submittedSha256 === 'string' ? payload.submittedSha256 : payload.sha256
+  const verifiedSubmittedSha256 = typeof payload.verifiedSubmittedSha256 === 'string' ? payload.verifiedSubmittedSha256 : payload.verifiedSha256
+  if (submittedSha256 !== verifiedSubmittedSha256) throw new Error('远端做题历史回下载 SHA-256 不一致，未报告同步成功')
   return {
     ok: true,
     private: true,
@@ -174,6 +180,8 @@ export async function publishLocalPrivateSync(expectedHead: string, snapshot: Po
     commit: payload.commit,
     sha256: payload.sha256,
     verifiedSha256: payload.verifiedSha256,
+    submittedSha256,
+    verifiedSubmittedSha256,
   }
 }
 

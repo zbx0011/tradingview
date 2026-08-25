@@ -62,7 +62,7 @@ describe('local private repository sync client', () => {
 
   it('receives private snapshots without sending a local workspace', async () => {
     vi.stubGlobal('fetch', vi.fn(async (_input, init) => {
-      expect(JSON.parse(String(init?.body))).toEqual({ action: 'receive' })
+      expect(JSON.parse(String(init?.body))).toEqual({ action: 'receive', scope: 'workspace' })
       return new Response(JSON.stringify({
         ok: true,
         private: true,
@@ -76,6 +76,40 @@ describe('local private repository sync client', () => {
       private: true,
       head: 'receive-head',
       snapshots: [workspace],
+    })
+    vi.unstubAllGlobals()
+  })
+
+  it('marks history-only receive and publish requests without changing the workspace schema', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (_input, init) => {
+      const body = JSON.parse(String(init?.body)) as { action: string; scope: string }
+      if (body.action === 'receive') {
+        expect(body.scope).toBe('history')
+        return new Response(JSON.stringify({
+          ok: true,
+          private: true,
+          head: 'history-head',
+          snapshots: [workspace],
+          sourcePaths: ['backups/history.json'],
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      expect(body).toMatchObject({ action: 'publish', scope: 'history' })
+      return new Response(JSON.stringify({
+        ok: true,
+        private: true,
+        path: 'backups/merged/history.json',
+        latestPath: 'backups/merged/latest.json',
+        commit: 'history-commit',
+        sha256: 'workspace-sha',
+        verifiedSha256: 'workspace-sha',
+        submittedSha256: 'history-sha',
+        verifiedSubmittedSha256: 'history-sha',
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }))
+
+    await expect(receiveLocalPrivateSync('history')).resolves.toMatchObject({ head: 'history-head' })
+    await expect(publishLocalPrivateSync('history-head', workspace, 'manual', 'history')).resolves.toMatchObject({
+      submittedSha256: 'history-sha',
     })
     vi.unstubAllGlobals()
   })

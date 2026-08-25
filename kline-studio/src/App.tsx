@@ -45,11 +45,11 @@ import {
   parseDecisionReplayFavoritesChecked, saveDecisionReplayFavorites, toggleDecisionReplayFavorite,
 } from './lib/decisionReplayFavorites'
 import { collectPortableWorkspace, downloadPortableWorkspace, loadPortableWorkspaceRecovery, parsePortableWorkspace, restorePortableWorkspaceRecovery, restorePortableWorkspaceSafely } from './lib/portableWorkspace'
-import { mergePortableWorkspaceProgress } from './lib/workspaceProgressSync'
+import { decisionHistoryWorkspace, mergePortableWorkspaceProgress, receivePortableWorkspaceSafely } from './lib/workspaceProgressSync'
 import {
-  LOCAL_SYNC_AUTO_MARKER_KEY, LocalSyncConflictError, localPrivateSyncAvailable,
+  LocalSyncConflictError, localPrivateSyncAvailable,
   prepareLocalPrivateSync, publishLocalPrivateSync, receiveLocalPrivateSync, runWithLocalPrivateSyncLock,
-  sha256PortableWorkspace, shouldSkipRecentBackgroundSync,
+  sha256PortableWorkspace, type LocalSyncScope,
 } from './lib/localPrivateSync'
 import { replayDecisionCandidates, type ReplayDecisionCandidate } from './lib/replayTradeRegistry'
 import {
@@ -64,7 +64,7 @@ import {
 type ChartType = 'candles' | 'hollow' | 'line' | 'area'
 type Theme = 'dark' | 'light'
 type PrivateSyncStatus = 'checking' | 'ready' | 'syncing' | 'synced' | 'received' | 'unavailable' | 'error'
-type PrivateSyncOperation = 'sync' | 'receive' | null
+type PrivateSyncOperation = 'sync' | 'receive' | 'history-sync' | 'history-receive' | null
 
 const DEFAULT_INDICATORS: IndicatorSettings = {
   ma: false, ema: true, boll: false, volume: true,
@@ -222,9 +222,6 @@ function App() {
   const decisionSessionStartLockRef = useRef(false)
   const decisionFavoriteKeysRef = useRef(decisionFavoriteKeys)
   const privateSyncInFlightRef = useRef(false)
-  const privateSyncQueuedRef = useRef(false)
-  const privateSyncLastFingerprintRef = useRef<string | null>(null)
-  const privateSyncRunnerRef = useRef<(manual?: boolean) => void>(() => undefined)
   const chartRef = useRef<ChartSurfaceHandle>(null)
   const workspaceRef = useRef<HTMLDivElement>(null)
   const drawingClipboardRef = useRef<Drawing | null>(null)
@@ -1184,117 +1181,7 @@ function App() {
       window.setTimeout(() => window.location.reload(), 250)
     }).catch((error) => notify(`合并失败，本机记录未被覆盖：${error instanceof Error ? error.message : '无法读取备份文件'}`))
   }, [notify])
-  const syncPrivateRepository = useCallback((manual = true) => {
-    // Export/sync must include the latest in-memory key press even if the
-    // short interactive debounce has not fired yet.
-    if (decisionPersistTimerRef.current !== null) {
-      window.clearTimeout(decisionPersistTimerRef.current)
-      decisionPersistTimerRef.current = null
-    }
-    saveDecisionReplayStoreSnapshot(decisionStoreRef.current)
-    const currentFingerprint = JSON.stringify([loadDecisionReplayStore(), loadDecisionReplayFavorites()])
-    if (!manual && currentFingerprint === privateSyncLastFingerprintRef.current) {
-      setPrivateSyncStatus('synced')
-      return
-    }
-    if (!manual && shouldSkipRecentBackgroundSync(localStorage.getItem(LOCAL_SYNC_AUTO_MARKER_KEY), currentFingerprint)) {
-      privateSyncLastFingerprintRef.current = currentFingerprint
-      setPrivateSyncStatus('synced')
-      return
-    }
-    if (privateSyncInFlightRef.current) {
-      // A periodic background tick can wait for the next hour. Only queue a
-      // manual request made while a background sync is in flight.
-      if (manual) privateSyncQueuedRef.current = true
-      return
-    }
-    privateSyncInFlightRef.current = true
-    setPrivateSyncBusy(true)
-    setPrivateSyncOperation('sync')
-    setPrivateSyncStatus('syncing')
-    const syncMode = manual ? 'manual' : 'background'
-    const executeSync = async () => {
-      const before = collectPortableWorkspace()
-      const prepared = await prepareLocalPrivateSync(before, syncMode)
-      if (prepared.deduplicated) {
-        privateSyncLastFingerprintRef.current = currentFingerprint
-        setPrivateSyncStatus('synced')
-        return
-      }
-      let summary = mergePortableWorkspaceProgress(prepared.snapshots, localStorage, { persistRecovery: false })
-      const afterMergeFingerprint = JSON.stringify([loadDecisionReplayStore(), loadDecisionReplayFavorites()])
-      if (syncMode === 'background' && afterMergeFingerprint === currentFingerprint) {
-        privateSyncLastFingerprintRef.current = afterMergeFingerprint
-        try {
-          localStorage.setItem(LOCAL_SYNC_AUTO_MARKER_KEY, JSON.stringify({
-            fingerprint: afterMergeFingerprint,
-            commit: prepared.head,
-            savedAt: Date.now(),
-          }))
-        } catch {
-          // The marker is only a cross-tab optimization; there was no new progress to publish.
-        }
-        setPrivateSyncStatus('synced')
-        return
-      }
-      let expectedHead = prepared.head
-      let merged = collectPortableWorkspace()
-      let published = null
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        try {
-          published = await publishLocalPrivateSync(expectedHead, merged, syncMode)
-          break
-        } catch (error) {
-          if (!(error instanceof LocalSyncConflictError) || attempt === 2) throw error
-          summary = mergePortableWorkspaceProgress(error.snapshots, localStorage, { persistRecovery: false })
-          expectedHead = error.head
-          merged = collectPortableWorkspace()
-        }
-      }
-      if (!published) throw new Error('私有仓库连续发生更新，已保留本机合并结果但未报告上传成功')
-      const localSha = await sha256PortableWorkspace(merged)
-      if (localSha !== published.sha256) throw new Error('浏览器备份与远端备份 SHA-256 不一致，未报告同步成功')
-      const syncedStore = loadDecisionReplayStore()
-      const syncedFavorites = loadDecisionReplayFavorites()
-      privateSyncLastFingerprintRef.current = JSON.stringify([syncedStore, syncedFavorites])
-      try {
-        localStorage.setItem(LOCAL_SYNC_AUTO_MARKER_KEY, JSON.stringify({
-          fingerprint: privateSyncLastFingerprintRef.current,
-          commit: published.commit,
-          savedAt: Date.now(),
-        }))
-      } catch {
-        // The marker is only a cross-tab optimization; verified history sync has already succeeded.
-      }
-      setDecisionStore(syncedStore)
-      setDecisionFavoriteKeys(syncedFavorites)
-      setPrivateSyncStatus('synced')
-      if (manual) notify(`私有仓库同步成功：${summary.sessionCount} 场、${summary.resultCount} 笔、${summary.favoriteCount} 个收藏；远端已回下载校验`)
-    }
-    void runWithLocalPrivateSyncLock(executeSync, manual).then((result) => {
-      if (!result.acquired) setPrivateSyncStatus('ready')
-    }).catch((error) => {
-      setPrivateSyncStatus('error')
-      if (manual) {
-        notify(`私有仓库同步失败：${error instanceof Error ? error.message : '未知错误'}；本机记录没有被完整覆盖`)
-      } else {
-        console.error('[Kline Studio] 私有仓库后台同步失败', error)
-      }
-    }).finally(() => {
-      privateSyncInFlightRef.current = false
-      setPrivateSyncBusy(false)
-      setPrivateSyncOperation(null)
-      if (privateSyncQueuedRef.current) {
-        privateSyncQueuedRef.current = false
-        window.setTimeout(() => privateSyncRunnerRef.current(true), 1000)
-      }
-    })
-  }, [notify])
-  useEffect(() => {
-    privateSyncRunnerRef.current = syncPrivateRepository
-  }, [syncPrivateRepository])
-
-  const receivePrivateRepository = useCallback(() => {
+  const syncPrivateRepository = useCallback((scope: LocalSyncScope = 'workspace') => {
     if (privateSyncInFlightRef.current) return
     if (decisionPersistTimerRef.current !== null) {
       window.clearTimeout(decisionPersistTimerRef.current)
@@ -1304,11 +1191,70 @@ function App() {
     saveDecisionReplayFavorites(decisionFavoriteKeysRef.current)
     privateSyncInFlightRef.current = true
     setPrivateSyncBusy(true)
-    setPrivateSyncOperation('receive')
+    setPrivateSyncOperation(scope === 'history' ? 'history-sync' : 'sync')
+    setPrivateSyncStatus('syncing')
+    const executeSync = async () => {
+      const localWorkspace = collectPortableWorkspace()
+      const before = scope === 'history' ? decisionHistoryWorkspace(localWorkspace) : localWorkspace
+      const prepared = await prepareLocalPrivateSync(before, 'manual', scope)
+      let summary = mergePortableWorkspaceProgress(prepared.snapshots, localStorage, { persistRecovery: false })
+      let expectedHead = prepared.head
+      let merged = scope === 'history' ? decisionHistoryWorkspace(collectPortableWorkspace()) : collectPortableWorkspace()
+      let published = null
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          published = await publishLocalPrivateSync(expectedHead, merged, 'manual', scope)
+          break
+        } catch (error) {
+          if (!(error instanceof LocalSyncConflictError) || attempt === 2) throw error
+          summary = mergePortableWorkspaceProgress(error.snapshots, localStorage, { persistRecovery: false })
+          expectedHead = error.head
+          merged = scope === 'history' ? decisionHistoryWorkspace(collectPortableWorkspace()) : collectPortableWorkspace()
+        }
+      }
+      if (!published) throw new Error('私有仓库连续发生更新，已保留本机合并结果但未报告上传成功')
+      const localSha = await sha256PortableWorkspace(merged)
+      const remoteSha = scope === 'history' ? published.submittedSha256 : published.sha256
+      if (localSha !== remoteSha) throw new Error(`${scope === 'history' ? '做题历史' : '完整工作区'}与远端回下载 SHA-256 不一致，未报告同步成功`)
+      const syncedStore = loadDecisionReplayStore()
+      const syncedFavorites = loadDecisionReplayFavorites()
+      decisionStoreRef.current = syncedStore
+      decisionFavoriteKeysRef.current = syncedFavorites
+      setDecisionStore(syncedStore)
+      setDecisionFavoriteKeys(syncedFavorites)
+      setPrivateSyncStatus('synced')
+      notify(`${scope === 'history' ? '仅同步做题历史' : '一键同步'}完成：${summary.sessionCount} 场、${summary.resultCount} 笔、${summary.favoriteCount} 个收藏；远端已回下载校验`)
+    }
+    void runWithLocalPrivateSyncLock(executeSync, true).then((result) => {
+      if (!result.acquired) setPrivateSyncStatus('ready')
+    }).catch((error) => {
+      setPrivateSyncStatus('error')
+      notify(`${scope === 'history' ? '仅同步做题历史' : '一键同步'}失败：${error instanceof Error ? error.message : '未知错误'}；本机记录没有被完整覆盖`)
+    }).finally(() => {
+      privateSyncInFlightRef.current = false
+      setPrivateSyncBusy(false)
+      setPrivateSyncOperation(null)
+    })
+  }, [notify])
+
+  const receivePrivateRepository = useCallback((scope: LocalSyncScope = 'workspace') => {
+    if (privateSyncInFlightRef.current) return
+    if (decisionPersistTimerRef.current !== null) {
+      window.clearTimeout(decisionPersistTimerRef.current)
+      decisionPersistTimerRef.current = null
+    }
+    saveDecisionReplayStoreSnapshot(decisionStoreRef.current)
+    saveDecisionReplayFavorites(decisionFavoriteKeysRef.current)
+    privateSyncInFlightRef.current = true
+    setPrivateSyncBusy(true)
+    setPrivateSyncOperation(scope === 'history' ? 'history-receive' : 'receive')
     setPrivateSyncStatus('syncing')
     const executeReceive = async () => {
-      const received = await receiveLocalPrivateSync()
-      const summary = mergePortableWorkspaceProgress(received.snapshots, localStorage)
+      const received = await receiveLocalPrivateSync(scope)
+      if (received.snapshots.length === 0) throw new Error('私有仓库没有可接收的备份')
+      const summary = scope === 'history'
+        ? mergePortableWorkspaceProgress(received.snapshots, localStorage)
+        : receivePortableWorkspaceSafely(received.snapshots[0], localStorage)
       const receivedStore = loadDecisionReplayStore()
       const receivedFavorites = loadDecisionReplayFavorites()
       decisionStoreRef.current = receivedStore
@@ -1316,13 +1262,13 @@ function App() {
       setDecisionStore(receivedStore)
       setDecisionFavoriteKeys(receivedFavorites)
       setPrivateSyncStatus('received')
-      notify(`一键接收完成：已安全合并 ${summary.sessionCount} 场、${summary.resultCount} 笔、${summary.favoriteCount} 个收藏；本机独立记录已保留，本次没有上传`)
+      notify(`${scope === 'history' ? '仅接收做题历史' : '一键接收'}完成：${summary.sessionCount} 场、${summary.resultCount} 笔、${summary.favoriteCount} 个收藏；本机历史已保留，本次没有上传`)
     }
     void runWithLocalPrivateSyncLock(executeReceive, true).then((result) => {
       if (!result.acquired) setPrivateSyncStatus('ready')
     }).catch((error) => {
       setPrivateSyncStatus('error')
-      notify(`一键接收失败：${error instanceof Error ? error.message : '未知错误'}；本机记录没有被覆盖`)
+      notify(`${scope === 'history' ? '仅接收做题历史' : '一键接收'}失败：${error instanceof Error ? error.message : '未知错误'}；本机记录没有被覆盖`)
     }).finally(() => {
       privateSyncInFlightRef.current = false
       setPrivateSyncBusy(false)
@@ -2268,7 +2214,7 @@ function App() {
       />}
 
       {indicatorPanelOpen && <IndicatorPanel value={indicators} onChange={setIndicators} onClose={() => setIndicatorPanelOpen(false)} />}
-      {settingsOpen && <SettingsPanel theme={theme} onTheme={setTheme} onReset={resetWorkspace} onExportWorkspace={exportWorkspace} onMergeProgress={mergeWorkspaceProgress} onPrivateReceive={receivePrivateRepository} onPrivateSync={() => syncPrivateRepository(true)} privateSyncBusy={privateSyncBusy} privateSyncOperation={privateSyncOperation} privateSyncStatus={privateSyncStatus} onImportWorkspace={importWorkspace} onRestoreLastImport={restoreLastWorkspaceImport} canRestoreWorkspace={Boolean(loadPortableWorkspaceRecovery())} onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <SettingsPanel theme={theme} onTheme={setTheme} onReset={resetWorkspace} onExportWorkspace={exportWorkspace} onMergeProgress={mergeWorkspaceProgress} onPrivateReceive={() => receivePrivateRepository('workspace')} onPrivateSync={() => syncPrivateRepository('workspace')} onHistoryReceive={() => receivePrivateRepository('history')} onHistorySync={() => syncPrivateRepository('history')} privateSyncBusy={privateSyncBusy} privateSyncOperation={privateSyncOperation} privateSyncStatus={privateSyncStatus} onImportWorkspace={importWorkspace} onRestoreLastImport={restoreLastWorkspaceImport} canRestoreWorkspace={Boolean(loadPortableWorkspaceRecovery())} onClose={() => setSettingsOpen(false)} />}
       {quickSearchOpen && <QuickSearchDialog items={quickSearchItems} query={quickSearchQuery} onQuery={setQuickSearchQuery} onSelect={runQuickSearchItem} onClose={() => setQuickSearchOpen(false)} />}
       {intervalDialogOpen && <IntervalShortcutDialog value={intervalDraft} onChange={setIntervalDraft} onApply={applyIntervalInput} onClose={() => setIntervalDialogOpen(false)} />}
       {goToDateOpen && <GoToDateDialog initialTime={data.at(-1)?.time ?? 0} onSelect={(time) => { chartRef.current?.goToTime(time); setGoToDateOpen(false); notify('已转到指定日期') }} onClose={() => setGoToDateOpen(false)} />}
@@ -2365,7 +2311,7 @@ function IndicatorPanel({ value, onChange, onClose }: { value: IndicatorSettings
   return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section className="modal indicator-modal" role="dialog" aria-modal="true" aria-label="指标设置"><div className="modal-header"><div><b>技术指标</b><small>叠加到主图的本地计算指标</small></div><button onClick={onClose} aria-label="关闭"><X size={18} /></button></div><div className="indicator-list">{rows.map((row) => <div className="indicator-row" key={row.key}><span className="indicator-color" style={{ background: row.color }} /><div><b>{row.name}</b><small>{row.detail}</small></div><label className="switch" aria-label={`${row.name}开关`} title={`${row.name}开关`}><input type="checkbox" checked={value[row.key]} onChange={(event) => onChange({ ...value, [row.key]: event.target.checked })} /><span /></label></div>)}</div><div className="parameter-grid"><label>MA 周期<input type="number" min="2" max="200" value={value.maPeriod} onChange={(event) => onChange({ ...value, maPeriod: Number(event.target.value) })} /></label><label>EMA 周期<input type="number" min="2" max="200" value={value.emaPeriod} onChange={(event) => onChange({ ...value, emaPeriod: Number(event.target.value) })} /></label><label>BOLL 周期<input type="number" min="2" max="200" value={value.bollPeriod} onChange={(event) => onChange({ ...value, bollPeriod: Number(event.target.value) })} /></label><label>标准差<input type="number" step="0.1" min="0.1" max="5" value={value.bollDeviation} onChange={(event) => onChange({ ...value, bollDeviation: Number(event.target.value) })} /></label></div><div className="modal-footer"><button onClick={() => onChange(DEFAULT_INDICATORS)}>恢复指标默认</button><button className="primary" onClick={onClose}>完成</button></div></section></div>
 }
 
-function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProgress, onPrivateReceive, onPrivateSync, privateSyncBusy, privateSyncOperation, privateSyncStatus, onImportWorkspace, onRestoreLastImport, canRestoreWorkspace, onClose }: {
+function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProgress, onPrivateReceive, onPrivateSync, onHistoryReceive, onHistorySync, privateSyncBusy, privateSyncOperation, privateSyncStatus, onImportWorkspace, onRestoreLastImport, canRestoreWorkspace, onClose }: {
   theme: Theme
   onTheme: (theme: Theme) => void
   onReset: () => void
@@ -2373,6 +2319,8 @@ function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProg
   onMergeProgress: (files: readonly File[]) => void
   onPrivateReceive: () => void
   onPrivateSync: () => void
+  onHistoryReceive: () => void
+  onHistorySync: () => void
   privateSyncBusy: boolean
   privateSyncOperation: PrivateSyncOperation
   privateSyncStatus: PrivateSyncStatus
@@ -2387,9 +2335,11 @@ function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProg
     <div className="panel-heading"><div><b>图表设置</b><small>外观与工作区</small></div><button onClick={onClose} aria-label="关闭"><X size={18} /></button></div>
     <section><h3>外观</h3><div className="theme-options"><button className={theme === 'dark' ? 'active' : ''} onClick={() => onTheme('dark')}><Moon size={18} />深色</button><button className={theme === 'light' ? 'active' : ''} onClick={() => onTheme('light')}><Sun size={18} />亮色</button></div></section>
     <section><h3>交互说明</h3><ul><li>鼠标滚轮：水平缩放</li><li>拖拽主图：平移时间轴</li><li>底部“适应”：显示全部数据</li><li>Shift+↓：播放 / 暂停回放</li><li>Shift+→：回放前进一格</li><li>Delete：删除选中绘图</li><li>Ctrl+Z：撤销</li><li>Ctrl+Y / Ctrl+Shift+Z：重做</li></ul></section>
-    <section><h3>跨电脑同步</h3><p>“一键接收”只拉取并安全合并到本机，不上传；“一键同步”会先接收合并，再上传并回下载校验。两个动作都只在点击时执行。</p><small className="private-sync-status">{privateSyncStatus === 'syncing' ? (privateSyncOperation === 'receive' ? '正在从私有仓库接收并合并…' : '正在合并、上传并校验…') : privateSyncStatus === 'received' ? '一键接收完成，本次没有上传' : privateSyncStatus === 'synced' ? '一键同步完成，远端 SHA-256 已验证' : privateSyncStatus === 'ready' ? '后台服务已连接，等待手动操作' : privateSyncStatus === 'unavailable' ? '当前不是本机服务，无法使用私有仓库同步' : privateSyncStatus === 'error' ? '上次手动操作失败，可点击重试' : '正在检查后台服务…'}</small><div className="workspace-transfer-actions">
+    <section><h3>跨电脑同步</h3><p>完整操作包含工作区设置和做题历史；“仅…做题历史”只处理场次、逐笔结果、收藏与已见题目，不修改图表设置。所有动作都只在点击时执行。</p><small className="private-sync-status">{privateSyncStatus === 'syncing' ? (privateSyncOperation === 'receive' ? '正在接收完整工作区…' : privateSyncOperation === 'history-receive' ? '正在接收做题历史…' : privateSyncOperation === 'history-sync' ? '正在同步做题历史…' : '正在同步完整工作区…') : privateSyncStatus === 'received' ? '接收完成，本次没有上传' : privateSyncStatus === 'synced' ? '同步完成，远端 SHA-256 已验证' : privateSyncStatus === 'ready' ? '后台服务已连接，等待手动操作' : privateSyncStatus === 'unavailable' ? '当前不是本机服务，无法使用私有仓库同步' : privateSyncStatus === 'error' ? '上次手动操作失败，可点击重试' : '正在检查后台服务…'}</small><div className="workspace-transfer-actions">
       <button type="button" disabled={privateSyncBusy} onClick={onPrivateReceive}><Download size={16} />{privateSyncOperation === 'receive' ? '正在接收…' : '一键接收'}</button>
       <button type="button" className="merge-progress" disabled={privateSyncBusy} onClick={onPrivateSync}><RefreshCcw size={16} />{privateSyncOperation === 'sync' ? '正在同步…' : '一键同步'}</button>
+      <button type="button" disabled={privateSyncBusy} onClick={onHistoryReceive}><History size={16} />{privateSyncOperation === 'history-receive' ? '正在接收历史…' : '仅接收做题历史'}</button>
+      <button type="button" className="merge-progress" disabled={privateSyncBusy} onClick={onHistorySync}><RefreshCcw size={16} />{privateSyncOperation === 'history-sync' ? '正在同步历史…' : '仅同步做题历史'}</button>
       <button type="button" onClick={onExportWorkspace}><Download size={16} />下载同步备份</button>
       <button type="button" className="merge-progress" onClick={() => mergeInputRef.current?.click()}><Upload size={16} />上传并合并备份</button>
       <button type="button" disabled={!canRestoreWorkspace} onClick={onRestoreLastImport}><History size={16} />撤销上次导入</button>

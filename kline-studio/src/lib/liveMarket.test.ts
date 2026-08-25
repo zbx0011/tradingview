@@ -16,13 +16,13 @@ describe('real market history', () => {
     expect(getDecisionReplayCandles('XAUUSD')).toBeNull()
   })
 
-  it('ships chronological one-minute snapshots for the four live symbols', () => {
+  it('ships chronological snapshots at each manifest resolution for the four live symbols', () => {
     for (const symbol of ['XAUUSD', 'XAGUSD', 'US500', 'BTCUSDT.P'] as const) {
       const metadata = snapshotManifest.series[symbol]
       const payload = JSON.parse(readFileSync(path.join(process.cwd(), 'public', metadata.file), 'utf8')) as { rows: number[][] }
       expect(payload.rows.length).toBe(metadata.count)
       expect(payload.rows.length).toBeGreaterThan(10_000)
-      expect(payload.rows[1][0] - payload.rows[0][0]).toBe(60)
+      expect(payload.rows[1][0] - payload.rows[0][0]).toBe(Number(metadata.resolution) * 60)
       expect(payload.rows.at(-1)![0]).toBeGreaterThan(payload.rows[0][0])
       expect(hasMarketSnapshot(symbol)).toBe(true)
       expect(getSnapshotStatus(symbol).kind).toBe('snapshot')

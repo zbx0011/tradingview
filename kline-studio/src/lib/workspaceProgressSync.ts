@@ -35,6 +35,26 @@ export interface WorkspaceProgressMergeOptions {
   persistRecovery?: boolean
 }
 
+export function decisionHistoryWorkspace(workspace: PortableWorkspace): PortableWorkspace {
+  return {
+    ...workspace,
+    entries: Object.fromEntries(Object.entries(workspace.entries).filter(([key]) => (
+      key === DECISION_REPLAY_STORAGE_KEY || key === DECISION_REPLAY_FAVORITES_STORAGE_KEY
+    ))),
+  }
+}
+
+function workspaceMemoryStorage(workspace: PortableWorkspace): StorageLike {
+  const values = new Map(Object.entries(workspace.entries))
+  return {
+    get length() { return values.size },
+    key: (index) => [...values.keys()][index] ?? null,
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => { values.set(key, value) },
+    removeItem: (key) => { values.delete(key) },
+  }
+}
+
 function readDecisionStore(raw: string | null, label: string): DecisionReplayStore {
   if (raw === null) return emptyDecisionReplayStore()
   const store = parseDecisionReplayStoreChecked(raw)
@@ -112,4 +132,27 @@ export function mergePortableWorkspaceProgress(
     resultCount: mergedStore.sessions.reduce((total, session) => total + sessionResults(session).length, 0),
     favoriteCount: mergedFavorites.length,
   }
+}
+
+/**
+ * Receive remote workspace settings while preserving and merging both computers' decision history.
+ * The complete result is staged in memory before the real browser storage is touched.
+ */
+export function receivePortableWorkspaceSafely(
+  remote: PortableWorkspace,
+  storage: StorageLike,
+): WorkspaceProgressMergeSummary {
+  const local = collectPortableWorkspace(storage)
+  const stagedStorage = workspaceMemoryStorage(remote)
+  const summary = mergePortableWorkspaceProgress([decisionHistoryWorkspace(local)], stagedStorage, { persistRecovery: false })
+  const staged = collectPortableWorkspace(stagedStorage)
+  savePortableWorkspaceRecovery(local, storage)
+  try {
+    restorePortableWorkspace(staged, storage)
+  } catch (error) {
+    restorePortableWorkspace(local, storage)
+    savePortableWorkspaceRecovery(local, storage)
+    throw error
+  }
+  return summary
 }

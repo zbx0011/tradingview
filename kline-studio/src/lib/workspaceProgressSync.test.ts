@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { DECISION_REPLAY_STORAGE_KEY, parseDecisionReplayStore, type DecisionReplaySession, type DecisionReplayStore } from './decisionReplay'
 import { DECISION_REPLAY_FAVORITES_STORAGE_KEY } from './decisionReplayFavorites'
 import { PORTABLE_WORKSPACE_RECOVERY_STORAGE_KEY, loadPortableWorkspaceRecovery, type PortableWorkspace } from './portableWorkspace'
-import { mergePortableWorkspaceProgress } from './workspaceProgressSync'
+import { mergePortableWorkspaceProgress, receivePortableWorkspaceSafely } from './workspaceProgressSync'
 
 function session(id: string, startedAt: number): DecisionReplaySession {
   return {
@@ -126,5 +126,27 @@ describe('workspace progress sync', () => {
     ], storage, { persistRecovery: false })).toMatchObject({ sessionCount: 2, resultCount: 2 })
     expect(storage.getItem(PORTABLE_WORKSPACE_RECOVERY_STORAGE_KEY)).toBeNull()
     expect(storage.getItem('kline-studio-workspace-v1')).toBe('keep-local-settings')
+  })
+
+  it('receives remote settings while merging and preserving local decision history', () => {
+    const local = store(session('local', 1000))
+    const storage = createStorage({
+      [DECISION_REPLAY_STORAGE_KEY]: JSON.stringify(local),
+      [DECISION_REPLAY_FAVORITES_STORAGE_KEY]: JSON.stringify(['trade:local']),
+      'kline-studio-workspace-v1': 'local-settings',
+    })
+    const remote = snapshot(store(session('remote', 2000)), ['trade:remote'])
+    remote.entries['kline-studio-workspace-v1'] = 'remote-settings'
+
+    expect(receivePortableWorkspaceSafely(remote, storage)).toMatchObject({
+      sessionCount: 2,
+      resultCount: 2,
+      favoriteCount: 2,
+    })
+    expect(storage.getItem('kline-studio-workspace-v1')).toBe('remote-settings')
+    expect(parseDecisionReplayStore(storage.getItem(DECISION_REPLAY_STORAGE_KEY)).sessions.map((item) => item.id)).toEqual([
+      'remote', 'local',
+    ])
+    expect(loadPortableWorkspaceRecovery(storage)?.entries['kline-studio-workspace-v1']).toBe('local-settings')
   })
 })
