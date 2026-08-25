@@ -327,6 +327,18 @@ async function prepareSync(snapshot: PortableWorkspace, mode: SyncMode) {
   }
 }
 
+async function receiveSync() {
+  await verifyPrivateVisibility()
+  const state = await ensureRepositoryUpdated()
+  const collected = await collectProgressSnapshots(state.repositoryPath)
+  return {
+    ok: true,
+    private: true,
+    head: state.head,
+    ...collected,
+  }
+}
+
 async function publishSync(expectedHead: string, snapshot: PortableWorkspace, mode: SyncMode) {
   const state = await ensureRepositoryUpdated()
   if (state.head !== expectedHead) {
@@ -373,6 +385,10 @@ export function localPrivateSyncPlugin(): Plugin {
           }
           if (request.method !== 'POST') throw new HttpError(405, '只支持 GET 和 POST')
           const body = await readJsonRequest(request) as { action?: unknown; mode?: unknown; snapshot?: unknown; expectedHead?: unknown }
+          if (body.action === 'receive') {
+            sendJson(response, 200, await enqueue(receiveSync))
+            return
+          }
           const snapshot = workspaceFromUnknown(body.snapshot)
           const mode: SyncMode = body.mode === 'background' ? 'background' : 'manual'
           if (body.action === 'prepare') {

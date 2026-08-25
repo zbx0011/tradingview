@@ -62,6 +62,14 @@ export interface LocalSyncPrepareResult {
   sourcePaths: string[]
 }
 
+export interface LocalSyncReceiveResult {
+  ok: true
+  private: true
+  head: string
+  snapshots: PortableWorkspace[]
+  sourcePaths: string[]
+}
+
 export interface LocalSyncPublishResult {
   ok: true
   private: true
@@ -132,6 +140,20 @@ export async function prepareLocalPrivateSync(snapshot: PortableWorkspace, mode:
     deduplicated: false,
     head: payload.head,
     premerge: { path: premerge.path, commit: premerge.commit, sha256: premerge.sha256 },
+    snapshots: checkedSnapshots(payload.snapshots),
+    sourcePaths: Array.isArray(payload.sourcePaths) ? payload.sourcePaths.filter((item): item is string => typeof item === 'string') : [],
+  }
+}
+
+export async function receiveLocalPrivateSync(): Promise<LocalSyncReceiveResult> {
+  const payload = await request({ action: 'receive' })
+  if (payload.private !== true || typeof payload.head !== 'string') {
+    throw new Error('私有仓库接收校验结果缺失，已停止接收')
+  }
+  return {
+    ok: true,
+    private: true,
+    head: payload.head,
     snapshots: checkedSnapshots(payload.snapshots),
     sourcePaths: Array.isArray(payload.sourcePaths) ? payload.sourcePaths.filter((item): item is string => typeof item === 'string') : [],
   }

@@ -48,7 +48,7 @@ import { collectPortableWorkspace, downloadPortableWorkspace, loadPortableWorksp
 import { mergePortableWorkspaceProgress } from './lib/workspaceProgressSync'
 import {
   LOCAL_SYNC_AUTO_MARKER_KEY, LocalSyncConflictError, localPrivateSyncAvailable,
-  prepareLocalPrivateSync, publishLocalPrivateSync, runWithLocalPrivateSyncLock,
+  prepareLocalPrivateSync, publishLocalPrivateSync, receiveLocalPrivateSync, runWithLocalPrivateSyncLock,
   sha256PortableWorkspace, shouldSkipRecentBackgroundSync,
 } from './lib/localPrivateSync'
 import { replayDecisionCandidates, type ReplayDecisionCandidate } from './lib/replayTradeRegistry'
@@ -63,7 +63,8 @@ import {
 
 type ChartType = 'candles' | 'hollow' | 'line' | 'area'
 type Theme = 'dark' | 'light'
-type PrivateSyncStatus = 'checking' | 'ready' | 'syncing' | 'synced' | 'unavailable' | 'error'
+type PrivateSyncStatus = 'checking' | 'ready' | 'syncing' | 'synced' | 'received' | 'unavailable' | 'error'
+type PrivateSyncOperation = 'sync' | 'receive' | null
 
 const DEFAULT_INDICATORS: IndicatorSettings = {
   ma: false, ema: true, boll: false, volume: true,
@@ -196,6 +197,7 @@ function App() {
   const [toast, setToast] = useState('')
   const [privateSyncBusy, setPrivateSyncBusy] = useState(false)
   const [privateSyncStatus, setPrivateSyncStatus] = useState<PrivateSyncStatus>('checking')
+  const [privateSyncOperation, setPrivateSyncOperation] = useState<PrivateSyncOperation>(null)
   const [remoteMarket, setRemoteMarket] = useState<{ symbol: SymbolId; bars: Candle[]; status: MarketDataStatus } | null>(null)
   const [decisionHistoryBySymbol, setDecisionHistoryBySymbol] = useState<Partial<Record<SymbolId, Candle[]>>>({})
   const [marketLoading, setMarketLoading] = useState<{ symbol: SymbolId; label: string } | null>(null)
@@ -1208,6 +1210,7 @@ function App() {
     }
     privateSyncInFlightRef.current = true
     setPrivateSyncBusy(true)
+    setPrivateSyncOperation('sync')
     setPrivateSyncStatus('syncing')
     const syncMode = manual ? 'manual' : 'background'
     const executeSync = async () => {
@@ -1280,6 +1283,7 @@ function App() {
     }).finally(() => {
       privateSyncInFlightRef.current = false
       setPrivateSyncBusy(false)
+      setPrivateSyncOperation(null)
       if (privateSyncQueuedRef.current) {
         privateSyncQueuedRef.current = false
         window.setTimeout(() => privateSyncRunnerRef.current(true), 1000)
@@ -1289,6 +1293,42 @@ function App() {
   useEffect(() => {
     privateSyncRunnerRef.current = syncPrivateRepository
   }, [syncPrivateRepository])
+
+  const receivePrivateRepository = useCallback(() => {
+    if (privateSyncInFlightRef.current) return
+    if (decisionPersistTimerRef.current !== null) {
+      window.clearTimeout(decisionPersistTimerRef.current)
+      decisionPersistTimerRef.current = null
+    }
+    saveDecisionReplayStoreSnapshot(decisionStoreRef.current)
+    saveDecisionReplayFavorites(decisionFavoriteKeysRef.current)
+    privateSyncInFlightRef.current = true
+    setPrivateSyncBusy(true)
+    setPrivateSyncOperation('receive')
+    setPrivateSyncStatus('syncing')
+    const executeReceive = async () => {
+      const received = await receiveLocalPrivateSync()
+      const summary = mergePortableWorkspaceProgress(received.snapshots, localStorage)
+      const receivedStore = loadDecisionReplayStore()
+      const receivedFavorites = loadDecisionReplayFavorites()
+      decisionStoreRef.current = receivedStore
+      decisionFavoriteKeysRef.current = receivedFavorites
+      setDecisionStore(receivedStore)
+      setDecisionFavoriteKeys(receivedFavorites)
+      setPrivateSyncStatus('received')
+      notify(`一键接收完成：已安全合并 ${summary.sessionCount} 场、${summary.resultCount} 笔、${summary.favoriteCount} 个收藏；本机独立记录已保留，本次没有上传`)
+    }
+    void runWithLocalPrivateSyncLock(executeReceive, true).then((result) => {
+      if (!result.acquired) setPrivateSyncStatus('ready')
+    }).catch((error) => {
+      setPrivateSyncStatus('error')
+      notify(`一键接收失败：${error instanceof Error ? error.message : '未知错误'}；本机记录没有被覆盖`)
+    }).finally(() => {
+      privateSyncInFlightRef.current = false
+      setPrivateSyncBusy(false)
+      setPrivateSyncOperation(null)
+    })
+  }, [notify])
 
   useEffect(() => {
     let cancelled = false
@@ -2228,7 +2268,7 @@ function App() {
       />}
 
       {indicatorPanelOpen && <IndicatorPanel value={indicators} onChange={setIndicators} onClose={() => setIndicatorPanelOpen(false)} />}
-      {settingsOpen && <SettingsPanel theme={theme} onTheme={setTheme} onReset={resetWorkspace} onExportWorkspace={exportWorkspace} onMergeProgress={mergeWorkspaceProgress} onPrivateSync={() => syncPrivateRepository(true)} privateSyncBusy={privateSyncBusy} privateSyncStatus={privateSyncStatus} onImportWorkspace={importWorkspace} onRestoreLastImport={restoreLastWorkspaceImport} canRestoreWorkspace={Boolean(loadPortableWorkspaceRecovery())} onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <SettingsPanel theme={theme} onTheme={setTheme} onReset={resetWorkspace} onExportWorkspace={exportWorkspace} onMergeProgress={mergeWorkspaceProgress} onPrivateReceive={receivePrivateRepository} onPrivateSync={() => syncPrivateRepository(true)} privateSyncBusy={privateSyncBusy} privateSyncOperation={privateSyncOperation} privateSyncStatus={privateSyncStatus} onImportWorkspace={importWorkspace} onRestoreLastImport={restoreLastWorkspaceImport} canRestoreWorkspace={Boolean(loadPortableWorkspaceRecovery())} onClose={() => setSettingsOpen(false)} />}
       {quickSearchOpen && <QuickSearchDialog items={quickSearchItems} query={quickSearchQuery} onQuery={setQuickSearchQuery} onSelect={runQuickSearchItem} onClose={() => setQuickSearchOpen(false)} />}
       {intervalDialogOpen && <IntervalShortcutDialog value={intervalDraft} onChange={setIntervalDraft} onApply={applyIntervalInput} onClose={() => setIntervalDialogOpen(false)} />}
       {goToDateOpen && <GoToDateDialog initialTime={data.at(-1)?.time ?? 0} onSelect={(time) => { chartRef.current?.goToTime(time); setGoToDateOpen(false); notify('已转到指定日期') }} onClose={() => setGoToDateOpen(false)} />}
@@ -2325,14 +2365,16 @@ function IndicatorPanel({ value, onChange, onClose }: { value: IndicatorSettings
   return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section className="modal indicator-modal" role="dialog" aria-modal="true" aria-label="指标设置"><div className="modal-header"><div><b>技术指标</b><small>叠加到主图的本地计算指标</small></div><button onClick={onClose} aria-label="关闭"><X size={18} /></button></div><div className="indicator-list">{rows.map((row) => <div className="indicator-row" key={row.key}><span className="indicator-color" style={{ background: row.color }} /><div><b>{row.name}</b><small>{row.detail}</small></div><label className="switch" aria-label={`${row.name}开关`} title={`${row.name}开关`}><input type="checkbox" checked={value[row.key]} onChange={(event) => onChange({ ...value, [row.key]: event.target.checked })} /><span /></label></div>)}</div><div className="parameter-grid"><label>MA 周期<input type="number" min="2" max="200" value={value.maPeriod} onChange={(event) => onChange({ ...value, maPeriod: Number(event.target.value) })} /></label><label>EMA 周期<input type="number" min="2" max="200" value={value.emaPeriod} onChange={(event) => onChange({ ...value, emaPeriod: Number(event.target.value) })} /></label><label>BOLL 周期<input type="number" min="2" max="200" value={value.bollPeriod} onChange={(event) => onChange({ ...value, bollPeriod: Number(event.target.value) })} /></label><label>标准差<input type="number" step="0.1" min="0.1" max="5" value={value.bollDeviation} onChange={(event) => onChange({ ...value, bollDeviation: Number(event.target.value) })} /></label></div><div className="modal-footer"><button onClick={() => onChange(DEFAULT_INDICATORS)}>恢复指标默认</button><button className="primary" onClick={onClose}>完成</button></div></section></div>
 }
 
-function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProgress, onPrivateSync, privateSyncBusy, privateSyncStatus, onImportWorkspace, onRestoreLastImport, canRestoreWorkspace, onClose }: {
+function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProgress, onPrivateReceive, onPrivateSync, privateSyncBusy, privateSyncOperation, privateSyncStatus, onImportWorkspace, onRestoreLastImport, canRestoreWorkspace, onClose }: {
   theme: Theme
   onTheme: (theme: Theme) => void
   onReset: () => void
   onExportWorkspace: () => void
   onMergeProgress: (files: readonly File[]) => void
+  onPrivateReceive: () => void
   onPrivateSync: () => void
   privateSyncBusy: boolean
+  privateSyncOperation: PrivateSyncOperation
   privateSyncStatus: PrivateSyncStatus
   onImportWorkspace: (file: File) => void
   onRestoreLastImport: () => void
@@ -2345,8 +2387,9 @@ function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProg
     <div className="panel-heading"><div><b>图表设置</b><small>外观与工作区</small></div><button onClick={onClose} aria-label="关闭"><X size={18} /></button></div>
     <section><h3>外观</h3><div className="theme-options"><button className={theme === 'dark' ? 'active' : ''} onClick={() => onTheme('dark')}><Moon size={18} />深色</button><button className={theme === 'light' ? 'active' : ''} onClick={() => onTheme('light')}><Sun size={18} />亮色</button></div></section>
     <section><h3>交互说明</h3><ul><li>鼠标滚轮：水平缩放</li><li>拖拽主图：平移时间轴</li><li>底部“适应”：显示全部数据</li><li>Shift+↓：播放 / 暂停回放</li><li>Shift+→：回放前进一格</li><li>Delete：删除选中绘图</li><li>Ctrl+Z：撤销</li><li>Ctrl+Y / Ctrl+Shift+Z：重做</li></ul></section>
-    <section><h3>跨电脑同步</h3><p>仅在你点击“私有仓库一键同步”时执行：先保护本机记录，再从 PRIVATE 仓库拉取并安全合并，最后上传并回下载校验。启动网站和日常做题都不会自动同步。</p><small className="private-sync-status">{privateSyncStatus === 'syncing' ? '正在手动同步…' : privateSyncStatus === 'synced' ? '手动同步完成，远端 SHA-256 已验证' : privateSyncStatus === 'ready' ? '后台服务已连接，等待手动同步' : privateSyncStatus === 'unavailable' ? '当前不是本机服务，无法使用私有仓库同步' : privateSyncStatus === 'error' ? '上次手动同步失败，可点击重试' : '正在检查后台服务…'}</small><div className="workspace-transfer-actions">
-      <button type="button" className="merge-progress" disabled={privateSyncBusy} onClick={onPrivateSync}><RefreshCcw size={16} />{privateSyncBusy ? '正在校验并同步…' : '私有仓库一键同步'}</button>
+    <section><h3>跨电脑同步</h3><p>“一键接收”只拉取并安全合并到本机，不上传；“一键同步”会先接收合并，再上传并回下载校验。两个动作都只在点击时执行。</p><small className="private-sync-status">{privateSyncStatus === 'syncing' ? (privateSyncOperation === 'receive' ? '正在从私有仓库接收并合并…' : '正在合并、上传并校验…') : privateSyncStatus === 'received' ? '一键接收完成，本次没有上传' : privateSyncStatus === 'synced' ? '一键同步完成，远端 SHA-256 已验证' : privateSyncStatus === 'ready' ? '后台服务已连接，等待手动操作' : privateSyncStatus === 'unavailable' ? '当前不是本机服务，无法使用私有仓库同步' : privateSyncStatus === 'error' ? '上次手动操作失败，可点击重试' : '正在检查后台服务…'}</small><div className="workspace-transfer-actions">
+      <button type="button" disabled={privateSyncBusy} onClick={onPrivateReceive}><Download size={16} />{privateSyncOperation === 'receive' ? '正在接收…' : '一键接收'}</button>
+      <button type="button" className="merge-progress" disabled={privateSyncBusy} onClick={onPrivateSync}><RefreshCcw size={16} />{privateSyncOperation === 'sync' ? '正在同步…' : '一键同步'}</button>
       <button type="button" onClick={onExportWorkspace}><Download size={16} />下载同步备份</button>
       <button type="button" className="merge-progress" onClick={() => mergeInputRef.current?.click()}><Upload size={16} />上传并合并备份</button>
       <button type="button" disabled={!canRestoreWorkspace} onClick={onRestoreLastImport}><History size={16} />撤销上次导入</button>

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   BACKGROUND_SYNC_INTERVAL_MS, LocalSyncConflictError, localPrivateSyncAvailable, parseLocalSyncAutoMarker,
-  prepareLocalPrivateSync, publishLocalPrivateSync, runWithLocalPrivateSyncLock, shouldSkipRecentBackgroundSync,
+  prepareLocalPrivateSync, publishLocalPrivateSync, receiveLocalPrivateSync, runWithLocalPrivateSyncLock, shouldSkipRecentBackgroundSync,
 } from './localPrivateSync'
 import type { PortableWorkspace } from './portableWorkspace'
 
@@ -57,6 +57,26 @@ describe('local private repository sync client', () => {
       snapshots: [workspace],
     })
     expect(fetch).toHaveBeenCalledWith('/__kline_studio_sync', expect.objectContaining({ method: 'POST' }))
+    vi.unstubAllGlobals()
+  })
+
+  it('receives private snapshots without sending a local workspace', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (_input, init) => {
+      expect(JSON.parse(String(init?.body))).toEqual({ action: 'receive' })
+      return new Response(JSON.stringify({
+        ok: true,
+        private: true,
+        head: 'receive-head',
+        snapshots: [workspace],
+        sourcePaths: ['backups/merged/latest.json'],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }))
+
+    await expect(receiveLocalPrivateSync()).resolves.toMatchObject({
+      private: true,
+      head: 'receive-head',
+      snapshots: [workspace],
+    })
     vi.unstubAllGlobals()
   })
 
