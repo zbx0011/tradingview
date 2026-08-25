@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { DECISION_REPLAY_STORAGE_KEY, parseDecisionReplayStore, type DecisionReplaySession, type DecisionReplayStore } from './decisionReplay'
 import { DECISION_REPLAY_FAVORITES_STORAGE_KEY } from './decisionReplayFavorites'
 import { PORTABLE_WORKSPACE_RECOVERY_STORAGE_KEY, loadPortableWorkspaceRecovery, type PortableWorkspace } from './portableWorkspace'
-import { mergePortableWorkspaceProgress, receivePortableWorkspaceSafely } from './workspaceProgressSync'
+import { mergePortableWorkspaceProgress, receivePortableWorkspaceSafely, receivePortableWorkspaceSnapshotsSafely } from './workspaceProgressSync'
 
 function session(id: string, startedAt: number): DecisionReplaySession {
   return {
@@ -146,6 +146,28 @@ describe('workspace progress sync', () => {
     expect(storage.getItem('kline-studio-workspace-v1')).toBe('remote-settings')
     expect(parseDecisionReplayStore(storage.getItem(DECISION_REPLAY_STORAGE_KEY)).sessions.map((item) => item.id)).toEqual([
       'remote', 'local',
+    ])
+    expect(loadPortableWorkspaceRecovery(storage)?.entries['kline-studio-workspace-v1']).toBe('local-settings')
+  })
+
+  it('receives settings from latest while recovering history from every before-sync snapshot', () => {
+    const storage = createStorage({
+      [DECISION_REPLAY_STORAGE_KEY]: JSON.stringify(store(session('local', 1000))),
+      [DECISION_REPLAY_FAVORITES_STORAGE_KEY]: JSON.stringify(['trade:local']),
+      'kline-studio-workspace-v1': 'local-settings',
+    })
+    const latest = snapshot(store(session('stale-latest', 2000)), ['trade:stale'])
+    latest.entries['kline-studio-workspace-v1'] = 'remote-settings'
+    const completedBeforeSync = snapshot(store(session('completed-before-sync', 3000)), ['trade:completed'])
+
+    expect(receivePortableWorkspaceSnapshotsSafely([latest, completedBeforeSync], storage)).toMatchObject({
+      sessionCount: 3,
+      resultCount: 3,
+      favoriteCount: 3,
+    })
+    expect(storage.getItem('kline-studio-workspace-v1')).toBe('remote-settings')
+    expect(parseDecisionReplayStore(storage.getItem(DECISION_REPLAY_STORAGE_KEY)).sessions.map((item) => item.id)).toEqual([
+      'completed-before-sync', 'stale-latest', 'local',
     ])
     expect(loadPortableWorkspaceRecovery(storage)?.entries['kline-studio-workspace-v1']).toBe('local-settings')
   })

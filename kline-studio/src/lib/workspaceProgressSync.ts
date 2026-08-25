@@ -156,3 +156,18 @@ export function receivePortableWorkspaceSafely(
   }
   return summary
 }
+
+/** Adopt the first snapshot's settings and merge history from every preserved remote snapshot. */
+export function receivePortableWorkspaceSnapshotsSafely(
+  snapshots: readonly PortableWorkspace[],
+  storage: StorageLike,
+): WorkspaceProgressMergeSummary {
+  if (snapshots.length === 0) throw new Error('没有可接收的工作区备份')
+  let summary = receivePortableWorkspaceSafely(snapshots[0], storage)
+  if (snapshots.length > 1) {
+    // Keep the recovery created before the settings restore; a second recovery
+    // here would replace it with an already-mutated intermediate workspace.
+    summary = mergePortableWorkspaceProgress(snapshots.slice(1), storage, { persistRecovery: false })
+  }
+  return summary
+}

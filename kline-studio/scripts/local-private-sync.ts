@@ -408,9 +408,16 @@ async function latestMergedWorkspace(repositoryPath: string) {
 async function receiveSync(scope: SyncScope) {
   await verifyPrivateVisibility()
   const state = await ensureRepositoryUpdated()
+  const history = await collectProgressSnapshots(state.repositoryPath)
   const collected = scope === 'history'
-    ? await collectProgressSnapshots(state.repositoryPath)
-    : await latestMergedWorkspace(state.repositoryPath).then(({ workspace, relativePath }) => ({ snapshots: [workspace], sourcePaths: [relativePath] }))
+    ? history
+    : await latestMergedWorkspace(state.repositoryPath).then(({ workspace, relativePath }) => ({
+      // Full receive adopts settings from the canonical latest workspace, then
+      // scans every history backup. A failed two-phase publish must never hide
+      // a more complete session that was already preserved in before-sync.
+      snapshots: [workspace, ...history.snapshots],
+      sourcePaths: [relativePath, ...history.sourcePaths],
+    }))
   return {
     ok: true,
     private: true,
@@ -494,6 +501,9 @@ export function localPrivateSyncPlugin(): Plugin {
           }
           const snapshot = workspaceFromUnknown(body.snapshot)
           const mode: SyncMode = body.mode === 'background' ? 'background' : 'manual'
+          if (mode === 'background') {
+            throw new HttpError(409, '自动同步已永久禁用；请在页面中使用手动接收或手动同步按钮')
+          }
           if (body.action === 'prepare') {
             sendJson(response, 200, await enqueue(() => prepareSync(snapshot, mode, scope)))
             return

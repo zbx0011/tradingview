@@ -45,7 +45,7 @@ import {
   parseDecisionReplayFavoritesChecked, saveDecisionReplayFavorites, toggleDecisionReplayFavorite,
 } from './lib/decisionReplayFavorites'
 import { collectPortableWorkspace, downloadPortableWorkspace, loadPortableWorkspaceRecovery, parsePortableWorkspace, restorePortableWorkspaceRecovery, restorePortableWorkspaceSafely } from './lib/portableWorkspace'
-import { decisionHistoryWorkspace, mergePortableWorkspaceProgress, receivePortableWorkspaceSafely } from './lib/workspaceProgressSync'
+import { decisionHistoryWorkspace, mergePortableWorkspaceProgress, receivePortableWorkspaceSnapshotsSafely } from './lib/workspaceProgressSync'
 import {
   LocalSyncConflictError, localPrivateSyncAvailable,
   prepareLocalPrivateSync, publishLocalPrivateSync, receiveLocalPrivateSync, runWithLocalPrivateSyncLock,
@@ -1252,9 +1252,12 @@ function App() {
     const executeReceive = async () => {
       const received = await receiveLocalPrivateSync(scope)
       if (received.snapshots.length === 0) throw new Error('私有仓库没有可接收的备份')
-      const summary = scope === 'history'
-        ? mergePortableWorkspaceProgress(received.snapshots, localStorage)
-        : receivePortableWorkspaceSafely(received.snapshots[0], localStorage)
+      let summary
+      if (scope === 'history') {
+        summary = mergePortableWorkspaceProgress(received.snapshots, localStorage)
+      } else {
+        summary = receivePortableWorkspaceSnapshotsSafely(received.snapshots, localStorage)
+      }
       const receivedStore = loadDecisionReplayStore()
       const receivedFavorites = loadDecisionReplayFavorites()
       decisionStoreRef.current = receivedStore
