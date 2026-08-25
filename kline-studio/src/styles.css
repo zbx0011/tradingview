@@ -605,9 +605,11 @@ button:disabled { opacity: .32; cursor: not-allowed; }
 .decision-choice-grid b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .decision-choice-grid small { color: #8f99ab; font-size: 10px; }
 .decision-active-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.decision-active-actions.post-exit-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .decision-active-actions > button { min-height: 46px; display: flex; align-items: center; justify-content: center; gap: 10px; color: #e2e7ef; background: #282f3b; border: 1px solid #3a4354; border-radius: 7px; }
 .decision-active-actions > button:hover { border-color: #527cd7; }
 .decision-active-actions .close-position { color: #fff; background: #1b7e6d; border-color: #22ab94; }
+.decision-active-actions .restart-trade { color: #dbe7ff; background: #27344d; border-color: #486cae; }
 .decision-active-actions .danger { color: #f98d96; }
 .decision-live-pnl { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 8px; padding: 8px 10px; border: 1px solid currentColor; border-radius: 7px; background: rgba(16,24,35,.78); font-size: 11px; }
 .decision-live-pnl span { color: #aeb8ca; }
@@ -779,6 +781,8 @@ button:disabled { opacity: .32; cursor: not-allowed; }
 .decision-history-overview b { overflow: hidden; color: #e8edf7; font-size: 19px; text-overflow: ellipsis; white-space: nowrap; }
 .decision-history-body { min-height: 0; padding: 17px 20px 20px; overflow: auto; }
 .decision-history-list { display: grid; gap: 10px; }
+.decision-history-load-more { position: sticky; bottom: 0; width: 100%; min-height: 38px; margin-top: 12px; color: #aebddd; background: rgba(31,38,52,.96); border: 1px solid #465674; border-radius: 7px; }
+.decision-history-load-more:hover { color: #fff; border-color: #6487ce; }
 .decision-history-card { width: 100%; display: grid; gap: 12px; padding: 14px; color: #cdd5e3; text-align: left; border: 1px solid #3a4353; border-radius: 9px; background: #222833; transition: border-color .15s ease, background .15s ease; cursor: pointer; }
 .decision-history-card:hover, .decision-history-card:focus-visible { border-color: #5978b5; background: #293140; outline: none; }
 .decision-history-card.favorite { border-color: rgba(245,183,0,.42); }
@@ -825,6 +829,7 @@ button:disabled { opacity: .32; cursor: not-allowed; }
   .decision-interval-options { grid-template-columns: repeat(3, 1fr); }
   .decision-availability { grid-column: 1; }
   .decision-choice-grid { grid-template-columns: 1fr 1fr; }
+  .decision-active-actions.post-exit-actions { grid-template-columns: 1fr; }
   .decision-detail-panel { right: 10px; width: min(520px, calc(100% - 20px)); }
   .decision-result-row { grid-template-columns: minmax(145px,1.5fr) 100px 90px 90px 90px 48px; }
   .decision-result-row > :nth-child(5) { display: none; }

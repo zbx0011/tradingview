@@ -27,7 +27,7 @@ export type DecisionAttemptStage = 'entry-decision' | 'entry-price' | 'risk-setu
 export type DecisionSessionStatus = 'active' | 'completed' | 'stopped'
 export type DecisionSessionOrigin = 'practice' | 'review'
 export type DecisionExitReason = 'skipped' | 'manual-close' | 'stop-loss' | 'take-profit' | 'end-of-data'
-export type DecisionShortcutAction = 'advance' | 'signal-extreme' | 'free-price' | 'skip' | 'cancel-pending' | 'manual-close' | 'next-trade' | 'confirm-risk' | 'cancel-setup'
+export type DecisionShortcutAction = 'advance' | 'signal-extreme' | 'free-price' | 'skip' | 'cancel-pending' | 'manual-close' | 'next-trade' | 'restart-trade' | 'confirm-risk' | 'cancel-setup'
 export type DecisionExerciseNavigationTarget = { kind: 'review'; result: DecisionTradeResult } | { kind: 'active' }
 
 export interface DecisionFill {
@@ -259,6 +259,16 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object'
 }
 
+/**
+ * A result can already exist while the chart deliberately remains on the same
+ * exercise in `post-exit`. Only the explicit "下一笔" transition changes the
+ * attempt to `complete`, so sync/repair code must use the stage—not `result`—
+ * when deciding whether it may advance the exercise cursor.
+ */
+function isCompletedDecisionAttempt(attempt: DecisionAttempt | undefined) {
+  return attempt?.stage === 'complete'
+}
+
 function removeExcludedCommodityTradesFromSession(session: DecisionReplaySession): DecisionReplaySession | null {
   const excludedKeys = new Set(session.candidates
     .filter((candidate) => isExcludedCommodityTrade(candidate.symbol, candidate.trade))
@@ -271,9 +281,9 @@ function removeExcludedCommodityTradesFromSession(session: DecisionReplaySession
   const rawCurrentIndex = Number.isFinite(session.currentIndex) ? Math.trunc(session.currentIndex) : 0
   const currentKey = session.candidates[Math.max(0, Math.min(session.candidates.length - 1, rawCurrentIndex))]?.key
   const preservedIndex = currentKey ? candidates.findIndex((candidate) => candidate.key === currentKey) : -1
-  const firstIncomplete = candidates.findIndex((candidate) => !attempts.find((attempt) => attempt.candidateKey === candidate.key)?.result)
+  const firstIncomplete = candidates.findIndex((candidate) => !isCompletedDecisionAttempt(attempts.find((attempt) => attempt.candidateKey === candidate.key)))
   const requestedCount = Math.min(Math.max(0, session.requestedCount), candidates.length)
-  const completedCount = attempts.filter((attempt) => attempt.result).length
+  const completedCount = attempts.filter((attempt) => isCompletedDecisionAttempt(attempt)).length
   const status: DecisionSessionStatus = session.status === 'active' && completedCount >= requestedCount
     ? 'completed'
     : session.status
@@ -386,6 +396,15 @@ function repairDecisionReplaySession(session: DecisionReplaySession): DecisionRe
   let currentIndex = Math.max(0, Math.min(session.candidates.length - 1, rawIndex))
   const attemptsByKey = new Map(session.attempts.map((attempt) => [attempt.candidateKey, attempt]))
 
+  // Older additive saves treated any attempt with a result as complete. That
+  // could leave an earlier post-exit attempt behind while moving currentIndex
+  // to a newly-created next attempt. Rewind to the first candidate that has
+  // not crossed the explicit `complete` transition, preserving both attempts.
+  const firstNotCompleted = session.candidates.findIndex((candidate) => (
+    !isCompletedDecisionAttempt(attemptsByKey.get(candidate.key))
+  ))
+  if (firstNotCompleted >= 0 && firstNotCompleted < currentIndex) currentIndex = firstNotCompleted
+
   // If a corrupt/legacy session points at a completed attempt, advance only
   // across fully completed candidates. Keep post-exit attempts in place: they
   // still need the user's explicit "下一笔" action.
@@ -423,9 +442,9 @@ export function normalizeDecisionReplayStore(store: DecisionReplayStore) {
 }
 
 function sessionProgressRank(session: DecisionReplaySession) {
-  const completed = session.attempts.filter((attempt) => attempt.result).length
+  const completed = session.attempts.filter((attempt) => isCompletedDecisionAttempt(attempt)).length
   const stageRank = Math.max(0, ...session.attempts.map((attempt) => (
-    attempt.stage === 'post-exit' ? 3 : attempt.stage === 'position-open' ? 2 : attempt.stage === 'order-pending' ? 1 : 0
+    attempt.stage === 'complete' ? 4 : attempt.stage === 'post-exit' ? 3 : attempt.stage === 'position-open' ? 2 : attempt.stage === 'order-pending' ? 1 : 0
   )))
   return [completed, session.currentIndex, stageRank, session.updatedAt] as const
 }
@@ -440,7 +459,7 @@ function newerDecisionSession(left: DecisionReplaySession, right: DecisionReplay
 }
 
 function sameDecisionResult(left: DecisionTradeResult, right: DecisionTradeResult) {
-  return JSON.stringify(left) === JSON.stringify(right)
+  return stableDecisionStringify(left) === stableDecisionStringify(right)
 }
 
 function stableBranchHash(value: string) {
@@ -450,6 +469,62 @@ function stableBranchHash(value: string) {
     hash = Math.imul(hash, 0x01000193)
   }
   return (hash >>> 0).toString(36)
+}
+
+/**
+ * JSON object key order is not part of a saved decision. Sorting keys keeps
+ * imports written by different app builds from manufacturing a false conflict.
+ */
+function stableDecisionStringify(value: unknown) {
+  return JSON.stringify(value, (_key, nested) => {
+    if (!isObject(nested) || Array.isArray(nested)) return nested
+    return Object.fromEntries(Object.keys(nested).sort().map((key) => [key, nested[key]]))
+  })
+}
+
+function decisionSyncBranchRootId(id: string) {
+  const markerIndex = id.indexOf('-sync-')
+  return markerIndex >= 0 ? id.slice(0, markerIndex) : id
+}
+
+function decisionSessionExactContentKey(session: DecisionReplaySession) {
+  const content: Partial<DecisionReplaySession> = { ...session }
+  delete content.id
+  return stableDecisionStringify(content)
+}
+
+/**
+ * Old repeated merges could append "-sync-..." to an already branched id.
+ * Re-key branches from their immutable content so an identical saved answer
+ * always has one id, regardless of how many computers merged it previously.
+ */
+function normalizeDecisionSyncBranchId(session: DecisionReplaySession) {
+  if (!isDecisionSyncBranch(session)) return session
+  const id = `${decisionSyncBranchRootId(session.id)}-sync-${stableBranchHash(decisionSessionExactContentKey(session))}`
+  return id === session.id ? session : { ...session, id }
+}
+
+/** Keep only answers that actually conflict with the canonical source session. */
+function trimDecisionSyncBranchAgainstPrimary(branch: DecisionReplaySession, primary: DecisionReplaySession) {
+  const primaryResults = new Map(primary.attempts.flatMap((attempt) => (
+    attempt.result ? [[attempt.candidateKey, attempt.result] as const] : []
+  )))
+  const attempts = branch.attempts.filter((attempt) => {
+    if (!attempt.result) return true
+    const primaryResult = primaryResults.get(attempt.candidateKey)
+    return !primaryResult || !sameDecisionResult(primaryResult, attempt.result)
+  })
+  if (attempts.length === branch.attempts.length) return branch
+  if (attempts.length === 0) return null
+  const candidateKeys = new Set(attempts.map((attempt) => attempt.candidateKey))
+  return normalizeDecisionSyncBranchId({
+    ...branch,
+    requestedCount: attempts.length,
+    candidates: branch.candidates.filter((candidate) => candidateKeys.has(candidate.key)),
+    attempts,
+    currentIndex: attempts.length,
+    status: 'completed',
+  })
 }
 
 /**
@@ -489,8 +564,8 @@ function mergeDecisionReplaySession(left: DecisionReplaySession, right: Decision
   })
 
   const requestedCount = Math.max(left.requestedCount, right.requestedCount, attempts.length)
-  const completedCount = attempts.filter((attempt) => attempt.result).length
-  const firstIncomplete = attempts.findIndex((attempt) => !attempt.result)
+  const completedCount = attempts.filter((attempt) => isCompletedDecisionAttempt(attempt)).length
+  const firstIncomplete = candidates.findIndex((candidate) => !isCompletedDecisionAttempt(attempts.find((attempt) => attempt.candidateKey === candidate.key)))
   const status: DecisionSessionStatus = completedCount >= requestedCount
     ? 'completed'
     : base.status
@@ -516,10 +591,10 @@ function mergeDecisionReplaySession(left: DecisionReplaySession, right: Decision
   if (conflictingAlternatives.length === 0) return { merged, branch: null }
   const conflictKeys = new Set(conflictingAlternatives.map((attempt) => attempt.candidateKey))
   const branchCandidates = alternative.candidates.filter((candidate) => conflictKeys.has(candidate.key))
-  const branchSignature = JSON.stringify(conflictingAlternatives.map((attempt) => attempt.result))
+  const branchSignature = stableDecisionStringify(conflictingAlternatives.map((attempt) => attempt.result))
   const branch: DecisionReplaySession = {
     ...alternative,
-    id: `${alternative.id}-sync-${stableBranchHash(branchSignature)}`,
+    id: `${decisionSyncBranchRootId(alternative.id)}-sync-${stableBranchHash(branchSignature)}`,
     requestedCount: conflictingAlternatives.length,
     candidates: branchCandidates,
     attempts: conflictingAlternatives,
@@ -538,7 +613,15 @@ interface NormalizedDecisionReplaySessions {
 /** Merge duplicate ids first, then merge independently-created copies of one exercise. */
 function mergeDecisionReplaySessionCollection(input: readonly DecisionReplaySession[]): NormalizedDecisionReplaySessions {
   const sessionsById = new Map<string, DecisionReplaySession>()
+  const immutableBranches: DecisionReplaySession[] = []
   for (const session of input) {
+    // A branch is an immutable preserved answer, not another continuation of
+    // its source session. Old and canonical branch ids can collide during an
+    // upgrade, so branch records must be content-keyed before any id merge.
+    if (isDecisionSyncBranch(session)) {
+      immutableBranches.push(session)
+      continue
+    }
     const existing = sessionsById.get(session.id)
     if (!existing) {
       sessionsById.set(session.id, session)
@@ -546,21 +629,26 @@ function mergeDecisionReplaySessionCollection(input: readonly DecisionReplaySess
     }
     const { merged, branch } = mergeDecisionReplaySession(existing, session)
     sessionsById.set(session.id, merged)
-    if (branch) {
-      const existingBranch = sessionsById.get(branch.id)
-      sessionsById.set(branch.id, existingBranch ? newerDecisionSession(existingBranch, branch) : branch)
-    }
+    if (branch) immutableBranches.push(branch)
   }
 
   const primaryGroups = new Map<string, { session: DecisionReplaySession; sourceIds: string[] }>()
-  const branches = new Map<string, DecisionReplaySession>()
-  for (const session of sessionsById.values()) {
-    if (isDecisionSyncBranch(session)) {
-      const existingBranch = branches.get(session.id)
-      branches.set(session.id, existingBranch ? newerDecisionSession(existingBranch, session) : session)
-      continue
+  const branches = new Map<string, { session: DecisionReplaySession; sourceIds: string[] }>()
+  const addBranch = (sourceBranch: DecisionReplaySession, sourceIds: string[] = [sourceBranch.id]) => {
+    const branch = normalizeDecisionSyncBranchId(sourceBranch)
+    const contentKey = decisionSessionExactContentKey(branch)
+    const existing = branches.get(contentKey)
+    if (!existing) {
+      branches.set(contentKey, { session: branch, sourceIds: [...new Set([...sourceIds, branch.id])] })
+      return
     }
-
+    // Equal content has equal progress; the stable id tie-break makes merging
+    // independent of import order even for very old branches with another root.
+    if (branch.id.localeCompare(existing.session.id) < 0) existing.session = branch
+    existing.sourceIds.push(...sourceIds, branch.id)
+  }
+  immutableBranches.forEach((branch) => addBranch(branch))
+  for (const session of sessionsById.values()) {
     const mergeKey = decisionSessionMergeKey(session)
     const group = primaryGroups.get(mergeKey)
     if (!group) {
@@ -572,8 +660,7 @@ function mergeDecisionReplaySessionCollection(input: readonly DecisionReplaySess
     group.session = merged
     group.sourceIds.push(session.id)
     if (branch) {
-      const existingBranch = branches.get(branch.id)
-      branches.set(branch.id, existingBranch ? newerDecisionSession(existingBranch, branch) : branch)
+      addBranch(branch)
     }
   }
 
@@ -592,13 +679,44 @@ function mergeDecisionReplaySessionCollection(input: readonly DecisionReplaySess
 
   const idMap = new Map<string, string>()
   const sessions: DecisionReplaySession[] = []
+  const primaryIdByExactContent = new Map<string, string>()
+  const primaryBySourceId = new Map<string, DecisionReplaySession>()
   for (const group of contentGroups.values()) {
     sessions.push(group.session)
-    group.sourceIds.forEach((sourceId) => idMap.set(sourceId, group.session.id))
+    primaryIdByExactContent.set(decisionSessionExactContentKey(group.session), group.session.id)
+    for (const sourceId of [...group.sourceIds, group.session.id]) {
+      idMap.set(sourceId, group.session.id)
+      primaryBySourceId.set(sourceId, group.session)
+    }
   }
-  for (const branch of branches.values()) {
-    sessions.push(branch)
-    idMap.set(branch.id, branch.id)
+  const reconciledBranches = new Map<string, { session: DecisionReplaySession; sourceIds: string[] }>()
+  for (const [contentKey, branch] of branches) {
+    const matchingPrimaryId = primaryIdByExactContent.get(contentKey)
+    if (matchingPrimaryId) {
+      branch.sourceIds.forEach((sourceId) => idMap.set(sourceId, matchingPrimaryId))
+      idMap.set(branch.session.id, matchingPrimaryId)
+      continue
+    }
+    const primary = primaryBySourceId.get(decisionSyncBranchRootId(branch.session.id))
+    const reconciled = primary ? trimDecisionSyncBranchAgainstPrimary(branch.session, primary) : branch.session
+    if (!reconciled) {
+      branch.sourceIds.forEach((sourceId) => idMap.set(sourceId, primary!.id))
+      idMap.set(branch.session.id, primary!.id)
+      continue
+    }
+    const reconciledContentKey = decisionSessionExactContentKey(reconciled)
+    const existing = reconciledBranches.get(reconciledContentKey)
+    if (!existing) {
+      reconciledBranches.set(reconciledContentKey, { session: reconciled, sourceIds: [...branch.sourceIds, branch.session.id] })
+      continue
+    }
+    existing.sourceIds.push(...branch.sourceIds, branch.session.id)
+    if (reconciled.id.localeCompare(existing.session.id) < 0) existing.session = reconciled
+  }
+  for (const branch of reconciledBranches.values()) {
+    sessions.push(branch.session)
+    branch.sourceIds.forEach((sourceId) => idMap.set(sourceId, branch.session.id))
+    idMap.set(branch.session.id, branch.session.id)
   }
   return { sessions, idMap }
 }
@@ -621,9 +739,15 @@ export function mergeDecisionReplayStores(local: DecisionReplayStore, imported: 
   }
 }
 
-export function loadDecisionReplayStore(): DecisionReplayStore {
-  if (typeof localStorage === 'undefined') return emptyDecisionReplayStore()
-  return parseDecisionReplayStore(localStorage.getItem(DECISION_REPLAY_STORAGE_KEY))
+export function loadDecisionReplayStore(
+  storage: Pick<Storage, 'getItem'> | undefined = typeof localStorage === 'undefined' ? undefined : localStorage,
+): DecisionReplayStore {
+  if (!storage) return emptyDecisionReplayStore()
+  try {
+    return parseDecisionReplayStore(storage.getItem(DECISION_REPLAY_STORAGE_KEY))
+  } catch {
+    return emptyDecisionReplayStore()
+  }
 }
 
 export function saveDecisionReplayStore(
@@ -638,6 +762,44 @@ export function saveDecisionReplayStore(
     // Storage quota or privacy-mode failures must never unmount the entire React application.
     return false
   }
+}
+
+/**
+ * Fast path for a store that is already canonical in React state. Unlike the
+ * import/repair path above, this deliberately does not parse and merge the
+ * entire previous localStorage snapshot before every interactive update.
+ */
+export function saveDecisionReplayStoreSnapshot(
+  store: DecisionReplayStore,
+  storage: Pick<Storage, 'setItem'> | undefined = typeof localStorage === 'undefined' ? undefined : localStorage,
+) {
+  if (!storage) return false
+  try {
+    storage.setItem(DECISION_REPLAY_STORAGE_KEY, serializeDecisionReplayStore(store))
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Persist a tab's progress without allowing an older tab to overwrite newer
+ * sessions that were merged while this tab was open. This is intentionally
+ * additive: both the storage snapshot and the caller's in-memory snapshot are
+ * merged before the write, so a refresh/pagehide cannot roll history back.
+ */
+export function persistDecisionReplayStoreAdditively(
+  store: DecisionReplayStore,
+  storage: (Pick<Storage, 'getItem'> & Pick<Storage, 'setItem'>) | undefined = typeof localStorage === 'undefined' ? undefined : localStorage,
+) {
+  const latest = loadDecisionReplayStore(storage)
+  // mergeDecisionReplayStores deliberately keeps the first store's active
+  // pointer. Prefer the current tab while it is starting/continuing a session;
+  // otherwise retain an active session that another tab has already saved.
+  const merged = store.activeSessionId
+    ? mergeDecisionReplayStores(store, latest)
+    : mergeDecisionReplayStores(latest, store)
+  return { store: merged, saved: saveDecisionReplayStore(merged, storage) }
 }
 
 function randomIndex(upperExclusive: number) {
@@ -687,6 +849,29 @@ export function createDecisionAttempt(candidate: ReplayDecisionCandidate): Decis
     fill: null,
     drawings: [],
     result: null,
+  }
+}
+
+/**
+ * Explicitly discard the current, not-yet-finalized post-exit answer and move
+ * that one exercise back to its signal candle. The correction marker makes the
+ * reset authoritative when additive persistence still contains the old result.
+ */
+export function restartPostExitDecisionAttempt(session: DecisionReplaySession, candidateKey: string, now = Date.now()) {
+  if (session.status !== 'active') return session
+  const candidateIndex = session.candidates.findIndex((candidate) => candidate.key === candidateKey)
+  if (candidateIndex < 0 || candidateIndex !== session.currentIndex) return session
+  const candidate = session.candidates[candidateIndex]
+  const attempt = session.attempts.find((item) => item.candidateKey === candidateKey)
+  if (!attempt || attempt.stage !== 'post-exit' || !attempt.result) return session
+  const correctionRevision = Math.max(now, (session.correctionRevision ?? 0) + 1)
+  return {
+    ...session,
+    attempts: session.attempts.map((item) => item.candidateKey === candidateKey ? createDecisionAttempt(candidate) : item),
+    currentIndex: candidateIndex,
+    updatedAt: now,
+    finishedAt: null,
+    correctionRevision,
   }
 }
 
@@ -1173,6 +1358,7 @@ export function decisionShortcutAction(stage: DecisionAttemptStage, key: string)
   if (stage === 'post-exit') {
     if (key === '1') return 'advance'
     if (key === '4') return 'next-trade'
+    if (key === '5') return 'restart-trade'
   }
   return null
 }

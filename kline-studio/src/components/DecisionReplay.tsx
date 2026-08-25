@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import {
   Archive, BarChart3, Check, ChevronRight, CircleDollarSign, Eye, Flag, History, LogOut,
@@ -414,7 +414,9 @@ function decisionHistoryTradeStatus(result: DecisionTradeResult | null, session:
   return '已完成'
 }
 
-export function DecisionHistoryDialog({ open, sessions, onClose, onOpenSession, onOpenFavoriteTrade, favoriteKeys = [], onToggleFavorite = () => undefined, defaultView = 'history', defaultHistoryView = 'trades' }: {
+const DECISION_HISTORY_RENDER_BATCH = 60
+
+interface DecisionHistoryDialogProps {
   open: boolean
   currentSymbol: SymbolId
   sessions: DecisionReplaySession[]
@@ -425,12 +427,27 @@ export function DecisionHistoryDialog({ open, sessions, onClose, onOpenSession, 
   onToggleFavorite?: (key: string) => void
   defaultView?: 'history' | 'favorites'
   defaultHistoryView?: DecisionHistoryViewMode
-}) {
+}
+
+function sameDecisionHistoryDialogProps(left: DecisionHistoryDialogProps, right: DecisionHistoryDialogProps) {
+  return left.open === right.open
+    && left.currentSymbol === right.currentSymbol
+    && left.sessions === right.sessions
+    && left.favoriteKeys === right.favoriteKeys
+    && left.defaultView === right.defaultView
+    && left.defaultHistoryView === right.defaultHistoryView
+}
+
+export const DecisionHistoryDialog = memo(function DecisionHistoryDialog({ open, sessions, onClose, onOpenSession, onOpenFavoriteTrade, favoriteKeys = [], onToggleFavorite = () => undefined, defaultView = 'history', defaultHistoryView = 'trades' }: DecisionHistoryDialogProps) {
   const [selectedHistorySymbols, setSelectedHistorySymbols] = useState<SymbolId[]>([])
   const [favoritesOnly, setFavoritesOnly] = useState(defaultView === 'favorites')
   const [historyViewMode, setHistoryViewMode] = useState<DecisionHistoryViewMode>(defaultHistoryView)
   const [historyPositionMode, setHistoryPositionMode] = useState<DecisionPositionSizingMode>('fixed-notional')
   const [historySort, setHistorySort] = useState<DecisionHistorySort>('time-desc')
+  const [historyRenderLimit, setHistoryRenderLimit] = useState(DECISION_HISTORY_RENDER_BATCH)
+  // This dialog stays mounted while closed. Returning before any aggregation
+  // prevents the clock and chart updates from rescanning thousands of attempts.
+  if (!open) return null
   const showAllSymbols = selectedHistorySymbols.length === 0
   const selectedHistorySymbolSet = new Set(selectedHistorySymbols)
   const selectedSymbolLabel = showAllSymbols ? '全部标的' : selectedHistorySymbols.join(' / ')
@@ -540,7 +557,6 @@ export function DecisionHistoryDialog({ open, sessions, onClose, onOpenSession, 
     }, historySort)
   })
 
-  if (!open) return null
   const summaryResults = visibleTradeEntries.flatMap((entry) => entry.result ? [entry.result] : [])
   const visibleTradeCount = summaryResults.length
   const hasVisibleHistory = visibleTradeEntries.length > 0
@@ -551,6 +567,11 @@ export function DecisionHistoryDialog({ open, sessions, onClose, onOpenSession, 
   const userWinStats = decisionWinStats(participatedResults, historyPositionMode, 'user')
   const systemParticipatedWinStats = decisionWinStats(participatedResults, historyPositionMode, 'system')
   const systemOverallWinStats = decisionWinStats(summaryResults, historyPositionMode, 'system')
+  const renderedHistorySessionGroups = sortedHistorySessionGroups.slice(0, historyRenderLimit)
+  const renderedTradeEntries = sortedTradeEntries.slice(0, historyRenderLimit)
+  const historyItemCount = historyViewMode === 'sessions' ? sortedHistorySessionGroups.length : sortedTradeEntries.length
+  const hasMoreHistoryItems = historyRenderLimit < historyItemCount
+  const loadMoreHistoryItems = () => setHistoryRenderLimit((current) => Math.min(historyItemCount, current + DECISION_HISTORY_RENDER_BATCH))
   const openFavoriteTrade = (sessionId: string, candidateKey: string) => {
     if (onOpenFavoriteTrade) onOpenFavoriteTrade(sessionId, candidateKey)
     else onOpenSession(sessionId)
@@ -623,9 +644,12 @@ export function DecisionHistoryDialog({ open, sessions, onClose, onOpenSession, 
         <article className="decision-system-summary"><span>系统参与部分净盈亏</span><DecisionModeMoneyStack modes={historyModes} compact={false} valueFor={(mode) => aggregateDecisionResults(participatedResults, mode).systemPnlUsd} /><small>参与部分胜率 <strong>{decisionWinRateText(systemParticipatedWinStats)}</strong> · 盈利 {systemParticipatedWinStats.wins} / {systemParticipatedWinStats.total} 笔</small><span className="decision-system-total-label">系统总净盈亏</span><DecisionModeMoneyStack modes={historyModes} compact={false} valueFor={(mode) => aggregateDecisionResults(summaryResults, mode).systemPnlUsd} /><small>总胜率 <strong>{decisionWinRateText(systemOverallWinStats)}</strong> · 盈利 {systemOverallWinStats.wins} / {systemOverallWinStats.total} 笔</small></article>
         <article><span>相对系统</span><DecisionModeMoneyStack modes={historyModes} compact={false} valueFor={(mode) => aggregateDecisionResults(summaryResults, mode).differenceUsd} /><small>{decisionPositionSizingLabel(historyPositionMode)} · 全部 {summaryResults.length} 笔</small></article>
       </div>
-      <div className="decision-history-body">
+      <div className="decision-history-body" onScroll={(event) => {
+        const target = event.currentTarget
+        if (hasMoreHistoryItems && target.scrollHeight - target.scrollTop - target.clientHeight < 240) loadMoreHistoryItems()
+      }}>
         {historyViewMode === 'sessions' ? (sortedHistorySessionGroups.length === 0 ? <div className="decision-empty">{favoritesOnly ? '所选标的还没有收藏记录。' : showAllSymbols ? '全部标的还没有练习卷子。' : '所选标的还没有练习卷子。'}</div> : <div className="decision-history-list">
-          {sortedHistorySessionGroups.map(({ session, candidates, entries, results, symbols, favoriteCount }) => {
+          {renderedHistorySessionGroups.map(({ session, candidates, entries, results, symbols, favoriteCount }) => {
             const participated = results.filter((result) => result.choice === 'traded')
             const userStats = decisionWinStats(participated, historyPositionMode, 'user')
             const systemStats = decisionWinStats(results, historyPositionMode, 'system')
@@ -669,7 +693,7 @@ export function DecisionHistoryDialog({ open, sessions, onClose, onOpenSession, 
             </div>
           })}
         </div>) : (!hasVisibleHistory ? <div className="decision-empty">{favoritesOnly ? '所选标的还没有收藏记录。' : showAllSymbols ? '全部标的还没有交易记录。' : '所选标的还没有交易记录。'}</div> : <div className="decision-history-list">
-          {sortedTradeEntries.map(({ session, candidate, attempt, result, favoriteKey, favorite, ordinal }) => <div
+          {renderedTradeEntries.map(({ session, candidate, attempt, result, favoriteKey, favorite, ordinal }) => <div
             key={`${session.id}:${candidate.key}`}
             className={`decision-history-card decision-history-trade-card${favorite ? ' favorite' : ''}`}
             role="button"
@@ -720,10 +744,11 @@ export function DecisionHistoryDialog({ open, sessions, onClose, onOpenSession, 
             >从信号K开始做</button>}
           </div>)}
         </div>)}
+        {hasMoreHistoryItems && <button type="button" className="decision-history-load-more" onClick={loadMoreHistoryItems}>继续向下滚动加载 · 已显示 {historyRenderLimit} / {historyItemCount}</button>}
       </div>
     </section>
   </div>
-}
+}, sameDecisionHistoryDialogProps)
 
 export function DecisionChartStatus({ session, attempt, currentPnlByMode = null, systemCurrentPnlByMode = null, systemCurrentPnlLocked = false, positionSizingModes = ['fixed-risk'] }: {
   session: DecisionReplaySession
@@ -1004,7 +1029,7 @@ function decisionReasonConnectorEndpoint(x: number, y: number, placement: Decisi
   }
 }
 
-export function DecisionReplayPanel({ candidate, attempt, ordinal, total, currentClose = null, currentPnlUsd = null, currentPnlByMode = null, positionSizingModes = ['fixed-risk'], favorite = false, independentReview = false, onToggleFavorite = () => undefined, onAdvance, onSignalExtreme, onFreePrice, onSkip, onManualClose, onCancelPending, onNextTrade, onStop }: {
+export function DecisionReplayPanel({ candidate, attempt, ordinal, total, currentClose = null, currentPnlUsd = null, currentPnlByMode = null, positionSizingModes = ['fixed-risk'], favorite = false, independentReview = false, onToggleFavorite = () => undefined, onAdvance, onSignalExtreme, onFreePrice, onSkip, onManualClose, onCancelPending, onNextTrade, onRestartTrade = () => undefined, onStop }: {
   candidate: ReplayDecisionCandidate
   attempt: DecisionAttempt
   ordinal: number
@@ -1023,6 +1048,7 @@ export function DecisionReplayPanel({ candidate, attempt, ordinal, total, curren
   onManualClose: () => void
   onCancelPending: () => void
   onNextTrade: () => void
+  onRestartTrade?: () => void
   onStop: () => void
 }) {
   const long = candidate.trade.side === 'long'
@@ -1341,7 +1367,7 @@ export function DecisionReplayPanel({ candidate, attempt, ordinal, total, curren
         {attempt.result && <section className="decision-post-exit-summary">
           <h3><Flag size={17} />本笔已经平仓</h3>
           <p>你的盈亏 <DecisionModeMoneyStack modes={positionSizingModes} compact={false} valueFor={(mode) => decisionResultPnl(attempt.result!, mode, 'user')} />，V5 系统盈亏 <DecisionModeMoneyStack modes={positionSizingModes} compact={false} valueFor={(mode) => decisionResultPnl(attempt.result!, mode, 'system')} />。</p>
-          <small>按 1 继续逐根观看后续行情；按 4 才会进入下一笔交易。</small>
+          <small>按 1 继续逐根观看后续行情；按 4 进入下一笔；按 5 从信号 K 重新开始本笔。</small>
         </section>}
       </div>
       <div className="decision-resize-handle" data-testid="decision-detail-resize-handle" aria-label="调整决策详情框大小" title="拖动调整详情框大小" onPointerDown={handleResizeStart} />
@@ -1365,7 +1391,7 @@ export function DecisionReplayPanel({ candidate, attempt, ordinal, total, curren
         </div>}
         <div className="decision-active-actions"><button onClick={onAdvance}><kbd>1</kbd>进入下一根 K 线</button><button className="close-position" onClick={onManualClose}><kbd>2</kbd>按当前 K 线收盘价离场</button></div>
       </>}
-      {attempt.stage === 'post-exit' && <div className="decision-active-actions"><button onClick={onAdvance}><kbd>1</kbd>继续观看下一根 K 线</button><button className="close-position" onClick={onNextTrade}><kbd>4</kbd>进入下一笔交易</button></div>}
+      {attempt.stage === 'post-exit' && <div className="decision-active-actions post-exit-actions"><button onClick={onAdvance}><kbd>1</kbd>继续观看下一根 K 线</button><button className="close-position" onClick={onNextTrade}><kbd>4</kbd>进入下一笔交易</button><button className="restart-trade" onClick={onRestartTrade}><kbd>5</kbd>重新开始这笔交易</button></div>}
       {attempt.stage === 'entry-price' && <div className="decision-action-hint"><MousePointer2 size={18} />请在图表上完成挂单价设置，单击确认，Esc 可取消</div>}
       {attempt.stage === 'risk-setup' && <div className="decision-action-hint"><MousePointer2 size={18} />设置好止盈止损后，按 <kbd>1</kbd> 确认，按 <kbd>2</kbd> 取消</div>}
     </nav>

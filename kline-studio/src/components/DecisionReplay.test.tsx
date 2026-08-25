@@ -4,6 +4,7 @@ import type { ReplayDecisionCandidate } from '../lib/replayTradeRegistry'
 import {
   buildDecisionResult, createDecisionAttempt, createDecisionSession, toggleDecisionHistorySymbolSelection,
 } from '../lib/decisionReplay'
+import type { DecisionReplaySession } from '../lib/decisionReplay'
 import { decisionReplayFavoriteKey } from '../lib/decisionReplayFavorites'
 import {
   DecisionChartAnnotations, DecisionChartStatus, DecisionHistoryDialog, DecisionReplayCenter, DecisionReplayPanel, DecisionResultsDialog, DecisionReviewPanel, DecisionRiskOverlay,
@@ -732,6 +733,36 @@ describe('decision replay components', () => {
     expect(markup).toContain('本场第 1 / 1 笔')
   })
 
+  it('renders large histories in batches instead of mounting every trade card at once', () => {
+    const sessions = Array.from({ length: 65 }, (_, index) => {
+      const item = candidate()
+      const attempt = { ...createDecisionAttempt(item), cursorTime: 3600 }
+      return {
+        ...createDecisionSession([item], 1, 1000 + index),
+        id: `history-batch-${index}`,
+        startedAt: 1000 + index,
+        attempts: [attempt],
+      }
+    })
+    const markup = renderToStaticMarkup(<DecisionHistoryDialog
+      open currentSymbol="XAUUSD" sessions={sessions} onClose={noop} onOpenSession={noop}
+    />)
+
+    expect(markup.match(/class="decision-history-card decision-history-trade-card"/g)).toHaveLength(60)
+    expect(markup).toContain('继续向下滚动加载')
+    expect(markup).toContain('已显示 60 / 65')
+  })
+
+  it('does not scan decision sessions while the history dialog is closed', () => {
+    const unreadableSessions = new Proxy([] as DecisionReplaySession[], {
+      get: () => { throw new Error('closed history must not inspect sessions') },
+    })
+
+    expect(renderToStaticMarkup(<DecisionHistoryDialog
+      open={false} currentSymbol="XAUUSD" sessions={unreadableSessions} onClose={noop} onOpenSession={noop}
+    />)).toBe('')
+  })
+
   it('keeps a closed trade on screen until the user explicitly chooses the next trade', () => {
     const item = candidate()
     const filled = {
@@ -755,5 +786,6 @@ describe('decision replay components', () => {
     expect(markup).toContain('本笔盈亏已锁定，可继续观看后续 K 线')
     expect(markup).toContain('继续观看下一根 K 线')
     expect(markup).toContain('进入下一笔交易')
+    expect(markup).toContain('<kbd>5</kbd>重新开始这笔交易')
   })
 })

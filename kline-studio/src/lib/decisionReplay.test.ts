@@ -9,9 +9,9 @@ import { parseCompactHistory } from './liveMarket'
 import {
   adjacentDecisionExerciseTarget, advanceDecisionAttempt, buildDecisionResult, cancelPendingOrderAndAdvance, candlesKnownAt, compareDecisionHistorySortValues, createDecisionAttempt, createDecisionReviewSession, createDecisionSession,
   decisionShortcutAction, defaultDecisionLevels, evaluatePositionBar, fillPendingOrder,
-  decisionResultPnl, decisionResultR, decisionSessionUserRStats, filterDecisionCandidatesByScope, historyCoversDecisionCandidate, intervalCutoffTime, parseDecisionReplayStore,
-  mergeDecisionReplayStores, pnlForDecision, pnlForDecisionMode, rewardRiskRatio, sampleDecisionCandidates,
-  saveDecisionReplayStore, serializeDecisionReplayStore, updateDecisionSessionDrawings, validDecisionLevels, validOpenPositionLevels, type DecisionReplaySession,
+  decisionResultPnl, decisionResultR, decisionSessionUserRStats, emptyDecisionReplayStore, filterDecisionCandidatesByScope, historyCoversDecisionCandidate, intervalCutoffTime, parseDecisionReplayStore,
+  mergeDecisionReplayStores, persistDecisionReplayStoreAdditively, pnlForDecision, pnlForDecisionMode, restartPostExitDecisionAttempt, rewardRiskRatio, sampleDecisionCandidates,
+  saveDecisionReplayStore, saveDecisionReplayStoreSnapshot, serializeDecisionReplayStore, updateDecisionSessionDrawings, validDecisionLevels, validOpenPositionLevels, type DecisionReplaySession,
 } from './decisionReplay'
 
 function candidate(key: string, side: 'long' | 'short' = 'long'): ReplayDecisionCandidate {
@@ -329,7 +329,9 @@ describe('decision replay', () => {
     expect(decisionShortcutAction('position-open', '2')).toBe('manual-close')
     expect(decisionShortcutAction('post-exit', '1')).toBe('advance')
     expect(decisionShortcutAction('post-exit', '4')).toBe('next-trade')
+    expect(decisionShortcutAction('post-exit', '5')).toBe('restart-trade')
     expect(decisionShortcutAction('post-exit', '2')).toBeNull()
+    expect(decisionShortcutAction('position-open', '5')).toBeNull()
     expect(decisionShortcutAction('risk-setup', '1')).toBe('confirm-risk')
     expect(decisionShortcutAction('risk-setup', '2')).toBe('cancel-setup')
   })
@@ -488,6 +490,66 @@ describe('decision replay', () => {
     expect(saveDecisionReplayStore(storeWithSessions(), storage)).toBe(false)
   })
 
+  it('persists a canonical interactive snapshot without rereading and merging the full history', () => {
+    const session = createDecisionSession([candidate('fast-save:1')], 1, 1000)
+    let value = ''
+    let reads = 0
+    const storage = {
+      getItem: () => { reads += 1; return value },
+      setItem: (_key: string, next: string) => { value = next },
+    }
+
+    expect(saveDecisionReplayStoreSnapshot(storeWithSessions(session), storage)).toBe(true)
+    expect(reads).toBe(0)
+    expect(parseDecisionReplayStore(value)).toMatchObject({ activeSessionId: session.id })
+  })
+
+  it('does not let an older tab overwrite sessions already present in browser storage', () => {
+    const storedSession = createDecisionSession([candidate('stored-newer:1')], 1, 2000)
+    const staleTabSession = createDecisionSession([candidate('stale-tab:1')], 1, 1000)
+    let value = serializeDecisionReplayStore(storeWithSessions(storedSession))
+    const storage = {
+      getItem: () => value,
+      setItem: (_key: string, next: string) => { value = next },
+    }
+
+    const persisted = persistDecisionReplayStoreAdditively(storeWithSessions(staleTabSession), storage)
+    const restored = parseDecisionReplayStore(value)
+
+    expect(persisted.saved).toBe(true)
+    expect(restored.sessions.map((session) => session.candidates[0].key).sort()).toEqual(['stale-tab:1', 'stored-newer:1'])
+  })
+
+  it('keeps a newly-created session active when additive persistence reads an older snapshot', () => {
+    const startedSession = createDecisionSession([candidate('just-started:1')], 1, 3000)
+    let value = serializeDecisionReplayStore(emptyDecisionReplayStore())
+    const storage = {
+      getItem: () => value,
+      setItem: (_key: string, next: string) => { value = next },
+    }
+
+    const persisted = persistDecisionReplayStoreAdditively(storeWithSessions(startedSession), storage)
+    const restored = parseDecisionReplayStore(value)
+
+    expect(persisted.store.activeSessionId).toBe(startedSession.id)
+    expect(restored.activeSessionId).toBe(startedSession.id)
+    expect(restored.sessions.find((session) => session.id === startedSession.id)?.status).toBe('active')
+  })
+
+  it('retains another tab active session when the current tab has none', () => {
+    const storedSession = createDecisionSession([candidate('other-tab-active:1')], 1, 3000)
+    let value = serializeDecisionReplayStore(storeWithSessions(storedSession))
+    const storage = {
+      getItem: () => value,
+      setItem: (_key: string, next: string) => { value = next },
+    }
+
+    const persisted = persistDecisionReplayStoreAdditively(emptyDecisionReplayStore(), storage)
+
+    expect(persisted.store.activeSessionId).toBe(storedSession.id)
+    expect(parseDecisionReplayStore(value).activeSessionId).toBe(storedSession.id)
+  })
+
   it('repairs an active session whose current candidate lost its attempt during sync', () => {
     const candidates = [candidate('repair:1'), candidate('repair:2')]
     const firstAttempt = createDecisionAttempt(candidates[0])
@@ -509,6 +571,89 @@ describe('decision replay', () => {
 
     expect(session.currentIndex).toBe(1)
     expect(currentAttempt).toMatchObject({ candidateKey: candidates[1].key, stage: 'entry-decision', result: null })
+  })
+
+  it('does not advance a post-exit exercise during a background sync merge', () => {
+    const candidates = [candidate('post-exit-sync:1'), candidate('post-exit-sync:2')]
+    const base = { ...createDecisionSession(candidates, 2, 1000), id: 'post-exit-sync' }
+    const exitedAttempt = {
+      ...base.attempts[0],
+      stage: 'post-exit' as const,
+      result: buildDecisionResult(candidates[0], base.attempts[0], {
+        time: 1001,
+        price: candidates[0].trade.entry.price,
+        reason: 'manual-close',
+      }, []),
+    }
+    const local = { ...base, attempts: [exitedAttempt], currentIndex: 0, updatedAt: 3000 }
+    const remote = { ...base, updatedAt: 2000 }
+
+    const merged = mergeDecisionReplayStores(storeWithSessions(local), storeWithSessions(remote))
+    const session = merged.sessions.find((item) => item.id === base.id)!
+
+    expect(merged.activeSessionId).toBe(base.id)
+    expect(session).toMatchObject({ status: 'active', currentIndex: 0 })
+    expect(session.attempts[0]).toMatchObject({ stage: 'post-exit', result: { choice: 'skipped' } })
+    expect(session.attempts.some((attempt) => attempt.candidateKey === candidates[1].key)).toBe(false)
+  })
+
+  it('repairs an active exercise that an older additive save advanced past post-exit', () => {
+    const candidates = [candidate('post-exit-repair:1'), candidate('post-exit-repair:2')]
+    const base = { ...createDecisionSession(candidates, 2, 1000), id: 'post-exit-repair' }
+    const exitedAttempt = {
+      ...base.attempts[0],
+      stage: 'post-exit' as const,
+      result: buildDecisionResult(candidates[0], base.attempts[0], {
+        time: 1001,
+        price: candidates[0].trade.entry.price,
+        reason: 'manual-close',
+      }, []),
+    }
+    const prematurelyCreatedNext = createDecisionAttempt(candidates[1])
+    const broken = {
+      ...base,
+      attempts: [exitedAttempt, prematurelyCreatedNext],
+      currentIndex: 1,
+      updatedAt: 3000,
+    }
+
+    const repaired = parseDecisionReplayStore(JSON.stringify(storeWithSessions(broken)))
+    const session = repaired.sessions.find((item) => item.id === base.id)!
+
+    expect(repaired.activeSessionId).toBe(base.id)
+    expect(session.currentIndex).toBe(0)
+    expect(session.attempts).toHaveLength(2)
+    expect(session.attempts[0]).toMatchObject({ stage: 'post-exit', result: { choice: 'skipped' } })
+    expect(session.attempts[1]).toMatchObject({ stage: 'entry-decision', result: null })
+  })
+
+  it('restarts only the current post-exit exercise and overrides the stale saved result', () => {
+    const candidates = [candidate('restart:1'), candidate('restart:2')]
+    const base = { ...createDecisionSession(candidates, 2, 1000), id: 'restart-session' }
+    const exitedAttempt = {
+      ...base.attempts[0],
+      stage: 'post-exit' as const,
+      cursorTime: 4200,
+      result: buildDecisionResult(candidates[0], base.attempts[0], {
+        time: 4200,
+        price: candidates[0].trade.entry.price,
+        reason: 'manual-close',
+      }, []),
+    }
+    const stale = { ...base, attempts: [exitedAttempt], updatedAt: 2000 }
+    const restarted = restartPostExitDecisionAttempt(stale, candidates[0].key, 3000)
+
+    expect(restarted).toMatchObject({ currentIndex: 0, status: 'active', correctionRevision: 3000, updatedAt: 3000 })
+    expect(restarted.attempts[0]).toMatchObject({
+      candidateKey: candidates[0].key,
+      stage: 'entry-decision',
+      cursorTime: candidates[0].trade.entry.signalTime,
+      result: null,
+      fill: null,
+      drawings: [],
+    })
+    const merged = mergeDecisionReplayStores(storeWithSessions(restarted), storeWithSessions(stale))
+    expect(merged.sessions[0].attempts[0]).toMatchObject({ stage: 'entry-decision', result: null })
   })
 
   it('merges histories from two computers and keeps the more advanced duplicate session', () => {
@@ -654,5 +799,83 @@ describe('decision replay', () => {
     expect(firstMerge.sessions.flatMap((session) => session.attempts).filter((attempt) => attempt.result)).toHaveLength(2)
     expect(firstMerge.sessions.some((session) => session.id.startsWith('shared-conflict-sync-'))).toBe(true)
     expect(secondMerge.sessions.map((session) => session.id)).toEqual(firstMerge.sessions.map((session) => session.id))
+  })
+
+  it('collapses identical legacy sync branches and never nests their ids', () => {
+    const item = candidate('shared:legacy-branch')
+    const base = { ...createDecisionSession([item], 1, 1000), id: 'shared-legacy-branch' }
+    const skipped = {
+      ...base.attempts[0], stage: 'complete' as const,
+      result: buildDecisionResult(item, base.attempts[0], { time: 1001, price: item.trade.entry.price, reason: 'skipped' }, []),
+    }
+    const traded = {
+      ...base.attempts[0], stage: 'complete' as const,
+      result: { ...skipped.result!, choice: 'traded' as const, userPnlUsd: 25 },
+    }
+    const left = { ...base, attempts: [skipped], currentIndex: 1, status: 'completed' as const, updatedAt: 2000, finishedAt: 2000 }
+    const right = { ...base, attempts: [traded], currentIndex: 1, status: 'completed' as const, updatedAt: 3000, finishedAt: 3000 }
+    const firstMerge = mergeDecisionReplayStores(storeWithSessions(left), storeWithSessions(right))
+    const branch = firstMerge.sessions.find((session) => session.id.includes('-sync-'))!
+    const primary = firstMerge.sessions.find((session) => !session.id.includes('-sync-'))!
+    const legacyCopies = [
+      { ...branch, id: `${branch.id}-sync-old-a` },
+      { ...branch, id: `${branch.id}-sync-old-a-sync-old-b` },
+      { ...primary, id: `${primary.id}-sync-old-primary-copy` },
+      {
+        ...primary,
+        id: `${primary.id}-sync-old-primary-subset`,
+        requestedCount: 1,
+        candidates: primary.candidates.slice(0, 1),
+        attempts: primary.attempts.slice(0, 1),
+        currentIndex: 1,
+      },
+    ]
+
+    const normalized = mergeDecisionReplayStores(
+      { ...firstMerge, sessions: [...firstMerge.sessions, ...legacyCopies] },
+      emptyDecisionReplayStore(),
+    )
+    const repeated = mergeDecisionReplayStores(normalized, normalized)
+    const branches = normalized.sessions.filter((session) => session.id.includes('-sync-'))
+
+    expect(branches).toHaveLength(1)
+    expect(branches[0].id.match(/-sync-/g)).toHaveLength(1)
+    expect(normalized.sessions.flatMap((session) => session.attempts).filter((attempt) => attempt.result)).toHaveLength(2)
+    expect(repeated).toEqual(normalized)
+  })
+
+  it('does not merge immutable branches again when legacy and canonical ids collide', () => {
+    const item = candidate('shared:branch-id-collision')
+    const base = { ...createDecisionSession([item], 1, 1000), id: 'shared-branch-id-collision' }
+    const skipped = {
+      ...base.attempts[0], stage: 'complete' as const,
+      result: buildDecisionResult(item, base.attempts[0], { time: 1001, price: item.trade.entry.price, reason: 'skipped' }, []),
+    }
+    const firstTrade = {
+      ...base.attempts[0], stage: 'complete' as const,
+      result: { ...skipped.result!, choice: 'traded' as const, userPnlUsd: 25 },
+    }
+    const left = { ...base, attempts: [skipped], currentIndex: 1, status: 'completed' as const, updatedAt: 2000, finishedAt: 2000 }
+    const right = { ...base, attempts: [firstTrade], currentIndex: 1, status: 'completed' as const, updatedAt: 3000, finishedAt: 3000 }
+    const firstMerge = mergeDecisionReplayStores(storeWithSessions(left), storeWithSessions(right))
+    const branch = firstMerge.sessions.find((session) => session.id.includes('-sync-'))!
+    const collidingLegacyBranch = {
+      ...branch,
+      attempts: branch.attempts.map((attempt) => ({
+        ...attempt,
+        result: attempt.result ? { ...attempt.result, userPnlUsd: 50 } : null,
+      })),
+    }
+
+    const normalized = mergeDecisionReplayStores(
+      { ...firstMerge, sessions: [...firstMerge.sessions, collidingLegacyBranch] },
+      emptyDecisionReplayStore(),
+    )
+    const repeated = mergeDecisionReplayStores(normalized, normalized)
+
+    expect(normalized.sessions).toHaveLength(3)
+    expect(normalized.sessions.filter((session) => session.id.includes('-sync-'))).toHaveLength(2)
+    expect(normalized.sessions.flatMap((session) => session.attempts).filter((attempt) => attempt.result)).toHaveLength(3)
+    expect(repeated).toEqual(normalized)
   })
 })

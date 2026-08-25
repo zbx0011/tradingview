@@ -2,7 +2,8 @@ import { parsePortableWorkspace, serializePortableWorkspace, type PortableWorksp
 
 const LOCAL_SYNC_ENDPOINT = '/__kline_studio_sync'
 export const LOCAL_SYNC_AUTO_MARKER_KEY = 'kline-studio-private-sync-auto-marker-v1'
-const BACKGROUND_SYNC_DEDUP_WINDOW_MS = 60_000
+export const BACKGROUND_SYNC_INTERVAL_MS = 60 * 60 * 1000
+const BACKGROUND_SYNC_DEDUP_WINDOW_MS = BACKGROUND_SYNC_INTERVAL_MS
 export type LocalSyncMode = 'manual' | 'background'
 
 export interface LocalSyncAutoMarker {

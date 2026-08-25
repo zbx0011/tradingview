@@ -47,7 +47,7 @@ import {
 import { collectPortableWorkspace, downloadPortableWorkspace, loadPortableWorkspaceRecovery, parsePortableWorkspace, restorePortableWorkspaceRecovery, restorePortableWorkspaceSafely } from './lib/portableWorkspace'
 import { mergePortableWorkspaceProgress } from './lib/workspaceProgressSync'
 import {
-  LOCAL_SYNC_AUTO_MARKER_KEY, LocalSyncConflictError, localPrivateSyncAvailable,
+  BACKGROUND_SYNC_INTERVAL_MS, LOCAL_SYNC_AUTO_MARKER_KEY, LocalSyncConflictError, localPrivateSyncAvailable,
   prepareLocalPrivateSync, publishLocalPrivateSync, runWithLocalPrivateSyncLock,
   sha256PortableWorkspace, shouldSkipRecentBackgroundSync,
 } from './lib/localPrivateSync'
@@ -56,8 +56,8 @@ import {
   DECISION_REPLAY_INTERVALS, DECISION_REPLAY_STORAGE_KEY, adjacentDecisionExerciseTarget, advanceDecisionAttempt, buildDecisionResult, cancelPendingOrderAndAdvance, candleAtOrBefore, candlesKnownAt, createDecisionAttempt,
   createDecisionReviewSession, createDecisionSession, currentDecisionAttempt, currentDecisionCandidate, decisionShortcutAction, defaultDecisionLevels,
   decisionAttemptInitialStopLoss, decisionSessionPositionSizingModes, emptyDecisionReplayStore, filterDecisionCandidatesByScope, historyCoversDecisionCandidate, intervalCutoffTime, intervalSeconds,
-  loadDecisionReplayStore, mergeDecisionReplayStores, nextCandleAfter, normalizeDecisionReplayStore, parseDecisionReplayStoreChecked, pnlForDecisionMode, sampleDecisionCandidates,
-  saveDecisionReplayStore, sessionResults, updateDecisionSessionDrawings, validDecisionLevels, validOpenPositionLevels,
+  loadDecisionReplayStore, mergeDecisionReplayStores, nextCandleAfter, normalizeDecisionReplayStore, parseDecisionReplayStoreChecked, pnlForDecisionMode, restartPostExitDecisionAttempt, sampleDecisionCandidates,
+  saveDecisionReplayStoreSnapshot, sessionResults, updateDecisionSessionDrawings, validDecisionLevels, validOpenPositionLevels,
   type DecisionAttempt, type DecisionExit, type DecisionPositionSizingMode, type DecisionReplayInterval, type DecisionReplaySession, type DecisionTradeResult,
 } from './lib/decisionReplay'
 
@@ -216,21 +216,21 @@ function App() {
   const decisionDrawingContextRef = useRef<string | null>(null)
   const decisionDrawingLoadingRef = useRef(false)
   const decisionStoreRef = useRef(decisionStore)
+  const decisionPersistTimerRef = useRef<number | null>(null)
   const decisionSessionStartLockRef = useRef(false)
   const decisionFavoriteKeysRef = useRef(decisionFavoriteKeys)
   const privateSyncAvailableRef = useRef(false)
   const privateSyncInFlightRef = useRef(false)
   const privateSyncQueuedRef = useRef(false)
   const privateSyncLastFingerprintRef = useRef<string | null>(null)
-  const privateSyncTimerRef = useRef<number | null>(null)
   const privateSyncRunnerRef = useRef<(manual?: boolean) => void>(() => undefined)
   const chartRef = useRef<ChartSurfaceHandle>(null)
   const workspaceRef = useRef<HTMLDivElement>(null)
   const drawingClipboardRef = useRef<Drawing | null>(null)
 
-  // Keep the UI and the persisted store on the same canonical session list even
-  // when hot reload leaves an older in-memory duplicate array behind.
-  const normalizedDecisionStore = useMemo(() => normalizeDecisionReplayStore(decisionStore), [decisionStore])
+  // Loading/import/sync already canonicalize the store. Re-normalizing all
+  // historical sessions on every candle advance blocked Edge's main thread.
+  const normalizedDecisionStore = decisionStore
 
   const activeDecisionSession = useMemo(() => normalizedDecisionStore.activeSessionId
     ? normalizedDecisionStore.sessions.find((session) => session.id === normalizedDecisionStore.activeSessionId && session.status === 'active') ?? null
@@ -253,10 +253,6 @@ function App() {
   // The draft is transient, so fall back to the active attempt's causal setup
   // after a refresh or hot update while keeping any edits in local state.
   const effectiveDecisionRiskDraft = decisionRiskDraft ?? decisionRiskFallback
-  const privateSyncFingerprint = useMemo(
-    () => JSON.stringify([normalizedDecisionStore, decisionFavoriteKeys]),
-    [decisionFavoriteKeys, normalizedDecisionStore],
-  )
   const decisionMode = Boolean(activeDecisionCandidate)
   const uiDrawings = decisionMode ? decisionDrawings : drawings
   const dispatchUiDrawing = decisionMode ? dispatchDecisionDrawing : dispatchDrawing
@@ -521,9 +517,13 @@ function App() {
   useEffect(() => saveReplayRangeLayers(replayRangeLayers), [replayRangeLayers])
   useEffect(() => saveFavoriteTools(favoriteTools), [favoriteTools])
   useEffect(() => {
-    decisionStoreRef.current = normalizedDecisionStore
-    saveDecisionReplayStore(normalizedDecisionStore)
-  }, [normalizedDecisionStore])
+    decisionStoreRef.current = decisionStore
+    if (decisionPersistTimerRef.current !== null) window.clearTimeout(decisionPersistTimerRef.current)
+    decisionPersistTimerRef.current = window.setTimeout(() => {
+      decisionPersistTimerRef.current = null
+      saveDecisionReplayStoreSnapshot(decisionStoreRef.current)
+    }, 400)
+  }, [decisionStore])
   useEffect(() => {
     decisionFavoriteKeysRef.current = decisionFavoriteKeys
     saveDecisionReplayFavorites(decisionFavoriteKeys)
@@ -556,14 +556,33 @@ function App() {
     return () => window.removeEventListener('storage', syncDecisionProgressFromAnotherTab)
   }, [])
   useEffect(() => {
+    const reloadDecisionProgress = (event: PageTransitionEvent) => {
+      if (!event.persisted) return
+      const current = decisionStoreRef.current
+      const next = mergeDecisionReplayStores(current, loadDecisionReplayStore())
+      if (JSON.stringify(next) === JSON.stringify(current)) return
+      decisionStoreRef.current = next
+      setDecisionStore(next)
+    }
+    window.addEventListener('pageshow', reloadDecisionProgress)
+    return () => {
+      window.removeEventListener('pageshow', reloadDecisionProgress)
+    }
+  }, [])
+  useEffect(() => {
     const flushDecisionProgress = () => {
-      saveDecisionReplayStore(decisionStoreRef.current)
+      if (decisionPersistTimerRef.current !== null) {
+        window.clearTimeout(decisionPersistTimerRef.current)
+        decisionPersistTimerRef.current = null
+      }
+      saveDecisionReplayStoreSnapshot(decisionStoreRef.current)
       saveDecisionReplayFavorites(decisionFavoriteKeysRef.current)
     }
     const flushWhenHidden = () => { if (document.visibilityState === 'hidden') flushDecisionProgress() }
     window.addEventListener('pagehide', flushDecisionProgress)
     document.addEventListener('visibilitychange', flushWhenHidden)
     return () => {
+      flushDecisionProgress()
       window.removeEventListener('pagehide', flushDecisionProgress)
       document.removeEventListener('visibilitychange', flushWhenHidden)
     }
@@ -809,8 +828,15 @@ function App() {
     setDecisionPriceDraft(null)
     setDecisionRiskDraft(null)
     setHoverCandle(null)
+    const returnFromReview = isLast && activeDecisionSession.origin === 'review' && decisionReviewReturnSessionId !== null
     if (!advanceImmediately) {
       notify('本笔已经平仓：按 1 继续观看，按 4 进入下一笔')
+    } else if (returnFromReview) {
+      setDecisionResultsSessionId(null)
+      setDecisionReviewReturnSessionId(null)
+      setDecisionFocusTick((value) => value + 1)
+      focusDecisionChartLatest()
+      notify('本题独立复盘已保存，已返回原练习')
     } else if (isLast) {
       setDecisionResultsSessionId(sessionId)
       notify('本场决策已完成，系统结果现已揭晓')
@@ -865,7 +891,14 @@ function App() {
       }
     })
     setHoverCandle(null)
-    if (isLast) {
+    const returnFromReview = isLast && activeDecisionSession.origin === 'review' && decisionReviewReturnSessionId !== null
+    if (returnFromReview) {
+      setDecisionResultsSessionId(null)
+      setDecisionReviewReturnSessionId(null)
+      setDecisionFocusTick((value) => value + 1)
+      focusDecisionChartLatest()
+      notify('本题独立复盘已保存，已返回原练习')
+    } else if (isLast) {
       setDecisionResultsSessionId(sessionId)
       notify('本场决策已完成，系统结果现已揭晓')
     } else {
@@ -874,6 +907,34 @@ function App() {
       focusDecisionChartLatest()
     }
   }, [activeDecisionAttempt, activeDecisionCandidate, activeDecisionSession, decisionDrawings.present, decisionReviewReturnSessionId, focusDecisionChartLatest, notify])
+
+  const restartActiveDecisionTrade = useCallback(() => {
+    if (!activeDecisionSession || !activeDecisionCandidate || activeDecisionAttempt?.stage !== 'post-exit') return
+    const sessionId = activeDecisionSession.id
+    const candidateKey = activeDecisionCandidate.key
+    const now = Date.now()
+    setDecisionStore((current) => {
+      const session = current.sessions.find((item) => item.id === sessionId)
+      if (!session) return current
+      const restarted = restartPostExitDecisionAttempt(session, candidateKey, now)
+      if (restarted === session) return current
+      return {
+        ...current,
+        sessions: current.sessions.map((item) => item.id === sessionId ? restarted : item),
+      }
+    })
+    setDecisionResultsSessionId(null)
+    setDecisionPriceDraft(null)
+    setDecisionRiskDraft(null)
+    setHoverCandle(null)
+    decisionDrawingLoadingRef.current = true
+    decisionDrawingContextRef.current = null
+    dispatchDecisionDrawing({ type: 'load', drawings: [] })
+    window.setTimeout(() => { decisionDrawingLoadingRef.current = false }, 0)
+    setDecisionFocusTick((value) => value + 1)
+    focusDecisionChartLatest()
+    notify('已回到信号 K，重新开始本笔交易')
+  }, [activeDecisionAttempt, activeDecisionCandidate, activeDecisionSession, focusDecisionChartLatest, notify])
 
   const stopDecisionSession = useCallback(() => {
     if (!activeDecisionSession) return
@@ -1123,14 +1184,27 @@ function App() {
     }).catch((error) => notify(`合并失败，本机记录未被覆盖：${error instanceof Error ? error.message : '无法读取备份文件'}`))
   }, [notify])
   const syncPrivateRepository = useCallback((manual = true) => {
+    // Export/sync must include the latest in-memory key press even if the
+    // short interactive debounce has not fired yet.
+    if (decisionPersistTimerRef.current !== null) {
+      window.clearTimeout(decisionPersistTimerRef.current)
+      decisionPersistTimerRef.current = null
+    }
+    saveDecisionReplayStoreSnapshot(decisionStoreRef.current)
     const currentFingerprint = JSON.stringify([loadDecisionReplayStore(), loadDecisionReplayFavorites()])
+    if (!manual && currentFingerprint === privateSyncLastFingerprintRef.current) {
+      setPrivateSyncStatus('synced')
+      return
+    }
     if (!manual && shouldSkipRecentBackgroundSync(localStorage.getItem(LOCAL_SYNC_AUTO_MARKER_KEY), currentFingerprint)) {
       privateSyncLastFingerprintRef.current = currentFingerprint
       setPrivateSyncStatus('synced')
       return
     }
     if (privateSyncInFlightRef.current) {
-      privateSyncQueuedRef.current = true
+      // A periodic background tick can wait for the next hour. Only queue a
+      // manual request made while a background sync is in flight.
+      if (manual) privateSyncQueuedRef.current = true
       return
     }
     privateSyncInFlightRef.current = true
@@ -1199,13 +1273,17 @@ function App() {
       if (!result.acquired) setPrivateSyncStatus('ready')
     }).catch((error) => {
       setPrivateSyncStatus('error')
-      notify(`私有仓库同步失败：${error instanceof Error ? error.message : '未知错误'}；本机记录没有被完整覆盖`)
+      if (manual) {
+        notify(`私有仓库同步失败：${error instanceof Error ? error.message : '未知错误'}；本机记录没有被完整覆盖`)
+      } else {
+        console.error('[Kline Studio] 私有仓库后台同步失败', error)
+      }
     }).finally(() => {
       privateSyncInFlightRef.current = false
       setPrivateSyncBusy(false)
       if (privateSyncQueuedRef.current) {
         privateSyncQueuedRef.current = false
-        window.setTimeout(() => privateSyncRunnerRef.current(false), 1000)
+        window.setTimeout(() => privateSyncRunnerRef.current(true), 1000)
       }
     })
   }, [notify])
@@ -1215,27 +1293,21 @@ function App() {
 
   useEffect(() => {
     let cancelled = false
+    let intervalId: number | null = null
     void localPrivateSyncAvailable().then((available) => {
       if (cancelled) return
       privateSyncAvailableRef.current = available
       setPrivateSyncStatus(available ? 'ready' : 'unavailable')
-      if (available) privateSyncRunnerRef.current(false)
+      if (available) {
+        privateSyncRunnerRef.current(false)
+        intervalId = window.setInterval(() => privateSyncRunnerRef.current(false), BACKGROUND_SYNC_INTERVAL_MS)
+      }
     })
-    return () => { cancelled = true }
-  }, [])
-
-  useEffect(() => {
-    if (!privateSyncAvailableRef.current || privateSyncFingerprint === privateSyncLastFingerprintRef.current) return
-    if (privateSyncTimerRef.current !== null) window.clearTimeout(privateSyncTimerRef.current)
-    privateSyncTimerRef.current = window.setTimeout(() => {
-      privateSyncTimerRef.current = null
-      privateSyncRunnerRef.current(false)
-    }, 5000)
     return () => {
-      if (privateSyncTimerRef.current !== null) window.clearTimeout(privateSyncTimerRef.current)
-      privateSyncTimerRef.current = null
+      cancelled = true
+      if (intervalId !== null) window.clearInterval(intervalId)
     }
-  }, [privateSyncFingerprint])
+  }, [])
   const restoreLastWorkspaceImport = useCallback(() => {
     const recovery = loadPortableWorkspaceRecovery()
     if (!recovery) {
@@ -1485,12 +1557,15 @@ function App() {
         return
       }
 
-      if (activeDecisionAttempt && !mod && !event.altKey && !event.shiftKey && /^[1-4]$/.test(event.key)) {
+      if (activeDecisionAttempt && !mod && !event.altKey && !event.shiftKey && /^[1-5]$/.test(event.key)) {
         const action = decisionShortcutAction(activeDecisionAttempt.stage, event.key)
         // Numeric keys belong exclusively to the decision flow while a
         // question is active. During price/risk setup an unsupported number
         // must not leak through and unexpectedly change the chart timeframe.
         event.preventDefault()
+        // One physical key press must perform at most one state transition.
+        // Otherwise OS key-repeat can act again after an exit changes the stage.
+        if (event.repeat) return
         if (action === 'advance') advanceActiveDecision()
         else if (action === 'signal-extreme') chooseSignalExtremeOrder()
         else if (action === 'free-price') chooseFreePriceOrder()
@@ -1500,6 +1575,7 @@ function App() {
         else if (action === 'cancel-pending') cancelPendingDecisionAndAdvance()
         else if (action === 'manual-close') closeActiveDecisionAtMarket()
         else if (action === 'next-trade') goToNextDecisionTrade()
+        else if (action === 'restart-trade') restartActiveDecisionTrade()
         return
       }
 
@@ -1647,7 +1723,7 @@ function App() {
     }
     window.addEventListener('keydown', keyHandler)
     return () => window.removeEventListener('keydown', keyHandler)
-  }, [activeDecisionAttempt, activeDecisionSession, activeSelectedReplayRangeId, activeTool, advanceActiveDecision, baseData, candle.close, cancelDecisionSetup, cancelPendingDecisionAndAdvance, chartSeconds, chooseFreePriceOrder, chooseSignalExtremeOrder, closeActiveDecisionAtMarket, confirmDecisionRisk, decisionResultsSession, deleteReplayRangeObject, dispatchUiDrawing, effectiveReplayResolution, goToNextDecisionTrade, interval, loadSavedLayout, navigateDecisionExercise, normalizedReplayCursor, notify, openAlertAt, openOrderAt, priceScaleAuto, priceScaleInverted, priceScaleLog, priceScalePercent, replayAtEnd, saveCurrentLayout, selectedDrawing, selectedDrawingIds, skipActiveDecision, symbol, takeSnapshotShortcut, uiDrawings.present, uiDrawings.selectedId, uiDrawings.selectedIds, watchlistOpen])
+  }, [activeDecisionAttempt, activeDecisionSession, activeSelectedReplayRangeId, activeTool, advanceActiveDecision, baseData, candle.close, cancelDecisionSetup, cancelPendingDecisionAndAdvance, chartSeconds, chooseFreePriceOrder, chooseSignalExtremeOrder, closeActiveDecisionAtMarket, confirmDecisionRisk, decisionResultsSession, deleteReplayRangeObject, dispatchUiDrawing, effectiveReplayResolution, goToNextDecisionTrade, interval, loadSavedLayout, navigateDecisionExercise, normalizedReplayCursor, notify, openAlertAt, openOrderAt, priceScaleAuto, priceScaleInverted, priceScaleLog, priceScalePercent, replayAtEnd, restartActiveDecisionTrade, saveCurrentLayout, selectedDrawing, selectedDrawingIds, skipActiveDecision, symbol, takeSnapshotShortcut, uiDrawings.present, uiDrawings.selectedId, uiDrawings.selectedIds, watchlistOpen])
 
   useEffect(() => {
     const cancelMeasure = () => {
@@ -1920,6 +1996,7 @@ function App() {
               onManualClose={closeActiveDecisionAtMarket}
               onCancelPending={cancelPendingDecisionAndAdvance}
               onNextTrade={goToNextDecisionTrade}
+              onRestartTrade={restartActiveDecisionTrade}
               onStop={stopDecisionSession}
             />}
             {activeDecisionCandidate && activeDecisionAttempt?.stage === 'entry-price' && decisionPriceDraft !== null && <DecisionPricePicker
@@ -2276,7 +2353,7 @@ function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProg
     <div className="panel-heading"><div><b>图表设置</b><small>外观与工作区</small></div><button onClick={onClose} aria-label="关闭"><X size={18} /></button></div>
     <section><h3>外观</h3><div className="theme-options"><button className={theme === 'dark' ? 'active' : ''} onClick={() => onTheme('dark')}><Moon size={18} />深色</button><button className={theme === 'light' ? 'active' : ''} onClick={() => onTheme('light')}><Sun size={18} />亮色</button></div></section>
     <section><h3>交互说明</h3><ul><li>鼠标滚轮：水平缩放</li><li>拖拽主图：平移时间轴</li><li>底部“适应”：显示全部数据</li><li>Shift+↓：播放 / 暂停回放</li><li>Shift+→：回放前进一格</li><li>Delete：删除选中绘图</li><li>Ctrl+Z：撤销</li><li>Ctrl+Y / Ctrl+Shift+Z：重做</li></ul></section>
-    <section><h3>跨电脑同步</h3><p>后台自动同步已开启：启动网站时自动拉取并安全合并，做题或收藏变化后 5 秒自动上传到 PRIVATE 仓库，全程不打开 Windows 文件选择框。</p><small className="private-sync-status">{privateSyncStatus === 'syncing' ? '正在后台同步…' : privateSyncStatus === 'synced' ? '后台同步完成，远端 SHA-256 已验证' : privateSyncStatus === 'ready' ? '后台服务已连接' : privateSyncStatus === 'unavailable' ? '当前不是本机服务，自动同步未启用' : privateSyncStatus === 'error' ? '上次后台同步失败，可点击立即重试' : '正在检查后台服务…'}</small><div className="workspace-transfer-actions">
+    <section><h3>跨电脑同步</h3><p>后台自动同步已开启：启动网站时自动拉取并安全合并，此后每小时最多同步一次，只有做题或收藏数据发生变化时才上传到 PRIVATE 仓库，全程不打开 Windows 文件选择框。</p><small className="private-sync-status">{privateSyncStatus === 'syncing' ? '正在后台同步…' : privateSyncStatus === 'synced' ? '后台同步完成，远端 SHA-256 已验证' : privateSyncStatus === 'ready' ? '后台服务已连接' : privateSyncStatus === 'unavailable' ? '当前不是本机服务，自动同步未启用' : privateSyncStatus === 'error' ? '上次后台同步失败，可点击立即重试' : '正在检查后台服务…'}</small><div className="workspace-transfer-actions">
       <button type="button" className="merge-progress" disabled={privateSyncBusy} onClick={onPrivateSync}><RefreshCcw size={16} />{privateSyncBusy ? '正在校验并同步…' : '私有仓库一键同步'}</button>
       <button type="button" onClick={onExportWorkspace}><Download size={16} />下载同步备份</button>
       <button type="button" className="merge-progress" onClick={() => mergeInputRef.current?.click()}><Upload size={16} />上传并合并备份</button>

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
-  LocalSyncConflictError, localPrivateSyncAvailable, parseLocalSyncAutoMarker,
+  BACKGROUND_SYNC_INTERVAL_MS, LocalSyncConflictError, localPrivateSyncAvailable, parseLocalSyncAutoMarker,
   prepareLocalPrivateSync, publishLocalPrivateSync, runWithLocalPrivateSyncLock, shouldSkipRecentBackgroundSync,
 } from './localPrivateSync'
 import type { PortableWorkspace } from './portableWorkspace'
@@ -13,11 +13,12 @@ const workspace: PortableWorkspace = {
 }
 
 describe('local private repository sync client', () => {
-  it('deduplicates the same background snapshot across tabs for one minute', () => {
+  it('deduplicates the same background snapshot across tabs for one hour', () => {
     const marker = JSON.stringify({ fingerprint: 'same', commit: 'abc', savedAt: 1000 })
     expect(parseLocalSyncAutoMarker(marker)).toMatchObject({ fingerprint: 'same', commit: 'abc' })
-    expect(shouldSkipRecentBackgroundSync(marker, 'same', 60_999)).toBe(true)
-    expect(shouldSkipRecentBackgroundSync(marker, 'same', 61_000)).toBe(false)
+    expect(BACKGROUND_SYNC_INTERVAL_MS).toBe(3_600_000)
+    expect(shouldSkipRecentBackgroundSync(marker, 'same', 3_600_999)).toBe(true)
+    expect(shouldSkipRecentBackgroundSync(marker, 'same', 3_601_000)).toBe(false)
     expect(shouldSkipRecentBackgroundSync(marker, 'changed', 2000)).toBe(false)
     expect(shouldSkipRecentBackgroundSync('{bad', 'same', 2000)).toBe(false)
   })
