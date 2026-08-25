@@ -47,7 +47,7 @@ import {
 import { collectPortableWorkspace, downloadPortableWorkspace, loadPortableWorkspaceRecovery, parsePortableWorkspace, restorePortableWorkspaceRecovery, restorePortableWorkspaceSafely } from './lib/portableWorkspace'
 import { mergePortableWorkspaceProgress } from './lib/workspaceProgressSync'
 import {
-  BACKGROUND_SYNC_INTERVAL_MS, LOCAL_SYNC_AUTO_MARKER_KEY, LocalSyncConflictError, localPrivateSyncAvailable,
+  LOCAL_SYNC_AUTO_MARKER_KEY, LocalSyncConflictError, localPrivateSyncAvailable,
   prepareLocalPrivateSync, publishLocalPrivateSync, runWithLocalPrivateSyncLock,
   sha256PortableWorkspace, shouldSkipRecentBackgroundSync,
 } from './lib/localPrivateSync'
@@ -219,7 +219,6 @@ function App() {
   const decisionPersistTimerRef = useRef<number | null>(null)
   const decisionSessionStartLockRef = useRef(false)
   const decisionFavoriteKeysRef = useRef(decisionFavoriteKeys)
-  const privateSyncAvailableRef = useRef(false)
   const privateSyncInFlightRef = useRef(false)
   const privateSyncQueuedRef = useRef(false)
   const privateSyncLastFingerprintRef = useRef<string | null>(null)
@@ -1293,19 +1292,12 @@ function App() {
 
   useEffect(() => {
     let cancelled = false
-    let intervalId: number | null = null
     void localPrivateSyncAvailable().then((available) => {
       if (cancelled) return
-      privateSyncAvailableRef.current = available
       setPrivateSyncStatus(available ? 'ready' : 'unavailable')
-      if (available) {
-        privateSyncRunnerRef.current(false)
-        intervalId = window.setInterval(() => privateSyncRunnerRef.current(false), BACKGROUND_SYNC_INTERVAL_MS)
-      }
     })
     return () => {
       cancelled = true
-      if (intervalId !== null) window.clearInterval(intervalId)
     }
   }, [])
   const restoreLastWorkspaceImport = useCallback(() => {
@@ -2353,7 +2345,7 @@ function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProg
     <div className="panel-heading"><div><b>图表设置</b><small>外观与工作区</small></div><button onClick={onClose} aria-label="关闭"><X size={18} /></button></div>
     <section><h3>外观</h3><div className="theme-options"><button className={theme === 'dark' ? 'active' : ''} onClick={() => onTheme('dark')}><Moon size={18} />深色</button><button className={theme === 'light' ? 'active' : ''} onClick={() => onTheme('light')}><Sun size={18} />亮色</button></div></section>
     <section><h3>交互说明</h3><ul><li>鼠标滚轮：水平缩放</li><li>拖拽主图：平移时间轴</li><li>底部“适应”：显示全部数据</li><li>Shift+↓：播放 / 暂停回放</li><li>Shift+→：回放前进一格</li><li>Delete：删除选中绘图</li><li>Ctrl+Z：撤销</li><li>Ctrl+Y / Ctrl+Shift+Z：重做</li></ul></section>
-    <section><h3>跨电脑同步</h3><p>后台自动同步已开启：启动网站时自动拉取并安全合并，此后每小时最多同步一次，只有做题或收藏数据发生变化时才上传到 PRIVATE 仓库，全程不打开 Windows 文件选择框。</p><small className="private-sync-status">{privateSyncStatus === 'syncing' ? '正在后台同步…' : privateSyncStatus === 'synced' ? '后台同步完成，远端 SHA-256 已验证' : privateSyncStatus === 'ready' ? '后台服务已连接' : privateSyncStatus === 'unavailable' ? '当前不是本机服务，自动同步未启用' : privateSyncStatus === 'error' ? '上次后台同步失败，可点击立即重试' : '正在检查后台服务…'}</small><div className="workspace-transfer-actions">
+    <section><h3>跨电脑同步</h3><p>仅在你点击“私有仓库一键同步”时执行：先保护本机记录，再从 PRIVATE 仓库拉取并安全合并，最后上传并回下载校验。启动网站和日常做题都不会自动同步。</p><small className="private-sync-status">{privateSyncStatus === 'syncing' ? '正在手动同步…' : privateSyncStatus === 'synced' ? '手动同步完成，远端 SHA-256 已验证' : privateSyncStatus === 'ready' ? '后台服务已连接，等待手动同步' : privateSyncStatus === 'unavailable' ? '当前不是本机服务，无法使用私有仓库同步' : privateSyncStatus === 'error' ? '上次手动同步失败，可点击重试' : '正在检查后台服务…'}</small><div className="workspace-transfer-actions">
       <button type="button" className="merge-progress" disabled={privateSyncBusy} onClick={onPrivateSync}><RefreshCcw size={16} />{privateSyncBusy ? '正在校验并同步…' : '私有仓库一键同步'}</button>
       <button type="button" onClick={onExportWorkspace}><Download size={16} />下载同步备份</button>
       <button type="button" className="merge-progress" onClick={() => mergeInputRef.current?.click()}><Upload size={16} />上传并合并备份</button>
