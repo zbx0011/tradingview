@@ -1250,13 +1250,15 @@ function App() {
     setPrivateSyncOperation(scope === 'history' ? 'history-receive' : 'receive')
     setPrivateSyncStatus('syncing')
     const executeReceive = async () => {
-      const received = await receiveLocalPrivateSync(scope)
+      const localWorkspace = collectPortableWorkspace()
+      const protectedSnapshot = scope === 'history' ? decisionHistoryWorkspace(localWorkspace) : localWorkspace
+      const received = await receiveLocalPrivateSync(scope, protectedSnapshot)
       if (received.snapshots.length === 0) throw new Error('私有仓库没有可接收的备份')
       let summary
       if (scope === 'history') {
-        summary = mergePortableWorkspaceProgress(received.snapshots, localStorage)
+        summary = mergePortableWorkspaceProgress(received.snapshots, localStorage, { persistRecovery: false })
       } else {
-        summary = receivePortableWorkspaceSnapshotsSafely(received.snapshots, localStorage)
+        summary = receivePortableWorkspaceSnapshotsSafely(received.snapshots, localStorage, { persistRecovery: false })
       }
       const receivedStore = loadDecisionReplayStore()
       const receivedFavorites = loadDecisionReplayFavorites()
@@ -1265,7 +1267,7 @@ function App() {
       setDecisionStore(receivedStore)
       setDecisionFavoriteKeys(receivedFavorites)
       setPrivateSyncStatus('received')
-      notify(`${scope === 'history' ? '仅接收做题历史' : '一键接收'}完成：${summary.sessionCount} 场、${summary.resultCount} 笔、${summary.favoriteCount} 个收藏；本机历史已保留，本次没有上传`)
+      notify(`${scope === 'history' ? '仅接收做题历史' : '一键接收'}完成：${summary.sessionCount} 场、${summary.resultCount} 笔、${summary.favoriteCount} 个收藏；接收前备份已保存到 ${received.recovery.path}，本次没有上传`)
     }
     void runWithLocalPrivateSyncLock(executeReceive, true).then((result) => {
       if (!result.acquired) setPrivateSyncStatus('ready')

@@ -69,6 +69,7 @@ export interface LocalSyncReceiveResult {
   head: string
   snapshots: PortableWorkspace[]
   sourcePaths: string[]
+  recovery: { path: string; sha256: string }
 }
 
 export interface LocalSyncPublishResult {
@@ -148,10 +149,15 @@ export async function prepareLocalPrivateSync(snapshot: PortableWorkspace, mode:
   }
 }
 
-export async function receiveLocalPrivateSync(scope: LocalSyncScope = 'workspace'): Promise<LocalSyncReceiveResult> {
-  const payload = await request({ action: 'receive', scope })
+export async function receiveLocalPrivateSync(scope: LocalSyncScope, localSnapshot: PortableWorkspace): Promise<LocalSyncReceiveResult> {
+  const payload = await request({ action: 'receive', scope, snapshot: localSnapshot })
   if (payload.private !== true || typeof payload.head !== 'string') {
     throw new Error('私有仓库接收校验结果缺失，已停止接收')
+  }
+  if (!payload.recovery || typeof payload.recovery !== 'object') throw new Error('本机磁盘保护备份校验结果缺失，已停止接收')
+  const recovery = payload.recovery as Record<string, unknown>
+  if (typeof recovery.path !== 'string' || typeof recovery.sha256 !== 'string') {
+    throw new Error('本机磁盘保护备份校验结果缺失，已停止接收')
   }
   return {
     ok: true,
@@ -159,6 +165,7 @@ export async function receiveLocalPrivateSync(scope: LocalSyncScope = 'workspace
     head: payload.head,
     snapshots: checkedSnapshots(payload.snapshots),
     sourcePaths: Array.isArray(payload.sourcePaths) ? payload.sourcePaths.filter((item): item is string => typeof item === 'string') : [],
+    recovery: { path: recovery.path, sha256: recovery.sha256 },
   }
 }
 

@@ -171,4 +171,22 @@ describe('workspace progress sync', () => {
     ])
     expect(loadPortableWorkspaceRecovery(storage)?.entries['kline-studio-workspace-v1']).toBe('local-settings')
   })
+
+  it('uses the verified disk recovery path instead of duplicating a quota-sized workspace in localStorage', () => {
+    const storage = createStorage({
+      [DECISION_REPLAY_STORAGE_KEY]: JSON.stringify(store(session('local', 1000))),
+      [DECISION_REPLAY_FAVORITES_STORAGE_KEY]: JSON.stringify(['trade:local']),
+      'kline-studio-workspace-v1': 'local-settings',
+    }, PORTABLE_WORKSPACE_RECOVERY_STORAGE_KEY)
+    const latest = snapshot(store(session('remote', 2000)), ['trade:remote'])
+    latest.entries['kline-studio-workspace-v1'] = 'remote-settings'
+
+    expect(receivePortableWorkspaceSnapshotsSafely([latest], storage, { persistRecovery: false })).toMatchObject({
+      sessionCount: 2,
+      resultCount: 2,
+      favoriteCount: 2,
+    })
+    expect(storage.getItem(PORTABLE_WORKSPACE_RECOVERY_STORAGE_KEY)).toBeNull()
+    expect(storage.getItem('kline-studio-workspace-v1')).toBe('remote-settings')
+  })
 })

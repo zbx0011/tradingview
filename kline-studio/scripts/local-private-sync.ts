@@ -39,6 +39,11 @@ interface PrivateRepositoryState {
   head: string
 }
 
+interface LocalRecoveryFile {
+  path: string
+  sha256: string
+}
+
 type SyncMode = 'manual' | 'background'
 type SyncScope = 'workspace' | 'history'
 
@@ -160,6 +165,26 @@ function historyWorkspace(workspace: PortableWorkspace): PortableWorkspace {
     ...workspace,
     entries: Object.fromEntries(Object.entries(workspace.entries).filter(([key]) => key === REPLAY_KEY || key === FAVORITES_KEY)),
   }
+}
+
+function localRecoveryDirectory() {
+  const localAppData = process.env.LOCALAPPDATA?.trim()
+  return localAppData
+    ? path.join(localAppData, 'KlineStudio', 'recovery')
+    : path.join(os.homedir(), '.kline-studio', 'recovery')
+}
+
+async function protectLocalSnapshot(snapshot: PortableWorkspace, scope: SyncScope): Promise<LocalRecoveryFile> {
+  const protectedSnapshot = scope === 'history' ? historyWorkspace(snapshot) : snapshot
+  const raw = serializeWorkspace(protectedSnapshot)
+  const digest = sha256(raw)
+  const directory = localRecoveryDirectory()
+  await fs.mkdir(directory, { recursive: true })
+  const file = path.join(directory, `kline-studio-${scope}-before-receive-${timestamp()}-${digest.slice(0, 12)}.json`)
+  await fs.writeFile(file, raw, { encoding: 'utf8', flag: 'wx' })
+  const verified = await fs.readFile(file)
+  if (sha256(verified) !== digest) throw new HttpError(500, '本机磁盘保护备份 SHA-256 校验失败，已停止接收')
+  return { path: file, sha256: digest }
 }
 
 function sha256(value: string | Buffer) {
@@ -496,7 +521,11 @@ export function localPrivateSyncPlugin(): Plugin {
           const body = await readJsonRequest(request) as { action?: unknown; mode?: unknown; scope?: unknown; snapshot?: unknown; expectedHead?: unknown }
           const scope: SyncScope = body.scope === 'history' ? 'history' : 'workspace'
           if (body.action === 'receive') {
-            sendJson(response, 200, await enqueue(() => receiveSync(scope)))
+            const localSnapshot = workspaceFromUnknown(body.snapshot)
+            sendJson(response, 200, await enqueue(async () => {
+              const recovery = await protectLocalSnapshot(localSnapshot, scope)
+              return { ...await receiveSync(scope), recovery }
+            }))
             return
           }
           const snapshot = workspaceFromUnknown(body.snapshot)

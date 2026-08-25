@@ -141,17 +141,19 @@ export function mergePortableWorkspaceProgress(
 export function receivePortableWorkspaceSafely(
   remote: PortableWorkspace,
   storage: StorageLike,
+  options: WorkspaceProgressMergeOptions = {},
 ): WorkspaceProgressMergeSummary {
   const local = collectPortableWorkspace(storage)
   const stagedStorage = workspaceMemoryStorage(remote)
   const summary = mergePortableWorkspaceProgress([decisionHistoryWorkspace(local)], stagedStorage, { persistRecovery: false })
   const staged = collectPortableWorkspace(stagedStorage)
-  savePortableWorkspaceRecovery(local, storage)
+  const persistRecovery = options.persistRecovery !== false
+  if (persistRecovery) savePortableWorkspaceRecovery(local, storage)
   try {
     restorePortableWorkspace(staged, storage)
   } catch (error) {
     restorePortableWorkspace(local, storage)
-    savePortableWorkspaceRecovery(local, storage)
+    if (persistRecovery) savePortableWorkspaceRecovery(local, storage)
     throw error
   }
   return summary
@@ -161,9 +163,10 @@ export function receivePortableWorkspaceSafely(
 export function receivePortableWorkspaceSnapshotsSafely(
   snapshots: readonly PortableWorkspace[],
   storage: StorageLike,
+  options: WorkspaceProgressMergeOptions = {},
 ): WorkspaceProgressMergeSummary {
   if (snapshots.length === 0) throw new Error('没有可接收的工作区备份')
-  let summary = receivePortableWorkspaceSafely(snapshots[0], storage)
+  let summary = receivePortableWorkspaceSafely(snapshots[0], storage, options)
   if (snapshots.length > 1) {
     // Keep the recovery created before the settings restore; a second recovery
     // here would replace it with an already-mutated intermediate workspace.

@@ -60,37 +60,41 @@ describe('local private repository sync client', () => {
     vi.unstubAllGlobals()
   })
 
-  it('receives private snapshots without sending a local workspace', async () => {
+  it('requires a verified local disk recovery before receiving private snapshots', async () => {
     vi.stubGlobal('fetch', vi.fn(async (_input, init) => {
-      expect(JSON.parse(String(init?.body))).toEqual({ action: 'receive', scope: 'workspace' })
+      expect(JSON.parse(String(init?.body))).toEqual({ action: 'receive', scope: 'workspace', snapshot: workspace })
       return new Response(JSON.stringify({
         ok: true,
         private: true,
         head: 'receive-head',
         snapshots: [workspace],
         sourcePaths: ['backups/merged/latest.json'],
+        recovery: { path: 'C:\\recovery\\before-receive.json', sha256: 'recovery-sha' },
       }), { status: 200, headers: { 'Content-Type': 'application/json' } })
     }))
 
-    await expect(receiveLocalPrivateSync()).resolves.toMatchObject({
+    await expect(receiveLocalPrivateSync('workspace', workspace)).resolves.toMatchObject({
       private: true,
       head: 'receive-head',
       snapshots: [workspace],
+      recovery: { sha256: 'recovery-sha' },
     })
     vi.unstubAllGlobals()
   })
 
   it('marks history-only receive and publish requests without changing the workspace schema', async () => {
     vi.stubGlobal('fetch', vi.fn(async (_input, init) => {
-      const body = JSON.parse(String(init?.body)) as { action: string; scope: string }
+      const body = JSON.parse(String(init?.body)) as { action: string; scope: string; snapshot?: PortableWorkspace }
       if (body.action === 'receive') {
         expect(body.scope).toBe('history')
+        expect(body.snapshot).toEqual(workspace)
         return new Response(JSON.stringify({
           ok: true,
           private: true,
           head: 'history-head',
           snapshots: [workspace],
           sourcePaths: ['backups/history.json'],
+          recovery: { path: 'C:\\recovery\\history.json', sha256: 'history-recovery-sha' },
         }), { status: 200, headers: { 'Content-Type': 'application/json' } })
       }
       expect(body).toMatchObject({ action: 'publish', scope: 'history' })
@@ -107,7 +111,9 @@ describe('local private repository sync client', () => {
       }), { status: 200, headers: { 'Content-Type': 'application/json' } })
     }))
 
-    await expect(receiveLocalPrivateSync('history')).resolves.toMatchObject({ head: 'history-head' })
+    await expect(receiveLocalPrivateSync('history', workspace)).resolves.toMatchObject({
+      head: 'history-head', recovery: { sha256: 'history-recovery-sha' },
+    })
     await expect(publishLocalPrivateSync('history-head', workspace, 'manual', 'history')).resolves.toMatchObject({
       submittedSha256: 'history-sha',
     })
