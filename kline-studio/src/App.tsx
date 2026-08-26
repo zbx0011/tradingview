@@ -52,13 +52,14 @@ import {
   sha256PortableWorkspace, type LocalSyncScope,
 } from './lib/localPrivateSync'
 import { replayDecisionCandidates, type ReplayDecisionCandidate } from './lib/replayTradeRegistry'
+import { createDecisionAnomalyReviewSession, findDecisionReplayAnomalies } from './lib/decisionReplayAnomalies'
 import {
   DECISION_REPLAY_INTERVALS, DECISION_REPLAY_STORAGE_KEY, adjacentDecisionExerciseTarget, advanceDecisionAttempt, buildDecisionResult, cancelPendingOrderAndAdvance, candleAtOrBefore, candlesKnownAt, createDecisionAttempt,
   createDecisionReviewSession, createDecisionSession, currentDecisionAttempt, currentDecisionCandidate, decisionShortcutAction, defaultDecisionLevels,
-  decisionAttemptInitialStopLoss, decisionSessionPositionSizingModes, emptyDecisionReplayStore, filterDecisionCandidatesByScope, historyCoversDecisionCandidate, intervalCutoffTime, intervalSeconds,
+  decisionAttemptInitialStopLoss, decisionStopLossMode, decisionSessionPositionSizingModes, emptyDecisionReplayStore, filterDecisionCandidatesByScope, historyCoversDecisionCandidate, intervalCutoffTime, intervalSeconds,
   loadDecisionReplayStore, mergeDecisionReplayStores, nextCandleAfter, normalizeDecisionReplayStore, parseDecisionReplayStoreChecked, pnlForDecisionMode, restartPostExitDecisionAttempt, sampleDecisionCandidates,
   saveDecisionReplayStoreSnapshot, sessionResults, updateDecisionSessionDrawings, validDecisionLevels, validOpenPositionLevels,
-  type DecisionAttempt, type DecisionExit, type DecisionPositionSizingMode, type DecisionReplayInterval, type DecisionReplaySession, type DecisionTradeResult,
+  type DecisionAttempt, type DecisionExit, type DecisionPositionSizingMode, type DecisionReplayInterval, type DecisionReplaySession, type DecisionStopLossMode, type DecisionTradeResult,
 } from './lib/decisionReplay'
 
 type ChartType = 'candles' | 'hollow' | 'line' | 'area'
@@ -399,6 +400,13 @@ function App() {
   const allDecisionCandidates = useMemo(() => registeredDecisionCandidates.filter((candidate) => (
     historyCoversDecisionCandidate(candidate, availableDecisionHistoryBySymbol[candidate.symbol])
   )), [availableDecisionHistoryBySymbol, registeredDecisionCandidates])
+  const decisionAnomalies = useMemo(() => decisionCenterOpen
+    ? findDecisionReplayAnomalies(normalizedDecisionStore.sessions, aggregateCandles(availableDecisionHistoryBySymbol.XAUUSD ?? [], 300))
+    : [], [availableDecisionHistoryBySymbol.XAUUSD, decisionCenterOpen, normalizedDecisionStore.sessions])
+  const replayableDecisionAnomalies = useMemo(() => decisionAnomalies.filter(({ result }) => (
+    historyCoversDecisionCandidate(result.candidate, availableDecisionHistoryBySymbol.XAUUSD)
+  )), [availableDecisionHistoryBySymbol.XAUUSD, decisionAnomalies])
+  const decisionAnomalyCount = new Set(replayableDecisionAnomalies.map(({ result }) => result.candidate.key)).size
   const availableDecisionCount = useMemo(() => {
     const seen = new Set(normalizedDecisionStore.seenTradeKeys)
     return allDecisionCandidates.filter((candidate) => (
@@ -778,6 +786,35 @@ function App() {
     notify(`已随机抽取 ${selected.length} 笔，开始严格因果决策回放`)
   }, [allDecisionCandidates, normalizedDecisionStore.seenTradeKeys, notify])
 
+  const beginAnomalyReview = useCallback((positionSizingModes: DecisionPositionSizingMode[]) => {
+    if (decisionSessionStartLockRef.current || replayableDecisionAnomalies.length === 0) return
+    decisionSessionStartLockRef.current = true
+    window.setTimeout(() => { decisionSessionStartLockRef.current = false }, 0)
+    const currentActive = normalizedDecisionStore.sessions.find((session) => session.id === normalizedDecisionStore.activeSessionId && session.status === 'active')
+    // Repeated clicks resume an unfinished anomaly batch instead of making empty duplicates.
+    const unfinished = normalizedDecisionStore.sessions.find((session) => session.reviewKind === 'stop-anomalies' && session.status === 'active')
+    const session = unfinished ?? createDecisionAnomalyReviewSession(replayableDecisionAnomalies, positionSizingModes)
+    setDecisionStore((current) => ({
+      ...current,
+      activeSessionId: session.id,
+      sessions: unfinished ? current.sessions : [session, ...current.sessions],
+    }))
+    setDecisionReviewReturnSessionId(currentActive?.id === session.id ? decisionReviewReturnSessionId : currentActive?.origin === 'review' ? decisionReviewReturnSessionId : currentActive?.id ?? null)
+    setDecisionCenterOpen(false)
+    setDecisionHistoryOpen(false)
+    setDecisionResultsSessionId(null)
+    setDecisionPriceDraft(null)
+    setDecisionRiskDraft(null)
+    setHoverCandle(null)
+    decisionDrawingLoadingRef.current = true
+    decisionDrawingContextRef.current = null
+    dispatchDecisionDrawing({ type: 'load', drawings: currentDecisionAttempt(session)?.drawings ?? [] })
+    window.setTimeout(() => { decisionDrawingLoadingRef.current = false }, 0)
+    setDecisionFocusTick((value) => value + 1)
+    focusDecisionChartLatest()
+    notify(`${unfinished ? '继续' : '已创建'}异常订单独立重做卷，共 ${session.candidates.length} 题；原记录保留`)
+  }, [decisionReviewReturnSessionId, focusDecisionChartLatest, normalizedDecisionStore, notify, replayableDecisionAnomalies])
+
   const completeDecisionTrade = useCallback((resolvedAttempt: DecisionAttempt, exit: DecisionExit, advanceImmediately = false) => {
     if (!activeDecisionSession || !activeDecisionCandidate) return
     const expectedCandidateKey = activeDecisionCandidate.key
@@ -987,7 +1024,7 @@ function App() {
     const levels = defaultDecisionLevels(activeDecisionCandidate.trade.side, price, activeDecisionCandidate.trade.entry.stopLoss)
     setDecisionPriceDraft(price)
     setDecisionRiskDraft(levels)
-    updateActiveDecisionAttempt((attempt) => ({ ...attempt, entryMode: 'signal-extreme', orderKind: 'stop', pendingEntryPrice: price, stage: 'risk-setup' }))
+    updateActiveDecisionAttempt((attempt) => ({ ...attempt, stopLossMode: 'close', entryMode: 'signal-extreme', orderKind: 'stop', pendingEntryPrice: price, stage: 'risk-setup' }))
   }, [activeDecisionAttempt, activeDecisionCandidate, decisionSourceData, updateActiveDecisionAttempt])
 
   const chooseFreePriceOrder = useCallback(() => {
@@ -996,13 +1033,13 @@ function App() {
     if (!current) return
     setDecisionPriceDraft(current.close)
     setDecisionRiskDraft(null)
-    updateActiveDecisionAttempt((attempt) => ({ ...attempt, entryMode: 'free-price', orderKind: null, pendingEntryPrice: null, stage: 'entry-price' }))
+    updateActiveDecisionAttempt((attempt) => ({ ...attempt, stopLossMode: 'close', entryMode: 'free-price', orderKind: null, pendingEntryPrice: null, stage: 'entry-price' }))
   }, [activeDecisionAttempt, decisionSourceData, updateActiveDecisionAttempt])
 
   const cancelDecisionSetup = useCallback(() => {
     setDecisionPriceDraft(null)
     setDecisionRiskDraft(null)
-    updateActiveDecisionAttempt((attempt) => ({ ...attempt, stage: 'entry-decision', entryMode: null, orderKind: null, pendingEntryPrice: null, initialStopLoss: null, stopLoss: null, takeProfit: null }))
+    updateActiveDecisionAttempt((attempt) => ({ ...attempt, stage: 'entry-decision', stopLossMode: 'close', entryMode: null, orderKind: null, pendingEntryPrice: null, initialStopLoss: null, stopLoss: null, takeProfit: null }))
   }, [updateActiveDecisionAttempt])
 
   const confirmDecisionPrice = useCallback(() => {
@@ -1053,6 +1090,12 @@ function App() {
       if (!valid) return attempt
       return { ...attempt, stopLoss, takeProfit }
     })
+  }, [updateActiveDecisionAttempt])
+
+  const updateDecisionStopLossMode = useCallback((mode: DecisionStopLossMode) => {
+    updateActiveDecisionAttempt((attempt) => ['risk-setup', 'order-pending', 'position-open'].includes(attempt.stage)
+      ? { ...attempt, stopLossMode: mode }
+      : attempt)
   }, [updateActiveDecisionAttempt])
 
   const skipActiveDecision = useCallback((reason: DecisionExit['reason'] = 'skipped') => {
@@ -1993,6 +2036,8 @@ function App() {
             />}
             {activeDecisionCandidate && activeDecisionAttempt?.stage === 'risk-setup' && activeDecisionAttempt.pendingEntryPrice !== null && effectiveDecisionRiskDraft && <DecisionRiskOverlay
               candidate={activeDecisionCandidate}
+              stopLossMode={decisionStopLossMode(activeDecisionAttempt.stopLossMode)}
+              onStopLossMode={updateDecisionStopLossMode}
               entryPrice={activeDecisionAttempt.pendingEntryPrice}
               stopLoss={effectiveDecisionRiskDraft.stopLoss}
               takeProfit={effectiveDecisionRiskDraft.takeProfit}
@@ -2007,6 +2052,8 @@ function App() {
             />}
             {activeDecisionCandidate && activeDecisionAttempt && (activeDecisionAttempt.stage === 'order-pending' || activeDecisionAttempt.stage === 'position-open') && (activeDecisionAttempt.fill?.price ?? activeDecisionAttempt.pendingEntryPrice) !== null && activeDecisionAttempt.stopLoss !== null && activeDecisionAttempt.takeProfit !== null && <DecisionRiskOverlay
               candidate={activeDecisionCandidate}
+              stopLossMode={decisionStopLossMode(activeDecisionAttempt.stopLossMode)}
+              onStopLossMode={updateDecisionStopLossMode}
               entryPrice={activeDecisionAttempt.fill?.price ?? activeDecisionAttempt.pendingEntryPrice!}
               entryLabel={activeDecisionAttempt.stage === 'position-open' ? '开仓' : '挂单'}
               stopLoss={activeDecisionAttempt.stopLoss}
@@ -2247,6 +2294,10 @@ function App() {
         onToggleFavorite={(key) => setDecisionFavoriteKeys((current) => toggleDecisionReplayFavorite(current, key))}
         onClose={() => setDecisionCenterOpen(false)}
         onStart={beginDecisionSession}
+        anomalyCount={decisionAnomalyCount}
+        anomalyUnavailableCount={decisionAnomalies.length - replayableDecisionAnomalies.length}
+        anomalyLoading={!availableDecisionHistoryBySymbol.XAUUSD?.length}
+        onRedoAnomalies={beginAnomalyReview}
         onContinue={() => { setDecisionCenterOpen(false); setDecisionResultsSessionId(null); focusDecisionChartLatest() }}
         onResults={(sessionId) => { setDecisionCenterOpen(false); setDecisionResultsSessionId(sessionId) }}
       />

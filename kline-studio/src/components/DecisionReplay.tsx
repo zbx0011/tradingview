@@ -6,11 +6,11 @@ import {
 } from 'lucide-react'
 import type { ReplayDecisionCandidate } from '../lib/replayTradeRegistry'
 import type {
-  DecisionAttempt, DecisionHistorySort, DecisionPositionSizingMode, DecisionReplayInterval, DecisionReplaySession, DecisionTradeResult,
+  DecisionAttempt, DecisionHistorySort, DecisionPositionSizingMode, DecisionReplayInterval, DecisionReplaySession, DecisionStopLossMode, DecisionTradeResult,
 } from '../lib/decisionReplay'
 import {
   aggregateDecisionResults, compareDecisionHistorySortValues, decisionPositionSizingLabel, decisionResultInitialStopLoss, decisionResultPnl, decisionResultR,
-  decisionSessionPositionSizingModes, decisionSessionUserRStats, DECISION_REPLAY_INTERVALS, DEFAULT_DECISION_POSITION_SIZING_MODES,
+  decisionStopLossMode, decisionSessionPositionSizingModes, decisionSessionUserRStats, DECISION_REPLAY_INTERVALS, DEFAULT_DECISION_POSITION_SIZING_MODES,
   formatDecisionDate, pnlForDecisionMode, rewardRiskRatio, sessionResults, symbolPrecision, toggleDecisionHistorySymbolSelection,
 } from '../lib/decisionReplay'
 import { formatPrice, INTERVALS, SYMBOLS, type Candle, type SymbolId } from '../lib/market'
@@ -164,12 +164,13 @@ function choiceLabel(result: DecisionTradeResult) {
   return `${mode} · ${orderKindLabel(result.orderKind)}`
 }
 
-function exitReasonLabel(reason: DecisionTradeResult['userExit']['reason']) {
+function exitReasonLabel(reason: DecisionTradeResult['userExit']['reason'], stopLossMode?: DecisionStopLossMode) {
   const labels: Record<DecisionTradeResult['userExit']['reason'], string> = {
     skipped: '主动不参与',
     'manual-close': '按 K 线收盘价手动离场',
-    'stop-loss': '触及止损',
+    'stop-loss': decisionStopLossMode(stopLossMode) === 'close' ? '收盘确认止损（按收盘价成交）' : '触及止损',
     'take-profit': '触及止盈',
+    'system-exit': '跟随系统平仓',
     'end-of-data': '行情数据结束',
   }
   return labels[reason]
@@ -231,7 +232,7 @@ export interface DecisionSymbolStats {
   }>
 }
 
-export function DecisionReplayCenter({ open, availableCount, totalCount, symbolStats, sessions, activeSessionId, favoriteKeys = [], onToggleFavorite = () => undefined, onClose, onStart, onContinue, onResults }: {
+export function DecisionReplayCenter({ open, availableCount, totalCount, symbolStats, sessions, activeSessionId, favoriteKeys = [], onToggleFavorite = () => undefined, onClose, onStart, onContinue, onResults, anomalyCount = 0, anomalyUnavailableCount = 0, anomalyLoading = false, onRedoAnomalies }: {
   open: boolean
   availableCount: number
   totalCount: number
@@ -244,6 +245,10 @@ export function DecisionReplayCenter({ open, availableCount, totalCount, symbolS
   onResults: (sessionId: string) => void
   favoriteKeys?: readonly string[]
   onToggleFavorite?: (key: string) => void
+  anomalyCount?: number
+  anomalyUnavailableCount?: number
+  anomalyLoading?: boolean
+  onRedoAnomalies?: (positionSizingModes: DecisionPositionSizingMode[]) => void
 }) {
   const [newSessionPreferences, setNewSessionPreferences] = useState(() => loadDecisionReplayCenterPreferences() ?? ({
     count: 30,
@@ -284,7 +289,15 @@ export function DecisionReplayCenter({ open, availableCount, totalCount, symbolS
           <Play size={22} /><span><b>继续未完成的决策回放</b><small>当前进度已自动保存</small></span><ChevronRight size={20} />
         </button>}
         <section className="decision-new-session">
-          <div><h3>开始新的随机练习</h3><p>从所有可用模拟订单中打乱抽取，已经出现过的交易不会再次抽到。</p></div>
+          <div className="decision-new-session-head">
+            <div><h3>开始新的随机练习</h3><p>从所有可用模拟订单中打乱抽取，已经出现过的交易不会再次抽到。</p></div>
+            <div className="decision-anomaly-entry">
+              <button className="decision-anomaly-redo" data-testid="decision-anomaly-redo" disabled={anomalyLoading || anomalyCount === 0 || selectedModes.length === 0 || !onRedoAnomalies} onClick={() => onRedoAnomalies?.(selectedModes)} title="按本机 XAUUSD 5分钟历史识别异常题目，创建独立重做卷；原记录和收藏保留，同一道题不重复抽取。">
+                <RotateCcw size={17} />{anomalyLoading ? '正在核对异常订单…' : `重做异常订单（${anomalyCount}题）`}
+              </button>
+              <small>独立重做 · 原记录保留{anomalyUnavailableCount > 0 ? ` · 另${anomalyUnavailableCount}笔缺行情，暂不能重做` : ''}</small>
+            </div>
+          </div>
           <div className="decision-symbol-filter" aria-label="选择练习标的">
             <div className="decision-symbol-filter-head"><b>选择标的</b><span>可多选，随机抽取只使用已勾选的标的</span></div>
             <div className="decision-symbol-options">
@@ -381,7 +394,7 @@ export function DecisionReplayCenter({ open, availableCount, totalCount, symbolS
                 }}
               >
                 <span className={`decision-session-status ${session.status}`}>{statusLabel(session.status)}</span>
-                <span><b>{results.length} / {session.candidates.length} 笔</b><small>{decisionSessionTimeLabel(session)}</small></span>
+                <span><b>{session.reviewKind === 'stop-anomalies' ? '异常订单重做 · ' : ''}{results.length} / {session.candidates.length} 笔</b><small>{decisionSessionTimeLabel(session)}</small></span>
                 <DecisionModeMoneyStack modes={modes} valueFor={(mode) => aggregateDecisionResults(results, mode).userPnlUsd} />
                 <span className="decision-list-actions"><DecisionFavoriteButton favorite={favoriteKeys.includes(favoriteKey)} onToggle={() => onToggleFavorite(favoriteKey)} label={favoriteKeys.includes(favoriteKey) ? '取消收藏本场练习' : '收藏本场练习'} /><ChevronRight size={18} /></span>
               </div>
@@ -928,6 +941,7 @@ interface DecisionAnnotationSpec {
   y: number
   kind: 'point' | 'reason'
   preference: DecisionAnnotationPlacement
+  labelY?: number
 }
 
 interface DecisionAnnotationRect {
@@ -937,8 +951,8 @@ interface DecisionAnnotationRect {
   bottom: number
 }
 
-const DECISION_POINT_LABEL_WIDTH = 176
-const DECISION_POINT_LABEL_HEIGHT = 26
+const DECISION_POINT_LABEL_WIDTH = 200
+const DECISION_POINT_LABEL_HEIGHT = 44
 const DECISION_REASON_LABEL_WIDTH = 48
 const DECISION_REASON_LABEL_HEIGHT = 18
 const DECISION_ANNOTATION_GAP = 14
@@ -946,19 +960,20 @@ const DECISION_ANNOTATION_GAP = 14
 function decisionAnnotationRect(spec: DecisionAnnotationSpec, placement: DecisionAnnotationPlacement): DecisionAnnotationRect {
   const width = spec.kind === 'point' ? DECISION_POINT_LABEL_WIDTH : DECISION_REASON_LABEL_WIDTH
   const height = spec.kind === 'point' ? DECISION_POINT_LABEL_HEIGHT : DECISION_REASON_LABEL_HEIGHT
+  const y = spec.labelY ?? spec.y
   switch (placement) {
     case 'placement-above-right':
-      return { left: spec.x + 8, right: spec.x + 8 + width, top: spec.y - height - DECISION_ANNOTATION_GAP, bottom: spec.y - DECISION_ANNOTATION_GAP }
+      return { left: spec.x + 8, right: spec.x + 8 + width, top: y - height - DECISION_ANNOTATION_GAP, bottom: y - DECISION_ANNOTATION_GAP }
     case 'placement-above-left':
       return { left: spec.x - 8 - width, right: spec.x - 8, top: spec.y - height - DECISION_ANNOTATION_GAP, bottom: spec.y - DECISION_ANNOTATION_GAP }
     case 'placement-below-right':
-      return { left: spec.x + 8, right: spec.x + 8 + width, top: spec.y + DECISION_ANNOTATION_GAP, bottom: spec.y + DECISION_ANNOTATION_GAP + height }
+      return { left: spec.x + 8, right: spec.x + 8 + width, top: y + DECISION_ANNOTATION_GAP, bottom: y + DECISION_ANNOTATION_GAP + height }
     case 'placement-below-left':
       return { left: spec.x - 8 - width, right: spec.x - 8, top: spec.y + DECISION_ANNOTATION_GAP, bottom: spec.y + DECISION_ANNOTATION_GAP + height }
     case 'placement-above':
-      return { left: spec.x - width / 2, right: spec.x + width / 2, top: spec.y - height - DECISION_ANNOTATION_GAP, bottom: spec.y - DECISION_ANNOTATION_GAP }
+      return { left: spec.x - width / 2, right: spec.x + width / 2, top: y - height - DECISION_ANNOTATION_GAP, bottom: y - DECISION_ANNOTATION_GAP }
     case 'placement-below':
-      return { left: spec.x - width / 2, right: spec.x + width / 2, top: spec.y + DECISION_ANNOTATION_GAP, bottom: spec.y + DECISION_ANNOTATION_GAP + height }
+      return { left: spec.x - width / 2, right: spec.x + width / 2, top: y + DECISION_ANNOTATION_GAP, bottom: y + DECISION_ANNOTATION_GAP + height }
     case 'placement-center-right':
       return { left: spec.x + 8, right: spec.x + 8 + width, top: spec.y - height / 2, bottom: spec.y + height / 2 }
     case 'placement-center-left':
@@ -977,32 +992,37 @@ function decisionAnnotationCandidates(spec: DecisionAnnotationSpec): DecisionAnn
       ? ['placement-below', 'placement-below-left', 'placement-below-right', 'placement-above', 'placement-above-left', 'placement-above-right']
       : ['placement-above', 'placement-above-left', 'placement-above-right', 'placement-below', 'placement-below-left', 'placement-below-right']
   }
-  const candidates: Record<DecisionAnnotationPlacement, DecisionAnnotationPlacement[]> = {
-    'placement-above-right': ['placement-above-right', 'placement-above-left', 'placement-below-right', 'placement-below-left', 'placement-center-right', 'placement-center-left'],
-    'placement-above-left': ['placement-above-left', 'placement-above-right', 'placement-below-left', 'placement-below-right', 'placement-center-left', 'placement-center-right'],
-    'placement-below-right': ['placement-below-right', 'placement-below-left', 'placement-above-right', 'placement-above-left', 'placement-center-right', 'placement-center-left'],
-    'placement-below-left': ['placement-below-left', 'placement-below-right', 'placement-above-left', 'placement-above-right', 'placement-center-left', 'placement-center-right'],
-    'placement-above': ['placement-above-right', 'placement-above-left', 'placement-below-right', 'placement-below-left', 'placement-center-right', 'placement-center-left'],
-    'placement-below': ['placement-below-right', 'placement-below-left', 'placement-above-right', 'placement-above-left', 'placement-center-right', 'placement-center-left'],
-    'placement-center-right': ['placement-center-right', 'placement-center-left', 'placement-above-right', 'placement-below-right', 'placement-above-left', 'placement-below-left'],
-    'placement-center-left': ['placement-center-left', 'placement-center-right', 'placement-above-left', 'placement-below-left', 'placement-above-right', 'placement-below-right'],
-  }
-  return candidates[spec.preference]
+  // Center each label on its candle: system above, user below. Only the
+  // vertical row may change when labels collide, never the time coordinate.
+  return spec.preference.startsWith('placement-below')
+    ? ['placement-below']
+    : ['placement-above']
 }
 
 /** Keep replay labels readable when several causal references share a candle. */
 function layoutDecisionAnnotations(specs: readonly DecisionAnnotationSpec[]) {
   const placements = new Map<string, { placement: DecisionAnnotationPlacement; rect: DecisionAnnotationRect }>()
   const reserved: DecisionAnnotationRect[] = []
+  const pointCount = specs.filter((spec) => spec.kind === 'point').length
   specs.forEach((spec) => {
-    const candidates = decisionAnnotationCandidates(spec)
+    const preferredPlacements = decisionAnnotationCandidates(spec)
+    const candidates = spec.kind === 'point'
+      ? Array.from({ length: pointCount }, (_, lane) => preferredPlacements.map((placement) => {
+        const rect = decisionAnnotationRect(spec, placement)
+        // Both owners get their own band; fill its rows from top to bottom.
+        const offset = lane * (DECISION_POINT_LABEL_HEIGHT + 8)
+        const top = Math.max(8, rect.top) + offset
+        return { placement, rect: { ...rect, top, bottom: top + DECISION_POINT_LABEL_HEIGHT } }
+      })).flat()
+      : preferredPlacements.map((placement) => ({ placement, rect: decisionAnnotationRect(spec, placement) }))
     let bestPlacement: DecisionAnnotationPlacement | null = null
     let bestRect: DecisionAnnotationRect | null = null
     let bestScore = Number.POSITIVE_INFINITY
-    candidates.forEach((placement, rank) => {
-      const rect = decisionAnnotationRect(spec, placement)
-      const overlap = reserved.reduce((total, item) => total + decisionAnnotationOverlap(rect, item), 0)
-      const score = overlap * 1000 + rank
+    candidates.forEach(({ placement, rect }, rank) => {
+      const paddedRect = spec.kind === 'point' ? { ...rect, top: rect.top - 4, bottom: rect.bottom + 4 } : rect
+      const overlap = reserved.reduce((total, item) => total + decisionAnnotationOverlap(paddedRect, item), 0)
+      const clippedTop = spec.kind === 'point' ? Math.max(0, -rect.top) * (rect.right - rect.left) : 0
+      const score = (overlap + clippedTop) * 1000 + rank
       if (score < bestScore) {
         bestPlacement = placement
         bestRect = rect
@@ -1363,10 +1383,12 @@ export function DecisionReplayPanel({ candidate, attempt, ordinal, total, curren
         {attempt.pendingEntryPrice !== null && <section className="decision-order-state">
           <h3><Target size={17} />你的订单</h3>
           <dl><dt>方向</dt><dd>{long ? '做多' : '做空'}</dd><dt>类型</dt><dd>{orderKindLabel(attempt.orderKind)}</dd><dt>挂单价</dt><dd>{formatPrice(attempt.pendingEntryPrice, candidate.symbol)}</dd>{attempt.fill && <><dt>成交价</dt><dd>{formatPrice(attempt.fill.price, candidate.symbol)}</dd></>}</dl>
+          <small>{decisionStopLossMode(attempt.stopLossMode) === 'close' ? '收盘止损 · 收盘越线按收盘价退出；系统先平仓则跟随退出' : '触碰止损 · 仅本笔生效，下笔恢复收盘止损'}</small>
         </section>}
         {attempt.result && <section className="decision-post-exit-summary">
           <h3><Flag size={17} />本笔已经平仓</h3>
           <p>你的盈亏 <DecisionModeMoneyStack modes={positionSizingModes} compact={false} valueFor={(mode) => decisionResultPnl(attempt.result!, mode, 'user')} />，V5 系统盈亏 <DecisionModeMoneyStack modes={positionSizingModes} compact={false} valueFor={(mode) => decisionResultPnl(attempt.result!, mode, 'system')} />。</p>
+          <p>{exitReasonLabel(attempt.result.userExit.reason, attempt.result.stopLossMode)}</p>
           <small>按 1 继续逐根观看后续行情；按 4 进入下一笔；按 5 从信号 K 重新开始本笔。</small>
         </section>}
       </div>
@@ -1468,12 +1490,14 @@ type DecisionRiskAmountPlacement = 'center' | 'left' | 'right'
 
 const DECISION_RISK_AMOUNT_GAP = 14
 
-export function DecisionRiskOverlay({ candidate, entryPrice, entryLabel = '挂单', stopLoss, takeProfit, initialStopLoss = stopLoss, currentCandleX = null, currentClose = null, currentPnlUsd = null, currentPnlByMode = null, positionSizingModes = ['fixed-risk'], toPrice, toY, onStopLoss, onTakeProfit, onConfirm, onCancel, editable = true, showConfirmControls = editable }: {
+export function DecisionRiskOverlay({ candidate, entryPrice, entryLabel = '挂单', stopLoss, takeProfit, initialStopLoss = stopLoss, stopLossMode = 'close', onStopLossMode, currentCandleX = null, currentClose = null, currentPnlUsd = null, currentPnlByMode = null, positionSizingModes = ['fixed-risk'], toPrice, toY, onStopLoss, onTakeProfit, onConfirm, onCancel, editable = true, showConfirmControls = editable }: {
   candidate: ReplayDecisionCandidate
   entryPrice: number
   entryLabel?: '挂单' | '开仓'
   stopLoss: number
   takeProfit: number
+  stopLossMode?: DecisionStopLossMode
+  onStopLossMode?: (mode: DecisionStopLossMode) => void
   /** Fixed-risk amounts remain sized from the original protective stop after trailing edits. */
   initialStopLoss?: number | null
   /** Horizontal chart coordinate of the latest visible candle, in the overlay's local coordinate system. */
@@ -1493,7 +1517,9 @@ export function DecisionRiskOverlay({ candidate, entryPrice, entryLabel = '挂�
 }) {
   const [targetAmountPlacement, setTargetAmountPlacement] = useState<DecisionRiskAmountPlacement>('center')
   const [stopAmountPlacement, setStopAmountPlacement] = useState<DecisionRiskAmountPlacement>('center')
+  const [stopControlLeft, setStopControlLeft] = useState<number | null>(null)
   const riskOverlayRef = useRef<HTMLDivElement>(null)
+  const stopControlRef = useRef<HTMLSpanElement>(null)
   const targetAmountRef = useRef<HTMLDivElement>(null)
   const stopAmountRef = useRef<HTMLDivElement>(null)
   const entryY = toY(entryPrice)
@@ -1554,6 +1580,28 @@ export function DecisionRiskOverlay({ candidate, entryPrice, entryLabel = '挂�
           .filter((rect) => rect.width > 0 && rect.height > 0)
           .map((rect) => ({ left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom }))
         const reserved = [...obstacles]
+        const control = stopControlRef.current
+        if (control) {
+          const rect = control.getBoundingClientRect()
+          const blockers = [...document.querySelectorAll<HTMLElement>('.decision-detail-panel, .decision-action-menu, .decision-chart-status, .decision-risk-confirm')]
+            .map((element) => element.getBoundingClientRect())
+            .filter((item) => item.width > 0 && item.height > 0)
+          // Keep the selector on the red line, but out from under draggable panels.
+          // Prefer the existing drag handle area rather than covering the latest candle.
+          const preferred = rootRect.left + rootRect.width * .23 + 16
+          const minLeft = rootRect.left + 12
+          const maxLeft = Math.max(minLeft, rootRect.right - rect.width - 12)
+          const options = [preferred, minLeft, maxLeft, ...blockers.flatMap((item) => [item.left - rect.width - 12, item.right + 12])]
+            .map((left) => Math.max(minLeft, Math.min(maxLeft, left)))
+          const best = options.reduce((best, left) => {
+            const placed = { left, right: left + rect.width, top: rect.top, bottom: rect.bottom }
+            const score = blockers.reduce((sum, item) => sum + decisionAnnotationOverlap(placed, item), 0) * 1000 + Math.abs(left - preferred)
+            return score < best.score ? { left, score, rect: placed } : best
+          }, { left: minLeft, score: Infinity, rect: { left: minLeft, right: minLeft + rect.width, top: rect.top, bottom: rect.bottom } })
+          const localLeft = best.left - rootRect.left
+          setStopControlLeft((current) => current !== null && Math.abs(current - localLeft) < .5 ? current : localLeft)
+          reserved.push(best.rect)
+        }
         const nextPlacement: Partial<Record<'target' | 'stop', DecisionRiskAmountPlacement>> = {}
         for (const entry of amountEntries) {
           const amountRect = entry.element.getBoundingClientRect()
@@ -1613,7 +1661,7 @@ export function DecisionRiskOverlay({ candidate, entryPrice, entryLabel = '挂�
       resizeObserver?.disconnect()
       mutationObserver?.disconnect()
     }
-  }, [amountModes, currentCandleX, currentY, editable, entryY, hasCurrentPnl, showConfirmControls, stopY, targetY])
+  }, [amountModes, currentCandleX, currentY, editable, entryY, hasCurrentPnl, showConfirmControls, stopY, targetY, stopLossMode])
   const dragStop = useLineDrag(toPrice, onStopLoss ?? (() => undefined))
   const dragTarget = useLineDrag(toPrice, onTakeProfit ?? (() => undefined))
   const precision = symbolPrecision(candidate.symbol)
@@ -1621,8 +1669,17 @@ export function DecisionRiskOverlay({ candidate, entryPrice, entryLabel = '挂�
     {targetY !== null && <div className="decision-risk-line target" data-testid="decision-take-profit-line" title={editable ? '拖动调整止盈' : undefined} style={{ top: targetY }} onPointerDown={editable ? dragTarget : undefined}><b className="decision-risk-hit-area" aria-hidden="true" /><i /><span><Target size={15} />止盈 {takeProfit.toFixed(precision)}</span><div ref={targetAmountRef} className={amountClassName(targetAmountPlacement)} data-testid="decision-take-profit-amount" style={amountPosition}><small>止盈金额</small><DecisionModeMoneyStack modes={amountModes} valueFor={(mode) => takeProfitAmountByMode[mode]} /></div></div>}
     {entryY !== null && <div className={`decision-risk-line entry${entryLabel === '开仓' ? ' filled' : ''}`} style={{ top: entryY }}><span>{entryLabel} {entryPrice.toFixed(precision)} · 盈亏比 1 : {ratio.toFixed(2)}</span></div>}
     {hasCurrentPnl && <div className={`decision-position-pnl-line${currentPnlValue === null ? '' : currentPnlValue >= 0 ? ' positive' : ' negative'}`} style={{ top: currentY! }} data-testid="decision-position-pnl-line"><span>收盘 {formatPrice(currentClose!, candidate.symbol)} · {currentPnlByMode !== null ? <DecisionModeMoneyStack modes={positionSizingModes} compact={false} valueFor={(mode) => currentPnlByMode[mode] ?? 0} valueLabel={(value) => value >= 0 ? '浮盈' : '浮亏'} /> : <>{currentPnlUsd! >= 0 ? '浮盈' : '浮亏'} {formatDecisionPnl(currentPnlUsd!)}</>}</span></div>}
-    {stopY !== null && <div className="decision-risk-line stop" data-testid="decision-stop-loss-line" title={editable ? '拖动调整止损' : undefined} style={{ top: stopY }} onPointerDown={editable ? dragStop : undefined}><b className="decision-risk-hit-area" aria-hidden="true" /><i /><span><Shield size={15} />止损 {stopLoss.toFixed(precision)}</span><div ref={stopAmountRef} className={amountClassName(stopAmountPlacement)} data-testid="decision-stop-loss-amount" style={amountPosition}><small>止损金额</small><DecisionModeMoneyStack modes={amountModes} valueFor={(mode) => stopLossAmountByMode[mode]} /></div></div>}
-    {editable && showConfirmControls && <div className="decision-risk-confirm"><div><b>拖动上下两个控制点</b><small>当前盈亏比 1 : {ratio.toFixed(2)} · {decisionSizingLabels(positionSizingModes)}</small></div><button onClick={onCancel}>取消</button><button className="primary" onClick={onConfirm}><Check size={17} />确认并进入下一根 K 线</button></div>}
+    {stopY !== null && <div className="decision-risk-line stop" data-testid="decision-stop-loss-line" title={editable ? '拖动调整止损；按钮只切换本笔模式，不移动价格' : undefined} style={{ top: stopY }} onPointerDown={editable ? dragStop : undefined}>
+      <b className="decision-risk-hit-area" aria-hidden="true" /><i />
+      <span ref={stopControlRef} className="decision-stop-control" style={{ left: stopControlLeft ?? 12, right: 'auto' }}><Shield size={15} />止损 {stopLoss.toFixed(precision)}
+        <span className="decision-stop-mode" role="group" aria-label="本笔止损触发方式" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
+          <button type="button" aria-pressed={stopLossMode === 'close'} disabled={!editable || !onStopLossMode} title="默认模式：收盘越过止损线才按收盘价退出，系统先退出则跟随；实际亏损可能超过止损线参考金额" onClick={() => onStopLossMode?.('close')}>收盘止损</button>
+          <button type="button" aria-pressed={stopLossMode === 'touch'} disabled={!editable || !onStopLossMode} title="仅本笔：盘中触碰止损线即退出，跳空按开盘价；下一笔恢复收盘止损" onClick={() => onStopLossMode?.('touch')}>触碰止损</button>
+        </span>
+      </span>
+      <div ref={stopAmountRef} className={amountClassName(stopAmountPlacement)} data-testid="decision-stop-loss-amount" style={amountPosition}><small>{stopLossMode === 'close' ? '止损线参考盈亏（非最大亏损）' : '止损金额'}</small><DecisionModeMoneyStack modes={amountModes} valueFor={(mode) => stopLossAmountByMode[mode]} /></div>
+    </div>}
+    {editable && showConfirmControls && <div className="decision-risk-confirm"><div><b>拖动上下两个控制点</b><small>当前盈亏比 1 : {ratio.toFixed(2)} · {decisionSizingLabels(positionSizingModes)}</small><small>{stopLossMode === 'close' ? '默认收盘止损：可能比止损线亏更多；系统平仓优先' : '触碰止损仅本笔生效，下笔默认收盘止损'}</small></div><button onClick={onCancel}>取消</button><button className="primary" onClick={onConfirm}><Check size={17} />确认并进入下一根 K 线</button></div>}
   </div>
 }
 
@@ -1679,11 +1736,50 @@ export function DecisionChartAnnotations({ candidate, attempt, result, data, toX
   const userExitX = userExit && userExit.time <= revealedThrough ? projectX(userExit.time) : null
   const userExitY = userExit === null || userExitX === null ? null : toY(userExit.price)
   const pointSpecs = [
-    systemEntryX !== null && systemEntryY !== null ? { id: 'system-entry', x: systemEntryX, y: systemEntryY, kind: 'point' as const, preference: 'placement-above-right' as const } : null,
-    systemExitX !== null && systemExitY !== null ? { id: 'system-exit', x: systemExitX, y: systemExitY, kind: 'point' as const, preference: 'placement-above-left' as const } : null,
-    userEntryX !== null && userEntryY !== null ? { id: 'user-entry', x: userEntryX, y: userEntryY, kind: 'point' as const, preference: 'placement-below-right' as const } : null,
-    userExitX !== null && userExitY !== null ? { id: 'user-exit', x: userExitX, y: userExitY, kind: 'point' as const, preference: 'placement-below-left' as const } : null,
-  ].filter((spec): spec is NonNullable<typeof spec> => spec !== null)
+    systemEntryX !== null && systemEntryY !== null ? { id: 'system-entry', x: systemEntryX, y: systemEntryY, time: candidate.trade.entry.time, kind: 'point' as const, preference: 'placement-above-right' as const, className: 'system entry', label: `系统开 ${formatPrice(candidate.trade.entry.price, candidate.symbol)}` } : null,
+    systemExitX !== null && systemExitY !== null ? { id: 'system-exit', x: systemExitX, y: systemExitY, time: candidate.trade.exit.time, kind: 'point' as const, preference: 'placement-above-right' as const, className: 'system exit', label: `系统平 ${formatPrice(candidate.trade.exit.price, candidate.symbol)}` } : null,
+    userEntryX !== null && userEntryY !== null ? { id: 'user-entry', x: userEntryX, y: userEntryY, time: userEntry!.time, kind: 'point' as const, preference: 'placement-below-right' as const, className: 'user entry', label: `你的开仓 ${formatPrice(userEntry!.price, candidate.symbol)}` } : null,
+    userExitX !== null && userExitY !== null ? { id: 'user-exit', x: userExitX, y: userExitY, time: userExit!.time, kind: 'point' as const, preference: 'placement-below-right' as const, className: 'user exit', label: `你的平仓 ${formatPrice(userExit!.price, candidate.symbol)}` } : null,
+  ].filter((spec): spec is NonNullable<typeof spec> => spec !== null).map((spec) => {
+    const candleTime = projectTime(spec.time)!
+    const index = data.findIndex((candle) => candle.time === candleTime)
+    const candle = data[index]
+    const nextX = data[index + 1] ? toX(data[index + 1].time) : null
+    const previousX = data[index - 1] ? toX(data[index - 1].time) : null
+    const spacing = nextX !== null ? Math.abs(nextX - spec.x) : previousX !== null ? Math.abs(spec.x - previousX) : 12
+    return {
+      ...spec, candleTime, candleIndex: index, candleSpacing: Math.max(1, spacing),
+      candleHighY: Math.min(spec.y, toY(candle.high) ?? spec.y),
+      candleLowY: Math.max(spec.y, toY(candle.low) ?? spec.y),
+      candleWidth: Math.min(22, Math.max(8, spacing * .8)),
+    }
+  })
+  const candleMarkers: Array<{ id: string; x: number; y: number; candleTime: number; label: string }> = []
+  for (const spec of pointSpecs.filter((point) => point.className.startsWith('system'))) {
+    let y = spec.candleHighY - 20
+    for (const other of candleMarkers) {
+      if (Math.abs(spec.x - other.x) < 24 && Math.abs(y - other.y) < 26) y = other.y - 26
+    }
+    candleMarkers.push({ id: spec.id, x: spec.x, y, candleTime: spec.candleTime, label: spec.id === 'system-entry' ? '开' : '平' })
+  }
+  // Reserve space outside the nearby candle range, not next to almost equal
+  // fill prices. That is where system/user labels used to cover one another.
+  const firstLabelX = Math.min(...pointSpecs.map((point) => point.x)) - DECISION_POINT_LABEL_WIDTH / 2
+  const lastLabelX = Math.max(...pointSpecs.map((point) => point.x)) + DECISION_POINT_LABEL_WIDTH / 2
+  const nearbyStart = Math.max(0, Math.min(...pointSpecs.map((point) => point.candleIndex - Math.ceil(DECISION_POINT_LABEL_WIDTH / 2 / point.candleSpacing) - 1)))
+  const nearbyEnd = Math.max(...pointSpecs.map((point) => point.candleIndex + Math.ceil(DECISION_POINT_LABEL_WIDTH / 2 / point.candleSpacing) + 2))
+  const nearbyCandles = (pointSpecs.length ? data.slice(nearbyStart, nearbyEnd) : []).flatMap((candle) => {
+    const x = toX(candle.time)
+    if (x === null || x < firstLabelX || x > lastLabelX) return []
+    const high = toY(candle.high)
+    const low = toY(candle.low)
+    return high === null || low === null ? [] : [{ high, low }]
+  })
+  const systemLabelY = Math.min(...pointSpecs.map((point) => point.candleHighY), ...nearbyCandles.map((candle) => candle.high), ...candleMarkers.map((marker) => marker.y - 10)) - 12
+  const systemBandHeight = candleMarkers.length * DECISION_POINT_LABEL_HEIGHT + Math.max(0, candleMarkers.length - 1) * 8
+  const systemBandTop = Math.max(8, systemLabelY - DECISION_ANNOTATION_GAP - systemBandHeight)
+  const userLabelY = Math.max(...pointSpecs.map((point) => point.candleLowY), ...nearbyCandles.map((candle) => candle.low))
+  const labelSpecs = pointSpecs.map((spec) => ({ ...spec, labelY: spec.className.startsWith('system') ? systemBandTop + DECISION_POINT_LABEL_HEIGHT + DECISION_ANNOTATION_GAP : userLabelY }))
   const reasonSpecs = reasonReferences.flatMap((reference) => {
     const exitOnly = reference.sections.length === 1 && reference.sections[0] === 'exit'
     const x = projectX(reference.time)
@@ -1696,7 +1792,7 @@ export function DecisionChartAnnotations({ candidate, attempt, result, data, toX
       preference: exitOnly ? 'placement-below' as const : 'placement-above' as const,
     }]
   })
-  const annotationPlacements = layoutDecisionAnnotations([...pointSpecs, ...reasonSpecs])
+  const annotationPlacements = layoutDecisionAnnotations([...labelSpecs, ...reasonSpecs])
   const placementFor = (id: string) => annotationPlacements.get(id)?.placement
   return <div
     className={`decision-chart-annotations${hidden ? ' is-hidden' : ''}`}
@@ -1735,13 +1831,31 @@ export function DecisionChartAnnotations({ candidate, attempt, result, data, toX
     {systemEntryX !== null && systemEntryY !== null && systemExitX !== null && systemExitY !== null && <>
       <svg width="100%" height="100%" preserveAspectRatio="none"><line className="system-path" x1={systemEntryX} y1={systemEntryY} x2={systemExitX} y2={systemExitY} /></svg>
     </>}
-    {systemEntryX !== null && systemEntryY !== null && <span className={`decision-point system entry ${placementFor('system-entry') ?? 'placement-above-right'}`} style={{ left: systemEntryX, top: systemEntryY }}>系统开 {formatPrice(candidate.trade.entry.price, candidate.symbol)}</span>}
-    {systemExitX !== null && systemExitY !== null && <span className={`decision-point system exit ${placementFor('system-exit') ?? 'placement-above-left'}`} style={{ left: systemExitX, top: systemExitY }}>系统平 {formatPrice(candidate.trade.exit.price, candidate.symbol)}</span>}
-    {userEntryX !== null && userEntryY !== null && <span className={`decision-point user entry ${placementFor('user-entry') ?? 'placement-below-right'}`} style={{ left: userEntryX, top: userEntryY }}>你的开仓 {formatPrice(userEntry!.price, candidate.symbol)}</span>}
     {userEntryX !== null && userEntryY !== null && userExitX !== null && userExitY !== null && <>
       <svg width="100%" height="100%" preserveAspectRatio="none"><line className="user-path" x1={userEntryX} y1={userEntryY} x2={userExitX} y2={userExitY} /></svg>
-      <span className={`decision-point user exit ${placementFor('user-exit') ?? 'placement-below-left'}`} style={{ left: userExitX, top: userExitY }}>你的平仓 {formatPrice(userExit!.price, candidate.symbol)}</span>
     </>}
+    <svg className="decision-point-connectors" width="100%" height="100%" preserveAspectRatio="none">
+      {pointSpecs.map((spec) => {
+        const rect = annotationPlacements.get(spec.id)!.rect
+        const isSystem = spec.className.startsWith('system')
+        const labelEdgeY = isSystem ? rect.bottom : rect.top
+        const marker = candleMarkers.find((item) => item.id === spec.id)
+        return <g key={spec.id} className={spec.className}>
+          {isSystem && <rect className="decision-candle-column" data-testid={`decision-candle-column-${spec.id}`} x={spec.x - spec.candleWidth / 2} y={spec.candleHighY - 6} width={spec.candleWidth} height={spec.candleLowY - spec.candleHighY + 12} />}
+          <polyline data-testid={`decision-point-connector-${spec.id}`} points={`${spec.x},${spec.y} ${spec.x},${labelEdgeY}`} />
+          <circle data-testid={`decision-point-anchor-${spec.id}`} cx={spec.x} cy={spec.y} r={isSystem ? 4 : 7} />
+          {marker && <g className="decision-candle-badge" data-testid={`decision-candle-marker-${spec.id}`} data-candle-time={marker.candleTime} transform={`translate(${marker.x}, ${marker.y})`}>
+            <rect x={-10} y={-10} width={20} height={19} rx={3} />
+            <path d="M -4 9 L 0 14 L 4 9 Z" />
+            <text textAnchor="middle" dominantBaseline="central" y={-1}>{marker.label}</text>
+          </g>}
+        </g>
+      })}
+    </svg>
+    {pointSpecs.map((spec) => {
+      const rect = annotationPlacements.get(spec.id)!.rect
+      return <span key={spec.id} data-testid={`decision-point-label-${spec.id}`} className={`decision-point ${spec.className}`} title={`${spec.label} · 成交 ${formatDecisionDate(spec.time)}（北京时间）`} style={{ left: rect.left, top: rect.top, width: DECISION_POINT_LABEL_WIDTH, height: DECISION_POINT_LABEL_HEIGHT }}><b>{spec.label}</b><small data-testid={`decision-point-time-${spec.id}`}>K线 {formatDecisionDate(spec.candleTime)}</small></span>
+    })}
   </div>
 }
 
@@ -1827,7 +1941,7 @@ export function DecisionReviewPanel({ result, positionSizingModes = ['fixed-risk
     <div className="decision-review-details">
       <section><h3>系统开仓信号 · {result.candidate.trade.entry.setup}</h3><p>{result.candidate.trade.entry.reason}</p></section>
       <section><h3>系统平仓 · {result.candidate.trade.exit.setup || result.candidate.trade.exit.reasonCode}</h3><p>{result.candidate.trade.exit.reason || `系统离场原因：${result.candidate.trade.exit.reasonCode}`}</p></section>
-      <section><h3>你的执行</h3><p>{result.choice === 'skipped' ? '本次选择不参与。' : result.choice === 'unfilled' ? `${choiceLabel(result)}，截至可用行情结束仍未成交。` : `${choiceLabel(result)}；开仓 ${formatPrice(result.userEntry?.price ?? 0, result.candidate.symbol)}，初始止损 ${formatPrice(initialStopLoss ?? 0, result.candidate.symbol)}，平仓 ${formatPrice(result.userExit.price, result.candidate.symbol)}${fixedRiskExplanation}，离场方式：${exitReasonLabel(result.userExit.reason)}。`}</p></section>
+      <section><h3>你的执行</h3><p>{result.choice === 'skipped' ? '本次选择不参与。' : result.choice === 'unfilled' ? `${choiceLabel(result)}，截至可用行情结束仍未成交。` : `${choiceLabel(result)}；开仓 ${formatPrice(result.userEntry?.price ?? 0, result.candidate.symbol)}，初始止损 ${formatPrice(initialStopLoss ?? 0, result.candidate.symbol)}，平仓 ${formatPrice(result.userExit.price, result.candidate.symbol)}${fixedRiskExplanation}，离场方式：${exitReasonLabel(result.userExit.reason, result.stopLossMode)}。`}</p></section>
     </div>
     <button className="decision-review-back" onClick={onBack}><ChevronRight size={17} />返回本场对比</button>
   </aside>

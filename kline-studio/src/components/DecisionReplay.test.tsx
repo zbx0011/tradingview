@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { ReplayDecisionCandidate } from '../lib/replayTradeRegistry'
 import {
-  buildDecisionResult, createDecisionAttempt, createDecisionSession, toggleDecisionHistorySymbolSelection,
+  buildDecisionResult, createDecisionAttempt, createDecisionSession, formatDecisionDate, toggleDecisionHistorySymbolSelection,
 } from '../lib/decisionReplay'
 import type { DecisionReplaySession } from '../lib/decisionReplay'
 import { decisionReplayFavoriteKey } from '../lib/decisionReplayFavorites'
@@ -32,6 +32,128 @@ function candidate(): ReplayDecisionCandidate {
 }
 
 const noop = () => undefined
+
+type AnnotationPoint = { time: number; price: number }
+
+function annotationCandidate(entry: AnnotationPoint, exit: AnnotationPoint): ReplayDecisionCandidate {
+  const item = candidate()
+  return {
+    ...item,
+    key: `${item.key}:${entry.time}:${exit.time}`,
+    trade: {
+      ...item.trade,
+      entry: {
+        ...item.trade.entry,
+        signalIdx: 1,
+        signalTime: entry.time,
+        time: entry.time,
+        price: entry.price,
+        reason: 'entry reason',
+      },
+      exit: {
+        ...item.trade.exit,
+        idx: 2,
+        time: exit.time,
+        price: exit.price,
+        reason: 'exit reason',
+      },
+    },
+  }
+}
+
+function annotationTag(markup: string, testId: string) {
+  const tag = markup.match(new RegExp(`<[^>]*\\bdata-testid="${testId}"[^>]*>`))?.[0]
+  if (!tag) throw new Error(`Missing data-testid="${testId}"`)
+  return tag
+}
+
+function numericAttribute(markup: string, testId: string, attribute: string) {
+  const tag = annotationTag(markup, testId)
+  const value = tag.match(new RegExp(`\\b${attribute}="([^"]+)"`))?.[1]
+  if (value === undefined) throw new Error(`Missing ${attribute} on ${testId}`)
+  return Number(value)
+}
+
+function stringAttribute(markup: string, testId: string, attribute: string) {
+  const tag = annotationTag(markup, testId)
+  const value = tag.match(new RegExp(`\\b${attribute}="([^"]*)"`))?.[1]
+  if (value === undefined) throw new Error(`Missing ${attribute} on ${testId}`)
+  return value
+}
+
+function elementText(markup: string, testId: string) {
+  const match = markup.match(new RegExp(`<[^>]*\\bdata-testid="${testId}"[^>]*>([^<]*)</[^>]+>`))
+  if (!match) throw new Error(`Missing text for data-testid="${testId}"`)
+  return match[1]
+}
+
+function styleNumber(markup: string, testId: string, property: string) {
+  const tag = annotationTag(markup, testId)
+  const style = tag.match(/style="([^"]*)"/)?.[1]
+  const value = style?.match(new RegExp(`(?:^|;)${property}:\\s*([^;]+)`))?.[1]
+  if (value === undefined) throw new Error(`Missing ${property} style on ${testId}`)
+  return Number(value.trim().replace(/px$/, ''))
+}
+
+function assertDecisionPoint(markup: string, id: string, anchorX: number, anchorY: number, expectedProjectTime?: number) {
+  const labelId = `decision-point-label-${id}`
+  const anchorId = `decision-point-anchor-${id}`
+  const connectorId = `decision-point-connector-${id}`
+  const labelLeft = styleNumber(markup, labelId, 'left')
+  const labelTop = styleNumber(markup, labelId, 'top')
+  const labelWidth = styleNumber(markup, labelId, 'width')
+  const labelHeight = styleNumber(markup, labelId, 'height')
+
+  expect(labelLeft + labelWidth / 2).toBeCloseTo(anchorX)
+  expect(labelWidth).toBe(200)
+  expect(labelHeight).toBe(44)
+  expect(numericAttribute(markup, anchorId, 'cx')).toBeCloseTo(anchorX)
+  expect(numericAttribute(markup, anchorId, 'cy')).toBeCloseTo(anchorY)
+  const connectorPoints = stringAttribute(markup, connectorId, 'points')
+    .trim()
+    .split(/\s+/)
+    .map((point) => point.split(',').map(Number))
+  expect(connectorPoints).toHaveLength(2)
+  const [anchorPoint, labelPoint] = connectorPoints
+  expect(anchorPoint[0]).toBeCloseTo(anchorX)
+  expect(anchorPoint[1]).toBeCloseTo(anchorY)
+  expect(labelPoint[0]).toBeCloseTo(anchorX)
+  expect(labelPoint[1]).toBeCloseTo(id.startsWith('system') ? labelTop + labelHeight : labelTop)
+
+  const radius = numericAttribute(markup, anchorId, 'r')
+  expect(radius).toBe(id.startsWith('system') ? 4 : 7)
+  if (expectedProjectTime !== undefined) expect(elementText(markup, `decision-point-time-${id}`)).toBe(`K线 ${formatDecisionDate(expectedProjectTime)}`)
+
+  return { left: labelLeft, top: labelTop, right: labelLeft + labelWidth, bottom: labelTop + labelHeight }
+}
+
+function markerBlock(markup: string, testId: string) {
+  const openingTag = annotationTag(markup, testId)
+  const start = markup.indexOf(openingTag)
+  const end = markup.indexOf('</g>', start)
+  if (start < 0 || end < 0) throw new Error(`Missing marker group for ${testId}`)
+  return markup.slice(start, end + 4)
+}
+
+function assertSystemCandleMarker(markup: string, id: string, anchorX: number, candleTime: number, highY: number, label: string) {
+  const markerId = `decision-candle-marker-${id}`
+  const columnId = `decision-candle-column-${id}`
+  expect(Number(stringAttribute(markup, markerId, 'data-candle-time'))).toBe(candleTime)
+  const transformValues = stringAttribute(markup, markerId, 'transform').match(/[-+]?(?:\d+\.?\d*|\.\d+)/g)?.map(Number) ?? []
+  expect(transformValues).toHaveLength(2)
+  expect(transformValues[0]).toBeCloseTo(anchorX)
+  expect(transformValues[1]).toBeLessThan(highY)
+  const columnX = numericAttribute(markup, columnId, 'x')
+  const columnWidth = numericAttribute(markup, columnId, 'width')
+  expect(columnX + columnWidth / 2).toBeCloseTo(anchorX)
+  expect(numericAttribute(markup, columnId, 'y')).toBeLessThanOrEqual(highY)
+  expect(markerBlock(markup, markerId)).toContain(`>${label}</text>`)
+  return transformValues[1]
+}
+
+function annotationData(times: readonly number[], price = 100, high = price + 1, low = price - 1) {
+  return times.map((time) => ({ time, open: price, high, low, close: price, volume: 10 }))
+}
 
 describe('decision replay components', () => {
   it('shows the causal entry reason and all four initial choices without revealing the system exit', () => {
@@ -140,6 +262,116 @@ describe('decision replay components', () => {
     expect(beforeSystemExit).not.toContain('系统平 103.000')
   })
 
+  it('centers nearby system entry and exit labels on their candles in time order', () => {
+    const entry = { time: 1_785_723_900, price: 4054.755 }
+    const exit = { time: 1_785_725_100, price: 4061.040 }
+    const firstTime = entry.time - 600
+    const item = annotationCandidate(entry, exit)
+    const markup = renderToStaticMarkup(<DecisionChartAnnotations
+      candidate={item}
+      attempt={createDecisionAttempt(item)}
+      result={null}
+      data={annotationData([firstTime, entry.time, entry.time + 300, exit.time], 4058, 4063, 4050)}
+      toX={(time) => (time - firstTime) / 300}
+      toY={(price) => 200 - (price - 4050) * 5}
+    />)
+
+    const entryRect = assertDecisionPoint(markup, 'system-entry', 2, 200 - (entry.price - 4050) * 5)
+    const exitRect = assertDecisionPoint(markup, 'system-exit', 6, 200 - (exit.price - 4050) * 5)
+    expect(entryRect.left).toBeLessThan(exitRect.left)
+  })
+
+  it('centers all same-bar system and user labels on their anchors without overlap', () => {
+    const candleTime = 1_785_723_900
+    const systemEntry = { time: candleTime, price: 4048.530 }
+    const systemExit = { time: candleTime, price: 4048.920 }
+    const userEntry = { time: candleTime + 60, price: 4048.530 }
+    const userExit = { time: candleTime + 60, price: 4048.732 }
+    const item = annotationCandidate(systemEntry, systemExit)
+    const attempt = {
+      ...createDecisionAttempt(item),
+      stage: 'post-exit' as const,
+      entryMode: 'signal-extreme' as const,
+      orderKind: 'stop' as const,
+      pendingEntryPrice: userEntry.price,
+      initialStopLoss: userEntry.price - 10,
+      stopLoss: userEntry.price - 10,
+      takeProfit: userEntry.price + 10,
+      fill: userEntry,
+    }
+    const result = buildDecisionResult(item, attempt, { ...userExit, reason: 'manual-close' }, [])
+    const toY = (price: number) => 180 - (price - 4048) * 20
+    const candleHighY = toY(4049.5)
+    const candleLowY = toY(4047.0)
+    const markup = renderToStaticMarkup(<DecisionChartAnnotations
+      candidate={item}
+      attempt={attempt}
+      result={result}
+      data={annotationData([candleTime], 4048, 4049.5, 4047.0)}
+      toX={() => 64}
+      toY={toY}
+    />)
+
+    const rects = [
+      assertDecisionPoint(markup, 'system-entry', 64, toY(systemEntry.price), candleTime),
+      assertDecisionPoint(markup, 'system-exit', 64, toY(systemExit.price), candleTime),
+      assertDecisionPoint(markup, 'user-entry', 64, toY(userEntry.price), candleTime),
+      assertDecisionPoint(markup, 'user-exit', 64, toY(userExit.price), candleTime),
+    ]
+    expect(rects[0].bottom).toBeLessThanOrEqual(candleHighY)
+    expect(rects[1].bottom).toBeLessThanOrEqual(candleHighY)
+    expect(rects[2].top).toBeGreaterThanOrEqual(candleLowY)
+    expect(rects[3].top).toBeGreaterThanOrEqual(candleLowY)
+    const entryBadgeY = assertSystemCandleMarker(markup, 'system-entry', 64, candleTime, candleHighY, '开')
+    const exitBadgeY = assertSystemCandleMarker(markup, 'system-exit', 64, candleTime, candleHighY, '平')
+    expect(Math.abs(entryBadgeY - exitBadgeY)).toBeGreaterThanOrEqual(20)
+    for (let leftIndex = 0; leftIndex < rects.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < rects.length; rightIndex += 1) {
+        const left = rects[leftIndex]
+        const right = rects[rightIndex]
+        const separated = left.right <= right.left || right.right <= left.left || left.bottom <= right.top || right.bottom <= left.top
+        expect(separated).toBe(true)
+      }
+    }
+  })
+
+  it('does not render future system exit label geometry before its candle is revealed', () => {
+    const entry = { time: 1_785_723_900, price: 4054.755 }
+    const exit = { time: entry.time + 600, price: 4061.040 }
+    const item = annotationCandidate(entry, exit)
+    const markup = renderToStaticMarkup(<DecisionChartAnnotations
+      candidate={item}
+      attempt={createDecisionAttempt(item)}
+      result={null}
+      data={annotationData([entry.time - 300, entry.time], 4058, 4063, 4050)}
+      toX={(time) => time - entry.time + 10}
+      toY={(price) => 200 - (price - 4050) * 5}
+    />)
+
+    expect(markup).toContain('data-testid="decision-point-label-system-entry"')
+    expect(markup).not.toContain('data-testid="decision-point-label-system-exit"')
+    expect(markup).not.toContain('data-testid="decision-point-anchor-system-exit"')
+    expect(markup).not.toContain('data-testid="decision-point-connector-system-exit"')
+    expect(markup).not.toContain('data-testid="decision-candle-marker-system-exit"')
+    expect(markup).not.toContain('data-testid="decision-candle-column-system-exit"')
+  })
+
+  it('retains the hidden annotation class while rendering point geometry', () => {
+    const point = { time: 1_785_723_900, price: 4054.755 }
+    const item = annotationCandidate(point, point)
+    const markup = renderToStaticMarkup(<DecisionChartAnnotations
+      candidate={item}
+      attempt={createDecisionAttempt(item)}
+      result={null}
+      data={annotationData([point.time], 4058, 4063, 4050)}
+      toX={() => 50}
+      toY={(price) => 200 - (price - 4050) * 5}
+      hidden
+    />)
+
+    expect(markup).toContain('class="decision-chart-annotations is-hidden"')
+  })
+
   it('keeps the user open/close visible when reviewing a completed trade', () => {
     const item = candidate()
     const attempt = {
@@ -186,14 +418,32 @@ describe('decision replay components', () => {
     expect(markup).toContain('挂单 100.000 · 盈亏比 1 : 1.00')
     expect(markup).toContain('止损 95.000')
     expect(markup).toContain('data-testid="decision-stop-loss-amount"')
-    expect(markup).toContain('止损金额')
+    expect(markup).toContain('止损线参考盈亏（非最大亏损）')
     expect(markup).toContain('-$100.00')
     expect(markup).toContain('data-testid="decision-take-profit-line"')
     expect(markup).toContain('data-testid="decision-stop-loss-line"')
     expect(markup.match(/decision-risk-hit-area/g)).toHaveLength(2)
     expect(markup).toContain('title="拖动调整止盈"')
-    expect(markup).toContain('title="拖动调整止损"')
+    expect(markup).toContain('title="拖动调整止损；按钮只切换本笔模式，不移动价格"')
     expect(markup).toContain('拖动上下两个控制点')
+  })
+
+  it('defaults the red-line selector to close mode and identifies touch as per-trade only', () => {
+    const props = {
+      candidate: candidate(), entryPrice: 100, stopLoss: 95, takeProfit: 105,
+      toPrice: (y: number) => y, toY: (price: number) => price,
+      onStopLoss: noop, onTakeProfit: noop, onStopLossMode: noop,
+    }
+    const close = renderToStaticMarkup(<DecisionRiskOverlay {...props} />)
+    expect(close).toMatch(/<button[^>]*aria-pressed="true"[^>]*>收盘止损<\/button>/)
+    expect(close).toMatch(/<button[^>]*aria-pressed="false"[^>]*>触碰止损<\/button>/)
+    expect(close).toContain('止损线参考盈亏（非最大亏损）')
+    const touch = renderToStaticMarkup(<DecisionRiskOverlay {...props} stopLossMode="touch" />)
+    expect(touch).toMatch(/<button[^>]*aria-pressed="true"[^>]*>触碰止损<\/button>/)
+    expect(touch).toContain('触碰止损仅本笔生效，下笔默认收盘止损')
+    expect(touch).not.toContain('止损线参考盈亏（非最大亏损）')
+    expect(styleNumber(close, 'decision-stop-loss-line', 'top')).toBe(95)
+    expect(styleNumber(touch, 'decision-stop-loss-line', 'top')).toBe(95)
   })
 
   it('keeps risk lines editable while a position is open without setup controls', () => {
@@ -624,6 +874,22 @@ describe('decision replay components', () => {
     expect(markup).toContain('<label class="decision-interval-option"><input type="checkbox"/><span><b>15min</b>')
     expect(markup).toContain('<label class="decision-interval-option"><input type="checkbox"/><span><b>1h</b>')
     expect(markup).toContain('disabled=""')
+  })
+
+  it('shows the independent anomaly redo entry with its verified count and safe disabled states', () => {
+    const props = {
+      open: true, availableCount: 5, totalCount: 8, symbolStats: [], sessions: [], activeSessionId: null,
+      onClose: noop, onStart: noop, onContinue: noop, onResults: noop, onRedoAnomalies: noop,
+    }
+    const ready = renderToStaticMarkup(<DecisionReplayCenter {...props} anomalyCount={21} />)
+    expect(ready).toContain('重做异常订单（21题）')
+    expect(ready).toContain('独立重做 · 原记录保留')
+    expect(annotationTag(ready, 'decision-anomaly-redo')).not.toContain('disabled')
+    const empty = renderToStaticMarkup(<DecisionReplayCenter {...props} anomalyCount={0} />)
+    expect(annotationTag(empty, 'decision-anomaly-redo')).toContain('disabled')
+    const loading = renderToStaticMarkup(<DecisionReplayCenter {...props} anomalyCount={21} anomalyLoading />)
+    expect(annotationTag(loading, 'decision-anomaly-redo')).toContain('disabled')
+    expect(loading).toContain('正在核对异常订单…')
   })
 
   it('opens history on all symbols instead of silently filtering to the active symbol', () => {

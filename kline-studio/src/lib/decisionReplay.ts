@@ -23,10 +23,11 @@ export interface DecisionHistorySortValue {
 
 export type DecisionEntryMode = 'signal-extreme' | 'free-price'
 export type DecisionOrderKind = 'stop' | 'limit'
+export type DecisionStopLossMode = 'touch' | 'close'
 export type DecisionAttemptStage = 'entry-decision' | 'entry-price' | 'risk-setup' | 'order-pending' | 'position-open' | 'post-exit' | 'complete'
 export type DecisionSessionStatus = 'active' | 'completed' | 'stopped'
 export type DecisionSessionOrigin = 'practice' | 'review'
-export type DecisionExitReason = 'skipped' | 'manual-close' | 'stop-loss' | 'take-profit' | 'end-of-data'
+export type DecisionExitReason = 'skipped' | 'manual-close' | 'stop-loss' | 'take-profit' | 'system-exit' | 'end-of-data'
 export type DecisionShortcutAction = 'advance' | 'signal-extreme' | 'free-price' | 'skip' | 'cancel-pending' | 'manual-close' | 'next-trade' | 'restart-trade' | 'confirm-risk' | 'cancel-setup'
 export type DecisionExerciseNavigationTarget = { kind: 'review'; result: DecisionTradeResult } | { kind: 'active' }
 
@@ -52,6 +53,8 @@ export interface DecisionTradeResult {
   userExit: DecisionExit
   /** Initial protective stop used to size the fixed-risk position. Legacy results may omit it. */
   initialStopLoss?: number | null
+  /** Omitted by legacy results, whose execution remains touch-based. */
+  stopLossMode?: DecisionStopLossMode
   stopLoss: number | null
   takeProfit: number | null
   plannedRiskUsd: number
@@ -72,6 +75,8 @@ export interface DecisionAttempt {
   pendingEntryPrice: number | null
   /** The stop used to size fixed-risk positions; it stays unchanged after trailing edits. */
   initialStopLoss: number | null
+  /** Per-order setting; never a global preference. Missing legacy values mean touch. */
+  stopLossMode?: DecisionStopLossMode
   stopLoss: number | null
   takeProfit: number | null
   fill: DecisionFill | null
@@ -97,6 +102,8 @@ export interface DecisionReplaySession {
   origin?: DecisionSessionOrigin
   sourceSessionId?: string | null
   sourceCandidateKey?: string | null
+  reviewKind?: 'stop-anomalies'
+  reviewSourceRecords?: Array<{ sessionId: string; candidateKey: string }>
   /** Monotonic marker for an explicit authoritative correction that may move progress backward. */
   correctionRevision?: number
 }
@@ -459,7 +466,16 @@ function newerDecisionSession(left: DecisionReplaySession, right: DecisionReplay
 }
 
 function sameDecisionResult(left: DecisionTradeResult, right: DecisionTradeResult) {
-  return stableDecisionStringify(left) === stableDecisionStringify(right)
+  return stableDecisionStringify(comparableDecisionStopMode(left)) === stableDecisionStringify(comparableDecisionStopMode(right))
+}
+
+/** Legacy absent mode and explicit touch mean the same thing. Do not rewrite
+ * saved records or change old branch hashes just to make that mode explicit. */
+function comparableDecisionStopMode<T extends { stopLossMode?: DecisionStopLossMode }>(value: T): T {
+  if (value.stopLossMode !== 'touch') return value
+  const comparable = { ...value }
+  delete comparable.stopLossMode
+  return comparable
 }
 
 function stableBranchHash(value: string) {
@@ -488,7 +504,13 @@ function decisionSyncBranchRootId(id: string) {
 }
 
 function decisionSessionExactContentKey(session: DecisionReplaySession) {
-  const content: Partial<DecisionReplaySession> = { ...session }
+  const content: Partial<DecisionReplaySession> = {
+    ...session,
+    attempts: session.attempts.map((attempt) => ({
+      ...comparableDecisionStopMode(attempt),
+      result: attempt.result ? comparableDecisionStopMode(attempt.result) : attempt.result,
+    })),
+  }
   delete content.id
   return stableDecisionStringify(content)
 }
@@ -591,7 +613,9 @@ function mergeDecisionReplaySession(left: DecisionReplaySession, right: Decision
   if (conflictingAlternatives.length === 0) return { merged, branch: null }
   const conflictKeys = new Set(conflictingAlternatives.map((attempt) => attempt.candidateKey))
   const branchCandidates = alternative.candidates.filter((candidate) => conflictKeys.has(candidate.key))
-  const branchSignature = stableDecisionStringify(conflictingAlternatives.map((attempt) => attempt.result))
+  const branchSignature = stableDecisionStringify(conflictingAlternatives.map((attempt) => (
+    attempt.result ? comparableDecisionStopMode(attempt.result) : attempt.result
+  )))
   const branch: DecisionReplaySession = {
     ...alternative,
     id: `${decisionSyncBranchRootId(alternative.id)}-sync-${stableBranchHash(branchSignature)}`,
@@ -844,6 +868,7 @@ export function createDecisionAttempt(candidate: ReplayDecisionCandidate): Decis
     orderKind: null,
     pendingEntryPrice: null,
     initialStopLoss: null,
+    stopLossMode: 'close',
     stopLoss: null,
     takeProfit: null,
     fill: null,
@@ -1146,9 +1171,24 @@ export function fillPendingOrder(side: TradeSide, orderKind: DecisionOrderKind, 
   return null
 }
 
-export function evaluatePositionBar(side: TradeSide, stopLoss: number, takeProfit: number, candle: Candle): DecisionExit | null {
-  const stopHit = side === 'long' ? candle.low <= stopLoss : candle.high >= stopLoss
+/** Do not reinterpret an old, already-open order when loading a newer app. */
+export function decisionStopLossMode(value: unknown): DecisionStopLossMode {
+  return value === 'close' ? 'close' : 'touch'
+}
+
+export function evaluatePositionBar(side: TradeSide, stopLoss: number, takeProfit: number, candle: Candle, stopLossMode: DecisionStopLossMode = 'touch'): DecisionExit | null {
   const targetHit = side === 'long' ? candle.high >= takeProfit : candle.low <= takeProfit
+  if (stopLossMode === 'close') {
+    // A take-profit touched during the bar precedes a stop evaluated only at its close.
+    if (targetHit) {
+      const price = side === 'long' ? Math.max(candle.open, takeProfit) : Math.min(candle.open, takeProfit)
+      return { time: candle.time, price, reason: 'take-profit' }
+    }
+    const closeBreached = side === 'long' ? candle.close < stopLoss : candle.close > stopLoss
+    // Keep time as the candle's opening timestamp, as all replay markers do. The fill is its close.
+    return closeBreached ? { time: candle.time, price: candle.close, reason: 'stop-loss' } : null
+  }
+  const stopHit = side === 'long' ? candle.low <= stopLoss : candle.high >= stopLoss
   // Intrabar ordering is unknowable from OHLC. The replay uses the conservative
   // stop-first convention so a decision result never benefits from future path knowledge.
   if (stopHit) {
@@ -1169,7 +1209,15 @@ export function advanceDecisionAttempt(candidate: ReplayDecisionCandidate, attem
     if (fill) nextAttempt = { ...nextAttempt, fill, stage: 'position-open' }
   }
   if (nextAttempt.stage === 'position-open' && nextAttempt.stopLoss !== null && nextAttempt.takeProfit !== null) {
-    return { attempt: nextAttempt, exit: evaluatePositionBar(candidate.trade.side, nextAttempt.stopLoss, nextAttempt.takeProfit, nextCandle) }
+    const mode = decisionStopLossMode(nextAttempt.stopLossMode)
+    const systemExit = candidate.trade.exit
+    // Only a newly reached system-exit bar may close a position. In particular,
+    // a late user entry must never be closed retroactively at a past system exit.
+    // With OHLC-only data, same-bar system exits take precedence over close confirmation.
+    if (mode === 'close' && nextAttempt.fill && systemExit.time === nextCandle.time && systemExit.time >= nextAttempt.fill.time) {
+      return { attempt: nextAttempt, exit: { time: systemExit.time, price: systemExit.price, reason: 'system-exit' } }
+    }
+    return { attempt: nextAttempt, exit: evaluatePositionBar(candidate.trade.side, nextAttempt.stopLoss, nextAttempt.takeProfit, nextCandle, mode) }
   }
   return { attempt: nextAttempt, exit: null }
 }
@@ -1184,6 +1232,7 @@ export function cancelPendingOrderAndAdvance(attempt: DecisionAttempt, nextCandl
     orderKind: null,
     pendingEntryPrice: null,
     initialStopLoss: null,
+    stopLossMode: 'close',
     stopLoss: null,
     takeProfit: null,
     fill: null,
@@ -1324,6 +1373,7 @@ export function buildDecisionResult(candidate: ReplayDecisionCandidate, attempt:
     userEntry: attempt.fill,
     userExit: exit,
     initialStopLoss: riskStopLoss,
+    stopLossMode: decisionStopLossMode(attempt.stopLossMode),
     stopLoss: attempt.stopLoss,
     takeProfit: attempt.takeProfit,
     plannedRiskUsd: DECISION_PLANNED_RISK_USD,

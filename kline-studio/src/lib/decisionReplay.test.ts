@@ -9,7 +9,7 @@ import { parseCompactHistory } from './liveMarket'
 import {
   adjacentDecisionExerciseTarget, advanceDecisionAttempt, buildDecisionResult, cancelPendingOrderAndAdvance, candlesKnownAt, compareDecisionHistorySortValues, createDecisionAttempt, createDecisionReviewSession, createDecisionSession,
   decisionShortcutAction, defaultDecisionLevels, evaluatePositionBar, fillPendingOrder,
-  decisionResultPnl, decisionResultR, decisionSessionUserRStats, emptyDecisionReplayStore, filterDecisionCandidatesByScope, historyCoversDecisionCandidate, intervalCutoffTime, parseDecisionReplayStore,
+  decisionResultPnl, decisionResultR, decisionSessionUserRStats, decisionStopLossMode, emptyDecisionReplayStore, filterDecisionCandidatesByScope, historyCoversDecisionCandidate, intervalCutoffTime, parseDecisionReplayStore,
   mergeDecisionReplayStores, persistDecisionReplayStoreAdditively, pnlForDecision, pnlForDecisionMode, restartPostExitDecisionAttempt, rewardRiskRatio, sampleDecisionCandidates,
   saveDecisionReplayStore, saveDecisionReplayStoreSnapshot, serializeDecisionReplayStore, updateDecisionSessionDrawings, validDecisionLevels, validOpenPositionLevels, type DecisionReplaySession,
 } from './decisionReplay'
@@ -91,6 +91,78 @@ describe('decision replay', () => {
     expect(fillPendingOrder('long', 'limit', 100, bar(0, 97, 101, 96, 99))).toEqual({ time: 0, price: 97 })
     expect(fillPendingOrder('short', 'limit', 100, bar(0, 103, 104, 99, 101))).toEqual({ time: 0, price: 103 })
     expect(evaluatePositionBar('long', 95, 105, bar(0, 100, 106, 94, 102))).toEqual({ time: 0, price: 95, reason: 'stop-loss' })
+  })
+
+  it('defaults new attempts to close stops while legacy mode values remain touch-compatible', () => {
+    const item = candidate('mode-default:1')
+    expect(createDecisionAttempt(item).stopLossMode).toBe('close')
+    expect(decisionStopLossMode(undefined)).toBe('touch')
+    expect(decisionStopLossMode('legacy-value')).toBe('touch')
+    expect(decisionStopLossMode('close')).toBe('close')
+  })
+
+  it('evaluates close stops from the actual close for both sides, with equality not triggering', () => {
+    expect(evaluatePositionBar('long', 95, 110, bar(300, 100, 105, 90, 96), 'close')).toBeNull()
+    expect(evaluatePositionBar('long', 95, 110, bar(600, 100, 105, 90, 95), 'close')).toBeNull()
+    expect(evaluatePositionBar('long', 95, 110, bar(900, 100, 105, 90, 94), 'close')).toEqual({ time: 900, price: 94, reason: 'stop-loss' })
+
+    expect(evaluatePositionBar('short', 105, 90, bar(300, 100, 110, 95, 104), 'close')).toBeNull()
+    expect(evaluatePositionBar('short', 105, 90, bar(600, 100, 110, 95, 105), 'close')).toBeNull()
+    expect(evaluatePositionBar('short', 105, 90, bar(900, 100, 110, 95, 106), 'close')).toEqual({ time: 900, price: 106, reason: 'stop-loss' })
+  })
+
+  it('lets an intrabar target win before a close-confirmed stop and records the actual close price', () => {
+    expect(evaluatePositionBar('long', 102, 110, bar(300, 100, 111, 99, 101), 'close')).toEqual({ time: 300, price: 110, reason: 'take-profit' })
+    expect(evaluatePositionBar('short', 98, 90, bar(600, 100, 101, 89, 99), 'close')).toEqual({ time: 600, price: 90, reason: 'take-profit' })
+
+    const item = candidate('close-profit:1')
+    const attempt = {
+      ...createDecisionAttempt(item),
+      stage: 'position-open' as const,
+      entryMode: 'signal-extreme' as const,
+      orderKind: 'stop' as const,
+      pendingEntryPrice: 100,
+      initialStopLoss: 95,
+      stopLossMode: 'close' as const,
+      stopLoss: 102,
+      takeProfit: 110,
+      fill: { time: 3300, price: 100 },
+    }
+    const exit = evaluatePositionBar('long', 102, 110, bar(3600, 100, 104, 100, 101), 'close')!
+    const result = buildDecisionResult(item, attempt, exit, [])
+    expect(exit).toEqual({ time: 3600, price: 101, reason: 'stop-loss' })
+    expect(result.stopLossMode).toBe('close')
+    expect(result.userPnlUsd).toBe(20)
+    expect(result.userPnlUsd).toBeLessThan((102 - 100) / (100 - 95) * 100)
+  })
+
+  it('preserves legacy touch stop-first and gap execution semantics', () => {
+    expect(evaluatePositionBar('long', 95, 110, bar(300, 93, 112, 90, 108), 'touch')).toEqual({ time: 300, price: 93, reason: 'stop-loss' })
+    expect(evaluatePositionBar('short', 105, 90, bar(600, 107, 110, 88, 92), 'touch')).toEqual({ time: 600, price: 107, reason: 'stop-loss' })
+  })
+
+  it('uses a newly reached system exit only for close mode and never leaks past or future exits', () => {
+    const item = { ...candidate('system:1'), trade: { ...candidate('system:1').trade, exit: { ...candidate('system:1').trade.exit, time: 3600, price: 104 } } }
+    const closeAttempt = {
+      ...createDecisionAttempt(item),
+      stage: 'position-open' as const,
+      pendingEntryPrice: 100,
+      initialStopLoss: 95,
+      stopLossMode: 'close' as const,
+      stopLoss: 95,
+      takeProfit: 120,
+      fill: { time: 3300, price: 100 },
+    }
+    expect(advanceDecisionAttempt(item, closeAttempt, bar(3600, 100, 106, 90, 94)).exit).toEqual({ time: 3600, price: 104, reason: 'system-exit' })
+
+    const touchAttempt = { ...closeAttempt, stopLossMode: 'touch' as const }
+    expect(advanceDecisionAttempt(item, touchAttempt, bar(3600, 100, 106, 99, 104)).exit).toBeNull()
+
+    const beforeEntry = { ...item, trade: { ...item.trade, exit: { ...item.trade.exit, time: 3000 } } }
+    expect(advanceDecisionAttempt(beforeEntry, closeAttempt, bar(3600, 100, 106, 99, 104)).exit).toBeNull()
+
+    const afterCurrent = { ...item, trade: { ...item.trade, exit: { ...item.trade.exit, time: 4200 } } }
+    expect(advanceDecisionAttempt(afterCurrent, closeAttempt, bar(3600, 100, 106, 99, 104)).exit).toBeNull()
   })
 
   it('admits only candidates with complete signal, entry and exit source candles', () => {
@@ -270,7 +342,7 @@ describe('decision replay', () => {
 
   it('advances pending orders and finalizes comparable results without future data', () => {
     const item = candidate('a:1')
-    const attempt = { ...createDecisionAttempt(item), stage: 'order-pending' as const, entryMode: 'signal-extreme' as const, orderKind: 'stop' as const, pendingEntryPrice: 100, stopLoss: 95, takeProfit: 105 }
+    const attempt = { ...createDecisionAttempt(item), stage: 'order-pending' as const, entryMode: 'signal-extreme' as const, orderKind: 'stop' as const, pendingEntryPrice: 100, stopLossMode: 'touch' as const, stopLoss: 95, takeProfit: 105 }
     const evaluation = advanceDecisionAttempt(item, attempt, bar(3300, 100, 106, 94, 101))
     expect(evaluation.attempt.fill).toEqual({ time: 3300, price: 100 })
     expect(evaluation.exit?.reason).toBe('stop-loss')
@@ -311,6 +383,7 @@ describe('decision replay', () => {
       orderKind: null,
       pendingEntryPrice: null,
       initialStopLoss: null,
+      stopLossMode: 'close',
       stopLoss: null,
       takeProfit: null,
       fill: null,
@@ -410,9 +483,108 @@ describe('decision replay', () => {
     expect(raw.storageFormat).toBe('compact-v1')
     expect(raw.candidateCatalog).toHaveLength(1)
     expect(raw.sessions[0].candidates).toBeUndefined()
+    expect(raw.sessions[0].attempts[0].stopLossMode).toBe('close')
     expect(raw.sessions[0].attempts[0].result.candidate).toBeUndefined()
+    expect(raw.sessions[0].attempts[0].result.stopLossMode).toBe('close')
     expect(raw.sessions[0].attempts[0].result.drawings).toBeUndefined()
     expect(parseDecisionReplayStore(serialized)).toEqual(normalizedStore)
+  })
+
+  it('keeps touch and close modes on both attempts and results through compact storage and merge', () => {
+    const touchItem = candidate('mode-compact:1')
+    const closeItem = candidate('mode-compact:2')
+    const makeCompleted = (item: ReplayDecisionCandidate, mode: 'touch' | 'close') => {
+      const attempt = {
+        ...createDecisionAttempt(item),
+        stage: 'complete' as const,
+        stopLossMode: mode,
+        result: buildDecisionResult(item, { ...createDecisionAttempt(item), stopLossMode: mode }, { time: 3600, price: 101, reason: 'skipped' }, []),
+      }
+      return {
+        ...createDecisionSession([item], 1, mode === 'touch' ? 1000 : 2000),
+        id: `${mode}-mode-session`,
+        attempts: [attempt],
+        currentIndex: 0,
+        status: 'active' as const,
+      }
+    }
+    const touchSession = makeCompleted(touchItem, 'touch')
+    const closeSession = makeCompleted(closeItem, 'close')
+    const touchStore = parseDecisionReplayStore(JSON.stringify(storeWithSessions(touchSession)))
+    const touchRaw = JSON.parse(serializeDecisionReplayStore(touchStore))
+    expect(touchRaw.sessions[0].attempts[0].stopLossMode).toBe('touch')
+    expect(touchRaw.sessions[0].attempts[0].result.stopLossMode).toBe('touch')
+    expect(parseDecisionReplayStore(JSON.stringify(touchRaw)).sessions[0].attempts[0].stopLossMode).toBe('touch')
+
+    const merged = mergeDecisionReplayStores(touchStore, parseDecisionReplayStore(JSON.stringify(storeWithSessions(closeSession))))
+    expect(merged.sessions).toHaveLength(2)
+    expect(merged.sessions.find((session) => session.id === touchSession.id)?.attempts[0].stopLossMode).toBe('touch')
+    expect(merged.sessions.find((session) => session.id === closeSession.id)?.attempts[0].result?.stopLossMode).toBe('close')
+  })
+
+  it('treats a missing legacy mode as touch without changing the parsed baseline result', () => {
+    const item = candidate('legacy-mode:1')
+    const attempt = {
+      ...createDecisionAttempt(item),
+      stage: 'complete' as const,
+      stopLossMode: 'touch' as const,
+      result: buildDecisionResult(item, createDecisionAttempt(item), { time: 3600, price: 101, reason: 'skipped' }, []),
+    }
+    const { stopLossMode: _legacyAttemptMode, ...legacyAttemptBase } = attempt
+    const { stopLossMode: _legacyResultMode, ...legacyResult } = attempt.result!
+    expect(_legacyAttemptMode).toBe('touch')
+    expect(_legacyResultMode).toBe('close')
+    const legacyAttempt = { ...legacyAttemptBase, result: legacyResult }
+    const legacySession = {
+      ...createDecisionSession([item], 1, 1000),
+      id: 'legacy-mode-session',
+      attempts: [legacyAttempt],
+      currentIndex: 0,
+      status: 'active' as const,
+    }
+    const raw = JSON.stringify(storeWithSessions(legacySession))
+    const baseline = parseDecisionReplayStore(raw)
+    const restored = parseDecisionReplayStore(serializeDecisionReplayStore(baseline))
+    expect(decisionStopLossMode(baseline.sessions[0].attempts[0].stopLossMode)).toBe('touch')
+    expect(decisionStopLossMode(baseline.sessions[0].attempts[0].result?.stopLossMode)).toBe('touch')
+    expect(restored.sessions[0].attempts[0].result).toEqual(baseline.sessions[0].attempts[0].result)
+  })
+
+  it('merges missing legacy touch mode with explicit touch, while touch and close remain distinct', () => {
+    const item = candidate('mode-merge:1')
+    const makeSession = (mode: 'touch' | 'close', omitMode = false) => {
+      const seed = createDecisionAttempt(item)
+      const result = buildDecisionResult(item, { ...seed, stopLossMode: mode }, { time: 3600, price: 101, reason: 'skipped' }, [])
+      const completeAttempt = { ...seed, stage: 'complete' as const, stopLossMode: mode, result }
+      const attempt = omitMode
+        ? (() => {
+            const { stopLossMode: _attemptMode, ...withoutAttemptMode } = completeAttempt
+            const { stopLossMode: _resultMode, ...withoutResultMode } = result
+            expect(_attemptMode).toBe(mode)
+            expect(_resultMode).toBe(mode)
+            return { ...withoutAttemptMode, result: withoutResultMode }
+          })()
+        : completeAttempt
+      return {
+        ...createDecisionSession([item], 1, mode === 'touch' ? 1000 : 2000),
+        id: 'mode-merge-session',
+        attempts: [attempt],
+        currentIndex: 1,
+        status: 'completed' as const,
+        finishedAt: 3000,
+      }
+    }
+    const legacyTouch = parseDecisionReplayStore(JSON.stringify(storeWithSessions(makeSession('touch', true))))
+    const explicitTouch = parseDecisionReplayStore(JSON.stringify(storeWithSessions(makeSession('touch'))))
+    const compatible = mergeDecisionReplayStores(legacyTouch, explicitTouch)
+    expect(compatible.sessions).toHaveLength(1)
+    expect(decisionStopLossMode(compatible.sessions[0].attempts[0].stopLossMode)).toBe('touch')
+    expect(decisionStopLossMode(compatible.sessions[0].attempts[0].result?.stopLossMode)).toBe('touch')
+
+    const explicitClose = parseDecisionReplayStore(JSON.stringify(storeWithSessions(makeSession('close'))))
+    const distinct = mergeDecisionReplayStores(explicitTouch, explicitClose)
+    expect(distinct.sessions).toHaveLength(2)
+    expect(new Set(distinct.sessions.map((session) => decisionStopLossMode(session.attempts[0].result?.stopLossMode)))).toEqual(new Set(['touch', 'close']))
   })
 
   it('deduplicates one persisted exercise that was saved under two session ids', () => {
@@ -634,7 +806,8 @@ describe('decision replay', () => {
       ...base.attempts[0],
       stage: 'post-exit' as const,
       cursorTime: 4200,
-      result: buildDecisionResult(candidates[0], base.attempts[0], {
+      stopLossMode: 'touch' as const,
+      result: buildDecisionResult(candidates[0], { ...base.attempts[0], stopLossMode: 'touch' }, {
         time: 4200,
         price: candidates[0].trade.entry.price,
         reason: 'manual-close',
@@ -648,6 +821,7 @@ describe('decision replay', () => {
       candidateKey: candidates[0].key,
       stage: 'entry-decision',
       cursorTime: candidates[0].trade.entry.signalTime,
+      stopLossMode: 'close',
       result: null,
       fill: null,
       drawings: [],
@@ -702,6 +876,7 @@ describe('decision replay', () => {
       orderKind: 'stop' as const,
       pendingEntryPrice: 101,
       initialStopLoss: 95,
+      stopLossMode: 'touch' as const,
       stopLoss: 95,
       takeProfit: 107,
       fill: { time: 3300, price: 101 },
@@ -721,7 +896,8 @@ describe('decision replay', () => {
     expect(review.sourceSessionId).toBe('source-session')
     expect(review.sourceCandidateKey).toBe(sourceResult.candidateKey)
     expect(review.positionSizingModes).toEqual(['fixed-notional'])
-    expect(review.attempts[0]).toMatchObject({ candidateKey: item.key, stage: 'entry-decision', cursorTime: item.trade.entry.signalTime, result: null })
+    expect(review.attempts[0]).toMatchObject({ candidateKey: item.key, stage: 'entry-decision', cursorTime: item.trade.entry.signalTime, stopLossMode: 'close', result: null })
+    expect(sourceResult.stopLossMode).toBe('touch')
     expect(source.attempts[0].result).toEqual(sourceResult)
     expect(source.status).toBe('completed')
   })
