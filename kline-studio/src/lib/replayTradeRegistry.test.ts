@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  replayDecisionCandidates, replayTradeDatasetInfos, resolveReplayDecisionSignalMarker, resolveReplayTradeMarker,
+  replayDecisionCandidates, replayDecisionContextSourceIds, replayTradeDatasetInfos, resolveReplayDecisionSignalMarker, resolveReplayTradeMarker,
   toReplayDecisionSignalSeriesMarkers, toReplayTradeConnectionSpecs, toReplayTradeSeriesMarkers,
 } from './replayTradeRegistry'
 
@@ -14,17 +14,17 @@ describe('replay trade dataset registry', () => {
       name: 'XAUUSD 回放交易',
       symbol: 'XAUUSD',
       interval: '5m',
-      tradeCount: 92,
-      markerCount: 184,
+      tradeCount: 87,
+      markerCount: 174,
     }))
   })
 
   it('renders only requested layers with source-unique marker and connection IDs', () => {
     const markers = toReplayTradeSeriesMarkers('XAUUSD', '5m', [sourceId])
     const connections = toReplayTradeConnectionSpecs('XAUUSD', '5m', [sourceId])
-    expect(markers).toHaveLength(184)
-    expect(connections).toHaveLength(92)
-    expect(new Set(markers.map((marker) => marker.id)).size).toBe(184)
+    expect(markers).toHaveLength(174)
+    expect(connections).toHaveLength(87)
+    expect(new Set(markers.map((marker) => marker.id)).size).toBe(174)
     expect(markers[0].id).toContain(sourceId)
     expect(connections[0].sourceId).toBe(sourceId)
     expect(toReplayTradeSeriesMarkers('XAUUSD', '5m', [])).toEqual([])
@@ -36,7 +36,7 @@ describe('replay trade dataset registry', () => {
     expect(resolveReplayTradeMarker('XAUUSD', '5m', [sourceId], marker.id)).toMatchObject({
       id: marker.id,
       sourceId,
-      trade: { tradeNumber: 1 },
+      trade: { tradeNumber: 2 },
     })
     expect(resolveReplayTradeMarker('XAUUSD', '5m', [], marker.id)).toBeNull()
   })
@@ -77,6 +77,17 @@ describe('replay trade dataset registry', () => {
     const markers = toReplayDecisionSignalSeriesMarkers('US500', '5m', [sourceId], nextOppositeSignalTime, null)
     expect(markers).toContainEqual(expect.objectContaining({ time: initialSignalTime, text: '多头信号' }))
     expect(markers).toContainEqual(expect.objectContaining({ time: nextOppositeSignalTime, text: '空头信号' }))
+  })
+
+  it('keeps adjacent replay sources available for pre-session decision context without duplicate signals', () => {
+    const candidates = replayDecisionCandidates()
+    const contextSourceIds = replayDecisionContextSourceIds(candidates, 'XAUUSD', '5m')
+    expect(contextSourceIds.length).toBeGreaterThan(1)
+
+    const markers = toReplayDecisionSignalSeriesMarkers('XAUUSD', '5m', contextSourceIds)
+    const identities = markers.map((marker) => `${Number(marker.time)}:${marker.text}`)
+    expect(new Set(identities).size).toBe(identities.length)
+    expect(replayDecisionContextSourceIds(candidates, 'BTCUSDT.P', '1m')).toEqual([])
   })
 
   it('resolves an opposite decision signal to the closing trade detail', () => {

@@ -1,5 +1,5 @@
 import type { Candle } from './market'
-import { createDecisionSession, decisionStopLossMode, type DecisionPositionSizingMode, type DecisionReplaySession, type DecisionTradeResult } from './decisionReplay'
+import { createDecisionSession, decisionResultSide, decisionStopLossMode, type DecisionPositionSizingMode, type DecisionReplaySession, type DecisionTradeResult } from './decisionReplay'
 
 export interface DecisionReplayAnomaly {
   sessionId: string
@@ -25,7 +25,7 @@ export function findDecisionReplayAnomalies(sessions: readonly DecisionReplaySes
       if (stop === null || !Number.isFinite(stop)) reasons.push('缺少有效止损价')
       else if (!bar) reasons.push('缺少原止损K线')
       else {
-        const long = result.candidate.trade.side === 'long'
+        const long = decisionResultSide(result) === 'long'
         if (!(long ? bar.low <= stop : bar.high >= stop)) reasons.push('原止损未被当前OANDA该K触碰')
         const expectedFill = long ? Math.min(bar.open, stop) : Math.max(bar.open, stop)
         if (Math.abs(expectedFill - result.userExit.price) > 1e-8) reasons.push('原止损成交与当前K线不一致')

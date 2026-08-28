@@ -25,12 +25,12 @@ describe('replay trade layers', () => {
       symbol: 'XAUUSD',
       interval: '5m',
       visible: true,
-      startTime: 1785709200,
-      endTime: 1786136100,
+      startTime: 1785712800,
+      endTime: 1786133100,
       startedAt: 1786264147,
       finishedAt: null,
-      tradeCount: 92,
-      markerCount: 184,
+      tradeCount: 87,
+      markerCount: 174,
     })
   })
 

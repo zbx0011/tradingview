@@ -51,21 +51,26 @@ import {
   prepareLocalPrivateSync, publishLocalPrivateSync, receiveLocalPrivateSync, runWithLocalPrivateSyncLock,
   sha256PortableWorkspace, type LocalSyncScope,
 } from './lib/localPrivateSync'
-import { replayDecisionCandidates, type ReplayDecisionCandidate } from './lib/replayTradeRegistry'
+import {
+  loadLocalCodeStatus, publishLocalCode, updateLocalCode,
+  type LocalCodeStatus,
+} from './lib/localCodeDeploy'
+import { replayDecisionCandidates, replayDecisionContextSourceIds, type ReplayDecisionCandidate } from './lib/replayTradeRegistry'
 import { createDecisionAnomalyReviewSession, findDecisionReplayAnomalies } from './lib/decisionReplayAnomalies'
 import {
   DECISION_REPLAY_INTERVALS, DECISION_REPLAY_STORAGE_KEY, adjacentDecisionExerciseTarget, advanceDecisionAttempt, buildDecisionResult, cancelPendingOrderAndAdvance, candleAtOrBefore, candlesKnownAt, createDecisionAttempt,
   createDecisionReviewSession, createDecisionSession, currentDecisionAttempt, currentDecisionCandidate, decisionShortcutAction, defaultDecisionLevels,
-  decisionAttemptInitialStopLoss, decisionStopLossMode, decisionSessionPositionSizingModes, emptyDecisionReplayStore, filterDecisionCandidatesByScope, historyCoversDecisionCandidate, intervalCutoffTime, intervalSeconds,
-  loadDecisionReplayStore, mergeDecisionReplayStores, nextCandleAfter, normalizeDecisionReplayStore, parseDecisionReplayStoreChecked, pnlForDecisionMode, restartPostExitDecisionAttempt, sampleDecisionCandidates,
+  decisionAttemptInitialStopLoss, decisionAttemptSide, decisionDayHistoryIsComplete, decisionSessionPracticeMode, decisionStopLossMode, decisionSessionPositionSizingModes, emptyDecisionReplayStore, filterDecisionCandidatesByScope, formatDecisionDay, historyCoversDecisionCandidate, intervalCutoffTime, intervalSeconds,
+  loadDecisionReplayStore, mergeDecisionReplayStores, nextCandleAfter, normalizeDecisionReplayStore, parseDecisionReplayStoreChecked, pnlForDecisionMode, restartPostExitDecisionAttempt, sampleDecisionCandidates, sampleDecisionDayCandidates,
   saveDecisionReplayStoreSnapshot, sessionResults, updateDecisionSessionDrawings, validDecisionLevels, validOpenPositionLevels,
-  type DecisionAttempt, type DecisionExit, type DecisionPositionSizingMode, type DecisionReplayInterval, type DecisionReplaySession, type DecisionStopLossMode, type DecisionTradeResult,
+  type DecisionAttempt, type DecisionExit, type DecisionPositionSizingMode, type DecisionPracticeMode, type DecisionReplayInterval, type DecisionReplaySession, type DecisionStopLossMode, type DecisionTradeResult,
 } from './lib/decisionReplay'
 
 type ChartType = 'candles' | 'hollow' | 'line' | 'area'
 type Theme = 'dark' | 'light'
 type PrivateSyncStatus = 'checking' | 'ready' | 'syncing' | 'synced' | 'received' | 'unavailable' | 'error'
 type PrivateSyncOperation = 'sync' | 'receive' | 'history-sync' | 'history-receive' | null
+type CodeDeployPhase = 'checking' | 'ready' | 'publishing' | 'published' | 'updating' | 'unavailable' | 'error'
 
 const DEFAULT_INDICATORS: IndicatorSettings = {
   ma: false, ema: true, boll: false, volume: true,
@@ -199,6 +204,8 @@ function App() {
   const [privateSyncBusy, setPrivateSyncBusy] = useState(false)
   const [privateSyncStatus, setPrivateSyncStatus] = useState<PrivateSyncStatus>('checking')
   const [privateSyncOperation, setPrivateSyncOperation] = useState<PrivateSyncOperation>(null)
+  const [codeDeployPhase, setCodeDeployPhase] = useState<CodeDeployPhase>('checking')
+  const [codeDeployStatus, setCodeDeployStatus] = useState<LocalCodeStatus | null>(null)
   const [remoteMarket, setRemoteMarket] = useState<{ symbol: SymbolId; bars: Candle[]; status: MarketDataStatus } | null>(null)
   const [decisionHistoryBySymbol, setDecisionHistoryBySymbol] = useState<Partial<Record<SymbolId, Candle[]>>>({})
   const [marketLoading, setMarketLoading] = useState<{ symbol: SymbolId; label: string } | null>(null)
@@ -236,6 +243,17 @@ function App() {
     : null, [normalizedDecisionStore])
   const activeDecisionCandidate = currentDecisionCandidate(activeDecisionSession)
   const activeDecisionAttempt = currentDecisionAttempt(activeDecisionSession)
+  const activeDecisionDaySequence = decisionSessionPracticeMode(activeDecisionSession) === 'day-sequence'
+    ? activeDecisionSession?.daySequence ?? null
+    : null
+  const decisionDayMode = activeDecisionDaySequence !== null
+  const decisionSignalReached = Boolean(activeDecisionCandidate && activeDecisionAttempt && (
+    !decisionDayMode || activeDecisionAttempt.cursorTime >= activeDecisionCandidate.trade.entry.signalTime
+  ))
+  const decisionDayModeRef = useRef(decisionDayMode)
+  useEffect(() => {
+    decisionDayModeRef.current = decisionDayMode
+  }, [decisionDayMode])
   const activeDecisionPositionSizingModes = decisionSessionPositionSizingModes(activeDecisionSession)
   const decisionResultsSession = useMemo(() => decisionResultsSessionId
     ? normalizedDecisionStore.sessions.find((session) => session.id === decisionResultsSessionId) ?? null
@@ -243,10 +261,11 @@ function App() {
   const decisionRiskFallback = useMemo(() => {
     const pendingEntryPrice = activeDecisionAttempt?.stage === 'risk-setup' ? activeDecisionAttempt.pendingEntryPrice : null
     if (!activeDecisionCandidate || pendingEntryPrice === null) return null
+    const side = activeDecisionAttempt ? decisionAttemptSide(activeDecisionCandidate, activeDecisionAttempt) : activeDecisionCandidate.trade.side
     return defaultDecisionLevels(
-      activeDecisionCandidate.trade.side,
+      side,
       pendingEntryPrice,
-      activeDecisionCandidate.trade.entry.stopLoss,
+      activeDecisionAttempt?.userSide ? null : activeDecisionCandidate.trade.entry.stopLoss,
     )
   }, [activeDecisionAttempt, activeDecisionCandidate])
   // The draft is transient, so fall back to the active attempt's causal setup
@@ -304,8 +323,13 @@ function App() {
   const decisionSourceData = useMemo(() => {
     if (!decisionSubject || !decisionMinuteHistory?.length) return []
     const seconds = intervalSeconds(decisionSubject.interval)
-    return seconds === 60 ? decisionMinuteHistory : aggregateCandles(decisionMinuteHistory, seconds)
-  }, [decisionMinuteHistory, decisionSubject])
+    const sourceData = seconds === 60 ? decisionMinuteHistory : aggregateCandles(decisionMinuteHistory, seconds)
+    if (!activeDecisionDaySequence) return sourceData
+    return sourceData.filter((candle) => (
+      candle.time >= activeDecisionDaySequence.startTime
+      && candle.time < activeDecisionDaySequence.endTime
+    ))
+  }, [activeDecisionDaySequence, decisionMinuteHistory, decisionSubject])
   const isMarketHistory = marketStatus.kind !== 'simulated'
   const liveData = useMemo(() => {
     if (isMarketHistory) return baseData
@@ -332,6 +356,9 @@ function App() {
   }, [activeDecisionAttempt, activeDecisionCandidate])
   const decisionData = useMemo(() => {
     if (!decisionSubject || !decisionMinuteHistory?.length || decisionCutoff === null) return []
+    // Day-sequence playback starts its cursor at the session open, but the
+    // chart keeps the same pre-signal history context as ordinary decision
+    // replay. Session bounds still govern advancing via decisionSourceData.
     const knownMinutes = candlesKnownAt(decisionMinuteHistory, decisionCutoff)
     return interval === '1m' ? knownMinutes : aggregateCandles(knownMinutes, INTERVALS[interval].seconds)
   }, [decisionCutoff, decisionMinuteHistory, decisionSubject, interval])
@@ -343,10 +370,13 @@ function App() {
   const candle = hoverCandle ?? data.at(-1) ?? baseData.at(-1)!
   const decisionCurrentCandle = decisionMode ? data.at(-1) ?? null : null
   const decisionPositionCandle = activeDecisionAttempt?.stage === 'position-open' ? data.at(-1) ?? null : null
-  const decisionPositionPnlByMode = activeDecisionCandidate?.trade.side && activeDecisionAttempt?.stage === 'position-open' && activeDecisionAttempt.fill && activeDecisionAttempt.stopLoss !== null && decisionPositionCandle
+  const activeDecisionUserSide = activeDecisionCandidate && activeDecisionAttempt
+    ? decisionAttemptSide(activeDecisionCandidate, activeDecisionAttempt)
+    : null
+  const decisionPositionPnlByMode = activeDecisionUserSide && activeDecisionCandidate && activeDecisionAttempt?.stage === 'position-open' && activeDecisionAttempt.fill && activeDecisionAttempt.stopLoss !== null && decisionPositionCandle
     ? {
-        'fixed-risk': pnlForDecisionMode('fixed-risk', activeDecisionCandidate.trade.side, activeDecisionAttempt.fill.price, decisionPositionCandle.close, decisionAttemptInitialStopLoss(activeDecisionCandidate, activeDecisionAttempt) ?? activeDecisionAttempt.stopLoss),
-        'fixed-notional': pnlForDecisionMode('fixed-notional', activeDecisionCandidate.trade.side, activeDecisionAttempt.fill.price, decisionPositionCandle.close, activeDecisionAttempt.stopLoss),
+        'fixed-risk': pnlForDecisionMode('fixed-risk', activeDecisionUserSide, activeDecisionAttempt.fill.price, decisionPositionCandle.close, decisionAttemptInitialStopLoss(activeDecisionCandidate, activeDecisionAttempt) ?? activeDecisionAttempt.stopLoss),
+        'fixed-notional': pnlForDecisionMode('fixed-notional', activeDecisionUserSide, activeDecisionAttempt.fill.price, decisionPositionCandle.close, activeDecisionAttempt.stopLoss),
       }
     : null
   // The system trade is also causal: once its entry candle is visible, show
@@ -388,18 +418,32 @@ function App() {
     () => replayTradeLayers.filter((layer) => layer.symbol === symbol && layer.interval === interval && layer.visible).map((layer) => layer.sourceId),
     [interval, replayTradeLayers, symbol],
   )
-  const decisionSignalSourceIds = useMemo(() => {
-    if (!decisionMode || !activeDecisionCandidate || !activeDecisionAttempt) return []
-    // Keep the current source's signal-only stream active for the whole causal
-    // exercise. This includes repeated observation before entry, an open
-    // position, and post-exit watching, while ChartSurface still clips every
-    // marker at the currently revealed candle.
-    return [activeDecisionCandidate.sourceId]
-  }, [activeDecisionAttempt, activeDecisionCandidate, decisionMode])
   const registeredDecisionCandidates = useMemo(() => replayDecisionCandidates(replayTradeLayers.map((layer) => layer.sourceId)), [replayTradeLayers])
   const allDecisionCandidates = useMemo(() => registeredDecisionCandidates.filter((candidate) => (
     historyCoversDecisionCandidate(candidate, availableDecisionHistoryBySymbol[candidate.symbol])
   )), [availableDecisionHistoryBySymbol, registeredDecisionCandidates])
+  const decisionContextSourceIds = useMemo(() => {
+    if (!decisionMode || !activeDecisionCandidate) return []
+    if (!decisionDayMode) return [activeDecisionCandidate.sourceId]
+    // Day playback can show candles from before the selected market session.
+    // Keep their already-known annotations too, even when those candles belong
+    // to an adjacent replay file. Marker generation still clips at the cursor.
+    return replayDecisionContextSourceIds(
+      allDecisionCandidates,
+      activeDecisionCandidate.symbol,
+      activeDecisionCandidate.interval,
+    )
+  }, [activeDecisionCandidate, allDecisionCandidates, decisionDayMode, decisionMode])
+  const decisionSignalSourceIds = useMemo(() => {
+    if (!decisionMode || !activeDecisionCandidate || !activeDecisionAttempt) return []
+    // Keep the context sources' signal-only stream active for the whole causal
+    // exercise. ChartSurface clips every marker at the revealed candle, so
+    // preceding context remains visible without leaking future signals.
+    return decisionContextSourceIds
+  }, [activeDecisionAttempt, activeDecisionCandidate, decisionContextSourceIds, decisionMode])
+  const decisionDayTradeSourceIds = useMemo(() => decisionDayMode && activeDecisionSession
+    ? [...new Set(activeDecisionSession.candidates.map((candidate) => candidate.sourceId))]
+    : [], [activeDecisionSession, decisionDayMode])
   const decisionAnomalies = useMemo(() => decisionCenterOpen
     ? findDecisionReplayAnomalies(normalizedDecisionStore.sessions, aggregateCandles(availableDecisionHistoryBySymbol.XAUUSD ?? [], 300))
     : [], [availableDecisionHistoryBySymbol.XAUUSD, decisionCenterOpen, normalizedDecisionStore.sessions])
@@ -598,6 +642,9 @@ function App() {
   // can restore the previous trade's viewport immediately afterwards.
   const focusDecisionChartLatest = useCallback(() => {
     const focus = () => {
+      // Delayed retries from ordinary random practice must never pull a newly
+      // opened day-sequence chart back to only the latest candles.
+      if (decisionDayModeRef.current) return
       // Keep automatic transitions identical to pressing the bottom-right A
       // button: reset the price scale to automatic before centering the latest
       // visible candles. This runs after the data commit, not synchronously in
@@ -627,6 +674,27 @@ function App() {
       })
     })
   }, [])
+
+  const focusDecisionDayChart = useCallback(() => {
+    const focus = () => {
+      if (!decisionDayModeRef.current) return
+      setPriceScaleAuto(true)
+      // The current day candle stays at the right edge while earlier candles
+      // remain visible as context, matching ordinary decision replay.
+      chartRef.current?.focusLatest()
+    }
+    if (typeof window === 'undefined') return
+    window.setTimeout(focus, 0)
+    window.setTimeout(focus, 120)
+    window.setTimeout(focus, 300)
+    window.setTimeout(focus, 600)
+    window.setTimeout(focus, 1000)
+  }, [])
+
+  const focusCurrentDecisionChart = useCallback(() => {
+    if (decisionDayMode) focusDecisionDayChart()
+    else focusDecisionChartLatest()
+  }, [decisionDayMode, focusDecisionChartLatest, focusDecisionDayChart])
 
   // Include the session id so switching between the source attempt and an
   // independent review reloads the correct drawing snapshot even when both
@@ -663,11 +731,12 @@ function App() {
       dispatchDecisionDrawing({ type: 'load', drawings: withoutTransientMeasurements(drawingsForContext) })
       window.setTimeout(() => {
         decisionDrawingLoadingRef.current = false
-        focusDecisionChartLatest()
+        if (decisionDayMode) focusDecisionDayChart()
+        else focusDecisionChartLatest()
       }, 0)
     }, 0)
     return () => window.clearTimeout(timer)
-  }, [decisionContextInterval, decisionContextKey, decisionContextSymbol, focusDecisionChartLatest])
+  }, [decisionContextInterval, decisionContextKey, decisionContextSymbol, decisionDayMode, focusDecisionChartLatest, focusDecisionDayChart])
 
   useEffect(() => {
     const candidateKey = decisionDrawingContextRef.current
@@ -690,8 +759,14 @@ function App() {
 
   useEffect(() => {
     if (!decisionMode) return
-    focusDecisionChartLatest()
-  }, [decisionMode, focusDecisionChartLatest, interval])
+    if (decisionDayMode) focusDecisionDayChart()
+    else focusDecisionChartLatest()
+  }, [decisionDayMode, decisionMode, focusDecisionChartLatest, focusDecisionDayChart, interval])
+
+  useEffect(() => {
+    if (!decisionDayMode || decisionData.length === 0) return
+    focusDecisionDayChart()
+  }, [decisionData.length, decisionDayMode, focusDecisionDayChart])
 
   useEffect(() => {
     const chart = chartRef.current
@@ -760,21 +835,38 @@ function App() {
     })
   }, [])
 
-  const beginDecisionSession = useCallback((requestedCount: number, selectedSymbols: SymbolId[], selectedIntervals: DecisionReplayInterval[], positionSizingModes: DecisionPositionSizingMode[]) => {
+  const beginDecisionSession = useCallback((requestedCount: number, selectedSymbols: SymbolId[], selectedIntervals: DecisionReplayInterval[], positionSizingModes: DecisionPositionSizingMode[], practiceMode: DecisionPracticeMode) => {
     if (decisionSessionStartLockRef.current) return
     decisionSessionStartLockRef.current = true
     window.setTimeout(() => { decisionSessionStartLockRef.current = false }, 0)
     const candidates = filterDecisionCandidatesByScope(allDecisionCandidates, selectedSymbols, selectedIntervals)
-    const selected = sampleDecisionCandidates(candidates, normalizedDecisionStore.seenTradeKeys, requestedCount)
+    const sampledDay = practiceMode === 'day-sequence'
+      ? sampleDecisionDayCandidates(
+        candidates,
+        normalizedDecisionStore.seenTradeKeys,
+        ({ daySequence }) => decisionDayHistoryIsComplete(
+          daySequence,
+          availableDecisionHistoryBySymbol[daySequence.symbol],
+        ),
+      )
+      : null
+    const selected = practiceMode === 'day-sequence'
+      ? sampledDay?.candidates ?? []
+      : sampleDecisionCandidates(candidates, normalizedDecisionStore.seenTradeKeys, requestedCount)
     if (selected.length === 0) {
-      notify('没有尚未练习的模拟交易')
+      notify(practiceMode === 'day-sequence' ? '当前筛选范围没有可组成完整交易日的未练习交易' : '没有尚未练习的模拟交易')
       return
     }
-    const session = createDecisionSession(selected, requestedCount, Date.now(), positionSizingModes)
+    const session = createDecisionSession(selected, practiceMode === 'day-sequence' ? selected.length : requestedCount, Date.now(), positionSizingModes, {
+      practiceMode,
+      ...(sampledDay ? { daySequence: sampledDay.daySequence } : {}),
+    })
     setDecisionStore((current) => normalizeDecisionReplayStore({
       ...current,
       activeSessionId: session.id,
-      seenTradeKeys: [...new Set([...current.seenTradeKeys, selected[0].key])],
+      // Reserve the whole sampled batch immediately. Otherwise a second tab
+      // or a repeated start click can sample the still-unreached tail again.
+      seenTradeKeys: [...new Set([...current.seenTradeKeys, ...selected.map((candidate) => candidate.key)])],
       sessions: [session, ...current.sessions],
     }))
     setDecisionCenterOpen(false)
@@ -782,9 +874,12 @@ function App() {
     setDecisionReviewReturnSessionId(null)
     setDecisionPriceDraft(null)
     setDecisionRiskDraft(null)
-    setDecisionFocusTick((value) => value + 1)
-    notify(`已随机抽取 ${selected.length} 笔，开始严格因果决策回放`)
-  }, [allDecisionCandidates, normalizedDecisionStore.seenTradeKeys, notify])
+    decisionDayModeRef.current = practiceMode === 'day-sequence'
+    if (practiceMode !== 'day-sequence') setDecisionFocusTick((value) => value + 1)
+    notify(sampledDay
+      ? `已随机选择 ${formatDecisionDay(sampledDay.daySequence.startTime)}，按时间顺序练习 ${selected.length} 笔`
+      : `已随机抽取 ${selected.length} 笔，开始严格因果决策回放`)
+  }, [allDecisionCandidates, availableDecisionHistoryBySymbol, normalizedDecisionStore.seenTradeKeys, notify])
 
   const beginAnomalyReview = useCallback((positionSizingModes: DecisionPositionSizingMode[]) => {
     if (decisionSessionStartLockRef.current || replayableDecisionAnomalies.length === 0) return
@@ -843,7 +938,10 @@ function App() {
       const nextCandidate = session.candidates[session.currentIndex + 1]
       if (nextCandidate) {
         nextIndex = session.currentIndex + 1
-        if (!attempts.some((attempt) => attempt.candidateKey === nextCandidate.key)) attempts = [...attempts, createDecisionAttempt(nextCandidate)]
+        if (!attempts.some((attempt) => attempt.candidateKey === nextCandidate.key)) attempts = [...attempts, createDecisionAttempt(
+          nextCandidate,
+          decisionSessionPracticeMode(session) === 'day-sequence' ? resolved.cursorTime : undefined,
+        )]
         seenTradeKeys = [...new Set([...seenTradeKeys, nextCandidate.key])]
       } else {
         status = 'completed'
@@ -865,7 +963,9 @@ function App() {
     setHoverCandle(null)
     const returnFromReview = isLast && activeDecisionSession.origin === 'review' && decisionReviewReturnSessionId !== null
     if (!advanceImmediately) {
-      notify('本笔已经平仓：按 1 继续观看，按 4 进入下一笔')
+      notify(decisionDayMode && isLast
+        ? '当天最后一笔已经结算：按 1 继续逐根观看到收盘'
+        : '本笔已经平仓：按 1 继续观看，按 4 进入下一笔')
     } else if (returnFromReview) {
       setDecisionResultsSessionId(null)
       setDecisionReviewReturnSessionId(null)
@@ -876,14 +976,21 @@ function App() {
       setDecisionResultsSessionId(sessionId)
       notify('本场决策已完成，系统结果现已揭晓')
     } else {
-      setDecisionFocusTick((value) => value + 1)
-      focusDecisionChartLatest()
+      if (!decisionDayMode) setDecisionFocusTick((value) => value + 1)
+      focusCurrentDecisionChart()
     }
-  }, [activeDecisionCandidate, activeDecisionSession, decisionDrawings.present, decisionReviewReturnSessionId, focusDecisionChartLatest, notify])
+  }, [activeDecisionCandidate, activeDecisionSession, decisionDayMode, decisionDrawings.present, decisionReviewReturnSessionId, focusCurrentDecisionChart, focusDecisionChartLatest, notify])
 
   const goToNextDecisionTrade = useCallback(() => {
     if (!activeDecisionSession || !activeDecisionCandidate || !activeDecisionAttempt?.result || activeDecisionAttempt.stage !== 'post-exit') return
     const isLast = activeDecisionSession.currentIndex >= activeDecisionSession.candidates.length - 1
+    const dayLastBarTime = activeDecisionDaySequence
+      ? activeDecisionDaySequence.endTime - intervalSeconds(activeDecisionCandidate.interval)
+      : null
+    if (isLast && dayLastBarTime !== null && activeDecisionAttempt.cursorTime < dayLastBarTime) {
+      notify('这是当天最后一笔交易；请按 1 继续逐根观看到收盘')
+      return
+    }
     const sessionId = activeDecisionSession.id
     const expectedCandidateKey = activeDecisionCandidate.key
     const drawingSnapshot = withoutTransientMeasurements(decisionDrawings.present)
@@ -908,7 +1015,10 @@ function App() {
       const nextCandidate = session.candidates[session.currentIndex + 1]
       if (nextCandidate) {
         nextIndex = session.currentIndex + 1
-        if (!attempts.some((attempt) => attempt.candidateKey === nextCandidate.key)) attempts = [...attempts, createDecisionAttempt(nextCandidate)]
+        if (!attempts.some((attempt) => attempt.candidateKey === nextCandidate.key)) attempts = [...attempts, createDecisionAttempt(
+          nextCandidate,
+          decisionSessionPracticeMode(session) === 'day-sequence' ? currentAttempt.cursorTime : undefined,
+        )]
         seenTradeKeys = [...new Set([...seenTradeKeys, nextCandidate.key])]
       } else {
         status = 'completed'
@@ -937,11 +1047,11 @@ function App() {
       setDecisionResultsSessionId(sessionId)
       notify('本场决策已完成，系统结果现已揭晓')
     } else {
-      setDecisionFocusTick((value) => value + 1)
+      if (!decisionDayMode) setDecisionFocusTick((value) => value + 1)
       notify('已进入下一笔交易')
-      focusDecisionChartLatest()
+      focusCurrentDecisionChart()
     }
-  }, [activeDecisionAttempt, activeDecisionCandidate, activeDecisionSession, decisionDrawings.present, decisionReviewReturnSessionId, focusDecisionChartLatest, notify])
+  }, [activeDecisionAttempt, activeDecisionCandidate, activeDecisionDaySequence, activeDecisionSession, decisionDayMode, decisionDrawings.present, decisionReviewReturnSessionId, focusCurrentDecisionChart, focusDecisionChartLatest, notify])
 
   const restartActiveDecisionTrade = useCallback(() => {
     if (!activeDecisionSession || !activeDecisionCandidate || activeDecisionAttempt?.stage !== 'post-exit') return
@@ -966,10 +1076,10 @@ function App() {
     decisionDrawingContextRef.current = null
     dispatchDecisionDrawing({ type: 'load', drawings: [] })
     window.setTimeout(() => { decisionDrawingLoadingRef.current = false }, 0)
-    setDecisionFocusTick((value) => value + 1)
-    focusDecisionChartLatest()
+    if (!decisionDayMode) setDecisionFocusTick((value) => value + 1)
+    focusCurrentDecisionChart()
     notify('已回到信号 K，重新开始本笔交易')
-  }, [activeDecisionAttempt, activeDecisionCandidate, activeDecisionSession, focusDecisionChartLatest, notify])
+  }, [activeDecisionAttempt, activeDecisionCandidate, activeDecisionSession, decisionDayMode, focusCurrentDecisionChart, notify])
 
   const stopDecisionSession = useCallback(() => {
     if (!activeDecisionSession) return
@@ -992,6 +1102,12 @@ function App() {
     const next = nextCandleAfter(decisionSourceData, activeDecisionAttempt.cursorTime)
     if (activeDecisionAttempt.stage === 'post-exit') {
       if (!next) {
+        const isLastDayTrade = decisionDayMode && activeDecisionSession
+          && activeDecisionSession.currentIndex >= activeDecisionSession.candidates.length - 1
+        if (isLastDayTrade) {
+          goToNextDecisionTrade()
+          return
+        }
         notify('已经到达可用行情末尾；按 4 进入下一笔交易')
         return
       }
@@ -1014,10 +1130,10 @@ function App() {
     else {
       updateActiveDecisionAttempt(() => ({ ...evaluation.attempt, drawings: withoutTransientMeasurements(decisionDrawings.present) }))
     }
-  }, [activeDecisionAttempt, activeDecisionCandidate, completeDecisionTrade, decisionDrawings.present, decisionSourceData, notify, updateActiveDecisionAttempt])
+  }, [activeDecisionAttempt, activeDecisionCandidate, activeDecisionSession, completeDecisionTrade, decisionDayMode, decisionDrawings.present, decisionSourceData, goToNextDecisionTrade, notify, updateActiveDecisionAttempt])
 
   const chooseSignalExtremeOrder = useCallback(() => {
-    if (!activeDecisionAttempt || !activeDecisionCandidate) return
+    if (!activeDecisionAttempt || !activeDecisionCandidate || !decisionSignalReached) return
     const current = candleAtOrBefore(decisionSourceData, activeDecisionAttempt.cursorTime)
     if (!current) return
     const price = activeDecisionCandidate.trade.side === 'long' ? current.high : current.low
@@ -1025,31 +1141,52 @@ function App() {
     setDecisionPriceDraft(price)
     setDecisionRiskDraft(levels)
     updateActiveDecisionAttempt((attempt) => ({ ...attempt, stopLossMode: 'close', entryMode: 'signal-extreme', orderKind: 'stop', pendingEntryPrice: price, stage: 'risk-setup' }))
-  }, [activeDecisionAttempt, activeDecisionCandidate, decisionSourceData, updateActiveDecisionAttempt])
+  }, [activeDecisionAttempt, activeDecisionCandidate, decisionSignalReached, decisionSourceData, updateActiveDecisionAttempt])
 
   const chooseFreePriceOrder = useCallback(() => {
-    if (!activeDecisionAttempt) return
+    if (!activeDecisionAttempt || !decisionSignalReached) return
     const current = candleAtOrBefore(decisionSourceData, activeDecisionAttempt.cursorTime)
     if (!current) return
     setDecisionPriceDraft(current.close)
     setDecisionRiskDraft(null)
     updateActiveDecisionAttempt((attempt) => ({ ...attempt, stopLossMode: 'close', entryMode: 'free-price', orderKind: null, pendingEntryPrice: null, stage: 'entry-price' }))
-  }, [activeDecisionAttempt, decisionSourceData, updateActiveDecisionAttempt])
+  }, [activeDecisionAttempt, decisionSignalReached, decisionSourceData, updateActiveDecisionAttempt])
+
+  const chooseDayMarketOrder = useCallback((side: 'long' | 'short') => {
+    if (!decisionDayMode || !activeDecisionAttempt || !activeDecisionCandidate || activeDecisionAttempt.stage !== 'entry-decision') return
+    const current = candleAtOrBefore(decisionSourceData, activeDecisionAttempt.cursorTime)
+    if (!current) return
+    const price = current.close
+    const levels = defaultDecisionLevels(side, price, null)
+    setDecisionPriceDraft(price)
+    setDecisionRiskDraft(levels)
+    updateActiveDecisionAttempt((attempt) => ({
+      ...attempt,
+      userSide: side,
+      stopLossMode: 'close',
+      entryMode: 'market-close',
+      orderKind: null,
+      pendingEntryPrice: price,
+      fill: { time: attempt.cursorTime, price },
+      stage: 'risk-setup',
+    }))
+  }, [activeDecisionAttempt, activeDecisionCandidate, decisionDayMode, decisionSourceData, updateActiveDecisionAttempt])
 
   const cancelDecisionSetup = useCallback(() => {
     setDecisionPriceDraft(null)
     setDecisionRiskDraft(null)
-    updateActiveDecisionAttempt((attempt) => ({ ...attempt, stage: 'entry-decision', stopLossMode: 'close', entryMode: null, orderKind: null, pendingEntryPrice: null, initialStopLoss: null, stopLoss: null, takeProfit: null }))
+    updateActiveDecisionAttempt((attempt) => ({ ...attempt, stage: 'entry-decision', userSide: undefined, stopLossMode: 'close', entryMode: null, orderKind: null, pendingEntryPrice: null, initialStopLoss: null, stopLoss: null, takeProfit: null, fill: null }))
   }, [updateActiveDecisionAttempt])
 
   const confirmDecisionPrice = useCallback(() => {
     if (!activeDecisionAttempt || !activeDecisionCandidate || decisionPriceDraft === null) return
     const current = candleAtOrBefore(decisionSourceData, activeDecisionAttempt.cursorTime)
     if (!current) return
-    const orderKind = activeDecisionCandidate.trade.side === 'long'
+    const side = decisionAttemptSide(activeDecisionCandidate, activeDecisionAttempt)
+    const orderKind = side === 'long'
       ? decisionPriceDraft >= current.close ? 'stop' : 'limit'
       : decisionPriceDraft <= current.close ? 'stop' : 'limit'
-    const levels = defaultDecisionLevels(activeDecisionCandidate.trade.side, decisionPriceDraft, activeDecisionCandidate.trade.entry.stopLoss)
+    const levels = defaultDecisionLevels(side, decisionPriceDraft, activeDecisionAttempt.userSide ? null : activeDecisionCandidate.trade.entry.stopLoss)
     setDecisionRiskDraft(levels)
     updateActiveDecisionAttempt((attempt) => ({ ...attempt, orderKind, pendingEntryPrice: decisionPriceDraft, stage: 'risk-setup' }))
   }, [activeDecisionAttempt, activeDecisionCandidate, decisionPriceDraft, decisionSourceData, updateActiveDecisionAttempt])
@@ -1058,15 +1195,20 @@ function App() {
     if (!activeDecisionAttempt || !activeDecisionCandidate || activeDecisionAttempt.pendingEntryPrice === null || !effectiveDecisionRiskDraft) return
     const riskDraft = effectiveDecisionRiskDraft
     const pendingEntryPrice = activeDecisionAttempt.pendingEntryPrice
-    if (!validDecisionLevels(activeDecisionCandidate.trade.side, pendingEntryPrice, riskDraft.stopLoss, riskDraft.takeProfit)) {
-      notify(activeDecisionCandidate.trade.side === 'long' ? '做多时止损必须低于挂单价，止盈必须高于挂单价' : '做空时止损必须高于挂单价，止盈必须低于挂单价')
+    const side = decisionAttemptSide(activeDecisionCandidate, activeDecisionAttempt)
+    if (!validDecisionLevels(side, pendingEntryPrice, riskDraft.stopLoss, riskDraft.takeProfit)) {
+      notify(side === 'long' ? '做多时止损必须低于开仓价，止盈必须高于开仓价' : '做空时止损必须高于开仓价，止盈必须低于开仓价')
       return
     }
     const configured: DecisionAttempt = {
-      ...activeDecisionAttempt, stage: 'order-pending', initialStopLoss: riskDraft.stopLoss, stopLoss: riskDraft.stopLoss,
+      ...activeDecisionAttempt, stage: activeDecisionAttempt.fill ? 'position-open' : 'order-pending', initialStopLoss: riskDraft.stopLoss, stopLoss: riskDraft.stopLoss,
       takeProfit: riskDraft.takeProfit, drawings: withoutTransientMeasurements(decisionDrawings.present),
     }
     setDecisionRiskDraft(null)
+    if (configured.stage === 'position-open') {
+      updateActiveDecisionAttempt(() => configured)
+      return
+    }
     const next = nextCandleAfter(decisionSourceData, configured.cursorTime)
     if (!next) {
       completeDecisionTrade(configured, { time: configured.cursorTime, price: pendingEntryPrice, reason: 'end-of-data' })
@@ -1084,9 +1226,10 @@ function App() {
       const stopLoss = field === 'stopLoss' ? value : attempt.stopLoss
       const takeProfit = field === 'takeProfit' ? value : attempt.takeProfit
       const entryPrice = attempt.fill?.price ?? attempt.pendingEntryPrice
+      const side = decisionAttemptSide(candidate, attempt)
       const valid = attempt.stage === 'position-open'
-        ? validOpenPositionLevels(candidate.trade.side, entryPrice, stopLoss, takeProfit)
-        : validDecisionLevels(candidate.trade.side, entryPrice, stopLoss, takeProfit)
+        ? validOpenPositionLevels(side, entryPrice, stopLoss, takeProfit)
+        : validDecisionLevels(side, entryPrice, stopLoss, takeProfit)
       if (!valid) return attempt
       return { ...attempt, stopLoss, takeProfit }
     })
@@ -1099,10 +1242,12 @@ function App() {
   }, [updateActiveDecisionAttempt])
 
   const skipActiveDecision = useCallback((reason: DecisionExit['reason'] = 'skipped') => {
-    if (!activeDecisionAttempt || !activeDecisionCandidate) return
+    if (!activeDecisionAttempt || !activeDecisionCandidate || !decisionSignalReached) return
     const current = candleAtOrBefore(decisionSourceData, activeDecisionAttempt.cursorTime)
-    completeDecisionTrade(activeDecisionAttempt, { time: activeDecisionAttempt.cursorTime, price: current?.close ?? activeDecisionCandidate.trade.entry.price, reason }, true)
-  }, [activeDecisionAttempt, activeDecisionCandidate, completeDecisionTrade, decisionSourceData])
+    const isLastDayTrade = decisionDayMode && activeDecisionSession
+      && activeDecisionSession.currentIndex >= activeDecisionSession.candidates.length - 1
+    completeDecisionTrade(activeDecisionAttempt, { time: activeDecisionAttempt.cursorTime, price: current?.close ?? activeDecisionCandidate.trade.entry.price, reason }, !isLastDayTrade)
+  }, [activeDecisionAttempt, activeDecisionCandidate, activeDecisionSession, completeDecisionTrade, decisionDayMode, decisionSignalReached, decisionSourceData])
 
   const cancelPendingDecisionAndAdvance = useCallback(() => {
     if (!activeDecisionAttempt || activeDecisionAttempt.stage !== 'order-pending') return
@@ -1183,13 +1328,16 @@ function App() {
     setDecisionRiskDraft(null)
     setHoverCandle(null)
     if (target.kind === 'active') {
-      setDecisionFocusTick((value) => value + 1)
-      focusDecisionChartLatest()
+      if (decisionSessionPracticeMode(session) === 'day-sequence') focusDecisionDayChart()
+      else {
+        setDecisionFocusTick((value) => value + 1)
+        focusDecisionChartLatest()
+      }
       notify('已返回当前最新练习')
       return
     }
     startDecisionReplayFromResult(session, target.result)
-  }, [activeDecisionSession, decisionResultsSession, focusDecisionChartLatest, notify, startDecisionReplayFromResult])
+  }, [activeDecisionSession, decisionResultsSession, focusDecisionChartLatest, focusDecisionDayChart, notify, startDecisionReplayFromResult])
   const exportWorkspace = useCallback(() => {
     const snapshot = collectPortableWorkspace()
     downloadPortableWorkspace(snapshot, workspaceBackupFileName('sync'))
@@ -1334,6 +1482,89 @@ function App() {
       cancelled = true
     }
   }, [])
+
+  const refreshCodeDeployStatus = useCallback((announce = false) => {
+    if (announce) setCodeDeployPhase('checking')
+    void loadLocalCodeStatus().then((status) => {
+      setCodeDeployStatus(status)
+      setCodeDeployPhase('ready')
+      if (announce) notify(status.updateAvailable
+        ? `发现新版本 ${status.remoteHead.slice(0, 7)}`
+        : status.clean && status.localHead === status.remoteHead
+          ? `代码已是最新版本 ${status.localHead.slice(0, 7)}`
+          : `当前有 ${status.dirtyFiles.length} 项未发布代码修改`)
+    }).catch((error) => {
+      setCodeDeployPhase('unavailable')
+      if (announce) notify(`代码状态检查失败：${error instanceof Error ? error.message : '未知错误'}`)
+    })
+  }, [notify])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => refreshCodeDeployStatus(false), 0)
+    return () => window.clearTimeout(timer)
+  }, [refreshCodeDeployStatus])
+
+  const publishCodeDeployment = useCallback(() => {
+    if (codeDeployPhase === 'publishing' || codeDeployPhase === 'updating') return
+    setCodeDeployPhase('publishing')
+    void publishLocalCode().then((result) => {
+      setCodeDeployStatus((current) => current ? {
+        ...current,
+        localHead: result.commit,
+        remoteHead: result.commit,
+        dirtyFiles: [],
+        clean: true,
+        updateAvailable: false,
+        aheadOfRemote: false,
+        diverged: false,
+      } : current)
+      setCodeDeployPhase('published')
+      notify(`代码已部署到 GitHub：${result.commit.slice(0, 7)}，远程提交已回读验证`)
+    }).catch((error) => {
+      setCodeDeployPhase('error')
+      notify(`代码发布失败：${error instanceof Error ? error.message : '未知错误'}`)
+    })
+  }, [codeDeployPhase, notify])
+
+  const updateCodeDeployment = useCallback(() => {
+    if (codeDeployPhase === 'publishing' || codeDeployPhase === 'updating') return
+    saveDecisionReplayStoreSnapshot(decisionStoreRef.current)
+    saveDecisionReplayFavorites(decisionFavoriteKeysRef.current)
+    setCodeDeployPhase('updating')
+    void updateLocalCode().then((result) => {
+      if (!result.restartRequired) {
+        setCodeDeployStatus((current) => current ? { ...current, localHead: result.commit, remoteHead: result.commit, updateAvailable: false } : current)
+        setCodeDeployPhase('ready')
+        notify(`代码已是最新版本 ${result.commit.slice(0, 7)}`)
+        return
+      }
+      notify(`新版本 ${result.commit.slice(0, 7)} 已验证，正在重启 4173…`)
+      const deadline = Date.now() + 120_000
+      const poll = () => {
+        void loadLocalCodeStatus().then((status) => {
+          if (status.localHead === result.commit) {
+            window.location.reload()
+            return
+          }
+          if (Date.now() < deadline) window.setTimeout(poll, 1500)
+          else {
+            setCodeDeployPhase('error')
+            notify('代码已更新，但 4173 服务未在 2 分钟内恢复')
+          }
+        }).catch(() => {
+          if (Date.now() < deadline) window.setTimeout(poll, 1500)
+          else {
+            setCodeDeployPhase('error')
+            notify('代码已更新，但 4173 服务未在 2 分钟内恢复')
+          }
+        })
+      }
+      window.setTimeout(poll, 1500)
+    }).catch((error) => {
+      setCodeDeployPhase('error')
+      notify(`代码更新失败：${error instanceof Error ? error.message : '未知错误'}`)
+    })
+  }, [codeDeployPhase, notify])
   const restoreLastWorkspaceImport = useCallback(() => {
     const recovery = loadPortableWorkspaceRecovery()
     if (!recovery) {
@@ -1584,7 +1815,7 @@ function App() {
       }
 
       if (activeDecisionAttempt && !mod && !event.altKey && !event.shiftKey && /^[1-5]$/.test(event.key)) {
-        const action = decisionShortcutAction(activeDecisionAttempt.stage, event.key)
+        const action = decisionShortcutAction(activeDecisionAttempt.stage, event.key, decisionDayMode ? 'day-sequence' : 'random-count')
         // Numeric keys belong exclusively to the decision flow while a
         // question is active. During price/risk setup an unsupported number
         // must not leak through and unexpectedly change the chart timeframe.
@@ -1595,6 +1826,8 @@ function App() {
         if (action === 'advance') advanceActiveDecision()
         else if (action === 'signal-extreme') chooseSignalExtremeOrder()
         else if (action === 'free-price') chooseFreePriceOrder()
+        else if (action === 'open-long') chooseDayMarketOrder('long')
+        else if (action === 'open-short') chooseDayMarketOrder('short')
         else if (action === 'confirm-risk') confirmDecisionRisk()
         else if (action === 'cancel-setup') cancelDecisionSetup()
         else if (action === 'skip') skipActiveDecision('skipped')
@@ -1749,7 +1982,7 @@ function App() {
     }
     window.addEventListener('keydown', keyHandler)
     return () => window.removeEventListener('keydown', keyHandler)
-  }, [activeDecisionAttempt, activeDecisionSession, activeSelectedReplayRangeId, activeTool, advanceActiveDecision, baseData, candle.close, cancelDecisionSetup, cancelPendingDecisionAndAdvance, chartSeconds, chooseFreePriceOrder, chooseSignalExtremeOrder, closeActiveDecisionAtMarket, confirmDecisionRisk, decisionResultsSession, deleteReplayRangeObject, dispatchUiDrawing, effectiveReplayResolution, goToNextDecisionTrade, interval, loadSavedLayout, navigateDecisionExercise, normalizedReplayCursor, notify, openAlertAt, openOrderAt, priceScaleAuto, priceScaleInverted, priceScaleLog, priceScalePercent, replayAtEnd, restartActiveDecisionTrade, saveCurrentLayout, selectedDrawing, selectedDrawingIds, skipActiveDecision, symbol, takeSnapshotShortcut, uiDrawings.present, uiDrawings.selectedId, uiDrawings.selectedIds, watchlistOpen])
+  }, [activeDecisionAttempt, activeDecisionSession, activeSelectedReplayRangeId, activeTool, advanceActiveDecision, baseData, candle.close, cancelDecisionSetup, cancelPendingDecisionAndAdvance, chartSeconds, chooseDayMarketOrder, chooseFreePriceOrder, chooseSignalExtremeOrder, closeActiveDecisionAtMarket, confirmDecisionRisk, decisionDayMode, decisionResultsSession, deleteReplayRangeObject, dispatchUiDrawing, effectiveReplayResolution, goToNextDecisionTrade, interval, loadSavedLayout, navigateDecisionExercise, normalizedReplayCursor, notify, openAlertAt, openOrderAt, priceScaleAuto, priceScaleInverted, priceScaleLog, priceScalePercent, replayAtEnd, restartActiveDecisionTrade, saveCurrentLayout, selectedDrawing, selectedDrawingIds, skipActiveDecision, symbol, takeSnapshotShortcut, uiDrawings.present, uiDrawings.selectedId, uiDrawings.selectedIds, watchlistOpen])
 
   useEffect(() => {
     const cancelMeasure = () => {
@@ -1889,7 +2122,7 @@ function App() {
               ref={chartRef} data={data} symbol={symbol} interval={interval} chartType={chartType} theme={theme}
               indicators={visibleIndicators} priceScaleAuto={priceScaleAuto} priceScaleLog={priceScaleLog}
               priceScalePercent={priceScalePercent} priceScaleInverted={priceScaleInverted}
-              visibleTradeLayerSourceIds={decisionMode ? [] : visibleTradeLayerSourceIds}
+              visibleTradeLayerSourceIds={decisionDayMode ? decisionDayTradeSourceIds : decisionMode ? [] : visibleTradeLayerSourceIds}
               decisionSignalSourceIds={decisionSignalSourceIds}
               // Decision replay is a chronological tape: every signal whose
               // candle has already arrived is visible, including the current
@@ -1905,9 +2138,9 @@ function App() {
                 setSelectedReplayRangeId(id)
               }}
               followLatest={!decisionMode && marketStatus.kind === 'live' && replayCursor === null}
-              focusLatestKey={marketHydrationKey + (decisionMode ? 10_000 + decisionFocusTick : 0)}
-              suppressAutoFocus={false}
-              centerLatestByDefault={decisionMode}
+              focusLatestKey={marketHydrationKey + (decisionMode && !decisionDayMode ? 10_000 + decisionFocusTick : 0)}
+              suppressAutoFocus={decisionDayMode}
+              centerLatestByDefault={decisionMode && !decisionDayMode}
               markersHidden={chartAnnotationsHidden}
               onHover={setHoverCandle}
               onViewportChange={refreshDrawingProjection}
@@ -1992,7 +2225,7 @@ function App() {
               onZoomSelection={(from, to) => chartRef.current?.zoomToFraction(from, to)}
               onOpenProperties={(drawing) => setDrawingSettingsId(drawing.id)}
             />
-            {decisionSubject && <DecisionChartAnnotations
+            {decisionSubject && decisionSignalReached && <DecisionChartAnnotations
               candidate={decisionSubject}
               attempt={activeDecisionAttempt}
               result={activeDecisionAttempt?.result ?? null}
@@ -2010,6 +2243,11 @@ function App() {
               currentPnlByMode={decisionPositionPnlByMode}
               positionSizingModes={activeDecisionPositionSizingModes}
               independentReview={activeDecisionSession?.origin === 'review'}
+              preSignal={!decisionSignalReached}
+              daySequenceMode={decisionDayMode}
+              canAdvanceTrade={!decisionDayMode
+                || (activeDecisionSession?.currentIndex ?? 0) < (activeDecisionSession?.candidates.length ?? 0) - 1
+                || Boolean(activeDecisionDaySequence && activeDecisionAttempt.cursorTime >= activeDecisionDaySequence.endTime - intervalSeconds(activeDecisionCandidate.interval))}
               favorite={decisionFavoriteKeys.includes(decisionReplayFavoriteKey('trade', activeDecisionCandidate.key))}
               onToggleFavorite={() => setDecisionFavoriteKeys((current) => toggleDecisionReplayFavorite(
                 current,
@@ -2018,6 +2256,8 @@ function App() {
               onAdvance={advanceActiveDecision}
               onSignalExtreme={chooseSignalExtremeOrder}
               onFreePrice={chooseFreePriceOrder}
+              onOpenLong={() => chooseDayMarketOrder('long')}
+              onOpenShort={() => chooseDayMarketOrder('short')}
               onSkip={() => skipActiveDecision('skipped')}
               onManualClose={closeActiveDecisionAtMarket}
               onCancelPending={cancelPendingDecisionAndAdvance}
@@ -2036,6 +2276,7 @@ function App() {
             />}
             {activeDecisionCandidate && activeDecisionAttempt?.stage === 'risk-setup' && activeDecisionAttempt.pendingEntryPrice !== null && effectiveDecisionRiskDraft && <DecisionRiskOverlay
               candidate={activeDecisionCandidate}
+              side={activeDecisionUserSide ?? undefined}
               stopLossMode={decisionStopLossMode(activeDecisionAttempt.stopLossMode)}
               onStopLossMode={updateDecisionStopLossMode}
               entryPrice={activeDecisionAttempt.pendingEntryPrice}
@@ -2052,6 +2293,7 @@ function App() {
             />}
             {activeDecisionCandidate && activeDecisionAttempt && (activeDecisionAttempt.stage === 'order-pending' || activeDecisionAttempt.stage === 'position-open') && (activeDecisionAttempt.fill?.price ?? activeDecisionAttempt.pendingEntryPrice) !== null && activeDecisionAttempt.stopLoss !== null && activeDecisionAttempt.takeProfit !== null && <DecisionRiskOverlay
               candidate={activeDecisionCandidate}
+              side={activeDecisionUserSide ?? undefined}
               stopLossMode={decisionStopLossMode(activeDecisionAttempt.stopLossMode)}
               onStopLossMode={updateDecisionStopLossMode}
               entryPrice={activeDecisionAttempt.fill?.price ?? activeDecisionAttempt.pendingEntryPrice!}
@@ -2266,7 +2508,7 @@ function App() {
       />}
 
       {indicatorPanelOpen && <IndicatorPanel value={indicators} onChange={setIndicators} onClose={() => setIndicatorPanelOpen(false)} />}
-      {settingsOpen && <SettingsPanel theme={theme} onTheme={setTheme} onReset={resetWorkspace} onExportWorkspace={exportWorkspace} onMergeProgress={mergeWorkspaceProgress} onPrivateReceive={() => receivePrivateRepository('workspace')} onPrivateSync={() => syncPrivateRepository('workspace')} onHistoryReceive={() => receivePrivateRepository('history')} onHistorySync={() => syncPrivateRepository('history')} privateSyncBusy={privateSyncBusy} privateSyncOperation={privateSyncOperation} privateSyncStatus={privateSyncStatus} onImportWorkspace={importWorkspace} onRestoreLastImport={restoreLastWorkspaceImport} canRestoreWorkspace={Boolean(loadPortableWorkspaceRecovery())} onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <SettingsPanel theme={theme} onTheme={setTheme} onReset={resetWorkspace} onExportWorkspace={exportWorkspace} onMergeProgress={mergeWorkspaceProgress} onPrivateReceive={() => receivePrivateRepository('workspace')} onPrivateSync={() => syncPrivateRepository('workspace')} onHistoryReceive={() => receivePrivateRepository('history')} onHistorySync={() => syncPrivateRepository('history')} privateSyncBusy={privateSyncBusy} privateSyncOperation={privateSyncOperation} privateSyncStatus={privateSyncStatus} codeDeployPhase={codeDeployPhase} codeDeployStatus={codeDeployStatus} onCodeDeployRefresh={() => refreshCodeDeployStatus(true)} onCodePublish={publishCodeDeployment} onCodeUpdate={updateCodeDeployment} onImportWorkspace={importWorkspace} onRestoreLastImport={restoreLastWorkspaceImport} canRestoreWorkspace={Boolean(loadPortableWorkspaceRecovery())} onClose={() => setSettingsOpen(false)} />}
       {quickSearchOpen && <QuickSearchDialog items={quickSearchItems} query={quickSearchQuery} onQuery={setQuickSearchQuery} onSelect={runQuickSearchItem} onClose={() => setQuickSearchOpen(false)} />}
       {intervalDialogOpen && <IntervalShortcutDialog value={intervalDraft} onChange={setIntervalDraft} onApply={applyIntervalInput} onClose={() => setIntervalDialogOpen(false)} />}
       {goToDateOpen && <GoToDateDialog initialTime={data.at(-1)?.time ?? 0} onSelect={(time) => { chartRef.current?.goToTime(time); setGoToDateOpen(false); notify('已转到指定日期') }} onClose={() => setGoToDateOpen(false)} />}
@@ -2298,7 +2540,7 @@ function App() {
         anomalyUnavailableCount={decisionAnomalies.length - replayableDecisionAnomalies.length}
         anomalyLoading={!availableDecisionHistoryBySymbol.XAUUSD?.length}
         onRedoAnomalies={beginAnomalyReview}
-        onContinue={() => { setDecisionCenterOpen(false); setDecisionResultsSessionId(null); focusDecisionChartLatest() }}
+        onContinue={() => { setDecisionCenterOpen(false); setDecisionResultsSessionId(null); focusCurrentDecisionChart() }}
         onResults={(sessionId) => { setDecisionCenterOpen(false); setDecisionResultsSessionId(sessionId) }}
       />
       <DecisionHistoryDialog
@@ -2314,7 +2556,10 @@ function App() {
            setDecisionHistoryOpen(false)
            setDecisionCenterOpen(false)
            setDecisionResultsSessionId(target?.status === 'active' ? null : sessionId)
-          if (target?.status === 'active') focusDecisionChartLatest()
+          if (target?.status === 'active') {
+            if (decisionSessionPracticeMode(target) === 'day-sequence') focusDecisionDayChart()
+            else focusDecisionChartLatest()
+          }
         }}
         onOpenFavoriteTrade={(sessionId, candidateKey) => {
           const target = normalizedDecisionStore.sessions.find((session) => session.id === sessionId)
@@ -2323,7 +2568,10 @@ function App() {
            setDecisionCenterOpen(false)
            setDecisionResultsSessionId(null)
            if (result) startDecisionReplayFromResult(target ?? null, result)
-           else if (target?.status === 'active') focusDecisionChartLatest()
+           else if (target?.status === 'active') {
+             if (decisionSessionPracticeMode(target) === 'day-sequence') focusDecisionDayChart()
+             else focusDecisionChartLatest()
+           }
          }}
       />
       <DecisionResultsDialog
@@ -2367,7 +2615,7 @@ function IndicatorPanel({ value, onChange, onClose }: { value: IndicatorSettings
   return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section className="modal indicator-modal" role="dialog" aria-modal="true" aria-label="指标设置"><div className="modal-header"><div><b>技术指标</b><small>叠加到主图的本地计算指标</small></div><button onClick={onClose} aria-label="关闭"><X size={18} /></button></div><div className="indicator-list">{rows.map((row) => <div className="indicator-row" key={row.key}><span className="indicator-color" style={{ background: row.color }} /><div><b>{row.name}</b><small>{row.detail}</small></div><label className="switch" aria-label={`${row.name}开关`} title={`${row.name}开关`}><input type="checkbox" checked={value[row.key]} onChange={(event) => onChange({ ...value, [row.key]: event.target.checked })} /><span /></label></div>)}</div><div className="parameter-grid"><label>MA 周期<input type="number" min="2" max="200" value={value.maPeriod} onChange={(event) => onChange({ ...value, maPeriod: Number(event.target.value) })} /></label><label>EMA 周期<input type="number" min="2" max="200" value={value.emaPeriod} onChange={(event) => onChange({ ...value, emaPeriod: Number(event.target.value) })} /></label><label>BOLL 周期<input type="number" min="2" max="200" value={value.bollPeriod} onChange={(event) => onChange({ ...value, bollPeriod: Number(event.target.value) })} /></label><label>标准差<input type="number" step="0.1" min="0.1" max="5" value={value.bollDeviation} onChange={(event) => onChange({ ...value, bollDeviation: Number(event.target.value) })} /></label></div><div className="modal-footer"><button onClick={() => onChange(DEFAULT_INDICATORS)}>恢复指标默认</button><button className="primary" onClick={onClose}>完成</button></div></section></div>
 }
 
-function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProgress, onPrivateReceive, onPrivateSync, onHistoryReceive, onHistorySync, privateSyncBusy, privateSyncOperation, privateSyncStatus, onImportWorkspace, onRestoreLastImport, canRestoreWorkspace, onClose }: {
+function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProgress, onPrivateReceive, onPrivateSync, onHistoryReceive, onHistorySync, privateSyncBusy, privateSyncOperation, privateSyncStatus, codeDeployPhase, codeDeployStatus, onCodeDeployRefresh, onCodePublish, onCodeUpdate, onImportWorkspace, onRestoreLastImport, canRestoreWorkspace, onClose }: {
   theme: Theme
   onTheme: (theme: Theme) => void
   onReset: () => void
@@ -2380,6 +2628,11 @@ function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProg
   privateSyncBusy: boolean
   privateSyncOperation: PrivateSyncOperation
   privateSyncStatus: PrivateSyncStatus
+  codeDeployPhase: CodeDeployPhase
+  codeDeployStatus: LocalCodeStatus | null
+  onCodeDeployRefresh: () => void
+  onCodePublish: () => void
+  onCodeUpdate: () => void
   onImportWorkspace: (file: File) => void
   onRestoreLastImport: () => void
   canRestoreWorkspace: boolean
@@ -2403,6 +2656,17 @@ function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProg
       <input ref={mergeInputRef} type="file" accept="application/json,.json" multiple hidden onChange={(event) => { const files = Array.from(event.target.files ?? []); if (files.length) onMergeProgress(files); event.currentTarget.value = '' }} />
       <input ref={importInputRef} type="file" accept="application/json,.json" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) onImportWorkspace(file); event.currentTarget.value = '' }} />
     </div></section>
+    <section className="code-deploy-section"><h3>跨电脑代码部署</h3><p>上面的数据同步按钮不包含网站代码。发布端会先运行完整验证，再把 Kline Studio 代码提交并推送到公开仓库；接收端只在工作区干净时快进更新，验证后自动重启 4173。不会读写浏览器做题历史。</p>
+      <div className={`code-deploy-status ${codeDeployPhase}`}>
+        <span>{codeDeployPhase === 'publishing' ? '正在验证并发布代码…' : codeDeployPhase === 'updating' ? '正在验证新版本并重启…' : codeDeployPhase === 'unavailable' ? '代码部署服务不可用' : codeDeployPhase === 'error' ? '上次代码操作失败' : codeDeployStatus ? `本机 ${codeDeployStatus.localHead.slice(0, 7)} · 远程 ${codeDeployStatus.remoteHead.slice(0, 7)}` : '正在读取代码版本…'}</span>
+        {codeDeployStatus && <small>{codeDeployStatus.diverged ? '本机与远程已分叉，必须停止' : codeDeployStatus.updateAvailable ? '远程有新版本，可更新' : codeDeployStatus.dirtyFiles.length > 0 ? `${codeDeployStatus.dirtyFiles.length} 项未发布代码修改` : '本机与 GitHub 代码一致'}</small>}
+      </div>
+      <div className="workspace-transfer-actions code-deploy-actions">
+        <button type="button" className="merge-progress" disabled={privateSyncBusy || codeDeployPhase === 'publishing' || codeDeployPhase === 'updating' || codeDeployPhase === 'unavailable'} onClick={onCodePublish}><Upload size={16} />{codeDeployPhase === 'publishing' ? '正在发布…' : '发布代码到 GitHub'}</button>
+        <button type="button" disabled={privateSyncBusy || codeDeployPhase === 'publishing' || codeDeployPhase === 'updating' || codeDeployPhase === 'unavailable'} onClick={onCodeUpdate}><Download size={16} />{codeDeployPhase === 'updating' ? '正在更新…' : '更新代码并重启'}</button>
+        <button type="button" className="code-status-refresh" disabled={codeDeployPhase === 'publishing' || codeDeployPhase === 'updating'} onClick={onCodeDeployRefresh}><RefreshCcw size={16} />检查代码版本</button>
+      </div>
+    </section>
     <section className="danger-section"><h3>工作区</h3><p>品种、周期、指标、绘图和回放进度会自动保存在当前浏览器。</p><button onClick={() => { onReset(); onClose() }}><RefreshCcw size={16} />恢复所有默认设置</button></section>
   </aside>
 }

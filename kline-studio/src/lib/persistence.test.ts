@@ -148,6 +148,7 @@ describe('decision replay center preferences', () => {
       selectedSymbols: ['XAUUSD', 'BTCUSDT.P'],
       selectedIntervals: ['5m'],
       selectedModes: ['fixed-notional'],
+      practiceMode: 'random-count',
     })
   })
 
@@ -162,7 +163,18 @@ describe('decision replay center preferences', () => {
       selectedSymbols: ['XAUUSD'],
       selectedIntervals: ['15m', '1h'],
       selectedModes: ['fixed-risk'],
+      practiceMode: 'random-count',
     })
+  })
+
+  it('restores the chronological random-day practice mode', () => {
+    expect(parseDecisionReplayCenterPreferences(JSON.stringify({
+      count: 30,
+      selectedSymbols: ['XAUUSD'],
+      selectedIntervals: ['5m'],
+      selectedModes: ['fixed-risk'],
+      practiceMode: 'day-sequence',
+    }))?.practiceMode).toBe('day-sequence')
   })
 
   it('rejects malformed replay center preferences', () => {

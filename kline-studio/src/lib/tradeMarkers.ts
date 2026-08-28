@@ -189,7 +189,7 @@ function validateDataset(value: TradeMarkerDataset): XauTradeMarker[] {
   return value.trades
 }
 
-const xauTradeMarkers = validateDataset(dataset).filter((trade) => !isExcludedCommodityTrade('XAUUSD', trade))
+const xauTradeMarkers = validateDataset(dataset).filter((trade) => !isExcludedCommodityTrade('XAUUSD', trade, '5m'))
 
 const xauTradeMarkerSummaryValue = {
   trades: xauTradeMarkers.length,

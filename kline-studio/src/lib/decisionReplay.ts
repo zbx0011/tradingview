@@ -2,7 +2,12 @@ import type { Drawing } from './drawings'
 import type { Candle, IntervalId, SymbolId } from './market'
 import type { ReplayDecisionCandidate } from './replayTradeRegistry'
 import type { TradeSide } from './tradeMarkers'
-import { isExcludedCommodityTrade } from './tradeEligibility'
+import {
+  CLOSED_SESSION_SYMBOLS,
+  SESSION_CLOSE_BEIJING_SECONDS,
+  SESSION_OPEN_BEIJING_SECONDS,
+  isExcludedCommodityTrade,
+} from './tradeEligibility'
 
 export const DECISION_REPLAY_STORAGE_KEY = 'kline-studio-decision-replay-v1'
 export const DECISION_REPLAY_VERSION = 1 as const
@@ -21,14 +26,15 @@ export interface DecisionHistorySortValue {
   pnlUsd: number | null
 }
 
-export type DecisionEntryMode = 'signal-extreme' | 'free-price'
+export type DecisionEntryMode = 'signal-extreme' | 'free-price' | 'market-close'
 export type DecisionOrderKind = 'stop' | 'limit'
 export type DecisionStopLossMode = 'touch' | 'close'
 export type DecisionAttemptStage = 'entry-decision' | 'entry-price' | 'risk-setup' | 'order-pending' | 'position-open' | 'post-exit' | 'complete'
 export type DecisionSessionStatus = 'active' | 'completed' | 'stopped'
 export type DecisionSessionOrigin = 'practice' | 'review'
+export type DecisionPracticeMode = 'random-count' | 'day-sequence'
 export type DecisionExitReason = 'skipped' | 'manual-close' | 'stop-loss' | 'take-profit' | 'system-exit' | 'end-of-data'
-export type DecisionShortcutAction = 'advance' | 'signal-extreme' | 'free-price' | 'skip' | 'cancel-pending' | 'manual-close' | 'next-trade' | 'restart-trade' | 'confirm-risk' | 'cancel-setup'
+export type DecisionShortcutAction = 'advance' | 'signal-extreme' | 'free-price' | 'open-long' | 'open-short' | 'skip' | 'cancel-pending' | 'manual-close' | 'next-trade' | 'restart-trade' | 'confirm-risk' | 'cancel-setup'
 export type DecisionExerciseNavigationTarget = { kind: 'review'; result: DecisionTradeResult } | { kind: 'active' }
 
 export interface DecisionFill {
@@ -46,6 +52,8 @@ export interface DecisionTradeResult {
   candidateKey: string
   candidate: ReplayDecisionCandidate
   choice: 'skipped' | 'unfilled' | 'traded'
+  /** User-selected direction in day-sequence mode. Missing legacy values follow the system candidate direction. */
+  userSide?: TradeSide
   entryMode: DecisionEntryMode | null
   orderKind: DecisionOrderKind | null
   cursorTime: number
@@ -70,6 +78,8 @@ export interface DecisionAttempt {
   candidateKey: string
   cursorTime: number
   stage: DecisionAttemptStage
+  /** Set only when day-sequence practice lets the user choose long/short independently. */
+  userSide?: TradeSide
   entryMode: DecisionEntryMode | null
   orderKind: DecisionOrderKind | null
   pendingEntryPrice: number | null
@@ -84,6 +94,16 @@ export interface DecisionAttempt {
   result: DecisionTradeResult | null
 }
 
+export interface DecisionDaySequence {
+  key: string
+  symbol: SymbolId
+  interval: DecisionReplayInterval
+  /** Inclusive Beijing calendar-day boundary, stored as Unix seconds. */
+  startTime: number
+  /** Exclusive Beijing calendar-day boundary, stored as Unix seconds. */
+  endTime: number
+}
+
 export interface DecisionReplaySession {
   id: string
   requestedCount: number
@@ -95,6 +115,10 @@ export interface DecisionReplaySession {
   updatedAt: number
   finishedAt: number | null
   positionSizingModes?: DecisionPositionSizingMode[]
+  /** Missing legacy values are ordinary custom-count random practice. */
+  practiceMode?: DecisionPracticeMode
+  /** Present only for a randomly selected, chronologically ordered trading day. */
+  daySequence?: DecisionDaySequence
   /**
    * Review sessions are independent attempts created from an immutable historical result.
    * This field is optional so backups written before review sessions remain valid.
@@ -155,6 +179,10 @@ export function decisionSessionPositionSizingModes(session: Pick<DecisionReplayS
   return normalizeDecisionPositionSizingModes(session?.positionSizingModes)
 }
 
+export function decisionSessionPracticeMode(session: Pick<DecisionReplaySession, 'practiceMode'> | null | undefined): DecisionPracticeMode {
+  return session?.practiceMode === 'day-sequence' ? 'day-sequence' : 'random-count'
+}
+
 function isDecisionSyncBranch(session: Pick<DecisionReplaySession, 'id'>) {
   return session.id.includes('-sync-')
 }
@@ -211,6 +239,8 @@ function decisionSessionMergeKey(session: DecisionReplaySession) {
     sourceCandidateKey: session.sourceCandidateKey ?? null,
     startedAt: session.startedAt,
     requestedCount: session.requestedCount,
+    practiceMode: decisionSessionPracticeMode(session),
+    daySequenceKey: session.daySequence?.key ?? null,
     positionSizingModes: decisionSessionPositionSizingModes(session),
     candidateKeys: session.candidates.map((candidate) => candidate.key),
   })
@@ -231,6 +261,8 @@ function decisionSessionContentMergeKey(session: DecisionReplaySession) {
     startedAt: session.startedAt,
     finishedAt: session.finishedAt ?? null,
     requestedCount: session.requestedCount,
+    practiceMode: decisionSessionPracticeMode(session),
+    daySequenceKey: session.daySequence?.key ?? null,
     status: session.status,
     candidateCount: session.candidates.length,
     attemptCount: session.attempts.length,
@@ -248,6 +280,13 @@ export function toggleDecisionHistorySymbolSelection(selected: readonly SymbolId
   if (selected.length === 0) return [symbol]
   if (!selected.includes(symbol)) return [...selected, symbol]
   const next = selected.filter((item) => item !== symbol)
+  return next.length > 0 ? next : []
+}
+
+export function toggleDecisionHistoryIntervalSelection(selected: readonly DecisionReplayInterval[], interval: DecisionReplayInterval): DecisionReplayInterval[] {
+  if (selected.length === 0) return [interval]
+  if (!selected.includes(interval)) return [...selected, interval]
+  const next = selected.filter((item) => item !== interval)
   return next.length > 0 ? next : []
 }
 
@@ -278,7 +317,7 @@ function isCompletedDecisionAttempt(attempt: DecisionAttempt | undefined) {
 
 function removeExcludedCommodityTradesFromSession(session: DecisionReplaySession): DecisionReplaySession | null {
   const excludedKeys = new Set(session.candidates
-    .filter((candidate) => isExcludedCommodityTrade(candidate.symbol, candidate.trade))
+    .filter((candidate) => isExcludedCommodityTrade(candidate.symbol, candidate.trade, candidate.interval))
     .map((candidate) => candidate.key))
   if (excludedKeys.size === 0) return session
 
@@ -316,7 +355,7 @@ function removeExcludedCommodityTradesFromStore(store: DecisionReplayStore): Dec
   })
   const excludedKeys = new Set(store.sessions
     .flatMap((session) => session.candidates)
-    .filter((candidate) => isExcludedCommodityTrade(candidate.symbol, candidate.trade))
+    .filter((candidate) => isExcludedCommodityTrade(candidate.symbol, candidate.trade, candidate.interval))
     .map((candidate) => candidate.key))
   const activeSessionId = store.activeSessionId && sessions.some((session) => session.id === store.activeSessionId && session.status === 'active')
     ? store.activeSessionId
@@ -364,7 +403,7 @@ export function parseDecisionReplayStoreChecked(raw: string | null): DecisionRep
     })
     const excludedKeys = new Set(normalizedSessions
       .flatMap((session) => session.candidates)
-      .filter((candidate) => isExcludedCommodityTrade(candidate.symbol, candidate.trade))
+    .filter((candidate) => isExcludedCommodityTrade(candidate.symbol, candidate.trade, candidate.interval))
       .map((candidate) => candidate.key))
     const sessions = normalizedSessions.flatMap((session) => {
       const filtered = removeExcludedCommodityTradesFromSession(session)
@@ -396,7 +435,8 @@ export function parseDecisionReplayStore(raw: string | null): DecisionReplayStor
  * This only adds a fresh, unanswered attempt; existing answers and drawings
  * are left untouched.
  */
-function repairDecisionReplaySession(session: DecisionReplaySession): DecisionReplaySession {
+function repairDecisionReplaySession(rawSession: DecisionReplaySession): DecisionReplaySession {
+  const session = normalizeDecisionDaySequence(rawSession)
   if (session.status !== 'active' || session.candidates.length === 0) return session
 
   const rawIndex = Number.isFinite(session.currentIndex) ? Math.trunc(session.currentIndex) : 0
@@ -427,21 +467,185 @@ function repairDecisionReplaySession(session: DecisionReplaySession): DecisionRe
 
   const attempts = attemptsByKey.has(currentCandidate.key)
     ? session.attempts
-    : [...session.attempts, createDecisionAttempt(currentCandidate)]
+    : [...session.attempts, createDecisionAttempt(
+      currentCandidate,
+      decisionSessionPracticeMode(session) === 'day-sequence'
+        ? currentIndex === 0
+          ? session.daySequence?.startTime
+          : attemptsByKey.get(session.candidates[currentIndex - 1]?.key)?.cursorTime
+        : undefined,
+    )]
   return { ...session, currentIndex, attempts }
+}
+
+interface DecisionTradeOccurrence {
+  id: string
+  session: DecisionReplaySession
+  candidate: ReplayDecisionCandidate
+  candidateIndex: number
+  attempt: DecisionAttempt | undefined
+}
+
+function isPracticeTradeDedupSession(session: DecisionReplaySession) {
+  // Review sessions and explicit sync branches are intentional alternate
+  // views/answers. Normal practice sessions are the only source of one-trade
+  // historical duplicates.
+  return session.origin !== 'review' && !isDecisionSyncBranch(session)
+}
+
+function decisionPracticeTradeDedupKey(session: DecisionReplaySession, candidateKey: string) {
+  return `${decisionSessionPracticeMode(session)}\u0000${candidateKey}`
+}
+
+function decisionAttemptProgressRank(attempt: DecisionAttempt | undefined) {
+  if (!attempt) return 0
+  const stageRank: Record<DecisionAttemptStage, number> = {
+    'entry-decision': 1,
+    'entry-price': 2,
+    'risk-setup': 3,
+    'order-pending': 4,
+    'position-open': 5,
+    'post-exit': 6,
+    complete: 7,
+  }
+  return (attempt.result ? 10 : 0) + stageRank[attempt.stage]
+}
+
+function shouldPreferDecisionTradeOccurrence(next: DecisionTradeOccurrence, current: DecisionTradeOccurrence) {
+  const nextProgress = decisionAttemptProgressRank(next.attempt)
+  const currentProgress = decisionAttemptProgressRank(current.attempt)
+  if (nextProgress !== currentProgress) return nextProgress > currentProgress
+  if (next.session.startedAt !== current.session.startedAt) return next.session.startedAt < current.session.startedAt
+  if (next.session.updatedAt !== current.session.updatedAt) return next.session.updatedAt < current.session.updatedAt
+  return next.candidateIndex < current.candidateIndex
+}
+
+/**
+ * Keep one occurrence of each transaction inside each practice mode. The same
+ * candidate is intentionally allowed once in custom-count practice and once in
+ * day-sequence practice because those modes have independent result statistics.
+ * Prefer a completed answer, then the earliest copy inside the same mode.
+ */
+function deduplicatePracticeDecisionTrades(store: DecisionReplayStore): DecisionReplayStore {
+  const occurrencesBySession = new Map<string, DecisionTradeOccurrence[]>()
+  const winnersByModeAndKey = new Map<string, DecisionTradeOccurrence>()
+
+  store.sessions.forEach((session) => {
+    if (!isPracticeTradeDedupSession(session)) return
+    const occurrences = session.candidates.map((candidate, candidateIndex) => {
+      const occurrence: DecisionTradeOccurrence = {
+        id: `${session.id}\u0000${candidate.key}\u0000${candidateIndex}`,
+        session,
+        candidate,
+        candidateIndex,
+        attempt: session.attempts.find((item) => item.candidateKey === candidate.key),
+      }
+      const dedupKey = decisionPracticeTradeDedupKey(session, candidate.key)
+      const current = winnersByModeAndKey.get(dedupKey)
+      if (!current || shouldPreferDecisionTradeOccurrence(occurrence, current)) winnersByModeAndKey.set(dedupKey, occurrence)
+      return occurrence
+    })
+    occurrencesBySession.set(session.id, occurrences)
+  })
+
+  const sessions = store.sessions.flatMap((session) => {
+    if (!isPracticeTradeDedupSession(session)) return [session]
+    // Preserve legacy/imported records whose result attempts are present but
+    // whose candidate array was never serialized. There is no safe identity
+    // to deduplicate until the candidate data is available.
+    if (session.candidates.length === 0) return [session]
+    const occurrences = occurrencesBySession.get(session.id) ?? []
+    const candidates = session.candidates.filter((candidate, candidateIndex) => {
+      const occurrence = occurrences[candidateIndex]
+      return Boolean(occurrence && winnersByModeAndKey.get(decisionPracticeTradeDedupKey(session, candidate.key))?.id === occurrence.id)
+    })
+    if (candidates.length === 0) return []
+
+    const keptCandidateKeys = new Set(candidates.map((candidate) => candidate.key))
+    const attemptsByKey = new Map<string, DecisionAttempt>()
+    const attemptOrder: string[] = []
+    const orphanAttempts: DecisionAttempt[] = []
+    session.attempts.forEach((attempt) => {
+      const candidateIndex = session.candidates.findIndex((candidate) => candidate.key === attempt.candidateKey)
+      const occurrence = candidateIndex >= 0 ? occurrences[candidateIndex] : undefined
+      if (!occurrence) {
+        orphanAttempts.push(attempt)
+        return
+      }
+      if (winnersByModeAndKey.get(decisionPracticeTradeDedupKey(session, attempt.candidateKey))?.id !== occurrence.id) return
+      const existing = attemptsByKey.get(attempt.candidateKey)
+      if (!existing) attemptOrder.push(attempt.candidateKey)
+      if (!existing || decisionAttemptProgressRank(attempt) > decisionAttemptProgressRank(existing)) {
+        attemptsByKey.set(attempt.candidateKey, attempt)
+      }
+    })
+    const attempts = [
+      ...attemptOrder.flatMap((key) => {
+        const attempt = attemptsByKey.get(key)
+        return attempt ? [attempt] : []
+      }),
+      ...orphanAttempts,
+    ]
+
+    const rawIndex = Number.isFinite(session.currentIndex) ? Math.trunc(session.currentIndex) : 0
+    const rawCurrentCandidate = session.candidates[Math.max(0, Math.min(session.candidates.length - 1, rawIndex))]
+    const preservedIndex = rawCurrentCandidate
+      ? candidates.findIndex((candidate) => candidate.key === rawCurrentCandidate.key)
+      : -1
+    const requestedCount = Math.min(
+      candidates.length,
+      Math.max(0, Number.isFinite(session.requestedCount) ? Math.trunc(session.requestedCount) : candidates.length),
+    )
+    const completedCount = attempts.filter((attempt) => keptCandidateKeys.has(attempt.candidateKey) && isCompletedDecisionAttempt(attempt)).length
+    const status: DecisionSessionStatus = session.status === 'active' && completedCount >= requestedCount
+      ? 'completed'
+      : session.status
+    const next: DecisionReplaySession = {
+      ...session,
+      requestedCount,
+      candidates,
+      attempts,
+      currentIndex: status === 'completed'
+        ? candidates.length
+        : preservedIndex >= 0 ? preservedIndex : Math.max(0, Math.min(candidates.length - 1, rawIndex)),
+      status,
+      finishedAt: status === 'completed' ? session.finishedAt ?? session.updatedAt : session.finishedAt,
+    }
+    return [repairDecisionReplaySession(next)]
+  })
+
+  // A candidate that was already selected in a practice session must remain
+  // seen even if its duplicate occurrence was removed from another session.
+  // This closes the old gap where only the first item of a newly sampled batch
+  // was marked as seen.
+  const seen = new Set<string>()
+  const seenTradeKeys: string[] = []
+  const addSeen = (key: string) => {
+    if (seen.has(key)) return
+    seen.add(key)
+    seenTradeKeys.push(key)
+  }
+  store.seenTradeKeys.forEach((key) => { if (typeof key === 'string') addSeen(key) })
+  store.sessions.forEach((session) => {
+    if (!isPracticeTradeDedupSession(session)) return
+    session.candidates.forEach((candidate) => addSeen(candidate.key))
+  })
+
+  return { ...store, sessions, seenTradeKeys }
 }
 
 function repairDecisionReplayStore(store: DecisionReplayStore): DecisionReplayStore {
   const repairedSessions = store.sessions.map(repairDecisionReplaySession)
   const normalized = mergeDecisionReplaySessionCollection(repairedSessions)
+  const deduplicated = deduplicatePracticeDecisionTrades({ ...store, sessions: normalized.sessions })
   const normalizedActiveSessionId = store.activeSessionId
     ? normalized.idMap.get(store.activeSessionId) ?? null
     : null
   const activeSessionId = normalizedActiveSessionId
-    && normalized.sessions.some((session) => session.id === normalizedActiveSessionId && session.status === 'active')
+    && deduplicated.sessions.some((session) => session.id === normalizedActiveSessionId && session.status === 'active')
     ? normalizedActiveSessionId
     : null
-  return { ...store, sessions: normalized.sessions, activeSessionId }
+  return { ...store, sessions: deduplicated.sessions, seenTradeKeys: deduplicated.seenTradeKeys, activeSessionId }
 }
 
 export function normalizeDecisionReplayStore(store: DecisionReplayStore) {
@@ -840,13 +1044,134 @@ function randomIndex(upperExclusive: number) {
 
 export function sampleDecisionCandidates(candidates: readonly ReplayDecisionCandidate[], seenTradeKeys: readonly string[], requestedCount: number) {
   const seen = new Set(seenTradeKeys)
-  const pool = candidates.filter((candidate) => !seen.has(candidate.key))
+  const uniqueCandidates = [...new Map(candidates.map((candidate) => [candidate.key, candidate])).values()]
+  const pool = uniqueCandidates.filter((candidate) => !seen.has(candidate.key))
   for (let index = pool.length - 1; index > 0; index -= 1) {
     const swapIndex = randomIndex(index + 1)
     ;[pool[index], pool[swapIndex]] = [pool[swapIndex], pool[index]]
   }
   const count = Math.max(0, Math.min(pool.length, Math.floor(requestedCount)))
   return pool.slice(0, count)
+}
+
+const BEIJING_UTC_OFFSET_SECONDS = 8 * 60 * 60
+const DAY_SECONDS = 24 * 60 * 60
+
+function decisionDaySequenceForCandidate(candidate: ReplayDecisionCandidate): DecisionDaySequence | null {
+  const closedSession = CLOSED_SESSION_SYMBOLS.includes(candidate.symbol)
+  const sessionOpen = closedSession ? SESSION_OPEN_BEIJING_SECONDS : 0
+  const day = Math.floor((candidate.trade.entry.signalTime + BEIJING_UTC_OFFSET_SECONDS - sessionOpen) / DAY_SECONDS)
+  const startTime = day * DAY_SECONDS - BEIJING_UTC_OFFSET_SECONDS + sessionOpen
+  const endTime = closedSession
+    ? startTime + DAY_SECONDS - SESSION_OPEN_BEIJING_SECONDS + SESSION_CLOSE_BEIJING_SECONDS
+    : startTime + DAY_SECONDS
+  const isInsideSession = (time: number) => time >= startTime && time < endTime
+  if (
+    !isInsideSession(candidate.trade.entry.signalTime)
+    || !isInsideSession(candidate.trade.entry.time)
+    || !isInsideSession(candidate.trade.exit.time)
+  ) return null
+  return {
+    key: `${candidate.symbol}:${candidate.interval}:${day}`,
+    symbol: candidate.symbol,
+    interval: candidate.interval as DecisionReplayInterval,
+    startTime,
+    endTime,
+  }
+}
+
+function normalizeDecisionDaySequence(session: DecisionReplaySession): DecisionReplaySession {
+  if (decisionSessionPracticeMode(session) !== 'day-sequence' || session.candidates.length === 0) return session
+  const index = Math.max(0, Math.min(session.candidates.length - 1, Math.trunc(session.currentIndex || 0)))
+  const candidate = session.candidates[index]
+  const daySequence = decisionDaySequenceForCandidate(candidate)
+  if (!daySequence) return session
+  const boundsAlreadyCanonical = (
+    session.daySequence?.key === daySequence.key
+    && session.daySequence.startTime === daySequence.startTime
+    && session.daySequence.endTime === daySequence.endTime
+  )
+  let normalized = boundsAlreadyCanonical ? session : { ...session, daySequence }
+  const attempt = session.attempts.find((item) => item.candidateKey === candidate.key)
+  const untouchedFirstQuestion = session.status === 'active'
+    && index === 0
+    && attempt?.stage === 'entry-decision'
+    && attempt.cursorTime === candidate.trade.entry.signalTime
+    && attempt.entryMode === null
+    && attempt.pendingEntryPrice === null
+    && attempt.fill === null
+    && attempt.result === null
+    && attempt.drawings.length === 0
+  if (untouchedFirstQuestion && attempt.cursorTime !== daySequence.startTime) {
+    normalized = {
+      ...normalized,
+      attempts: normalized.attempts.map((item) => item.candidateKey === candidate.key
+        ? { ...item, cursorTime: daySequence.startTime }
+        : item),
+    }
+  }
+  return normalized
+}
+
+export interface SampledDecisionDay {
+  daySequence: DecisionDaySequence
+  candidates: ReplayDecisionCandidate[]
+}
+
+/** A day paper is selectable only when its source tape contains both session edges. */
+export function decisionDayHistoryIsComplete(
+  daySequence: DecisionDaySequence,
+  candles: readonly Candle[] | null | undefined,
+) {
+  if (!candles?.length) return false
+  const lastBarTime = daySequence.endTime - intervalSeconds(daySequence.interval)
+  let hasOpen = false
+  let hasClose = false
+  for (const candle of candles) {
+    if (candle.time === daySequence.startTime) hasOpen = true
+    if (candle.time === lastBarTime) hasClose = true
+    if (hasOpen && hasClose) return true
+  }
+  return false
+}
+
+/**
+ * Build one paper from a single symbol/timeframe/Beijing date. Candidates are
+ * kept causal and ordered by signal, then entry, instead of being shuffled.
+ */
+export function decisionDayCandidateGroups(
+  candidates: readonly ReplayDecisionCandidate[],
+  seenTradeKeys: readonly string[],
+) {
+  const seen = new Set(seenTradeKeys)
+  const uniqueCandidates = [...new Map(candidates.map((candidate) => [candidate.key, candidate])).values()]
+  const groups = new Map<string, SampledDecisionDay>()
+  uniqueCandidates.forEach((candidate) => {
+    if (seen.has(candidate.key) || !DECISION_REPLAY_INTERVALS.includes(candidate.interval as DecisionReplayInterval)) return
+    const daySequence = decisionDaySequenceForCandidate(candidate)
+    if (!daySequence) return
+    const group = groups.get(daySequence.key) ?? { daySequence, candidates: [] }
+    group.candidates.push(candidate)
+    groups.set(daySequence.key, group)
+  })
+  return [...groups.values()].map((group) => ({
+    ...group,
+    candidates: [...group.candidates].sort((left, right) => (
+      left.trade.entry.signalTime - right.trade.entry.signalTime
+      || left.trade.entry.time - right.trade.entry.time
+      || left.trade.tradeNumber - right.trade.tradeNumber
+      || left.key.localeCompare(right.key)
+    )),
+  }))
+}
+
+export function sampleDecisionDayCandidates(
+  candidates: readonly ReplayDecisionCandidate[],
+  seenTradeKeys: readonly string[],
+  isSelectable: (group: SampledDecisionDay) => boolean = () => true,
+): SampledDecisionDay | null {
+  const groups = decisionDayCandidateGroups(candidates, seenTradeKeys).filter(isSelectable)
+  return groups.length > 0 ? groups[randomIndex(groups.length)] : null
 }
 
 export function filterDecisionCandidatesByScope(
@@ -859,10 +1184,10 @@ export function filterDecisionCandidatesByScope(
   return candidates.filter((candidate) => symbols.has(candidate.symbol) && intervals.has(candidate.interval))
 }
 
-export function createDecisionAttempt(candidate: ReplayDecisionCandidate): DecisionAttempt {
+export function createDecisionAttempt(candidate: ReplayDecisionCandidate, cursorTime = candidate.trade.entry.signalTime): DecisionAttempt {
   return {
     candidateKey: candidate.key,
-    cursorTime: candidate.trade.entry.signalTime,
+    cursorTime,
     stage: 'entry-decision',
     entryMode: null,
     orderKind: null,
@@ -909,6 +1234,8 @@ export function createDecisionSession(
     origin?: DecisionSessionOrigin
     sourceSessionId?: string
     sourceCandidateKey?: string
+    practiceMode?: DecisionPracticeMode
+    daySequence?: DecisionDaySequence
   } = {},
 ): DecisionReplaySession {
   if (candidates.length === 0) throw new Error('没有可用于决策回放的未完成交易')
@@ -917,7 +1244,9 @@ export function createDecisionSession(
     id,
     requestedCount,
     candidates,
-    attempts: [createDecisionAttempt(candidates[0])],
+    attempts: [createDecisionAttempt(candidates[0], options.practiceMode === 'day-sequence'
+      ? options.daySequence?.startTime
+      : undefined)],
     currentIndex: 0,
     status: 'active',
     startedAt: now,
@@ -925,6 +1254,8 @@ export function createDecisionSession(
     finishedAt: null,
     positionSizingModes: normalizeDecisionPositionSizingModes(positionSizingModes),
     origin: options.origin ?? 'practice',
+    practiceMode: options.practiceMode ?? 'random-count',
+    ...(options.daySequence ? { daySequence: options.daySequence } : {}),
     ...(options.sourceSessionId ? { sourceSessionId: options.sourceSessionId } : {}),
     ...(options.sourceCandidateKey ? { sourceCandidateKey: options.sourceCandidateKey } : {}),
   }
@@ -1204,8 +1535,9 @@ export function evaluatePositionBar(side: TradeSide, stopLoss: number, takeProfi
 
 export function advanceDecisionAttempt(candidate: ReplayDecisionCandidate, attempt: DecisionAttempt, nextCandle: Candle): DecisionBarEvaluation {
   let nextAttempt = { ...attempt, cursorTime: nextCandle.time }
+  const side = decisionAttemptSide(candidate, nextAttempt)
   if (nextAttempt.stage === 'order-pending' && nextAttempt.pendingEntryPrice !== null && nextAttempt.stopLoss !== null && nextAttempt.takeProfit !== null) {
-    const fill = fillPendingOrder(candidate.trade.side, nextAttempt.orderKind ?? 'stop', nextAttempt.pendingEntryPrice, nextCandle)
+    const fill = fillPendingOrder(side, nextAttempt.orderKind ?? 'stop', nextAttempt.pendingEntryPrice, nextCandle)
     if (fill) nextAttempt = { ...nextAttempt, fill, stage: 'position-open' }
   }
   if (nextAttempt.stage === 'position-open' && nextAttempt.stopLoss !== null && nextAttempt.takeProfit !== null) {
@@ -1214,10 +1546,10 @@ export function advanceDecisionAttempt(candidate: ReplayDecisionCandidate, attem
     // Only a newly reached system-exit bar may close a position. In particular,
     // a late user entry must never be closed retroactively at a past system exit.
     // With OHLC-only data, same-bar system exits take precedence over close confirmation.
-    if (mode === 'close' && nextAttempt.fill && systemExit.time === nextCandle.time && systemExit.time >= nextAttempt.fill.time) {
+    if (nextAttempt.userSide === undefined && mode === 'close' && nextAttempt.fill && systemExit.time === nextCandle.time && systemExit.time >= nextAttempt.fill.time) {
       return { attempt: nextAttempt, exit: { time: systemExit.time, price: systemExit.price, reason: 'system-exit' } }
     }
-    return { attempt: nextAttempt, exit: evaluatePositionBar(candidate.trade.side, nextAttempt.stopLoss, nextAttempt.takeProfit, nextCandle, mode) }
+    return { attempt: nextAttempt, exit: evaluatePositionBar(side, nextAttempt.stopLoss, nextAttempt.takeProfit, nextCandle, mode) }
   }
   return { attempt: nextAttempt, exit: null }
 }
@@ -1228,6 +1560,7 @@ export function cancelPendingOrderAndAdvance(attempt: DecisionAttempt, nextCandl
     ...attempt,
     cursorTime: nextCandle.time,
     stage: 'entry-decision',
+    userSide: undefined,
     entryMode: null,
     orderKind: null,
     pendingEntryPrice: null,
@@ -1278,25 +1611,35 @@ function isValidInitialStopLoss(side: TradeSide, entryPrice: number, stopLoss: n
   return side === 'long' ? stopLoss < entryPrice : stopLoss > entryPrice
 }
 
+export function decisionAttemptSide(candidate: ReplayDecisionCandidate, attempt: Pick<DecisionAttempt, 'userSide'>): TradeSide {
+  return attempt.userSide === 'long' || attempt.userSide === 'short' ? attempt.userSide : candidate.trade.side
+}
+
+export function decisionResultSide(result: Pick<DecisionTradeResult, 'userSide' | 'candidate'>): TradeSide {
+  return result.userSide === 'long' || result.userSide === 'short' ? result.userSide : result.candidate.trade.side
+}
+
 export function decisionAttemptInitialStopLoss(candidate: ReplayDecisionCandidate, attempt: DecisionAttempt) {
+  const side = decisionAttemptSide(candidate, attempt)
   const entryPrice = attempt.fill?.price ?? attempt.pendingEntryPrice ?? candidate.trade.entry.price
-  if (isValidInitialStopLoss(candidate.trade.side, entryPrice, attempt.initialStopLoss)) return attempt.initialStopLoss
+  if (isValidInitialStopLoss(side, entryPrice, attempt.initialStopLoss)) return attempt.initialStopLoss
   // A legacy pending order has not had a chance to trail yet, so its current stop is still its initial stop.
-  if (attempt.stage === 'order-pending' && isValidInitialStopLoss(candidate.trade.side, entryPrice, attempt.stopLoss)) return attempt.stopLoss
+  if (attempt.stage === 'order-pending' && isValidInitialStopLoss(side, entryPrice, attempt.stopLoss)) return attempt.stopLoss
   // Legacy open/completed attempts did not preserve the initial stop. The causal trade definition is the
   // only immutable pre-entry stop available; never resize from a later trailing stop.
-  if (isValidInitialStopLoss(candidate.trade.side, entryPrice, candidate.trade.entry.stopLoss)) return candidate.trade.entry.stopLoss
-  return isValidInitialStopLoss(candidate.trade.side, entryPrice, attempt.stopLoss) ? attempt.stopLoss : null
+  if (attempt.userSide === undefined && isValidInitialStopLoss(side, entryPrice, candidate.trade.entry.stopLoss)) return candidate.trade.entry.stopLoss
+  return isValidInitialStopLoss(side, entryPrice, attempt.stopLoss) ? attempt.stopLoss : null
 }
 
 export function decisionResultInitialStopLoss(result: DecisionTradeResult) {
   if (!result.userEntry) return null
+  const side = decisionResultSide(result)
   const entryPrice = result.userEntry.price
-  if (isValidInitialStopLoss(result.candidate.trade.side, entryPrice, result.initialStopLoss)) return result.initialStopLoss
+  if (isValidInitialStopLoss(side, entryPrice, result.initialStopLoss)) return result.initialStopLoss
   // Results created before initialStopLoss existed may contain the final trailing stop in result.stopLoss.
   // Recover their sizing from the immutable structural stop that was known before entry.
-  if (isValidInitialStopLoss(result.candidate.trade.side, entryPrice, result.candidate.trade.entry.stopLoss)) return result.candidate.trade.entry.stopLoss
-  return isValidInitialStopLoss(result.candidate.trade.side, entryPrice, result.stopLoss) ? result.stopLoss : null
+  if (result.userSide === undefined && isValidInitialStopLoss(side, entryPrice, result.candidate.trade.entry.stopLoss)) return result.candidate.trade.entry.stopLoss
+  return isValidInitialStopLoss(side, entryPrice, result.stopLoss) ? result.stopLoss : null
 }
 
 export function decisionResultR(result: DecisionTradeResult, actor: 'user' | 'system') {
@@ -1304,14 +1647,14 @@ export function decisionResultR(result: DecisionTradeResult, actor: 'user' | 'sy
   if (result.choice !== 'traded' || !result.userEntry) return 0
   const initialStopLoss = decisionResultInitialStopLoss(result)
   if (initialStopLoss === null) return result.userR
-  return pnlForDecision(result.candidate.trade.side, result.userEntry.price, result.userExit.price, initialStopLoss, 1).rMultiple
+  return pnlForDecision(decisionResultSide(result), result.userEntry.price, result.userExit.price, initialStopLoss, 1).rMultiple
 }
 
 export function normalizeDecisionTradeResult(result: DecisionTradeResult): DecisionTradeResult {
   const initialStopLoss = decisionResultInitialStopLoss(result)
   if (result.choice !== 'traded' || !result.userEntry || initialStopLoss === null) return { ...result, initialStopLoss }
   const plannedRiskUsd = Number.isFinite(result.plannedRiskUsd) && result.plannedRiskUsd > 0 ? result.plannedRiskUsd : DECISION_PLANNED_RISK_USD
-  const user = pnlForDecision(result.candidate.trade.side, result.userEntry.price, result.userExit.price, initialStopLoss, plannedRiskUsd)
+  const user = pnlForDecision(decisionResultSide(result), result.userEntry.price, result.userExit.price, initialStopLoss, plannedRiskUsd)
   return {
     ...result,
     initialStopLoss,
@@ -1333,11 +1676,11 @@ export function decisionResultPnl(
     const initialStopLoss = decisionResultInitialStopLoss(result)
     if (initialStopLoss === null) return result.userPnlUsd
     const plannedRiskUsd = Number.isFinite(result.plannedRiskUsd) && result.plannedRiskUsd > 0 ? result.plannedRiskUsd : DECISION_PLANNED_RISK_USD
-    return pnlForDecision(result.candidate.trade.side, result.userEntry.price, result.userExit.price, initialStopLoss, plannedRiskUsd).pnlUsd
+    return pnlForDecision(decisionResultSide(result), result.userEntry.price, result.userExit.price, initialStopLoss, plannedRiskUsd).pnlUsd
   }
   if (actor === 'user') {
     if (result.choice !== 'traded' || !result.userEntry) return 0
-    return pnlForDecisionMode('fixed-notional', result.candidate.trade.side, result.userEntry.price, result.userExit.price, result.stopLoss ?? result.userEntry.price)
+    return pnlForDecisionMode('fixed-notional', decisionResultSide(result), result.userEntry.price, result.userExit.price, result.stopLoss ?? result.userEntry.price)
   }
   return pnlForDecisionMode(
     'fixed-notional',
@@ -1360,13 +1703,15 @@ export function buildDecisionResult(candidate: ReplayDecisionCandidate, attempt:
     ? 'traded'
     : exit.reason === 'skipped' || attempt.pendingEntryPrice === null ? 'skipped' : 'unfilled'
   const riskStopLoss = decisionAttemptInitialStopLoss(candidate, attempt) ?? attempt.stopLoss
+  const userSide = decisionAttemptSide(candidate, attempt)
   const user = traded
-    ? pnlForDecision(candidate.trade.side, attempt.fill!.price, exit.price, riskStopLoss!, DECISION_PLANNED_RISK_USD)
+    ? pnlForDecision(userSide, attempt.fill!.price, exit.price, riskStopLoss!, DECISION_PLANNED_RISK_USD)
     : { pnlUsd: 0, rMultiple: 0 }
   return {
     candidateKey: candidate.key,
     candidate,
     choice,
+    ...(attempt.userSide ? { userSide: attempt.userSide } : {}),
     entryMode: attempt.entryMode,
     orderKind: attempt.orderKind ?? null,
     cursorTime: attempt.cursorTime,
@@ -1386,9 +1731,14 @@ export function buildDecisionResult(candidate: ReplayDecisionCandidate, attempt:
   }
 }
 
-export function decisionShortcutAction(stage: DecisionAttemptStage, key: string): DecisionShortcutAction | null {
+export function decisionShortcutAction(stage: DecisionAttemptStage, key: string, practiceMode: DecisionPracticeMode = 'random-count'): DecisionShortcutAction | null {
   if (stage === 'entry-decision') {
     if (key === '1') return 'advance'
+    if (practiceMode === 'day-sequence') {
+      if (key === '2') return 'open-long'
+      if (key === '3') return 'open-short'
+      return null
+    }
     if (key === '2') return 'signal-extreme'
     if (key === '3') return 'free-price'
     if (key === '4') return 'skip'
@@ -1481,7 +1831,7 @@ export function decisionSessionUserRStats(session: DecisionReplaySession): Decis
     const initialStopLoss = decisionResultInitialStopLoss(result)
     if (entryPrice === undefined || initialStopLoss === null) return []
     const stopDistance = Math.abs(entryPrice - initialStopLoss)
-    const signedMove = result.candidate.trade.side === 'long'
+    const signedMove = decisionResultSide(result) === 'long'
       ? result.userExit.price - entryPrice
       : entryPrice - result.userExit.price
     if (!Number.isFinite(stopDistance) || stopDistance <= 0 || !Number.isFinite(signedMove)) return []
@@ -1504,6 +1854,12 @@ export function decisionSessionUserRStats(session: DecisionReplaySession): Decis
 export function formatDecisionDate(epochSeconds: number) {
   return new Intl.DateTimeFormat('zh-CN', {
     timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(new Date(epochSeconds * 1000))
+}
+
+export function formatDecisionDay(epochSeconds: number) {
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
   }).format(new Date(epochSeconds * 1000))
 }
 

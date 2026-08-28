@@ -1,19 +1,20 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import {
-  Archive, BarChart3, Check, ChevronRight, CircleDollarSign, Eye, Flag, History, LogOut,
+  Archive, BarChart3, CalendarDays, Check, ChevronRight, CircleDollarSign, Eye, Flag, History, ListOrdered, LogOut,
   MousePointer2, Play, RotateCcw, Shield, Star, Target, X,
 } from 'lucide-react'
 import type { ReplayDecisionCandidate } from '../lib/replayTradeRegistry'
 import type {
-  DecisionAttempt, DecisionHistorySort, DecisionPositionSizingMode, DecisionReplayInterval, DecisionReplaySession, DecisionStopLossMode, DecisionTradeResult,
+  DecisionAttempt, DecisionHistorySort, DecisionPositionSizingMode, DecisionPracticeMode, DecisionReplayInterval, DecisionReplaySession, DecisionStopLossMode, DecisionTradeResult,
 } from '../lib/decisionReplay'
 import {
-  aggregateDecisionResults, compareDecisionHistorySortValues, decisionPositionSizingLabel, decisionResultInitialStopLoss, decisionResultPnl, decisionResultR,
-  decisionStopLossMode, decisionSessionPositionSizingModes, decisionSessionUserRStats, DECISION_REPLAY_INTERVALS, DEFAULT_DECISION_POSITION_SIZING_MODES,
-  formatDecisionDate, pnlForDecisionMode, rewardRiskRatio, sessionResults, symbolPrecision, toggleDecisionHistorySymbolSelection,
+  aggregateDecisionResults, compareDecisionHistorySortValues, decisionAttemptSide, decisionPositionSizingLabel, decisionResultInitialStopLoss, decisionResultPnl, decisionResultR, decisionResultSide,
+  decisionSessionPracticeMode, decisionStopLossMode, decisionSessionPositionSizingModes, decisionSessionUserRStats, DECISION_REPLAY_INTERVALS, DEFAULT_DECISION_POSITION_SIZING_MODES,
+  formatDecisionDate, formatDecisionDay, pnlForDecisionMode, rewardRiskRatio, sessionResults, symbolPrecision, toggleDecisionHistoryIntervalSelection, toggleDecisionHistorySymbolSelection,
 } from '../lib/decisionReplay'
-import { formatPrice, INTERVALS, SYMBOLS, type Candle, type SymbolId } from '../lib/market'
+import { formatPrice, INTERVALS, SYMBOLS, type Candle, type IntervalId, type SymbolId } from '../lib/market'
+import type { TradeSide } from '../lib/tradeMarkers'
 import { extractReasonCandleIndexes, resolveTradeCandleReferences } from '../lib/tradeCandleReferences'
 import {
   loadDecisionChartStatusPreferences, loadDecisionReplayCenterPreferences, loadDecisionReplayMenuPreferences, loadDecisionReplayPanelPreferences,
@@ -160,7 +161,8 @@ function orderKindLabel(kind: DecisionAttempt['orderKind']) {
 function choiceLabel(result: DecisionTradeResult) {
   if (result.choice === 'skipped') return '未参与'
   if (result.choice === 'unfilled') return '挂单未成交'
-  const mode = result.entryMode === 'signal-extreme' ? '本 K 突破价' : '自由选价'
+  const mode = result.entryMode === 'signal-extreme' ? '本 K 突破价' : result.entryMode === 'market-close' ? '当前 K 收盘开仓' : '自由选价'
+  if (result.entryMode === 'market-close') return `${decisionResultSide(result) === 'long' ? '开多' : '开空'} · ${mode}`
   return `${mode} · ${orderKindLabel(result.orderKind)}`
 }
 
@@ -240,7 +242,7 @@ export function DecisionReplayCenter({ open, availableCount, totalCount, symbolS
   sessions: DecisionReplaySession[]
   activeSessionId: string | null
   onClose: () => void
-  onStart: (count: number, symbols: SymbolId[], intervals: DecisionReplayInterval[], positionSizingModes: DecisionPositionSizingMode[]) => void
+  onStart: (count: number, symbols: SymbolId[], intervals: DecisionReplayInterval[], positionSizingModes: DecisionPositionSizingMode[], practiceMode: DecisionPracticeMode) => void
   onContinue: () => void
   onResults: (sessionId: string) => void
   favoriteKeys?: readonly string[]
@@ -255,8 +257,9 @@ export function DecisionReplayCenter({ open, availableCount, totalCount, symbolS
     selectedSymbols: symbolStats.filter((item) => item.intervals.some((stat) => stat.interval === '5m' && stat.remaining > 0)).map((item) => item.symbol),
     selectedIntervals: ['5m'] as DecisionReplayInterval[],
     selectedModes: [...DEFAULT_DECISION_POSITION_SIZING_MODES],
+    practiceMode: 'random-count' as DecisionPracticeMode,
   }))
-  const { count, selectedSymbols, selectedIntervals, selectedModes } = newSessionPreferences
+  const { count, selectedSymbols, selectedIntervals, selectedModes, practiceMode } = newSessionPreferences
   useEffect(() => saveDecisionReplayCenterPreferences(newSessionPreferences), [newSessionPreferences])
   const selectedStats = symbolStats.filter((item) => selectedSymbols.includes(item.symbol))
   const selectedAvailableCount = selectedStats.reduce((sum, item) => sum + item.intervals
@@ -290,13 +293,27 @@ export function DecisionReplayCenter({ open, availableCount, totalCount, symbolS
         </button>}
         <section className="decision-new-session">
           <div className="decision-new-session-head">
-            <div><h3>开始新的随机练习</h3><p>从所有可用模拟订单中打乱抽取，已经出现过的交易不会再次抽到。</p></div>
+            <div><h3>开始新的决策练习</h3><p>{practiceMode === 'day-sequence' ? '随机选择一个交易日，按当天信号时间顺序逐笔练习；图表保持整日时间轴，不跳到开仓点。' : '从所有可用模拟订单中打乱抽取，已经出现过的交易不会再次抽到。'}</p></div>
             <div className="decision-anomaly-entry">
               <button className="decision-anomaly-redo" data-testid="decision-anomaly-redo" disabled={anomalyLoading || anomalyCount === 0 || selectedModes.length === 0 || !onRedoAnomalies} onClick={() => onRedoAnomalies?.(selectedModes)} title="按本机 XAUUSD 5分钟历史识别异常题目，创建独立重做卷；原记录和收藏保留，同一道题不重复抽取。">
                 <RotateCcw size={17} />{anomalyLoading ? '正在核对异常订单…' : `重做异常订单（${anomalyCount}题）`}
               </button>
               <small>独立重做 · 原记录保留{anomalyUnavailableCount > 0 ? ` · 另${anomalyUnavailableCount}笔缺行情，暂不能重做` : ''}</small>
             </div>
+          </div>
+          <div className="decision-practice-mode" role="group" aria-label="选择决策回放模式">
+            <button
+              type="button"
+              className={practiceMode === 'random-count' ? 'active' : ''}
+              aria-pressed={practiceMode === 'random-count'}
+              onClick={() => setNewSessionPreferences((current) => ({ ...current, practiceMode: 'random-count' }))}
+            ><ListOrdered size={18} /><span><b>自定义题目数量</b><small>跨日期随机抽题，题量由你设置</small></span></button>
+            <button
+              type="button"
+              className={practiceMode === 'day-sequence' ? 'active' : ''}
+              aria-pressed={practiceMode === 'day-sequence'}
+              onClick={() => setNewSessionPreferences((current) => ({ ...current, practiceMode: 'day-sequence' }))}
+            ><CalendarDays size={18} /><span><b>随机交易日顺序回放</b><small>随机一天，按信号时间从早到晚逐笔练习</small></span></button>
           </div>
           <div className="decision-symbol-filter" aria-label="选择练习标的">
             <div className="decision-symbol-filter-head"><b>选择标的</b><span>可多选，随机抽取只使用已勾选的标的</span></div>
@@ -369,9 +386,11 @@ export function DecisionReplayCenter({ open, availableCount, totalCount, symbolS
               </label>)}
             </div>
           </div>
-          <label><span>交易数量 N</span><input className="decision-count-input" type="number" min="1" max={Math.max(1, effectiveAvailableCount)} value={boundedCount} disabled={effectiveAvailableCount === 0} onChange={(event) => setNewSessionPreferences((current) => ({ ...current, count: Math.max(1, Number(event.target.value) || 1) }))} /></label>
+          {practiceMode === 'random-count'
+            ? <label><span>交易数量 N</span><input className="decision-count-input" type="number" min="1" max={Math.max(1, effectiveAvailableCount)} value={boundedCount} disabled={effectiveAvailableCount === 0} onChange={(event) => setNewSessionPreferences((current) => ({ ...current, count: Math.max(1, Number(event.target.value) || 1) }))} /></label>
+            : <div className="decision-day-mode-note"><CalendarDays size={17} /><span><b>题数按当天实际交易</b><small>仅抽取同一标的、同一周期、完整交易日内的未练习交易；有休市的品种从开盘 K 线开始</small></span></div>}
           <div className="decision-availability"><b>{effectiveAvailableCount.toLocaleString('zh-CN')}</b> 笔未练习 / 共 {effectiveTotalCount.toLocaleString('zh-CN')} 笔</div>
-          <button className="decision-primary" disabled={effectiveAvailableCount === 0 || selectedSymbols.length === 0 || selectedIntervals.length === 0 || selectedModes.length === 0} onClick={() => onStart(boundedCount, selectedSymbols, selectedIntervals, selectedModes)}>随机抽取并开始</button>
+          <button className="decision-primary" disabled={effectiveAvailableCount === 0 || selectedSymbols.length === 0 || selectedIntervals.length === 0 || selectedModes.length === 0} onClick={() => onStart(boundedCount, selectedSymbols, selectedIntervals, selectedModes, practiceMode)}>{practiceMode === 'day-sequence' ? '随机选一天并按顺序开始' : '随机抽取并开始'}</button>
         </section>
         <section className="decision-archives">
           <div className="decision-section-heading"><Archive size={18} /><h3>永久练习存档</h3><span>{sessions.length} 场</span></div>
@@ -394,7 +413,7 @@ export function DecisionReplayCenter({ open, availableCount, totalCount, symbolS
                 }}
               >
                 <span className={`decision-session-status ${session.status}`}>{statusLabel(session.status)}</span>
-                <span><b>{session.reviewKind === 'stop-anomalies' ? '异常订单重做 · ' : ''}{results.length} / {session.candidates.length} 笔</b><small>{decisionSessionTimeLabel(session)}</small></span>
+                <span><b>{session.reviewKind === 'stop-anomalies' ? '异常订单重做 · ' : session.practiceMode === 'day-sequence' ? '按日顺序 · ' : ''}{results.length} / {session.candidates.length} 笔</b><small>{session.daySequence ? `${formatDecisionDay(session.daySequence.startTime)} · ` : ''}{decisionSessionTimeLabel(session)}</small></span>
                 <DecisionModeMoneyStack modes={modes} valueFor={(mode) => aggregateDecisionResults(results, mode).userPnlUsd} />
                 <span className="decision-list-actions"><DecisionFavoriteButton favorite={favoriteKeys.includes(favoriteKey)} onToggle={() => onToggleFavorite(favoriteKey)} label={favoriteKeys.includes(favoriteKey) ? '取消收藏本场练习' : '收藏本场练习'} /><ChevronRight size={18} /></span>
               </div>
@@ -440,6 +459,7 @@ interface DecisionHistoryDialogProps {
   onToggleFavorite?: (key: string) => void
   defaultView?: 'history' | 'favorites'
   defaultHistoryView?: DecisionHistoryViewMode
+  defaultStatsMode?: 'custom' | 'day-sequence'
 }
 
 function sameDecisionHistoryDialogProps(left: DecisionHistoryDialogProps, right: DecisionHistoryDialogProps) {
@@ -449,30 +469,38 @@ function sameDecisionHistoryDialogProps(left: DecisionHistoryDialogProps, right:
     && left.favoriteKeys === right.favoriteKeys
     && left.defaultView === right.defaultView
     && left.defaultHistoryView === right.defaultHistoryView
+    && left.defaultStatsMode === right.defaultStatsMode
 }
 
-export const DecisionHistoryDialog = memo(function DecisionHistoryDialog({ open, sessions, onClose, onOpenSession, onOpenFavoriteTrade, favoriteKeys = [], onToggleFavorite = () => undefined, defaultView = 'history', defaultHistoryView = 'trades' }: DecisionHistoryDialogProps) {
+export const DecisionHistoryDialog = memo(function DecisionHistoryDialog({ open, sessions, onClose, onOpenSession, onOpenFavoriteTrade, favoriteKeys = [], onToggleFavorite = () => undefined, defaultView = 'history', defaultHistoryView = 'trades', defaultStatsMode = 'custom' }: DecisionHistoryDialogProps) {
   const [selectedHistorySymbols, setSelectedHistorySymbols] = useState<SymbolId[]>([])
+  const [selectedHistoryIntervals, setSelectedHistoryIntervals] = useState<DecisionReplayInterval[]>([])
   const [favoritesOnly, setFavoritesOnly] = useState(defaultView === 'favorites')
   const [historyViewMode, setHistoryViewMode] = useState<DecisionHistoryViewMode>(defaultHistoryView)
   const [historyPositionMode, setHistoryPositionMode] = useState<DecisionPositionSizingMode>('fixed-notional')
   const [historySort, setHistorySort] = useState<DecisionHistorySort>('time-desc')
+  const [historyStatsMode, setHistoryStatsMode] = useState<'custom' | 'day-sequence'>(defaultStatsMode)
   const [historyRenderLimit, setHistoryRenderLimit] = useState(DECISION_HISTORY_RENDER_BATCH)
   // This dialog stays mounted while closed. Returning before any aggregation
   // prevents the clock and chart updates from rescanning thousands of attempts.
   if (!open) return null
   const showAllSymbols = selectedHistorySymbols.length === 0
   const selectedHistorySymbolSet = new Set(selectedHistorySymbols)
+  const showAllIntervals = selectedHistoryIntervals.length === 0
+  const selectedHistoryIntervalSet = new Set(selectedHistoryIntervals)
   const selectedSymbolLabel = showAllSymbols ? '全部标的' : selectedHistorySymbols.join(' / ')
-  const historyScopeLabel = favoritesOnly ? `已收藏 · ${selectedSymbolLabel}` : selectedSymbolLabel
-  const historyScopeTitle = favoritesOnly ? `${selectedSymbolLabel}的收藏记录` : selectedSymbolLabel
+  const selectedIntervalLabel = showAllIntervals ? '全部周期' : selectedHistoryIntervals.map((interval) => INTERVALS[interval].label).join(' / ')
+  const historyScopeLabel = `${favoritesOnly ? '已收藏 · ' : ''}${selectedSymbolLabel}${showAllIntervals ? '' : ` · ${selectedIntervalLabel}`}`
+  const historyScopeTitle = `${selectedSymbolLabel}${showAllIntervals ? '' : ` · ${selectedIntervalLabel}`}${favoritesOnly ? '的收藏记录' : ''}`
   const matchesSelectedSymbol = (symbol: SymbolId) => showAllSymbols || selectedHistorySymbolSet.has(symbol)
+  const matchesSelectedInterval = (interval: IntervalId) => showAllIntervals || selectedHistoryIntervalSet.has(interval as DecisionReplayInterval)
   // Independent redo sessions are persisted for their own result dialog, but
   // must never alter the source practice session's historical statistics.
   const historySessions = sessions.filter((session) => session.origin !== 'review')
 
-  const tradeEntries = historySessions.flatMap((session) => session.candidates.flatMap((candidate, index) => {
-    if (!matchesSelectedSymbol(candidate.symbol)) return []
+  const tradeEntries = historySessions.flatMap((session) => session.candidates
+    .filter((candidate) => matchesSelectedSymbol(candidate.symbol) && matchesSelectedInterval(candidate.interval))
+    .flatMap((candidate, index) => {
     const attempt = session.attempts.find((item) => item.candidateKey === candidate.key) ?? null
     if (!decisionAttemptHasHistoryProgress(candidate, attempt)) return []
     const favoriteKey = decisionReplayFavoriteKey('trade', candidate.key)
@@ -487,7 +515,7 @@ export const DecisionHistoryDialog = memo(function DecisionHistoryDialog({ open,
     }]
   }))
   const historySessionGroups = historySessions.flatMap((session) => {
-    const candidatesForScope = session.candidates.filter((candidate) => matchesSelectedSymbol(candidate.symbol))
+    const candidatesForScope = session.candidates.filter((candidate) => matchesSelectedSymbol(candidate.symbol) && matchesSelectedInterval(candidate.interval))
     if (candidatesForScope.length === 0) return []
     const sessionEntries = tradeEntries.filter((entry) => entry.session.id === session.id && (!favoritesOnly || entry.favorite))
     if (favoritesOnly && sessionEntries.length === 0) return []
@@ -511,6 +539,7 @@ export const DecisionHistoryDialog = memo(function DecisionHistoryDialog({ open,
     const userPnl = aggregateDecisionResults(group.results, historyPositionMode).userPnlUsd
     const systemPnl = aggregateDecisionResults(group.results, historyPositionMode).systemPnlUsd
     return JSON.stringify({
+      practiceMode: decisionSessionPracticeMode(group.session),
       status: group.session.status,
       symbols: [...group.symbols].sort(),
       startedAt: group.session.startedAt,
@@ -521,6 +550,7 @@ export const DecisionHistoryDialog = memo(function DecisionHistoryDialog({ open,
       participatedCount: participated.length,
       skippedCount: group.results.filter((result) => result.choice === 'skipped').length,
       favoriteCount: group.favoriteCount,
+      intervals: [...new Set(group.candidates.map((candidate) => candidate.interval))].sort(),
       userWins: userStats.wins,
       userTotal: userStats.total,
       systemWins: systemStats.wins,
@@ -570,9 +600,9 @@ export const DecisionHistoryDialog = memo(function DecisionHistoryDialog({ open,
     }, historySort)
   })
 
-  const summaryResults = visibleTradeEntries.flatMap((entry) => entry.result ? [entry.result] : [])
+  const customModeTradeEntries = visibleTradeEntries.filter((entry) => decisionSessionPracticeMode(entry.session) === 'random-count')
+  const summaryResults = customModeTradeEntries.flatMap((entry) => entry.result ? [entry.result] : [])
   const visibleTradeCount = summaryResults.length
-  const hasVisibleHistory = visibleTradeEntries.length > 0
   const historyModes: readonly DecisionPositionSizingMode[] = [historyPositionMode]
   const participatedResults = summaryResults.filter((result) => result.choice === 'traded')
   const skippedTradeCount = summaryResults.filter((result) => result.choice === 'skipped').length
@@ -580,9 +610,21 @@ export const DecisionHistoryDialog = memo(function DecisionHistoryDialog({ open,
   const userWinStats = decisionWinStats(participatedResults, historyPositionMode, 'user')
   const systemParticipatedWinStats = decisionWinStats(participatedResults, historyPositionMode, 'system')
   const systemOverallWinStats = decisionWinStats(summaryResults, historyPositionMode, 'system')
-  const renderedHistorySessionGroups = sortedHistorySessionGroups.slice(0, historyRenderLimit)
-  const renderedTradeEntries = sortedTradeEntries.slice(0, historyRenderLimit)
-  const historyItemCount = historyViewMode === 'sessions' ? sortedHistorySessionGroups.length : sortedTradeEntries.length
+  const customModeSessionCount = deduplicatedHistorySessionGroups.filter((group) => decisionSessionPracticeMode(group.session) === 'random-count').length
+  const daySequenceTradeEntries = visibleTradeEntries.filter((entry) => decisionSessionPracticeMode(entry.session) === 'day-sequence')
+  const daySequenceResults = daySequenceTradeEntries.flatMap((entry) => entry.result ? [entry.result] : [])
+  const daySequenceParticipatedResults = daySequenceResults.filter((result) => result.choice === 'traded')
+  const daySequenceSkippedTradeCount = daySequenceResults.filter((result) => result.choice === 'skipped').length
+  const daySequenceUnfilledTradeCount = daySequenceResults.filter((result) => result.choice === 'unfilled').length
+  const daySequenceSessionCount = deduplicatedHistorySessionGroups.filter((group) => decisionSessionPracticeMode(group.session) === 'day-sequence').length
+  const daySequenceUserWinStats = decisionWinStats(daySequenceParticipatedResults, historyPositionMode, 'user')
+  const daySequenceSystemWinStats = decisionWinStats(daySequenceResults, historyPositionMode, 'system')
+  const selectedPracticeMode = historyStatsMode === 'day-sequence' ? 'day-sequence' : 'random-count'
+  const modeHistorySessionGroups = sortedHistorySessionGroups.filter((group) => decisionSessionPracticeMode(group.session) === selectedPracticeMode)
+  const modeTradeEntries = sortedTradeEntries.filter((entry) => decisionSessionPracticeMode(entry.session) === selectedPracticeMode)
+  const renderedHistorySessionGroups = modeHistorySessionGroups.slice(0, historyRenderLimit)
+  const renderedTradeEntries = modeTradeEntries.slice(0, historyRenderLimit)
+  const historyItemCount = historyViewMode === 'sessions' ? modeHistorySessionGroups.length : modeTradeEntries.length
   const hasMoreHistoryItems = historyRenderLimit < historyItemCount
   const loadMoreHistoryItems = () => setHistoryRenderLimit((current) => Math.min(historyItemCount, current + DECISION_HISTORY_RENDER_BATCH))
   const openFavoriteTrade = (sessionId: string, candidateKey: string) => {
@@ -593,7 +635,7 @@ export const DecisionHistoryDialog = memo(function DecisionHistoryDialog({ open,
     <section className="decision-history" role="dialog" aria-modal="true" aria-label="决策历史记录" data-testid="decision-history-dialog">
       <header>
         <span className="decision-history-icon"><History size={25} /></span>
-        <div><h2>历史记录</h2><small>{historyScopeTitle} · {favoritesOnly ? '逐笔收藏交易' : historyViewMode === 'sessions' ? '按卷子汇总' : '逐笔交易记录'}</small></div>
+        <div><h2>历史记录</h2><small>{historyScopeTitle} · {historyStatsMode === 'day-sequence' ? '日内逐根回放' : '自定义模式'} · {favoritesOnly ? '逐笔收藏交易' : historyViewMode === 'sessions' ? '按卷子汇总' : '逐笔交易记录'}</small></div>
         <div className="decision-history-filters">
           <button
             type="button"
@@ -624,6 +666,25 @@ export const DecisionHistoryDialog = memo(function DecisionHistoryDialog({ open,
         })}
         <small>{showAllSymbols ? '默认显示全部；勾选任一标的进入单选' : `已选择 ${selectedHistorySymbols.length} 个标的；可继续勾选进行多选`}</small>
       </div>
+      <div className="decision-history-interval-controls" role="group" aria-label="历史记录时间级别筛选">
+        <span>时间级别</span>
+        <label className={showAllIntervals ? 'active' : ''}>
+          <input type="checkbox" checked={showAllIntervals} onChange={() => setSelectedHistoryIntervals([])} />
+          全部周期
+        </label>
+        {DECISION_REPLAY_INTERVALS.map((interval) => {
+          const checked = selectedHistoryIntervalSet.has(interval)
+          return <label className={checked ? 'active' : ''} key={interval}>
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={() => setSelectedHistoryIntervals((selected) => toggleDecisionHistoryIntervalSelection(selected, interval))}
+            />
+            {INTERVALS[interval].label}
+          </label>
+        })}
+        <small>{showAllIntervals ? '默认显示全部周期；可勾选一个或多个时间级别' : `已选择 ${selectedHistoryIntervals.length} 个时间级别；可继续勾选进行多选`}</small>
+      </div>
       <div className="decision-history-display-controls">
         <span>展示方式</span>
         <div className="decision-history-view-modes" role="group" aria-label="历史记录展示方式">
@@ -651,17 +712,28 @@ export const DecisionHistoryDialog = memo(function DecisionHistoryDialog({ open,
         </label>
         <small>{historyViewMode === 'sessions' ? '按每场练习显示考分；点击卷子查看每笔交易详情' : '盈利排序按当前仓位口径计算'}</small>
       </div>
-      <div className="decision-history-overview">
-        <article><span>{historyViewMode === 'sessions' ? '卷子数' : favoritesOnly ? '收藏笔数' : '总笔数'}</span><b>{historyViewMode === 'sessions' ? sortedHistorySessionGroups.length : visibleTradeCount}</b><small>{historyViewMode === 'sessions' ? `${historyScopeLabel} · 点击进入逐笔详情` : historyScopeLabel}</small></article>
-        <article><span>你的累计净盈亏</span><DecisionModeMoneyStack modes={historyModes} compact={false} valueFor={(mode) => aggregateDecisionResults(summaryResults, mode).userPnlUsd} /><small>参与胜率 <strong>{decisionWinRateText(userWinStats)}</strong> · 盈利 {userWinStats.wins} / {userWinStats.total} 笔 · 未参与 {skippedTradeCount} 笔交易{unfilledTradeCount > 0 ? ` · 未成交 ${unfilledTradeCount} 笔` : ''}</small></article>
-        <article className="decision-system-summary"><span>系统参与部分净盈亏</span><DecisionModeMoneyStack modes={historyModes} compact={false} valueFor={(mode) => aggregateDecisionResults(participatedResults, mode).systemPnlUsd} /><small>参与部分胜率 <strong>{decisionWinRateText(systemParticipatedWinStats)}</strong> · 盈利 {systemParticipatedWinStats.wins} / {systemParticipatedWinStats.total} 笔</small><span className="decision-system-total-label">系统总净盈亏</span><DecisionModeMoneyStack modes={historyModes} compact={false} valueFor={(mode) => aggregateDecisionResults(summaryResults, mode).systemPnlUsd} /><small>总胜率 <strong>{decisionWinRateText(systemOverallWinStats)}</strong> · 盈利 {systemOverallWinStats.wins} / {systemOverallWinStats.total} 笔</small></article>
-        <article><span>相对系统</span><DecisionModeMoneyStack modes={historyModes} compact={false} valueFor={(mode) => aggregateDecisionResults(summaryResults, mode).differenceUsd} /><small>{decisionPositionSizingLabel(historyPositionMode)} · 全部 {summaryResults.length} 笔</small></article>
+      <div className="decision-history-stats-modes" role="group" aria-label="历史统计模式">
+        <span>统计模式</span>
+        <button type="button" className={historyStatsMode === 'custom' ? 'active' : ''} aria-pressed={historyStatsMode === 'custom'} onClick={() => { setHistoryStatsMode('custom'); setHistoryRenderLimit(DECISION_HISTORY_RENDER_BATCH) }}>自定义模式 <b>{visibleTradeCount}</b> 笔</button>
+        <button type="button" className={`day-sequence${historyStatsMode === 'day-sequence' ? ' active' : ''}`} aria-pressed={historyStatsMode === 'day-sequence'} onClick={() => { setHistoryStatsMode('day-sequence'); setHistoryRenderLimit(DECISION_HISTORY_RENDER_BATCH) }}>日内逐根回放 <b>{daySequenceResults.length}</b> 笔</button>
+        <small>两种模式独立统计；点击切换下方收益卡</small>
       </div>
+      {historyStatsMode === 'custom' ? <div className="decision-history-overview" role="region" aria-label="自定义题目模式收益" data-testid="decision-custom-mode-history-summary">
+        <article><span>{historyViewMode === 'sessions' ? '自定义模式卷子数' : favoritesOnly ? '自定义模式收藏笔数' : '自定义模式笔数'}</span><b>{historyViewMode === 'sessions' ? customModeSessionCount : visibleTradeCount}</b><small>{historyViewMode === 'sessions' ? `${historyScopeLabel} · 点击进入逐笔详情` : historyScopeLabel} · 不含逐根回放</small></article>
+        <article><span>你的自定义模式净盈亏</span><DecisionModeMoneyStack modes={historyModes} compact={false} valueFor={(mode) => aggregateDecisionResults(summaryResults, mode).userPnlUsd} /><small>参与胜率 <strong>{decisionWinRateText(userWinStats)}</strong> · 盈利 {userWinStats.wins} / {userWinStats.total} 笔 · 未参与 {skippedTradeCount} 笔交易{unfilledTradeCount > 0 ? ` · 未成交 ${unfilledTradeCount} 笔` : ''}</small></article>
+        <article className="decision-system-summary"><span>自定义模式系统参与净盈亏</span><DecisionModeMoneyStack modes={historyModes} compact={false} valueFor={(mode) => aggregateDecisionResults(participatedResults, mode).systemPnlUsd} /><small>参与部分胜率 <strong>{decisionWinRateText(systemParticipatedWinStats)}</strong> · 盈利 {systemParticipatedWinStats.wins} / {systemParticipatedWinStats.total} 笔</small><span className="decision-system-total-label">自定义模式系统总净盈亏</span><DecisionModeMoneyStack modes={historyModes} compact={false} valueFor={(mode) => aggregateDecisionResults(summaryResults, mode).systemPnlUsd} /><small>总胜率 <strong>{decisionWinRateText(systemOverallWinStats)}</strong> · 盈利 {systemOverallWinStats.wins} / {systemOverallWinStats.total} 笔</small></article>
+        <article><span>自定义模式相对系统</span><DecisionModeMoneyStack modes={historyModes} compact={false} valueFor={(mode) => aggregateDecisionResults(summaryResults, mode).differenceUsd} /><small>{decisionPositionSizingLabel(historyPositionMode)} · 全部 {summaryResults.length} 笔</small></article>
+      </div> : <div className="decision-history-overview decision-day-sequence-overview" role="region" aria-label="日内逐根回放模式收益" data-testid="decision-day-sequence-history-summary">
+        <article><span>逐根回放笔数</span><b>{daySequenceResults.length}</b><small>{daySequenceSessionCount} 场有记录 · 参与 {daySequenceParticipatedResults.length} 笔 · 未参与 {daySequenceSkippedTradeCount} 笔{daySequenceUnfilledTradeCount > 0 ? ` · 未成交 ${daySequenceUnfilledTradeCount} 笔` : ''}</small></article>
+        <article><span>你的逐根回放净盈亏</span><DecisionModeMoneyStack modes={historyModes} compact={false} valueFor={(mode) => aggregateDecisionResults(daySequenceResults, mode).userPnlUsd} /><small>参与胜率 <strong>{decisionWinRateText(daySequenceUserWinStats)}</strong> · 盈利 {daySequenceUserWinStats.wins} / {daySequenceUserWinStats.total} 笔</small></article>
+        <article><span>逐根回放系统净盈亏</span><DecisionModeMoneyStack modes={historyModes} compact={false} valueFor={(mode) => aggregateDecisionResults(daySequenceResults, mode).systemPnlUsd} /><small>总胜率 <strong>{decisionWinRateText(daySequenceSystemWinStats)}</strong> · 盈利 {daySequenceSystemWinStats.wins} / {daySequenceSystemWinStats.total} 笔</small></article>
+        <article><span>逐根回放相对系统</span><DecisionModeMoneyStack modes={historyModes} compact={false} valueFor={(mode) => aggregateDecisionResults(daySequenceResults, mode).differenceUsd} /><small>{decisionPositionSizingLabel(historyPositionMode)} · 全部 {daySequenceResults.length} 笔</small></article>
+      </div>}
       <div className="decision-history-body" onScroll={(event) => {
         const target = event.currentTarget
         if (hasMoreHistoryItems && target.scrollHeight - target.scrollTop - target.clientHeight < 240) loadMoreHistoryItems()
       }}>
-        {historyViewMode === 'sessions' ? (sortedHistorySessionGroups.length === 0 ? <div className="decision-empty">{favoritesOnly ? '所选标的还没有收藏记录。' : showAllSymbols ? '全部标的还没有练习卷子。' : '所选标的还没有练习卷子。'}</div> : <div className="decision-history-list">
+        {historyViewMode === 'sessions' ? (modeHistorySessionGroups.length === 0 ? <div className="decision-empty">{favoritesOnly ? '当前模式在所选标的中还没有收藏记录。' : historyStatsMode === 'day-sequence' ? '当前筛选还没有日内逐根回放卷子。' : '当前筛选还没有自定义模式卷子。'}</div> : <div className="decision-history-list">
           {renderedHistorySessionGroups.map(({ session, candidates, entries, results, symbols, favoriteCount }) => {
             const participated = results.filter((result) => result.choice === 'traded')
             const userStats = decisionWinStats(participated, historyPositionMode, 'user')
@@ -686,7 +758,7 @@ export const DecisionHistoryDialog = memo(function DecisionHistoryDialog({ open,
               <div className="decision-history-card-head decision-history-session-card-head">
                 <span className={`decision-session-status ${session.status}`}>{statusLabel(session.status)}</span>
                 <span>
-                  <b>{symbols.join(' / ')} · 决策练习</b>
+                  <b>{symbols.join(' / ')} · {decisionSessionPracticeMode(session) === 'day-sequence' ? '日内逐根回放' : '决策练习'}</b>
                   <small>{decisionSessionTimeLabel(session)} · {progressCount} 笔有记录 · {decisionSizingLabels(decisionSessionPositionSizingModes(session))}</small>
                 </span>
                 {favoriteCount > 0 ? <span className="decision-history-favorite-count"><Star size={13} fill="currentColor" />{favoriteCount} 笔</span> : <span />}
@@ -705,7 +777,7 @@ export const DecisionHistoryDialog = memo(function DecisionHistoryDialog({ open,
             <small className="decision-history-card-hint">点击查看本场每笔交易详情、收益对比和独立画图；重新回看不会覆盖原结果</small>
             </div>
           })}
-        </div>) : (!hasVisibleHistory ? <div className="decision-empty">{favoritesOnly ? '所选标的还没有收藏记录。' : showAllSymbols ? '全部标的还没有交易记录。' : '所选标的还没有交易记录。'}</div> : <div className="decision-history-list">
+        </div>) : (modeTradeEntries.length === 0 ? <div className="decision-empty">{favoritesOnly ? '当前模式在所选标的中还没有收藏记录。' : historyStatsMode === 'day-sequence' ? '当前筛选还没有日内逐根回放交易。' : '当前筛选还没有自定义模式交易。'}</div> : <div className="decision-history-list">
           {renderedTradeEntries.map(({ session, candidate, attempt, result, favoriteKey, favorite, ordinal }) => <div
             key={`${session.id}:${candidate.key}`}
             className={`decision-history-card decision-history-trade-card${favorite ? ' favorite' : ''}`}
@@ -723,8 +795,8 @@ export const DecisionHistoryDialog = memo(function DecisionHistoryDialog({ open,
             <div className="decision-history-card-head decision-history-trade-card-head">
               <span className={`decision-session-status ${result ? 'completed' : session.status}`}>{decisionHistoryTradeStatus(result, session)}</span>
               <span>
-                <b>{candidate.symbol} · {INTERVALS[candidate.interval].label} · {candidate.trade.side === 'long' ? '多头' : '空头'} · 第 {candidate.trade.tradeNumber} 笔</b>
-                <small>练习 {new Date(session.startedAt).toLocaleString('zh-CN')} · 信号 K {formatDecisionDate(candidate.trade.entry.signalTime)} · 本场第 {ordinal} / {session.candidates.length} 笔</small>
+                <b>{candidate.symbol} · {INTERVALS[candidate.interval].label} · {(result ? decisionResultSide(result) : attempt ? decisionAttemptSide(candidate, attempt) : candidate.trade.side) === 'long' ? '多头' : '空头'} · 第 {candidate.trade.tradeNumber} 笔</b>
+                <small>{decisionSessionPracticeMode(session) === 'day-sequence' ? '日内逐根回放 · ' : ''}练习 {new Date(session.startedAt).toLocaleString('zh-CN')} · 信号 K {formatDecisionDate(candidate.trade.entry.signalTime)} · 本场第 {ordinal} / {session.candidates.length} 笔</small>
               </span>
               <DecisionFavoriteButton favorite={favorite} onToggle={() => onToggleFavorite(favoriteKey)} label={favorite ? '取消收藏本笔交易' : '收藏本笔交易'} />
               <ChevronRight size={19} />
@@ -779,6 +851,10 @@ export function DecisionChartStatus({ session, attempt, currentPnlByMode = null,
   const participatedResults = results.filter((result) => result.choice === 'traded')
   const skippedTradeCount = results.filter((result) => result.choice === 'skipped').length
   const positionOpen = attempt.stage === 'position-open' && currentPnlByMode !== null
+  const currentCandidate = session.candidates[session.currentIndex]
+  const preSignal = decisionSessionPracticeMode(session) === 'day-sequence'
+    && attempt.stage === 'entry-decision'
+    && Boolean(currentCandidate && attempt.cursorTime < currentCandidate.trade.entry.signalTime)
   const hasCurrentResult = Boolean(attempt.result)
   const hasCurrentPnl = positionOpen || hasCurrentResult
   const currentResultIsUnsettled = attempt.stage === 'post-exit' && hasCurrentResult
@@ -900,11 +976,11 @@ export function DecisionChartStatus({ session, attempt, currentPnlByMode = null,
       }}
     >
       <strong><span className="decision-chart-status-grip" aria-hidden="true">⠿</span><CircleDollarSign size={15} />本场练习盈亏</strong>
-      <span>第 {session.currentIndex + 1} / {session.candidates.length} 笔</span>
+      <span>{session.practiceMode === 'day-sequence' && session.daySequence ? `${formatDecisionDay(session.daySequence.startTime)} · 按日顺序 · ` : ''}第 {session.currentIndex + 1} / {session.candidates.length} 笔</span>
     </header>
     <div className="decision-chart-status-grid">
       <article className={`current-pnl${hasCurrentPnl ? ' has-value' : ''}`}>
-        <div><span>{positionOpen ? '当前笔实时盈亏' : '当前笔盈亏'}</span><small>{stageLabel[attempt.stage]}</small></div>
+        <div><span>{positionOpen ? '当前笔实时盈亏' : '当前笔盈亏'}</span><small>{preSignal ? '从开盘逐根等待信号' : stageLabel[attempt.stage]}</small></div>
         {hasCurrentPnl
           ? <DecisionModeMoneyStack modes={positionSizingModes} valueFor={currentValueFor} compact />
           : <b className="decision-chart-status-empty">—</b>}
@@ -921,12 +997,12 @@ export function DecisionChartStatus({ session, attempt, currentPnlByMode = null,
   </aside>
 }
 
-function StageBadge({ attempt }: { attempt: DecisionAttempt }) {
+function StageBadge({ attempt, preSignal = false }: { attempt: DecisionAttempt; preSignal?: boolean }) {
   const labels: Record<DecisionAttempt['stage'], string> = {
     'entry-decision': '等待决策', 'entry-price': '选择挂单价', 'risk-setup': '设置止盈止损',
     'order-pending': '挂单等待成交', 'position-open': '持仓中', 'post-exit': '已平仓·观察中', complete: '已完成',
   }
-  return <span className={`decision-stage ${attempt.stage}`}>{labels[attempt.stage]}</span>
+  return <span className={`decision-stage ${attempt.stage}`}>{preSignal && attempt.stage === 'entry-decision' ? '等待决策' : labels[attempt.stage]}</span>
 }
 
 type DecisionAnnotationPlacement =
@@ -1049,7 +1125,7 @@ function decisionReasonConnectorEndpoint(x: number, y: number, placement: Decisi
   }
 }
 
-export function DecisionReplayPanel({ candidate, attempt, ordinal, total, currentClose = null, currentPnlUsd = null, currentPnlByMode = null, positionSizingModes = ['fixed-risk'], favorite = false, independentReview = false, onToggleFavorite = () => undefined, onAdvance, onSignalExtreme, onFreePrice, onSkip, onManualClose, onCancelPending, onNextTrade, onRestartTrade = () => undefined, onStop }: {
+export function DecisionReplayPanel({ candidate, attempt, ordinal, total, currentClose = null, currentPnlUsd = null, currentPnlByMode = null, positionSizingModes = ['fixed-risk'], favorite = false, independentReview = false, preSignal = false, daySequenceMode = false, canAdvanceTrade = true, onToggleFavorite = () => undefined, onAdvance, onSignalExtreme, onFreePrice, onOpenLong = () => undefined, onOpenShort = () => undefined, onSkip, onManualClose, onCancelPending, onNextTrade, onRestartTrade = () => undefined, onStop }: {
   candidate: ReplayDecisionCandidate
   attempt: DecisionAttempt
   ordinal: number
@@ -1060,10 +1136,15 @@ export function DecisionReplayPanel({ candidate, attempt, ordinal, total, curren
   positionSizingModes?: readonly DecisionPositionSizingMode[]
   favorite?: boolean
   independentReview?: boolean
+  preSignal?: boolean
+  daySequenceMode?: boolean
+  canAdvanceTrade?: boolean
   onToggleFavorite?: () => void
   onAdvance: () => void
   onSignalExtreme: () => void
   onFreePrice: () => void
+  onOpenLong?: () => void
+  onOpenShort?: () => void
   onSkip: () => void
   onManualClose: () => void
   onCancelPending: () => void
@@ -1071,7 +1152,8 @@ export function DecisionReplayPanel({ candidate, attempt, ordinal, total, curren
   onRestartTrade?: () => void
   onStop: () => void
 }) {
-  const long = candidate.trade.side === 'long'
+  const systemLong = candidate.trade.side === 'long'
+  const userLong = decisionAttemptSide(candidate, attempt) === 'long'
   const livePnlMode = positionSizingModes.length === 1 ? positionSizingModes[0] : null
   const livePnlValue = livePnlMode && currentPnlByMode ? currentPnlByMode[livePnlMode] ?? 0 : currentPnlUsd
   const hasLivePnl = currentClose !== null && (currentPnlByMode !== null ? positionSizingModes.length > 0 : currentPnlUsd !== null)
@@ -1363,26 +1445,31 @@ export function DecisionReplayPanel({ candidate, attempt, ordinal, total, curren
     <aside ref={panelRef} style={decisionPanelStyle(panelPreferences)} className={`decision-detail-panel${dragging ? ' is-dragging' : ''}${resizing ? ' is-resizing' : ''}`} data-testid="decision-detail-panel">
       <header onPointerDown={handleDragStart} title="拖动移动决策详情框">
         <span className="decision-grip" role="button" aria-label="拖动移动决策详情框" data-testid="decision-detail-drag-handle">⠿</span>
-        <div><h2>第 {ordinal} / {total} 笔 · {candidate.symbol} · {INTERVALS[candidate.interval].label}</h2><small>{independentReview ? '独立复盘 · 原记录不会被覆盖 · ' : ''}信号 K：{formatDecisionDate(candidate.trade.entry.signalTime)} · {attempt.result ? '本笔盈亏已锁定，可继续观看后续 K 线' : '系统原结果将在本笔结束后揭晓'}</small></div>
-        <DecisionFavoriteButton
+        <div><h2>{preSignal ? `${candidate.symbol} · ${INTERVALS[candidate.interval].label} · 日内逐根回放` : `第 ${ordinal} / ${total} 笔 · ${candidate.symbol} · ${INTERVALS[candidate.interval].label}`}</h2><small>{preSignal
+          ? `当前 K：${formatDecisionDate(attempt.cursorTime)} · 信号尚未出现，未来信息保持隐藏`
+          : <>{independentReview ? '独立复盘 · 原记录不会被覆盖 · ' : ''}信号 K：{formatDecisionDate(candidate.trade.entry.signalTime)} · {attempt.result ? '本笔盈亏已锁定，可继续观看后续 K 线' : '系统原结果将在本笔结束后揭晓'}</>}</small></div>
+        {!preSignal && <DecisionFavoriteButton
           favorite={favorite}
           onToggle={onToggleFavorite}
           label={favorite ? '取消收藏本笔交易' : '收藏本笔交易'}
-        />
-        <StageBadge attempt={attempt} />
+        />}
+        <StageBadge attempt={attempt} preSignal={preSignal} />
         <button title="提前退出并结算" onClick={onStop}><LogOut size={19} /></button>
       </header>
       <div className="decision-detail-scroll">
-        <section className="decision-signal-summary">
-          <div className={long ? 'long' : 'short'}>{long ? '开多信号' : '开空信号'}</div>
+        {preSignal ? <section className="decision-reason decision-pre-signal">
+          <h3>从当天第一根 K 线开始</h3>
+          <p>按 1 逐根播放行情；按 2 以当前 K 线收盘价开多，按 3 开空。系统方向和理由只会在对应信号 K 到达后显示。</p>
+        </section> : <><section className="decision-signal-summary">
+          <div className={systemLong ? 'long' : 'short'}>{systemLong ? '开多信号' : '开空信号'}</div>
         </section>
         <section className="decision-reason">
-          <h3 className={long ? 'long' : 'short'}>{candidate.trade.entry.setup}</h3>
+          <h3 className={systemLong ? 'long' : 'short'}>{candidate.trade.entry.setup}</h3>
           <p>{highlightDecisionReason(candidate.trade.entry.reason, entryReferenceIndexes)}</p>
-        </section>
+        </section></>}
         {attempt.pendingEntryPrice !== null && <section className="decision-order-state">
           <h3><Target size={17} />你的订单</h3>
-          <dl><dt>方向</dt><dd>{long ? '做多' : '做空'}</dd><dt>类型</dt><dd>{orderKindLabel(attempt.orderKind)}</dd><dt>挂单价</dt><dd>{formatPrice(attempt.pendingEntryPrice, candidate.symbol)}</dd>{attempt.fill && <><dt>成交价</dt><dd>{formatPrice(attempt.fill.price, candidate.symbol)}</dd></>}</dl>
+          <dl><dt>方向</dt><dd>{userLong ? '做多' : '做空'}</dd><dt>类型</dt><dd>{attempt.entryMode === 'market-close' ? '当前 K 收盘开仓' : orderKindLabel(attempt.orderKind)}</dd><dt>{attempt.fill ? '开仓价' : '挂单价'}</dt><dd>{formatPrice(attempt.pendingEntryPrice, candidate.symbol)}</dd>{attempt.fill && <><dt>成交时间</dt><dd>{formatDecisionDate(attempt.fill.time)}</dd></>}</dl>
           <small>{decisionStopLossMode(attempt.stopLossMode) === 'close' ? '收盘止损 · 收盘越线按收盘价退出；系统先平仓则跟随退出' : '触碰止损 · 仅本笔生效，下笔恢复收盘止损'}</small>
         </section>}
         {attempt.result && <section className="decision-post-exit-summary">
@@ -1397,11 +1484,16 @@ export function DecisionReplayPanel({ candidate, attempt, ordinal, total, curren
     <nav ref={menuRef} style={decisionMenuStyle(menuPreferences)} className={`decision-action-menu${menuDragging ? ' is-dragging' : ''}`} aria-label="决策操作菜单" data-testid="decision-action-menu">
       <div className="decision-action-progress" onPointerDown={handleMenuDragStart} title="拖动移动决策操作框">
         <span className="decision-menu-grip" role="button" aria-label="拖动移动决策操作框" data-testid="decision-action-drag-handle">⠿</span>
-        <b>决策回放</b><span>{ordinal}/{total}</span><StageBadge attempt={attempt} />
+        <b>决策回放</b><span>{ordinal}/{total}</span><StageBadge attempt={attempt} preSignal={preSignal} />
       </div>
-      {attempt.stage === 'entry-decision' && <div className="decision-choice-grid">
+      {daySequenceMode && attempt.stage === 'entry-decision' && <div className="decision-choice-grid decision-day-choice-grid">
+        <button onClick={onAdvance}><kbd>1</kbd><span><b>播放下一根 K 线</b><small>继续逐根观察</small></span></button>
+        <button onClick={onOpenLong}><kbd>2</kbd><span><b>开多</b><small>按当前 K 线收盘价</small></span></button>
+        <button onClick={onOpenShort}><kbd>3</kbd><span><b>开空</b><small>按当前 K 线收盘价</small></span></button>
+      </div>}
+      {!daySequenceMode && !preSignal && attempt.stage === 'entry-decision' && <div className="decision-choice-grid">
         <button onClick={onAdvance}><kbd>1</kbd><span><b>先观察</b><small>进入下一根 K 线</small></span></button>
-        <button onClick={onSignalExtreme}><kbd>2</kbd><span><b>本 K 突破价挂单</b><small>{long ? '最高价做多' : '最低价做空'}</small></span></button>
+        <button onClick={onSignalExtreme}><kbd>2</kbd><span><b>本 K 突破价挂单</b><small>{systemLong ? '最高价做多' : '最低价做空'}</small></span></button>
         <button onClick={onFreePrice}><kbd>3</kbd><span><b>自由选择挂单价</b><small>在图上点击价格</small></span></button>
         <button className="skip" onClick={onSkip}><kbd>4</kbd><span><b>不参与</b><small>直接进入下一笔</small></span></button>
       </div>}
@@ -1413,7 +1505,7 @@ export function DecisionReplayPanel({ candidate, attempt, ordinal, total, curren
         </div>}
         <div className="decision-active-actions"><button onClick={onAdvance}><kbd>1</kbd>进入下一根 K 线</button><button className="close-position" onClick={onManualClose}><kbd>2</kbd>按当前 K 线收盘价离场</button></div>
       </>}
-      {attempt.stage === 'post-exit' && <div className="decision-active-actions post-exit-actions"><button onClick={onAdvance}><kbd>1</kbd>继续观看下一根 K 线</button><button className="close-position" onClick={onNextTrade}><kbd>4</kbd>进入下一笔交易</button><button className="restart-trade" onClick={onRestartTrade}><kbd>5</kbd>重新开始这笔交易</button></div>}
+      {attempt.stage === 'post-exit' && <div className={`decision-active-actions post-exit-actions${canAdvanceTrade ? '' : ' no-next'}`}><button onClick={onAdvance}><kbd>1</kbd>继续观看下一根 K 线</button>{canAdvanceTrade && <button className="close-position" onClick={onNextTrade}><kbd>4</kbd>进入下一笔交易</button>}<button className="restart-trade" onClick={onRestartTrade}><kbd>5</kbd>重新开始这笔交易</button>{daySequenceMode && !canAdvanceTrade && <small>当天最后一笔结束后，继续按 1 逐根看到收盘。</small>}</div>}
       {attempt.stage === 'entry-price' && <div className="decision-action-hint"><MousePointer2 size={18} />请在图表上完成挂单价设置，单击确认，Esc 可取消</div>}
       {attempt.stage === 'risk-setup' && <div className="decision-action-hint"><MousePointer2 size={18} />设置好止盈止损后，按 <kbd>1</kbd> 确认，按 <kbd>2</kbd> 取消</div>}
     </nav>
@@ -1490,8 +1582,9 @@ type DecisionRiskAmountPlacement = 'center' | 'left' | 'right'
 
 const DECISION_RISK_AMOUNT_GAP = 14
 
-export function DecisionRiskOverlay({ candidate, entryPrice, entryLabel = '挂单', stopLoss, takeProfit, initialStopLoss = stopLoss, stopLossMode = 'close', onStopLossMode, currentCandleX = null, currentClose = null, currentPnlUsd = null, currentPnlByMode = null, positionSizingModes = ['fixed-risk'], toPrice, toY, onStopLoss, onTakeProfit, onConfirm, onCancel, editable = true, showConfirmControls = editable }: {
+export function DecisionRiskOverlay({ candidate, side, entryPrice, entryLabel = '挂单', stopLoss, takeProfit, initialStopLoss = stopLoss, stopLossMode = 'close', onStopLossMode, currentCandleX = null, currentClose = null, currentPnlUsd = null, currentPnlByMode = null, positionSizingModes = ['fixed-risk'], toPrice, toY, onStopLoss, onTakeProfit, onConfirm, onCancel, editable = true, showConfirmControls = editable }: {
   candidate: ReplayDecisionCandidate
+  side?: TradeSide
   entryPrice: number
   entryLabel?: '挂单' | '开仓'
   stopLoss: number
@@ -1532,9 +1625,10 @@ export function DecisionRiskOverlay({ candidate, entryPrice, entryLabel = '挂�
   const hasCurrentPnl = currentClose !== null && currentY !== null && (currentPnlByMode !== null ? positionSizingModes.length > 0 : currentPnlUsd !== null)
   const amountModes = positionSizingModes.length > 0 ? positionSizingModes : DEFAULT_DECISION_POSITION_SIZING_MODES
   const riskSizingStopLoss = initialStopLoss ?? stopLoss
+  const positionSide = side ?? candidate.trade.side
   const amountAt = (exitPrice: number): Record<DecisionPositionSizingMode, number> => ({
-    'fixed-risk': pnlForDecisionMode('fixed-risk', candidate.trade.side, entryPrice, exitPrice, riskSizingStopLoss),
-    'fixed-notional': pnlForDecisionMode('fixed-notional', candidate.trade.side, entryPrice, exitPrice, riskSizingStopLoss),
+    'fixed-risk': pnlForDecisionMode('fixed-risk', positionSide, entryPrice, exitPrice, riskSizingStopLoss),
+    'fixed-notional': pnlForDecisionMode('fixed-notional', positionSide, entryPrice, exitPrice, riskSizingStopLoss),
   })
   const stopLossAmountByMode = amountAt(stopLoss)
   const takeProfitAmountByMode = amountAt(takeProfit)
@@ -1665,7 +1759,7 @@ export function DecisionRiskOverlay({ candidate, entryPrice, entryLabel = '挂�
   const dragStop = useLineDrag(toPrice, onStopLoss ?? (() => undefined))
   const dragTarget = useLineDrag(toPrice, onTakeProfit ?? (() => undefined))
   const precision = symbolPrecision(candidate.symbol)
-  return <div ref={riskOverlayRef} className={`decision-risk-overlay ${editable ? 'editable' : 'locked'} ${candidate.trade.side}`} data-testid="decision-risk-overlay">
+  return <div ref={riskOverlayRef} className={`decision-risk-overlay ${editable ? 'editable' : 'locked'} ${positionSide}`} data-testid="decision-risk-overlay">
     {targetY !== null && <div className="decision-risk-line target" data-testid="decision-take-profit-line" title={editable ? '拖动调整止盈' : undefined} style={{ top: targetY }} onPointerDown={editable ? dragTarget : undefined}><b className="decision-risk-hit-area" aria-hidden="true" /><i /><span><Target size={15} />止盈 {takeProfit.toFixed(precision)}</span><div ref={targetAmountRef} className={amountClassName(targetAmountPlacement)} data-testid="decision-take-profit-amount" style={amountPosition}><small>止盈金额</small><DecisionModeMoneyStack modes={amountModes} valueFor={(mode) => takeProfitAmountByMode[mode]} /></div></div>}
     {entryY !== null && <div className={`decision-risk-line entry${entryLabel === '开仓' ? ' filled' : ''}`} style={{ top: entryY }}><span>{entryLabel} {entryPrice.toFixed(precision)} · 盈亏比 1 : {ratio.toFixed(2)}</span></div>}
     {hasCurrentPnl && <div className={`decision-position-pnl-line${currentPnlValue === null ? '' : currentPnlValue >= 0 ? ' positive' : ' negative'}`} style={{ top: currentY! }} data-testid="decision-position-pnl-line"><span>收盘 {formatPrice(currentClose!, candidate.symbol)} · {currentPnlByMode !== null ? <DecisionModeMoneyStack modes={positionSizingModes} compact={false} valueFor={(mode) => currentPnlByMode[mode] ?? 0} valueLabel={(value) => value >= 0 ? '浮盈' : '浮亏'} /> : <>{currentPnlUsd! >= 0 ? '浮盈' : '浮亏'} {formatDecisionPnl(currentPnlUsd!)}</>}</span></div>}
@@ -1914,7 +2008,7 @@ export function DecisionResultsDialog({ session, onClose, onReview, onNew, onRet
               }
             }}
           >
-          <span><b>{index + 1}. {result.candidate.symbol}</b><small>{INTERVALS[result.candidate.interval].label} · {result.candidate.trade.side === 'long' ? '多' : '空'}</small></span>
+          <span><b>{index + 1}. {result.candidate.symbol}</b><small>{INTERVALS[result.candidate.interval].label} · {decisionResultSide(result) === 'long' ? '多' : '空'}</small></span>
           <span>{choiceLabel(result)}</span>
           <DecisionModeMoneyStack modes={modes} valueFor={(mode) => decisionResultPnl(result, mode, 'user')} />
           <DecisionModeMoneyStack modes={modes} valueFor={(mode) => decisionResultPnl(result, mode, 'system')} />

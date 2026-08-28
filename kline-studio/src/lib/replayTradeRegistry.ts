@@ -130,7 +130,7 @@ function validatePayload(value: unknown, origin: string): RegisteredReplayTradeD
     if (!trade.result || !finite(trade.result.barsHeld) || !finite(trade.result.rMultiple) || !finite(trade.result.pnlUsd)) throw new Error(`回放图层结果无效：${origin} #${trade.tradeNumber}`)
   }
   if (payload.trades.length === 0) throw new Error(`回放图层没有交易：${origin}`)
-  const trades = payload.trades.filter((trade) => !isExcludedCommodityTrade(payload.symbol, trade))
+  const trades = payload.trades.filter((trade) => !isExcludedCommodityTrade(payload.symbol, trade, payload.interval))
   if (trades.length === 0) throw new Error(`回放图层没有日内完成交易：${origin}`)
   const sourceId = nonEmpty(payload.layer?.sourceId) ? payload.layer.sourceId : fallbackSourceId(payload)
   const name = nonEmpty(payload.layer?.name) ? payload.layer.name : `${payload.symbol} 回放交易`
@@ -212,6 +212,16 @@ export function replayDecisionCandidates(sourceIds?: readonly string[]): ReplayD
   return [...new Map(candidates.map((candidate) => [candidate.key, candidate])).values()]
 }
 
+export function replayDecisionContextSourceIds(
+  candidates: readonly ReplayDecisionCandidate[],
+  symbol: SymbolId,
+  interval: IntervalId,
+): string[] {
+  return [...new Set(candidates
+    .filter((candidate) => candidate.symbol === symbol && candidate.interval === interval)
+    .map((candidate) => candidate.sourceId))]
+}
+
 function datasetsFor(symbol: SymbolId, interval: IntervalId, sourceIds: readonly string[]) {
   const allowed = new Set(sourceIds)
   return [...registry.values()].filter((dataset) => allowed.has(dataset.sourceId) && dataset.symbol === symbol && dataset.interval === interval)
@@ -287,7 +297,10 @@ export function toReplayDecisionSignalSeriesMarkers(
     return tradeEvents
   }))
   const uniqueEvents = [...new Map(events.map((event) => [
-    `${event.sourceId}:${event.time}:${event.side}`,
+    // Replay files can overlap. A signal at the same candle in the same
+    // direction is one chart event even when more than one retained source
+    // contains it.
+    `${event.time}:${event.side}`,
     event,
   ])).values()]
   return uniqueEvents

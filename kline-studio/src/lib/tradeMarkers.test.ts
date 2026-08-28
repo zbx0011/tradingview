@@ -7,36 +7,36 @@ import {
 } from './tradeMarkers'
 
 describe('XAUUSD conservative trade markers', () => {
-  it('contains 92 completed intraday trades with complete entry, exit and result details', () => {
+  it('contains 87 completed intraday trades after session-edge cleanup', () => {
     const trades = getXauTradeMarkers('XAUUSD', '5m')
-    expect(trades).toHaveLength(92)
-    expect(trades.filter((trade) => trade.side === 'long')).toHaveLength(43)
-    expect(trades.filter((trade) => trade.side === 'short')).toHaveLength(49)
-    expect(new Set(trades.map((trade) => trade.entry.time)).size).toBe(92)
-    expect(new Set(trades.map((trade) => trade.exit.time)).size).toBe(92)
+    expect(trades).toHaveLength(87)
+    expect(trades.filter((trade) => trade.side === 'long')).toHaveLength(41)
+    expect(trades.filter((trade) => trade.side === 'short')).toHaveLength(46)
+    expect(new Set(trades.map((trade) => trade.entry.time)).size).toBe(87)
+    expect(new Set(trades.map((trade) => trade.exit.time)).size).toBe(87)
     expect(trades.every((trade) => Number.isInteger(trade.entry.time) && Number.isInteger(trade.exit.time))).toBe(true)
     expect(trades.every((trade) => trade.entry.time % 300 === 0 && trade.exit.time % 300 === 0)).toBe(true)
     expect(trades.every((trade) => trade.exit.time >= trade.entry.time)).toBe(true)
     expect(trades.every((trade) => trade.entry.reason.trim() && trade.entry.setup.trim() && trade.exit.beijingTime.trim())).toBe(true)
-    expect(trades.map((trade) => trade.tradeNumber)).toEqual(Array.from({ length: 94 }, (_, index) => index + 1).filter((number) => number !== 37 && number !== 67))
+    expect(trades.map((trade) => trade.tradeNumber)).toEqual(Array.from({ length: 94 }, (_, index) => index + 1).filter((number) => ![1, 24, 37, 54, 67, 71, 94].includes(number)))
     expect(trades.filter((trade) => trade.entry.time === trade.exit.time)).toHaveLength(6)
-    expect(new Set(trades.flatMap((trade) => [trade.entry.time, trade.exit.time])).size).toBe(178)
-    expect(trades.some((trade) => trade.tradeNumber === 37 || trade.tradeNumber === 67)).toBe(false)
+    expect(new Set(trades.flatMap((trade) => [trade.entry.time, trade.exit.time])).size).toBe(168)
+    expect(trades.some((trade) => [1, 24, 37, 54, 67, 71, 94].includes(trade.tradeNumber))).toBe(false)
     expect(trades.every((trade) => trade.entry.takeProfit === null && trade.entry.noFixedTakeProfitAtEntry)).toBe(true)
-    expect(trades.filter((trade) => trade.exit.reasonCode === 'INITIAL_STOP_LOSS')).toHaveLength(26)
-    expect(trades.filter((trade) => trade.exit.reasonCode === 'TRAILING_STOP')).toHaveLength(19)
+    expect(trades.filter((trade) => trade.exit.reasonCode === 'INITIAL_STOP_LOSS')).toHaveLength(24)
+    expect(trades.filter((trade) => trade.exit.reasonCode === 'TRAILING_STOP')).toHaveLength(18)
     expect(trades.filter((trade) => trade.exit.reasonCode === 'TRAILING_STOP_GAP')).toHaveLength(1)
-    expect(trades.filter((trade) => trade.exit.reasonCode === 'OPPOSITE_SIGNAL_CLOSE')).toHaveLength(46)
+    expect(trades.filter((trade) => trade.exit.reasonCode === 'OPPOSITE_SIGNAL_CLOSE')).toHaveLength(44)
     expect(trades.filter((trade) => trade.exit.reasonCode === 'OPPOSITE_SIGNAL_CLOSE').every((trade) => trade.exit.setup && trade.exit.reason)).toBe(true)
     expect(xauTradeMarkerSummary()).toMatchObject({
-      trades: 92,
-      long: 43,
-      short: 49,
-      entryMarkers: 92,
-      exitMarkers: 92,
-      uniqueTimes: 178,
+      trades: 87,
+      long: 41,
+      short: 46,
+      entryMarkers: 87,
+      exitMarkers: 87,
+      uniqueTimes: 168,
       sameBarOpenClose: 6,
-      exitReasonCounts: { INITIAL_STOP_LOSS: 26, INITIAL_STOP_LOSS_GAP: 0, TRAILING_STOP: 19, TRAILING_STOP_GAP: 1, OPPOSITE_SIGNAL_CLOSE: 46, END_OF_DATA_MARK_TO_MARKET: 0 },
+      exitReasonCounts: { INITIAL_STOP_LOSS: 24, INITIAL_STOP_LOSS_GAP: 0, TRAILING_STOP: 18, TRAILING_STOP_GAP: 1, OPPOSITE_SIGNAL_CLOSE: 44, END_OF_DATA_MARK_TO_MARKET: 0 },
     })
   })
 
@@ -47,15 +47,15 @@ describe('XAUUSD conservative trade markers', () => {
     expect(toXauTradeSeriesMarkers('XAUUSD', '1m')).toEqual([])
   })
 
-  it('emits 92 entry and 92 exit native markers with stable IDs and styles', () => {
+  it('emits 87 entry and 87 exit native markers with stable IDs and styles', () => {
     const trades = getXauTradeMarkers('XAUUSD', '5m')
     const markers = toXauTradeSeriesMarkers('XAUUSD', '5m')
-    expect(markers).toHaveLength(184)
-    expect(markers.filter((marker) => marker.text?.startsWith('开'))).toHaveLength(92)
-    expect(markers.filter((marker) => marker.text?.startsWith('平'))).toHaveLength(92)
-    expect(new Set(markers.map((marker) => marker.id)).size).toBe(184)
+    expect(markers).toHaveLength(174)
+    expect(markers.filter((marker) => marker.text?.startsWith('开'))).toHaveLength(87)
+    expect(markers.filter((marker) => marker.text?.startsWith('平'))).toHaveLength(87)
+    expect(new Set(markers.map((marker) => marker.id)).size).toBe(174)
     expect(markers.map((marker) => Number(marker.time))).toEqual([...markers.map((marker) => Number(marker.time))].sort((a, b) => a - b))
-    expect(markers[0]).toMatchObject({ id: 'xau-trade-1-entry', time: 1785709200, position: 'aboveBar', shape: 'arrowDown', text: '开空', color: '#f7525f' })
+    expect(markers[0]).toMatchObject({ id: 'xau-trade-2-entry', time: 1785712800, position: 'belowBar', shape: 'arrowUp', text: '开多', color: '#22ab94' })
     expect(markers.find((marker) => marker.text === '开多')).toMatchObject({ position: 'belowBar', shape: 'arrowUp', color: '#22ab94' })
     expect(markers.find((marker) => marker.text === '开空')).toMatchObject({ position: 'aboveBar', shape: 'arrowDown', color: '#f7525f' })
     expect(markers.find((marker) => marker.text === '平多')).toMatchObject({ position: 'aboveBar', shape: 'circle', color: '#f59e0b' })
@@ -83,28 +83,28 @@ describe('XAUUSD conservative trade markers', () => {
   it('highlights both markers for the active trade without changing replay filtering', () => {
     const normal = toXauTradeSeriesMarkers('XAUUSD', '5m')
     expect(toXauTradeSeriesMarkers('XAUUSD', '5m', undefined, null)).toEqual(normal)
-    const active = toXauTradeSeriesMarkers('XAUUSD', '5m', undefined, 1)
-    const activeMarkers = active.filter((marker) => marker.id === 'xau-trade-1-entry' || marker.id === 'xau-trade-1-exit')
+    const active = toXauTradeSeriesMarkers('XAUUSD', '5m', undefined, 2)
+    const activeMarkers = active.filter((marker) => marker.id === 'xau-trade-2-entry' || marker.id === 'xau-trade-2-exit')
     expect(activeMarkers).toHaveLength(2)
     expect(activeMarkers.every((marker) => marker.color === '#facc15' && marker.size === 2)).toBe(true)
-    expect(active.filter((marker) => marker.id !== 'xau-trade-1-entry' && marker.id !== 'xau-trade-1-exit')).toEqual(normal.filter((marker) => marker.id !== 'xau-trade-1-entry' && marker.id !== 'xau-trade-1-exit'))
+    expect(active.filter((marker) => marker.id !== 'xau-trade-2-entry' && marker.id !== 'xau-trade-2-exit')).toEqual(normal.filter((marker) => marker.id !== 'xau-trade-2-entry' && marker.id !== 'xau-trade-2-exit'))
 
     const cutoff = Number(normal[80].time)
     const normalRevealed = toXauTradeSeriesMarkers('XAUUSD', '5m', cutoff)
-    const activeRevealed = toXauTradeSeriesMarkers('XAUUSD', '5m', cutoff, 1)
+    const activeRevealed = toXauTradeSeriesMarkers('XAUUSD', '5m', cutoff, 2)
     expect(activeRevealed.map((marker) => marker.id)).toEqual(normalRevealed.map((marker) => marker.id))
     expect(activeRevealed.every((marker) => Number(marker.time) <= cutoff)).toBe(true)
   })
 
   it('emits one independently colored connection per completed trade', () => {
     const connections = toXauTradeConnectionSpecs('XAUUSD', '5m')
-    expect(connections).toHaveLength(92)
-    expect(new Set(connections.map((connection) => connection.id)).size).toBe(92)
-    expect(connections.filter((connection) => connection.outcome === 'profit')).toHaveLength(37)
-    expect(connections.filter((connection) => connection.outcome === 'loss')).toHaveLength(55)
+    expect(connections).toHaveLength(87)
+    expect(new Set(connections.map((connection) => connection.id)).size).toBe(87)
+    expect(connections.filter((connection) => connection.outcome === 'profit')).toHaveLength(34)
+    expect(connections.filter((connection) => connection.outcome === 'loss')).toHaveLength(53)
     expect(connections.filter((connection) => connection.outcome === 'breakeven')).toHaveLength(0)
-    expect(connections.filter((connection) => connection.color === '#22ab94')).toHaveLength(37)
-    expect(connections.filter((connection) => connection.color === '#f7525f')).toHaveLength(55)
+    expect(connections.filter((connection) => connection.color === '#22ab94')).toHaveLength(34)
+    expect(connections.filter((connection) => connection.color === '#f7525f')).toHaveLength(53)
     expect(connections.filter((connection) => connection.color === '#f59e0b')).toHaveLength(0)
     expect(connections.every((connection) => connection.entryTime <= connection.exitTime)).toBe(true)
     const sameBarTrade = connections.find((connection) => connection.entryTime === connection.exitTime)!
@@ -123,22 +123,23 @@ describe('XAUUSD conservative trade markers', () => {
   })
 
   it('resolves IDs and toggles the same marker without side effects', () => {
-    expect(parseXauTradeMarkerId('xau-trade-1-entry')).toEqual({ tradeNumber: 1, kind: 'entry' })
-    expect(parseXauTradeMarkerId('xau-trade-94-exit')).toEqual({ tradeNumber: 94, kind: 'exit' })
-    expect(parseXauTradeMarkerId('xau-trade-95-exit')).toBeNull()
+    expect(parseXauTradeMarkerId('xau-trade-1-entry')).toBeNull()
+    expect(parseXauTradeMarkerId('xau-trade-2-entry')).toEqual({ tradeNumber: 2, kind: 'entry' })
+    expect(parseXauTradeMarkerId('xau-trade-93-exit')).toEqual({ tradeNumber: 93, kind: 'exit' })
+    expect(parseXauTradeMarkerId('xau-trade-94-exit')).toBeNull()
     expect(parseXauTradeMarkerId('xau-trade-0-entry')).toBeNull()
     expect(parseXauTradeMarkerId('not-a-marker')).toBeNull()
-    const selection = resolveXauTradeMarker('XAUUSD', '5m', 'xau-trade-1-entry')!
+    const selection = resolveXauTradeMarker('XAUUSD', '5m', 'xau-trade-2-entry')!
     expect(selection.kind).toBe('entry')
-    expect(selection.trade.tradeNumber).toBe(1)
-    expect(resolveXauTradeMarker('XAUUSD', '1m', 'xau-trade-1-entry')).toBeNull()
+    expect(selection.trade.tradeNumber).toBe(2)
+    expect(resolveXauTradeMarker('XAUUSD', '1m', 'xau-trade-2-entry')).toBeNull()
     expect(toggleXauTradeMarkerSelection(null, selection.id)).toBe(selection.id)
     expect(toggleXauTradeMarkerSelection(selection.id, selection.id)).toBeNull()
-    expect(toggleXauTradeMarkerSelection(selection.id, 'xau-trade-1-exit')).toBe('xau-trade-1-exit')
+    expect(toggleXauTradeMarkerSelection(selection.id, 'xau-trade-2-exit')).toBe('xau-trade-2-exit')
   })
 
   it('provides non-empty public exit explanations and titles', () => {
-    const trade = getXauTradeMarkers('XAUUSD', '5m')[0]
+    const trade = getXauTradeMarkers('XAUUSD', '5m').find((item) => item.side === 'short')!
 expect(exitReasonLabel('OPPOSITE_SIGNAL_CLOSE')).toBe('反向信号平仓')
 expect(exitReasonLabel('OPPOSITE_SIGNAL_NEXT_BAR_BREAK')).toBe('反向信号下一根确认')
     expect(exitReasonLabel('INITIAL_STOP_LOSS')).toBe('固定止损')

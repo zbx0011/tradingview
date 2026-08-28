@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { ReplayDecisionCandidate } from '../lib/replayTradeRegistry'
 import {
-  buildDecisionResult, createDecisionAttempt, createDecisionSession, formatDecisionDate, toggleDecisionHistorySymbolSelection,
+  buildDecisionResult, createDecisionAttempt, createDecisionSession, formatDecisionDate, toggleDecisionHistoryIntervalSelection, toggleDecisionHistorySymbolSelection,
 } from '../lib/decisionReplay'
 import type { DecisionReplaySession } from '../lib/decisionReplay'
 import { decisionReplayFavoriteKey } from '../lib/decisionReplayFavorites'
@@ -181,6 +181,28 @@ describe('decision replay components', () => {
     expect(markup).toContain('data-testid="decision-action-drag-handle"')
     expect(markup).toContain('拖动移动决策操作框')
     expect(markup).not.toContain('不可提前显示的系统平仓理由')
+  })
+
+  it('shows next-candle, open-long and open-short choices before the first signal of a day sequence', () => {
+    const item = candidate()
+    const markup = renderToStaticMarkup(<DecisionReplayPanel
+      candidate={item} attempt={createDecisionAttempt(item, 600)} ordinal={1} total={3}
+      preSignal daySequenceMode
+      onAdvance={noop} onSignalExtreme={noop} onFreePrice={noop} onSkip={noop}
+      onManualClose={noop} onCancelPending={noop} onNextTrade={noop} onStop={noop}
+    />)
+
+    expect(markup).toContain('从当天第一根 K 线开始')
+    expect(markup).toContain('播放下一根 K 线')
+    expect(markup).toContain('<kbd>2</kbd><span><b>开多</b>')
+    expect(markup).toContain('<kbd>3</kbd><span><b>开空</b>')
+    expect(markup).toContain('按当前 K 线收盘价')
+    expect(markup).toContain('未来信息保持隐藏')
+    expect(markup).not.toContain('开多信号')
+    expect(markup).not.toContain('震荡区间向上真突破')
+    expect(markup).not.toContain('本 K 突破价挂单')
+    expect(markup).not.toContain('自由选择挂单价')
+    expect(markup).not.toContain('不参与')
   })
 
   it('shows the per-trade favorite control while the exercise is in progress', () => {
@@ -679,11 +701,12 @@ describe('decision replay components', () => {
       favoriteKeys={[decisionReplayFavoriteKey('trade', item.key)]}
     />)
     expect(markup).toContain('历史记录')
-    expect(markup).toContain('<span>总笔数</span><b>1</b>')
+    expect(markup).toContain('<span>自定义模式笔数</span><b>1</b>')
     expect(markup).not.toContain('练习场次')
-    expect(markup).toContain('你的累计净盈亏')
-    expect(markup).toContain('系统参与部分净盈亏')
-    expect(markup).toContain('系统总净盈亏')
+    expect(markup).toContain('你的自定义模式净盈亏')
+    expect(markup).toContain('自定义模式系统参与净盈亏')
+    expect(markup).toContain('自定义模式系统总净盈亏')
+    expect(markup).not.toContain('日内逐根回放模式收益')
     expect(markup).toContain('aria-label="历史记录展示方式"')
     expect(markup).toContain('aria-pressed="true">逐笔交易</button>')
     expect(markup).toContain('aria-pressed="false">按卷子</button>')
@@ -691,6 +714,78 @@ describe('decision replay components', () => {
     expect(markup).toContain('查看已收藏记录')
     expect(markup).toContain('1 笔')
     expect(markup).toContain('点击直接打开这一笔的 K 线复盘与独立画图')
+  })
+
+  it('shows day-sequence earnings in a separate history module without mixing ordinary practice', () => {
+    const item = candidate()
+    const completedAttempt = (exitPrice: number) => {
+      const filled = {
+        ...createDecisionAttempt(item),
+        stage: 'position-open' as const,
+        entryMode: 'signal-extreme' as const,
+        orderKind: 'stop' as const,
+        pendingEntryPrice: 101,
+        stopLoss: 95,
+        takeProfit: 107,
+        fill: { time: 3300, price: 101 },
+      }
+      const result = buildDecisionResult(item, filled, { time: 3600, price: exitPrice, reason: 'manual-close' }, [])
+      return { ...filled, stage: 'post-exit' as const, result }
+    }
+    const daySession = {
+      ...createDecisionSession([item], 1, 100, ['fixed-notional'], {
+        practiceMode: 'day-sequence',
+        daySequence: { key: 'XAUUSD:5m:2026-01-01', symbol: 'XAUUSD' as const, interval: '5m' as const, startTime: 1, endTime: 86_401 },
+      }),
+      id: 'day-sequence-history',
+      status: 'completed' as const,
+      attempts: [completedAttempt(103)],
+      finishedAt: 101,
+    }
+    const ordinarySession = {
+      ...createDecisionSession([item], 1, 200, ['fixed-notional']),
+      id: 'ordinary-history',
+      status: 'completed' as const,
+      attempts: [completedAttempt(99)],
+      finishedAt: 201,
+    }
+    const customMarkup = renderToStaticMarkup(<DecisionHistoryDialog
+      open currentSymbol="XAUUSD" sessions={[daySession, ordinarySession]} onClose={noop} onOpenSession={noop}
+    />)
+    const dayMarkup = renderToStaticMarkup(<DecisionHistoryDialog
+      open currentSymbol="XAUUSD" sessions={[daySession, ordinarySession]} onClose={noop} onOpenSession={noop}
+      defaultStatsMode="day-sequence"
+    />)
+    const daySessionMarkup = renderToStaticMarkup(<DecisionHistoryDialog
+      open currentSymbol="XAUUSD" sessions={[daySession, ordinarySession]} onClose={noop} onOpenSession={noop}
+      defaultStatsMode="day-sequence" defaultHistoryView="sessions"
+    />)
+    const customModuleStart = customMarkup.indexOf('data-testid="decision-custom-mode-history-summary"')
+    const customModuleEnd = customMarkup.indexOf('class="decision-history-body"', customModuleStart)
+    const customModeModule = customMarkup.slice(customModuleStart, customModuleEnd)
+    const moduleStart = dayMarkup.indexOf('data-testid="decision-day-sequence-history-summary"')
+    const moduleEnd = dayMarkup.indexOf('class="decision-history-body"', moduleStart)
+    const daySequenceModule = dayMarkup.slice(moduleStart, moduleEnd)
+
+    expect(customMarkup).toContain('aria-label="历史统计模式"')
+    expect(customMarkup).toContain('aria-pressed="true">自定义模式 <b>1</b> 笔</button>')
+    expect(customMarkup).toContain('aria-pressed="false">日内逐根回放 <b>1</b> 笔</button>')
+    expect(customModuleStart).toBeGreaterThan(-1)
+    expect(customModeModule).toContain('<span>自定义模式笔数</span><b>1</b>')
+    expect(customModeModule).toContain('你的自定义模式净盈亏')
+    expect(customModeModule).toContain('-$198.02')
+    expect(moduleStart).toBeGreaterThan(-1)
+    expect(dayMarkup).toContain('aria-label="日内逐根回放模式收益"')
+    expect(daySequenceModule).toContain('<span>逐根回放笔数</span><b>1</b>')
+    expect(daySequenceModule).toContain('1 场有记录 · 参与 1 笔 · 未参与 0 笔')
+    expect(daySequenceModule).toContain('你的逐根回放净盈亏')
+    expect(daySequenceModule).toContain('+$198.02')
+    expect(daySequenceModule).not.toContain('-$198.02')
+    expect(customMarkup).not.toContain('日内逐根回放 · 练习')
+    expect(dayMarkup).toContain('日内逐根回放 · 练习')
+    expect(daySessionMarkup).toContain('全部标的 · 日内逐根回放 · 按卷子汇总')
+    expect(daySessionMarkup).toContain('XAUUSD · 日内逐根回放')
+    expect(daySessionMarkup).not.toContain('XAUUSD · 决策练习')
   })
 
   it('renders every favorite trade as its own history card instead of grouping by session', () => {
@@ -791,8 +886,8 @@ describe('decision replay components', () => {
       defaultHistoryView="sessions"
     />)
 
-    expect(markup).toContain('全部标的 · 按卷子汇总')
-    expect(markup).toContain('<span>卷子数</span><b>1</b>')
+    expect(markup).toContain('全部标的 · 自定义模式 · 按卷子汇总')
+    expect(markup).toContain('<span>自定义模式卷子数</span><b>1</b>')
     expect(markup).toContain('aria-pressed="true">按卷子</button>')
     expect(markup).toContain('aria-pressed="false">逐笔交易</button>')
     expect(markup).toContain('XAUUSD · 决策练习')
@@ -831,7 +926,7 @@ describe('decision replay components', () => {
       defaultHistoryView="sessions"
     />)
 
-    expect(markup).toContain('<span>卷子数</span><b>1</b>')
+    expect(markup).toContain('<span>自定义模式卷子数</span><b>1</b>')
     expect((markup.match(/XAUUSD · 决策练习/g) ?? []).length).toBe(1)
   })
 
@@ -864,6 +959,11 @@ describe('decision replay components', () => {
       sessions={[]} activeSessionId={null} onClose={noop} onStart={noop} onContinue={noop} onResults={noop}
     />)
     expect(markup).toContain('选择标的')
+    expect(markup).toContain('aria-label="选择决策回放模式"')
+    expect(markup).toContain('自定义题目数量')
+    expect(markup).toContain('随机交易日顺序回放')
+    expect(markup).toContain('跨日期随机抽题，题量由你设置')
+    expect(markup).toContain('随机一天，按信号时间从早到晚逐笔练习')
     expect(markup).toContain('XAUUSD')
     expect(markup).toContain('共 4 笔 · 剩余 3 笔')
     expect(markup).toContain('BTCUSDT.P')
@@ -874,6 +974,18 @@ describe('decision replay components', () => {
     expect(markup).toContain('<label class="decision-interval-option"><input type="checkbox"/><span><b>15min</b>')
     expect(markup).toContain('<label class="decision-interval-option"><input type="checkbox"/><span><b>1h</b>')
     expect(markup).toContain('disabled=""')
+  })
+
+  it('labels chronological day sessions with their Beijing date', () => {
+    const item = candidate()
+    const dayStart = Date.UTC(2025, 11, 31, 16) / 1000
+    const session = createDecisionSession([item], 1, 1, ['fixed-risk'], {
+      practiceMode: 'day-sequence',
+      daySequence: { key: 'XAUUSD:5m:test-day', symbol: 'XAUUSD', interval: '5m', startTime: dayStart, endTime: dayStart + 86_400 },
+    })
+    const markup = renderToStaticMarkup(<DecisionChartStatus session={session} attempt={session.attempts[0]} />)
+
+    expect(markup).toContain('2026/01/01 · 按日顺序 · 第 1 / 1 笔')
   })
 
   it('shows the independent anomaly redo entry with its verified count and safe disabled states', () => {
@@ -903,20 +1015,25 @@ describe('decision replay components', () => {
     const markup = renderToStaticMarkup(<DecisionHistoryDialog
       open currentSymbol="BTCUSDT.P" sessions={[session]} onClose={noop} onOpenSession={noop}
     />)
-    expect(markup).toContain('全部标的 · 逐笔交易记录')
-    expect(markup).toContain('<span>总笔数</span><b>1</b><small>全部标的</small>')
+    expect(markup).toContain('全部标的 · 自定义模式 · 逐笔交易记录')
+    expect(markup).toContain('<span>自定义模式笔数</span><b>1</b><small>全部标的 · 不含逐根回放</small>')
     expect(markup).toContain('aria-label="历史记录标的筛选"')
     expect(markup).toContain('<input type="checkbox" checked=""/>全部标的')
     expect(markup).toContain('<input type="checkbox"/>XAUUSD')
     expect(markup).toContain('<input type="checkbox"/>BTCUSDT.P')
+    expect(markup).toContain('aria-label="历史记录时间级别筛选"')
+    expect(markup).toContain('<input type="checkbox" checked=""/>全部周期')
+    expect(markup).toContain('<input type="checkbox"/>5分')
+    expect(markup).toContain('<input type="checkbox"/>15分')
+    expect(markup).toContain('<input type="checkbox"/>1小时')
     expect(markup).not.toContain('aria-label="历史记录范围"')
     expect(markup).toContain('aria-label="历史记录仓位显示方式"')
     expect(markup).toContain('class="active" aria-pressed="true">固定仓位 10,000U</button>')
     expect(markup).toContain('aria-pressed="false">固定风险 100U</button>')
     expect(markup).toContain('参与胜率 <strong>100.0%</strong> · 盈利 1 / 1 笔')
-    expect(markup).toContain('系统参与部分净盈亏')
+    expect(markup).toContain('自定义模式系统参与净盈亏')
     expect(markup).toContain('参与部分胜率 <strong>100.0%</strong> · 盈利 1 / 1 笔')
-    expect(markup).toContain('系统总净盈亏')
+    expect(markup).toContain('自定义模式系统总净盈亏')
     expect(markup).toContain('总胜率 <strong>100.0%</strong> · 盈利 1 / 1 笔')
     expect(markup).toContain('aria-label="历史记录排序"')
     expect(markup).toContain('时间降序（最新优先）')
@@ -931,6 +1048,13 @@ describe('decision replay components', () => {
     expect(toggleDecisionHistorySymbolSelection(['XAUUSD'], 'BTCUSDT.P')).toEqual(['XAUUSD', 'BTCUSDT.P'])
     expect(toggleDecisionHistorySymbolSelection(['XAUUSD', 'BTCUSDT.P'], 'XAUUSD')).toEqual(['BTCUSDT.P'])
     expect(toggleDecisionHistorySymbolSelection(['BTCUSDT.P'], 'BTCUSDT.P')).toEqual([])
+  })
+
+  it('supports switching from all intervals to one or multiple checked intervals', () => {
+    expect(toggleDecisionHistoryIntervalSelection([], '5m')).toEqual(['5m'])
+    expect(toggleDecisionHistoryIntervalSelection(['5m'], '15m')).toEqual(['5m', '15m'])
+    expect(toggleDecisionHistoryIntervalSelection(['5m', '15m'], '5m')).toEqual(['15m'])
+    expect(toggleDecisionHistoryIntervalSelection(['15m'], '15m')).toEqual([])
   })
 
   it('keeps skipped questions out of the user rate while including them in the system rate', () => {
@@ -961,9 +1085,9 @@ describe('decision replay components', () => {
     />)
 
     expect(markup).toContain('参与胜率 <strong>100.0%</strong> · 盈利 1 / 1 笔 · 未参与 1 笔交易')
-    expect(markup).toContain('系统参与部分净盈亏')
+    expect(markup).toContain('自定义模式系统参与净盈亏')
     expect(markup).toContain('参与部分胜率 <strong>100.0%</strong> · 盈利 1 / 1 笔')
-    expect(markup).toContain('系统总净盈亏')
+    expect(markup).toContain('自定义模式系统总净盈亏')
     expect(markup).toContain('总胜率 <strong>100.0%</strong> · 盈利 2 / 2 笔')
     expect(markup).not.toContain('盈利 1 / 2 笔')
     expect(markup).toContain('未参与')

@@ -2,7 +2,7 @@ import type { Drawing } from './drawings'
 import type { IntervalId, SymbolId } from './market'
 import {
   DECISION_REPLAY_INTERVALS,
-  type DecisionPositionSizingMode, type DecisionReplayInterval,
+  type DecisionPositionSizingMode, type DecisionPracticeMode, type DecisionReplayInterval,
 } from './decisionReplay'
 
 export interface SavedWorkspace {
@@ -58,6 +58,7 @@ export interface DecisionReplayCenterPreferences {
   selectedSymbols: SymbolId[]
   selectedIntervals: DecisionReplayInterval[]
   selectedModes: DecisionPositionSizingMode[]
+  practiceMode: DecisionPracticeMode
 }
 
 export const STORAGE_KEY = 'kline-studio-workspace-v1'
@@ -253,11 +254,13 @@ export function parseDecisionReplayCenterPreferences(raw: string | null): Decisi
     const selectedSymbols = value.selectedSymbols.filter((symbol): symbol is SymbolId => DECISION_REPLAY_SYMBOLS.includes(symbol as SymbolId))
     const selectedIntervals = (value.selectedIntervals ?? ['5m']).filter((interval): interval is DecisionReplayInterval => DECISION_REPLAY_INTERVALS.includes(interval as DecisionReplayInterval))
     const selectedModes = value.selectedModes.filter((mode): mode is DecisionPositionSizingMode => DECISION_REPLAY_POSITION_MODES.includes(mode as DecisionPositionSizingMode))
+    const practiceMode: DecisionPracticeMode = value.practiceMode === 'day-sequence' ? 'day-sequence' : 'random-count'
     return {
       count: Math.floor(value.count!),
       selectedSymbols: [...new Set(selectedSymbols)],
       selectedIntervals: [...new Set(selectedIntervals)],
       selectedModes: [...new Set(selectedModes)],
+      practiceMode,
     }
   } catch {
     return null

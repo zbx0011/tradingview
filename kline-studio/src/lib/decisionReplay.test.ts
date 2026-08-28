@@ -8,9 +8,9 @@ import type { Candle } from './market'
 import { parseCompactHistory } from './liveMarket'
 import {
   adjacentDecisionExerciseTarget, advanceDecisionAttempt, buildDecisionResult, cancelPendingOrderAndAdvance, candlesKnownAt, compareDecisionHistorySortValues, createDecisionAttempt, createDecisionReviewSession, createDecisionSession,
-  decisionShortcutAction, defaultDecisionLevels, evaluatePositionBar, fillPendingOrder,
+  decisionAttemptSide, decisionDayCandidateGroups, decisionDayHistoryIsComplete, decisionResultSide, decisionSessionPracticeMode, decisionShortcutAction, defaultDecisionLevels, evaluatePositionBar, fillPendingOrder,
   decisionResultPnl, decisionResultR, decisionSessionUserRStats, decisionStopLossMode, emptyDecisionReplayStore, filterDecisionCandidatesByScope, historyCoversDecisionCandidate, intervalCutoffTime, parseDecisionReplayStore,
-  mergeDecisionReplayStores, persistDecisionReplayStoreAdditively, pnlForDecision, pnlForDecisionMode, restartPostExitDecisionAttempt, rewardRiskRatio, sampleDecisionCandidates,
+  mergeDecisionReplayStores, normalizeDecisionReplayStore, persistDecisionReplayStoreAdditively, pnlForDecision, pnlForDecisionMode, restartPostExitDecisionAttempt, rewardRiskRatio, sampleDecisionCandidates, sampleDecisionDayCandidates,
   saveDecisionReplayStore, saveDecisionReplayStoreSnapshot, serializeDecisionReplayStore, updateDecisionSessionDrawings, validDecisionLevels, validOpenPositionLevels, type DecisionReplaySession,
 } from './decisionReplay'
 
@@ -66,6 +66,12 @@ describe('decision replay', () => {
     expect(selected.some((item) => item.key === 'a:2')).toBe(false)
   })
 
+  it('deduplicates repeated candidate keys before sampling', () => {
+    const selected = sampleDecisionCandidates([candidate('same:1'), candidate('same:1'), candidate('other:1')], [], 10)
+    expect(selected).toHaveLength(2)
+    expect(new Set(selected.map((item) => item.key))).toEqual(new Set(['same:1', 'other:1']))
+  })
+
   it('filters random exercises by both selected symbol and timeframe', () => {
     const fiveMinute = candidate('five:1')
     const fifteenMinute = { ...candidate('fifteen:1'), interval: '15m' as const }
@@ -75,6 +81,128 @@ describe('decision replay', () => {
     expect(filterDecisionCandidatesByScope(candidates, ['XAUUSD'], ['15m']).map((item) => item.key)).toEqual(['fifteen:1'])
     expect(filterDecisionCandidatesByScope(candidates, ['XAUUSD', 'XAGUSD'], ['5m', '1h']).map((item) => item.key)).toEqual(['five:1', 'hour:1'])
     expect(filterDecisionCandidatesByScope(candidates, ['XAGUSD'], ['15m'])).toEqual([])
+  })
+
+  it('groups one Beijing date by symbol and timeframe, then orders its questions chronologically', () => {
+    const beijingDayStart = Date.UTC(2025, 11, 31, 16) / 1000
+    const marketOpen = beijingDayStart + 6 * 60 * 60
+    const timed = (key: string, signalOffset: number, symbol: ReplayDecisionCandidate['symbol'] = 'XAUUSD', interval: ReplayDecisionCandidate['interval'] = '5m') => {
+      const item = candidate(key)
+      const signalTime = beijingDayStart + signalOffset
+      return {
+        ...item,
+        symbol,
+        interval,
+        trade: {
+          ...item.trade,
+          entry: { ...item.trade.entry, signalTime, time: signalTime + 300 },
+          exit: { ...item.trade.exit, time: signalTime + 900 },
+        },
+      }
+    }
+    const later = timed('day:2', 6 * 60 * 60 + 3_600)
+    const earlier = timed('day:1', 6 * 60 * 60 + 1_800)
+    const otherSymbol = timed('day:3', 6 * 60 * 60 + 2_400, 'XAGUSD')
+
+    const groups = decisionDayCandidateGroups([later, otherSymbol, earlier], [])
+    expect(groups).toHaveLength(2)
+    expect(groups.find((group) => group.daySequence.symbol === 'XAUUSD')?.candidates.map((item) => item.key)).toEqual(['day:1', 'day:2'])
+    expect(groups.find((group) => group.daySequence.symbol === 'XAUUSD')?.daySequence).toMatchObject({
+      interval: '5m', startTime: marketOpen, endTime: beijingDayStart + 29 * 60 * 60,
+    })
+  })
+
+  it('samples a single chronological day without reusing seen or cross-date trades', () => {
+    const beijingDayStart = Date.UTC(2025, 11, 31, 16) / 1000
+    const first = candidate('day-sample:1')
+    const second = candidate('day-sample:2')
+    const at = (item: ReplayDecisionCandidate, signalOffset: number, exitOffset = signalOffset + 900): ReplayDecisionCandidate => ({
+      ...item,
+      trade: {
+        ...item.trade,
+        entry: { ...item.trade.entry, signalTime: beijingDayStart + signalOffset, time: beijingDayStart + signalOffset + 300 },
+        exit: { ...item.trade.exit, time: beijingDayStart + exitOffset },
+      },
+    })
+    const crossDate = at(candidate('day-sample:cross'), 28 * 60 * 60 + 50 * 60, 29 * 60 * 60 + 5 * 60)
+    const sampled = sampleDecisionDayCandidates([
+      at(second, 6 * 60 * 60 + 3_600),
+      crossDate,
+      at(first, 6 * 60 * 60 + 1_800),
+    ], ['day-sample:2'])
+
+    expect(sampled?.candidates.map((item) => item.key)).toEqual(['day-sample:1'])
+    expect(decisionSessionPracticeMode(createDecisionSession(sampled!.candidates, 1, 1, undefined, {
+      practiceMode: 'day-sequence', daySequence: sampled!.daySequence,
+    }))).toBe('day-sequence')
+  })
+
+  it('requires both session-edge candles before a day can be sampled', () => {
+    const beijingDayStart = Date.UTC(2025, 11, 31, 16) / 1000
+    const marketOpen = beijingDayStart + 6 * 60 * 60
+    const marketClose = beijingDayStart + 29 * 60 * 60
+    const item = candidate('day-complete:1')
+    const candidateInSession: ReplayDecisionCandidate = {
+      ...item,
+      trade: {
+        ...item.trade,
+        entry: { ...item.trade.entry, signalTime: marketOpen + 3_600, time: marketOpen + 3_900 },
+        exit: { ...item.trade.exit, time: marketOpen + 4_500 },
+      },
+    }
+    const group = decisionDayCandidateGroups([candidateInSession], [])[0]
+    const complete = [bar(marketOpen, 1, 1, 1, 1), bar(marketClose - 300, 1, 1, 1, 1)]
+
+    expect(decisionDayHistoryIsComplete(group.daySequence, complete)).toBe(true)
+    expect(decisionDayHistoryIsComplete(group.daySequence, complete.slice(1))).toBe(false)
+    expect(sampleDecisionDayCandidates([candidateInSession], [], ({ daySequence }) => (
+      decisionDayHistoryIsComplete(daySequence, complete.slice(1))
+    ))).toBeNull()
+  })
+
+  it('repairs an active legacy calendar-day session to market-open bounds', () => {
+    const beijingDayStart = Date.UTC(2025, 11, 31, 16) / 1000
+    const marketOpen = beijingDayStart + 6 * 60 * 60
+    const item = candidate('legacy-day:1')
+    const candidateInSession: ReplayDecisionCandidate = {
+      ...item,
+      trade: {
+        ...item.trade,
+        entry: { ...item.trade.entry, signalTime: marketOpen + 3_600, time: marketOpen + 3_900 },
+        exit: { ...item.trade.exit, time: marketOpen + 4_500 },
+      },
+    }
+    const created = createDecisionSession([candidateInSession], 1, 1, undefined, {
+      practiceMode: 'day-sequence',
+      daySequence: {
+        key: 'XAUUSD:5m:legacy', symbol: 'XAUUSD', interval: '5m',
+        startTime: beijingDayStart, endTime: beijingDayStart + 24 * 60 * 60,
+      },
+    })
+    const session = {
+      ...created,
+      // Versions before day-tape playback initialized the untouched first
+      // question directly at its signal candle.
+      attempts: created.attempts.map((attempt) => ({ ...attempt, cursorTime: candidateInSession.trade.entry.signalTime })),
+    }
+
+    const repaired = normalizeDecisionReplayStore(storeWithSessions(session)).sessions[0]
+    expect(repaired.daySequence).toMatchObject({
+      startTime: marketOpen,
+      endTime: beijingDayStart + 29 * 60 * 60,
+    })
+    expect(repaired.attempts[0].cursorTime).toBe(marketOpen)
+  })
+
+  it('starts a new day-sequence session at the first market candle, not the first signal', () => {
+    const item = candidate('day-open:1')
+    const session = createDecisionSession([item], 1, 1, undefined, {
+      practiceMode: 'day-sequence',
+      daySequence: { key: 'day-open', symbol: 'XAUUSD', interval: '5m', startTime: 600, endTime: 86_400 },
+    })
+
+    expect(session.attempts[0].cursorTime).toBe(600)
+    expect(session.attempts[0].cursorTime).toBeLessThan(item.trade.entry.signalTime)
   })
 
   it('cuts minute history at the end of the currently revealed source bar', () => {
@@ -407,6 +535,38 @@ describe('decision replay', () => {
     expect(decisionShortcutAction('position-open', '5')).toBeNull()
     expect(decisionShortcutAction('risk-setup', '1')).toBe('confirm-risk')
     expect(decisionShortcutAction('risk-setup', '2')).toBe('cancel-setup')
+    expect(decisionShortcutAction('entry-decision', '1', 'day-sequence')).toBe('advance')
+    expect(decisionShortcutAction('entry-decision', '2', 'day-sequence')).toBe('open-long')
+    expect(decisionShortcutAction('entry-decision', '3', 'day-sequence')).toBe('open-short')
+    expect(decisionShortcutAction('entry-decision', '4', 'day-sequence')).toBeNull()
+  })
+
+  it('persists and calculates a day-sequence short independently of the long system candidate', () => {
+    const item = candidate('day-side:1', 'long')
+    const attempt = {
+      ...createDecisionAttempt(item, 3900),
+      userSide: 'short' as const,
+      stage: 'position-open' as const,
+      entryMode: 'market-close' as const,
+      pendingEntryPrice: 100,
+      initialStopLoss: 105,
+      stopLoss: 105,
+      takeProfit: 95,
+      fill: { time: 3900, price: 100 },
+    }
+    expect(decisionAttemptSide(item, attempt)).toBe('short')
+    expect(decisionAttemptSide(item, createDecisionAttempt(item))).toBe('long')
+
+    const evaluation = advanceDecisionAttempt(item, attempt, { time: item.trade.exit.time, open: 100, high: 102, low: 98, close: 99, volume: 1 })
+    expect(evaluation.exit).toBeNull()
+    const result = buildDecisionResult(item, evaluation.attempt, { time: 4500, price: 95, reason: 'manual-close' }, [])
+    expect(result).toMatchObject({ userSide: 'short', entryMode: 'market-close', userPnlUsd: 100, userR: 1 })
+    expect(decisionResultSide(result)).toBe('short')
+
+    const session = createDecisionSession([item], 1, 123, ['fixed-risk'], { practiceMode: 'day-sequence' })
+    session.attempts = [{ ...evaluation.attempt, stage: 'complete', result }]
+    const parsed = parseDecisionReplayStore(serializeDecisionReplayStore({ version: 1, seenTradeKeys: [item.key], activeSessionId: null, sessions: [session] }))
+    expect(parsed.sessions[0].attempts[0]).toMatchObject({ userSide: 'short', result: { userSide: 'short', userPnlUsd: 100 } })
   })
 
   it('navigates backward through completed exercises and only returns forward to the reached active exercise', () => {
@@ -625,6 +785,63 @@ describe('decision replay', () => {
     expect(merged.sessions).toHaveLength(1)
     expect(merged.sessions[0].id).toBe(original.id)
     expect(merged.sessions[0].attempts[0].result?.choice).toBe('skipped')
+  })
+
+  it('keeps one occurrence when a completed practice trade appears in separate sessions', () => {
+    const item = candidate('duplicate-trade:1')
+    const makeCompleted = (id: string, startedAt: number, price: number) => {
+      const base = { ...createDecisionSession([item], 1, startedAt), id }
+      const attempt = {
+        ...base.attempts[0],
+        stage: 'complete' as const,
+        result: buildDecisionResult(item, base.attempts[0], { time: startedAt + 1, price, reason: 'skipped' }, []),
+      }
+      return { ...base, attempts: [attempt], currentIndex: 1, status: 'completed' as const, finishedAt: startedAt + 2 }
+    }
+
+    const parsed = parseDecisionReplayStore(JSON.stringify({
+      version: 1,
+      seenTradeKeys: [],
+      activeSessionId: null,
+      sessions: [makeCompleted('duplicate-later', 2000, 102), makeCompleted('duplicate-earlier', 1000, 101)],
+    }))
+
+    expect(parsed.sessions).toHaveLength(1)
+    expect(parsed.sessions[0].id).toBe('duplicate-earlier')
+    expect(parsed.sessions[0].attempts).toHaveLength(1)
+    expect(parsed.sessions[0].attempts[0].result?.userExit.price).toBe(101)
+    expect(parsed.seenTradeKeys).toEqual(['duplicate-trade:1'])
+  })
+
+  it('keeps the same completed trade once in each practice mode', () => {
+    const item = candidate('cross-mode-trade:1')
+    const makeCompleted = (id: string, startedAt: number, practiceMode: 'random-count' | 'day-sequence') => {
+      const base = {
+        ...createDecisionSession([item], 1, startedAt, ['fixed-notional'], { practiceMode }),
+        id,
+      }
+      const attempt = {
+        ...base.attempts[0],
+        stage: 'complete' as const,
+        result: buildDecisionResult(item, base.attempts[0], { time: startedAt + 1, price: 101, reason: 'skipped' }, []),
+      }
+      return { ...base, attempts: [attempt], currentIndex: 1, status: 'completed' as const, finishedAt: startedAt + 2 }
+    }
+
+    const parsed = parseDecisionReplayStore(JSON.stringify({
+      version: 1,
+      seenTradeKeys: ['cross-mode-trade:1'],
+      activeSessionId: null,
+      sessions: [
+        makeCompleted('custom-mode-copy', 1000, 'random-count'),
+        makeCompleted('day-sequence-copy', 2000, 'day-sequence'),
+      ],
+    }))
+
+    expect(parsed.sessions).toHaveLength(2)
+    expect(parsed.sessions.map((session) => session.practiceMode).sort()).toEqual(['day-sequence', 'random-count'])
+    expect(parsed.sessions.every((session) => session.candidates[0].key === 'cross-mode-trade:1')).toBe(true)
+    expect(parsed.seenTradeKeys).toEqual(['cross-mode-trade:1'])
   })
 
   it('keeps one completed copy when a legacy import regenerated its candidate key', () => {
