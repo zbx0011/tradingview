@@ -52,8 +52,8 @@ import {
   sha256PortableWorkspace, type LocalSyncScope,
 } from './lib/localPrivateSync'
 import {
-  LocalCodeDeployUnavailableError, loadLocalCodeStatus, publishLocalCode, updateLocalCode,
-  type LocalCodeStatus,
+  LocalCodeDeployUnavailableError, loadLocalCodeDeployActivity, loadLocalCodeStatus, publishLocalCode,
+  saveLocalCodeDeployActivity, updateLocalCode, type LocalCodeDeployActivity, type LocalCodeStatus,
 } from './lib/localCodeDeploy'
 import { latestReplayDecisionSignal, replayDecisionCandidates, replayDecisionContextSourceIds, replayTradeDatasetInfos, type ReplayDecisionCandidate } from './lib/replayTradeRegistry'
 import { createDecisionAnomalyReviewSession, findDecisionReplayAnomalies } from './lib/decisionReplayAnomalies'
@@ -81,6 +81,13 @@ const DEFAULT_INTERVAL: IntervalId = '5m'
 function workspaceBackupFileName(kind: 'sync' | 'before-merge' | 'before-import' | 'before-undo') {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').replace('Z', '')
   return `kline-studio-${kind}-${timestamp}.json`
+}
+
+function formatCodeDeployTime(value?: string) {
+  if (!value || !Number.isFinite(Date.parse(value))) return '暂无记录'
+  return new Date(value).toLocaleString('zh-CN', {
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  })
 }
 
 const CHART_TYPES: { id: ChartType; label: string; icon: typeof ChartCandlestick }[] = [
@@ -207,6 +214,7 @@ function App() {
   const [codeDeployPhase, setCodeDeployPhase] = useState<CodeDeployPhase>('checking')
   const [codeDeployStatus, setCodeDeployStatus] = useState<LocalCodeStatus | null>(null)
   const [codeDeployError, setCodeDeployError] = useState('')
+  const [codeDeployActivity, setCodeDeployActivity] = useState<LocalCodeDeployActivity>(loadLocalCodeDeployActivity)
   const codeDeployStatusInFlightRef = useRef(false)
   const [remoteMarket, setRemoteMarket] = useState<{ symbol: SymbolId; bars: Candle[]; status: MarketDataStatus } | null>(null)
   const [decisionHistoryBySymbol, setDecisionHistoryBySymbol] = useState<Partial<Record<SymbolId, Candle[]>>>({})
@@ -584,6 +592,7 @@ function App() {
   useEffect(() => saveWeeklyMergedReplayTradeLayers(replayTradeLayers), [replayTradeLayers])
   useEffect(() => saveReplayRangeLayers(replayRangeLayers), [replayRangeLayers])
   useEffect(() => saveFavoriteTools(favoriteTools), [favoriteTools])
+  useEffect(() => saveLocalCodeDeployActivity(codeDeployActivity), [codeDeployActivity])
   useEffect(() => {
     decisionStoreRef.current = decisionStore
     if (decisionPersistTimerRef.current !== null) window.clearTimeout(decisionPersistTimerRef.current)
@@ -1542,7 +1551,9 @@ function App() {
     codeDeployStatusInFlightRef.current = true
     if (announce) setCodeDeployPhase('checking')
     void loadLocalCodeStatus().then((status) => {
+      const verifiedAt = new Date().toISOString()
       setCodeDeployStatus(status)
+      setCodeDeployActivity((current) => ({ ...current, lastVerifiedAt: verifiedAt }))
       setCodeDeployError('')
       setCodeDeployPhase('ready')
       if (announce) notify(status.updateAvailable
@@ -1576,16 +1587,23 @@ function App() {
     setCodeDeployError('')
     setCodeDeployPhase('publishing')
     void publishLocalCode().then((result) => {
+      const completedAt = new Date().toISOString()
       setCodeDeployStatus((current) => current ? {
         ...current,
         localHead: result.commit,
         remoteHead: result.commit,
+        localHeadTimestamp: completedAt,
+        remoteHeadTimestamp: completedAt,
         dirtyFiles: [],
         clean: true,
         updateAvailable: false,
         aheadOfRemote: false,
         diverged: false,
       } : current)
+      setCodeDeployActivity({
+        lastVerifiedAt: completedAt,
+        lastSuccessfulSync: { action: 'publish', at: completedAt, commit: result.commit },
+      })
       setCodeDeployPhase('published')
       notify(`代码已部署到 GitHub：${result.commit.slice(0, 7)}，远程提交已回读验证`)
     }).catch((error) => {
@@ -1602,8 +1620,13 @@ function App() {
     setCodeDeployError('')
     setCodeDeployPhase('updating')
     void updateLocalCode().then((result) => {
+      const completedAt = new Date().toISOString()
+      setCodeDeployActivity({
+        lastVerifiedAt: completedAt,
+        lastSuccessfulSync: { action: 'update', at: completedAt, commit: result.commit },
+      })
       if (!result.restartRequired) {
-        setCodeDeployStatus((current) => current ? { ...current, localHead: result.commit, remoteHead: result.commit, updateAvailable: false } : current)
+        setCodeDeployStatus((current) => current ? { ...current, localHead: result.commit, remoteHead: result.commit, localHeadTimestamp: completedAt, remoteHeadTimestamp: completedAt, updateAvailable: false } : current)
         setCodeDeployPhase('ready')
         notify(`代码已是最新版本 ${result.commit.slice(0, 7)}`)
         return
@@ -2582,7 +2605,7 @@ function App() {
       />}
 
       {indicatorPanelOpen && <IndicatorPanel value={indicators} onChange={setIndicators} onClose={() => setIndicatorPanelOpen(false)} />}
-      {settingsOpen && <SettingsPanel theme={theme} onTheme={setTheme} onReset={resetWorkspace} onExportWorkspace={exportWorkspace} onMergeProgress={mergeWorkspaceProgress} onPrivateReceive={() => receivePrivateRepository('workspace')} onPrivateSync={() => syncPrivateRepository('workspace')} onHistoryReceive={() => receivePrivateRepository('history')} onHistorySync={() => syncPrivateRepository('history')} privateSyncBusy={privateSyncBusy} privateSyncOperation={privateSyncOperation} privateSyncStatus={privateSyncStatus} codeDeployPhase={codeDeployPhase} codeDeployStatus={codeDeployStatus} codeDeployError={codeDeployError} onCodeDeployRefresh={() => refreshCodeDeployStatus(true)} onCodePublish={publishCodeDeployment} onCodeUpdate={updateCodeDeployment} onImportWorkspace={importWorkspace} onRestoreLastImport={restoreLastWorkspaceImport} canRestoreWorkspace={Boolean(loadPortableWorkspaceRecovery())} onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <SettingsPanel theme={theme} onTheme={setTheme} onReset={resetWorkspace} onExportWorkspace={exportWorkspace} onMergeProgress={mergeWorkspaceProgress} onPrivateReceive={() => receivePrivateRepository('workspace')} onPrivateSync={() => syncPrivateRepository('workspace')} onHistoryReceive={() => receivePrivateRepository('history')} onHistorySync={() => syncPrivateRepository('history')} privateSyncBusy={privateSyncBusy} privateSyncOperation={privateSyncOperation} privateSyncStatus={privateSyncStatus} codeDeployPhase={codeDeployPhase} codeDeployStatus={codeDeployStatus} codeDeployError={codeDeployError} codeDeployActivity={codeDeployActivity} onCodeDeployRefresh={() => refreshCodeDeployStatus(true)} onCodePublish={publishCodeDeployment} onCodeUpdate={updateCodeDeployment} onImportWorkspace={importWorkspace} onRestoreLastImport={restoreLastWorkspaceImport} canRestoreWorkspace={Boolean(loadPortableWorkspaceRecovery())} onClose={() => setSettingsOpen(false)} />}
       {quickSearchOpen && <QuickSearchDialog items={quickSearchItems} query={quickSearchQuery} onQuery={setQuickSearchQuery} onSelect={runQuickSearchItem} onClose={() => setQuickSearchOpen(false)} />}
       {intervalDialogOpen && <IntervalShortcutDialog value={intervalDraft} onChange={setIntervalDraft} onApply={applyIntervalInput} onClose={() => setIntervalDialogOpen(false)} />}
       {goToDateOpen && <GoToDateDialog initialTime={data.at(-1)?.time ?? 0} onSelect={(time) => { chartRef.current?.goToTime(time); setGoToDateOpen(false); notify('已转到指定日期') }} onClose={() => setGoToDateOpen(false)} />}
@@ -2689,7 +2712,7 @@ function IndicatorPanel({ value, onChange, onClose }: { value: IndicatorSettings
   return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section className="modal indicator-modal" role="dialog" aria-modal="true" aria-label="指标设置"><div className="modal-header"><div><b>技术指标</b><small>叠加到主图的本地计算指标</small></div><button onClick={onClose} aria-label="关闭"><X size={18} /></button></div><div className="indicator-list">{rows.map((row) => <div className="indicator-row" key={row.key}><span className="indicator-color" style={{ background: row.color }} /><div><b>{row.name}</b><small>{row.detail}</small></div><label className="switch" aria-label={`${row.name}开关`} title={`${row.name}开关`}><input type="checkbox" checked={value[row.key]} onChange={(event) => onChange({ ...value, [row.key]: event.target.checked })} /><span /></label></div>)}</div><div className="parameter-grid"><label>MA 周期<input type="number" min="2" max="200" value={value.maPeriod} onChange={(event) => onChange({ ...value, maPeriod: Number(event.target.value) })} /></label><label>EMA 周期<input type="number" min="2" max="200" value={value.emaPeriod} onChange={(event) => onChange({ ...value, emaPeriod: Number(event.target.value) })} /></label><label>BOLL 周期<input type="number" min="2" max="200" value={value.bollPeriod} onChange={(event) => onChange({ ...value, bollPeriod: Number(event.target.value) })} /></label><label>标准差<input type="number" step="0.1" min="0.1" max="5" value={value.bollDeviation} onChange={(event) => onChange({ ...value, bollDeviation: Number(event.target.value) })} /></label></div><div className="modal-footer"><button onClick={() => onChange(DEFAULT_INDICATORS)}>恢复指标默认</button><button className="primary" onClick={onClose}>完成</button></div></section></div>
 }
 
-function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProgress, onPrivateReceive, onPrivateSync, onHistoryReceive, onHistorySync, privateSyncBusy, privateSyncOperation, privateSyncStatus, codeDeployPhase, codeDeployStatus, codeDeployError, onCodeDeployRefresh, onCodePublish, onCodeUpdate, onImportWorkspace, onRestoreLastImport, canRestoreWorkspace, onClose }: {
+function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProgress, onPrivateReceive, onPrivateSync, onHistoryReceive, onHistorySync, privateSyncBusy, privateSyncOperation, privateSyncStatus, codeDeployPhase, codeDeployStatus, codeDeployError, codeDeployActivity, onCodeDeployRefresh, onCodePublish, onCodeUpdate, onImportWorkspace, onRestoreLastImport, canRestoreWorkspace, onClose }: {
   theme: Theme
   onTheme: (theme: Theme) => void
   onReset: () => void
@@ -2705,6 +2728,7 @@ function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProg
   codeDeployPhase: CodeDeployPhase
   codeDeployStatus: LocalCodeStatus | null
   codeDeployError: string
+  codeDeployActivity: LocalCodeDeployActivity
   onCodeDeployRefresh: () => void
   onCodePublish: () => void
   onCodeUpdate: () => void
@@ -2716,6 +2740,13 @@ function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProg
   const mergeInputRef = useRef<HTMLInputElement>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
   const codeDeployStatusPending = codeDeployPhase === 'checking' || codeDeployPhase === 'unavailable' || codeDeployPhase === 'status-error'
+  const codeDeploySyncState = !codeDeployStatus ? null
+    : codeDeployStatus.diverged ? { tone: 'danger', label: '同步异常', detail: '本机与 GitHub 已分叉，必须停止' }
+      : codeDeployStatus.updateAvailable ? { tone: 'warning', label: '尚未同步', detail: 'GitHub 有新版本等待更新' }
+        : codeDeployStatus.aheadOfRemote ? { tone: 'warning', label: '尚未同步', detail: '本机提交尚未发布到 GitHub' }
+          : codeDeployStatus.dirtyFiles.length > 0 ? { tone: 'warning', label: '尚未同步', detail: `${codeDeployStatus.dirtyFiles.length} 项本机修改尚未发布` }
+            : codeDeployStatus.localHead === codeDeployStatus.remoteHead ? { tone: 'success', label: '同步成功', detail: '本机与 GitHub 代码完全一致' }
+              : { tone: 'warning', label: '需要检查', detail: '本机与 GitHub 提交不一致' }
   return <aside className="settings-panel">
     <div className="panel-heading"><div><b>图表设置</b><small>外观与工作区</small></div><button onClick={onClose} aria-label="关闭"><X size={18} /></button></div>
     <section><h3>外观</h3><div className="theme-options"><button className={theme === 'dark' ? 'active' : ''} onClick={() => onTheme('dark')}><Moon size={18} />深色</button><button className={theme === 'light' ? 'active' : ''} onClick={() => onTheme('light')}><Sun size={18} />亮色</button></div></section>
@@ -2734,8 +2765,13 @@ function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProg
     </div></section>
     <section className="code-deploy-section"><h3>跨电脑代码部署</h3><p>上面的数据同步按钮不包含网站代码。发布端会先运行完整验证，再把 Kline Studio 代码提交并推送到公开仓库；接收端只在工作区干净时快进更新，验证后自动重启 4173。不会读写浏览器做题历史。</p>
       <div className={`code-deploy-status ${codeDeployPhase}`}>
-        <span>{codeDeployPhase === 'publishing' ? '正在验证并发布代码…' : codeDeployPhase === 'updating' ? '正在验证新版本并重启…' : codeDeployPhase === 'unavailable' ? '代码部署服务暂未连接，正在自动重试' : codeDeployPhase === 'status-error' ? '代码版本检查失败，正在自动重试' : codeDeployPhase === 'error' ? '上次代码操作失败' : codeDeployStatus ? `本机 ${codeDeployStatus.localHead.slice(0, 7)} · 远程 ${codeDeployStatus.remoteHead.slice(0, 7)}` : '正在读取代码版本…'}</span>
-        {codeDeployError ? <small>{codeDeployError}；也可点击“检查代码版本”立即重试</small> : codeDeployStatus && <small>{codeDeployStatus.diverged ? '本机与远程已分叉，必须停止' : codeDeployStatus.updateAvailable ? '远程有新版本，可更新' : codeDeployStatus.dirtyFiles.length > 0 ? `${codeDeployStatus.dirtyFiles.length} 项未发布代码修改` : '本机与 GitHub 代码一致'}</small>}
+        <span className={codeDeploySyncState ? 'code-deploy-summary' : undefined}>{codeDeployPhase === 'publishing' ? '正在验证并发布代码…' : codeDeployPhase === 'updating' ? '正在验证新版本并重启…' : codeDeployPhase === 'unavailable' ? '代码部署服务暂未连接，正在自动重试' : codeDeployPhase === 'status-error' ? '代码版本检查失败，正在自动重试' : codeDeployPhase === 'error' ? '上次代码操作失败' : codeDeploySyncState ? <><b className={`code-deploy-sync-label ${codeDeploySyncState.tone}`}>{codeDeploySyncState.label}</b><em>{codeDeploySyncState.detail}</em></> : '正在读取代码版本…'}</span>
+        {codeDeployError ? <small>{codeDeployError}；也可点击“检查代码版本”立即重试</small> : codeDeployStatus && <div className="code-deploy-audit">
+          <small>本机 <b>{codeDeployStatus.localHead.slice(0, 7)}</b> · GitHub <b>{codeDeployStatus.remoteHead.slice(0, 7)}</b></small>
+          <small>最近检查：<b>{formatCodeDeployTime(codeDeployActivity.lastVerifiedAt)}</b></small>
+          <small>上次代码同步（GitHub）：<b>{formatCodeDeployTime(codeDeployStatus.remoteHeadTimestamp)}</b></small>
+          <small>本机最近成功操作：<b>{codeDeployActivity.lastSuccessfulSync ? `${codeDeployActivity.lastSuccessfulSync.action === 'publish' ? '发布' : '更新'} · ${formatCodeDeployTime(codeDeployActivity.lastSuccessfulSync.at)} · ${codeDeployActivity.lastSuccessfulSync.commit.slice(0, 7)}` : '暂无记录（从本版本开始记录）'}</b></small>
+        </div>}
       </div>
       <div className="workspace-transfer-actions code-deploy-actions">
         <button type="button" className="merge-progress" disabled={privateSyncBusy || codeDeployStatusPending || codeDeployPhase === 'publishing' || codeDeployPhase === 'updating'} onClick={onCodePublish}><Upload size={16} />{codeDeployPhase === 'publishing' ? '正在发布…' : '发布代码到 GitHub'}</button>

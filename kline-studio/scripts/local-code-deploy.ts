@@ -113,6 +113,12 @@ async function repositoryState(fetchLatest = false): Promise<RepositoryState> {
   }
 }
 
+async function commitTimestamp(repositoryRoot: string, commit: string) {
+  const timestamp = (await runFile('git', ['show', '-s', '--format=%cI', commit], { cwd: repositoryRoot })).stdout.trim()
+  if (!timestamp || !Number.isFinite(Date.parse(timestamp))) throw new HttpError(500, `无法读取提交时间：${commit}`)
+  return timestamp
+}
+
 function statusPath(line: string) {
   return line.slice(3).replace(/^"|"$/g, '')
 }
@@ -268,8 +274,15 @@ export function localCodeDeployPlugin(): Plugin {
           if (request.method !== 'POST') throw new HttpError(405, '只支持 POST')
           const body = await readRequest(request)
           if (body.action === 'status') {
-            const state = await enqueue(() => repositoryState(true))
-            sendJson(response, 200, { ok: true, action: 'status', ...state })
+            const result = await enqueue(async () => {
+              const state = await repositoryState(true)
+              const [localHeadTimestamp, remoteHeadTimestamp] = await Promise.all([
+                commitTimestamp(state.repositoryRoot, state.localHead),
+                commitTimestamp(state.repositoryRoot, state.remoteHead),
+              ])
+              return { ...state, localHeadTimestamp, remoteHeadTimestamp }
+            })
+            sendJson(response, 200, { ok: true, action: 'status', ...result })
             return
           }
           if (body.action === 'publish-code') {

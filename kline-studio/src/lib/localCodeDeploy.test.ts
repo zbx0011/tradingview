@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { LocalCodeDeployUnavailableError, loadLocalCodeStatus, publishLocalCode, updateLocalCode } from './localCodeDeploy'
+import {
+  LocalCodeDeployUnavailableError, loadLocalCodeDeployActivity, loadLocalCodeStatus,
+  publishLocalCode, saveLocalCodeDeployActivity, updateLocalCode,
+} from './localCodeDeploy'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -16,6 +19,8 @@ describe('local code deployment client', () => {
         branch: 'master',
         localHead: 'local',
         remoteHead: 'remote',
+        localHeadTimestamp: '2026-08-31T09:00:00+08:00',
+        remoteHeadTimestamp: '2026-08-31T09:05:00+08:00',
         dirtyFiles: [],
         clean: true,
         updateAvailable: true,
@@ -78,5 +83,19 @@ describe('local code deployment client', () => {
   it('treats a non-JSON endpoint response as an unavailable deployment service', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('<!doctype html>', { status: 404 })))
     await expect(loadLocalCodeStatus()).rejects.toBeInstanceOf(LocalCodeDeployUnavailableError)
+  })
+
+  it('persists the latest successful local code sync audit separately from workspace history', () => {
+    let saved = ''
+    const storage = {
+      getItem: () => saved || null,
+      setItem: (_key: string, value: string) => { saved = value },
+    }
+    const activity = {
+      lastVerifiedAt: '2026-08-31T10:00:00+08:00',
+      lastSuccessfulSync: { action: 'publish' as const, at: '2026-08-31T09:59:00+08:00', commit: 'abc1234' },
+    }
+    saveLocalCodeDeployActivity(activity, storage)
+    expect(loadLocalCodeDeployActivity(storage)).toEqual(activity)
   })
 })

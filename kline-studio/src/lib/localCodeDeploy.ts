@@ -1,4 +1,5 @@
 const LOCAL_CODE_DEPLOY_ENDPOINT = '/__kline_studio_code_deploy'
+const LOCAL_CODE_DEPLOY_ACTIVITY_KEY = 'kline-local-code-deploy-activity-v1'
 
 export class LocalCodeDeployUnavailableError extends Error {
   override name = 'LocalCodeDeployUnavailableError'
@@ -13,11 +14,56 @@ export interface LocalCodeStatus {
   branch: string
   localHead: string
   remoteHead: string
+  localHeadTimestamp: string
+  remoteHeadTimestamp: string
   dirtyFiles: string[]
   clean: boolean
   updateAvailable: boolean
   aheadOfRemote: boolean
   diverged: boolean
+}
+
+export interface LocalCodeDeployActivity {
+  lastVerifiedAt?: string
+  lastSuccessfulSync?: {
+    action: 'publish' | 'update'
+    at: string
+    commit: string
+  }
+}
+
+function isIsoDate(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && Number.isFinite(Date.parse(value))
+}
+
+export function loadLocalCodeDeployActivity(
+  storage: Pick<Storage, 'getItem'> | undefined = typeof localStorage === 'undefined' ? undefined : localStorage,
+): LocalCodeDeployActivity {
+  if (!storage) return {}
+  try {
+    const parsed = JSON.parse(storage.getItem(LOCAL_CODE_DEPLOY_ACTIVITY_KEY) ?? 'null') as Record<string, unknown> | null
+    if (!parsed || typeof parsed !== 'object') return {}
+    const lastSuccessfulSync = parsed.lastSuccessfulSync as Record<string, unknown> | undefined
+    return {
+      ...(isIsoDate(parsed.lastVerifiedAt) ? { lastVerifiedAt: parsed.lastVerifiedAt } : {}),
+      ...(lastSuccessfulSync
+        && (lastSuccessfulSync.action === 'publish' || lastSuccessfulSync.action === 'update')
+        && isIsoDate(lastSuccessfulSync.at)
+        && typeof lastSuccessfulSync.commit === 'string'
+        && lastSuccessfulSync.commit.length > 0
+        ? { lastSuccessfulSync: { action: lastSuccessfulSync.action, at: lastSuccessfulSync.at, commit: lastSuccessfulSync.commit } }
+        : {}),
+    }
+  } catch {
+    return {}
+  }
+}
+
+export function saveLocalCodeDeployActivity(
+  activity: LocalCodeDeployActivity,
+  storage: Pick<Storage, 'setItem'> | undefined = typeof localStorage === 'undefined' ? undefined : localStorage,
+) {
+  storage?.setItem(LOCAL_CODE_DEPLOY_ACTIVITY_KEY, JSON.stringify(activity))
 }
 
 export interface LocalCodePublishResult {
@@ -63,7 +109,9 @@ async function request<T>(action: 'status' | 'publish-code' | 'update-code'): Pr
 
 export async function loadLocalCodeStatus() {
   const result = await request<LocalCodeStatus>('status')
-  if (typeof result.localHead !== 'string' || typeof result.remoteHead !== 'string' || !Array.isArray(result.dirtyFiles)) {
+  if (typeof result.localHead !== 'string' || typeof result.remoteHead !== 'string'
+    || !isIsoDate(result.localHeadTimestamp) || !isIsoDate(result.remoteHeadTimestamp)
+    || !Array.isArray(result.dirtyFiles)) {
     throw new Error('本机代码状态响应缺少必要字段')
   }
   return result
