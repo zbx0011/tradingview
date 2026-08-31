@@ -43,6 +43,17 @@ describe('chart viewport live-follow behavior', () => {
     })).toBe('preserve')
   })
 
+  it('uses the same fixed viewport when a day-sequence reveals another candle', () => {
+    expect(viewportActionAfterDataUpdate({
+      focusReady: false,
+      hasVisibleRange: true,
+      followLatest: false,
+      wasAtRealtime: false,
+      previousLength: 100,
+      nextLength: 101,
+    })).toBe('preserve')
+  })
+
   it('only recenters a decision chart for an explicit candidate focus request', () => {
     expect(viewportActionAfterDataUpdate({
       focusReady: true,

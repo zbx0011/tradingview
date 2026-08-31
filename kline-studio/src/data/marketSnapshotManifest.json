@@ -1,5 +1,5 @@
 {
-  "fetchedAt": "2026-08-21T12:31:22.192Z",
+  "fetchedAt": "2026-08-30T03:45:04.747Z",
   "timezone": "UTC",
   "series": {
     "XAUUSD": {
@@ -7,36 +7,45 @@
       "vendor": "OANDA",
       "resolution": "5",
       "file": "data/market-snapshots/xauusd-1m.json",
-      "count": 10891,
-      "firstTime": 1782684000,
-      "lastTime": 1787315400
+      "count": 18144,
+      "firstTime": 1779994800,
+      "lastTime": 1787950500
     },
     "XAGUSD": {
       "symbol": "OANDA:XAGUSD",
       "vendor": "OANDA",
       "resolution": "5",
       "file": "data/market-snapshots/xagusd-1m.json",
-      "count": 10891,
-      "firstTime": 1782684000,
-      "lastTime": 1787315400
+      "count": 19722,
+      "firstTime": 1779321600,
+      "lastTime": 1787950500
     },
     "US500": {
       "symbol": "OANDA:SPX500USD",
       "vendor": "OANDA",
       "resolution": "5",
       "file": "data/market-snapshots/us500-1m.json",
-      "count": 10891,
-      "firstTime": 1782684000,
-      "lastTime": 1787315400
+      "count": 19152,
+      "firstTime": 1779667200,
+      "lastTime": 1787950500
     },
     "BTCUSDT.P": {
-      "symbol": "KUCOIN:XBTUSDTM",
-      "vendor": "KUCOIN",
-      "resolution": "1",
+      "symbol": "BYBIT:BTCUSDT.P",
+      "vendor": "BYBIT",
+      "resolution": "5",
       "file": "data/market-snapshots/btcusdt-p-1m.json",
-      "count": 127287,
-      "firstTime": 1779352920,
-      "lastTime": 1787128800
+      "count": 16280,
+      "firstTime": 1783177200,
+      "lastTime": 1788060900
+    },
+    "ETHUSD": {
+      "symbol": "BYBIT:ETHUSDT.P",
+      "vendor": "BYBIT",
+      "resolution": "5",
+      "file": "data/market-snapshots/ethusd-1m.json",
+      "count": 16280,
+      "firstTime": 1783177200,
+      "lastTime": 1788060900
     }
   }
 }

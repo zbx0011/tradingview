@@ -12,7 +12,7 @@ const fileNames = {
   XAGUSD: 'xagusd-1m.json',
   US500: 'us500-1m.json',
   'BTCUSDT.P': 'btcusdt-p-1m.json',
-  'ETHUSDT.P': 'ethusdt-p-1m.json',
+  ETHUSD: 'ethusd-1m.json',
 }
 
 const snapshot = JSON.parse(await readFile(sourcePath, 'utf8'))

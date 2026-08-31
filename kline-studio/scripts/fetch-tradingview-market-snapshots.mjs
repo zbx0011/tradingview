@@ -30,7 +30,10 @@ const SERIES = [
   { id: 'XAGUSD', symbol: 'OANDA:XAGUSD', vendor: 'OANDA' },
   { id: 'US500', symbol: 'OANDA:SPX500USD', vendor: 'OANDA' },
   { id: 'BTCUSDT.P', symbol: 'BYBIT:BTCUSDT.P', vendor: 'BYBIT' },
-  { id: 'ETHUSDT.P', symbol: 'BYBIT:ETHUSDT.P', vendor: 'BYBIT' },
+  // The application uses ETHUSD as its canonical symbol. Keep the source
+  // aligned with the replay registry so the decision bank can hydrate the
+  // same Bybit perpetual feed instead of silently omitting it.
+  { id: 'ETHUSD', symbol: 'BYBIT:ETHUSDT.P', vendor: 'BYBIT' },
 ]
 const selectedSeries = SERIES.filter((series) => requestedSeries.size === 0 || requestedSeries.has(series.id))
 if (selectedSeries.length === 0) throw new Error(`MARKET_SERIES 未匹配任何可用标的: ${[...requestedSeries].join(', ')}`)

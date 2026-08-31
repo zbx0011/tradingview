@@ -1,5 +1,9 @@
 const LOCAL_CODE_DEPLOY_ENDPOINT = '/__kline_studio_code_deploy'
 
+export class LocalCodeDeployUnavailableError extends Error {
+  override name = 'LocalCodeDeployUnavailableError'
+}
+
 export interface LocalCodeStatus {
   ok: true
   action: 'status'
@@ -34,16 +38,21 @@ export interface LocalCodeUpdateResult {
 }
 
 async function request<T>(action: 'status' | 'publish-code' | 'update-code'): Promise<T> {
-  const response = await fetch(LOCAL_CODE_DEPLOY_ENDPOINT, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Kline-Studio-Deploy': '1' },
-    body: JSON.stringify({ action }),
-  })
+  let response: Response
+  try {
+    response = await fetch(LOCAL_CODE_DEPLOY_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Kline-Studio-Deploy': '1' },
+      body: JSON.stringify({ action }),
+    })
+  } catch {
+    throw new LocalCodeDeployUnavailableError('暂时无法连接本机代码部署服务')
+  }
   let payload: Record<string, unknown>
   try {
     payload = await response.json() as Record<string, unknown>
   } catch {
-    throw new Error(`本机代码部署服务返回了无效响应（HTTP ${response.status}）`)
+    throw new LocalCodeDeployUnavailableError(`本机代码部署服务返回了无效响应（HTTP ${response.status}）`)
   }
   if (!response.ok || payload.ok !== true) {
     const details = Array.isArray(payload.dirtyFiles) ? `：${payload.dirtyFiles.join('；')}` : ''

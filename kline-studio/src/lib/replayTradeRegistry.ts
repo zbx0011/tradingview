@@ -64,6 +64,8 @@ export interface ReplayDecisionCandidate {
   scenario: string
   backtestSha256: string
   trade: XauTradeMarker
+  /** User-created continuation slot in day-sequence practice; it has no additional system benchmark trade. */
+  manualContinuation?: boolean
 }
 
 interface RegisteredReplayTradeDataset extends ReplayTradeDatasetInfo {
@@ -372,6 +374,18 @@ export function resolveReplayDecisionSignalMarker(
     return null
   }
   return null
+}
+
+/** Resolve the newest raw long/short signal that is already visible on the chart. */
+export function latestReplayDecisionSignal(
+  symbol: SymbolId,
+  interval: IntervalId,
+  sourceIds: readonly string[],
+  revealedThrough: number,
+  afterSignalTime: number | null = null,
+): ReplayDecisionSignalMarkerSelection | null {
+  const marker = toReplayDecisionSignalSeriesMarkers(symbol, interval, sourceIds, revealedThrough, afterSignalTime).at(-1)
+  return marker ? resolveReplayDecisionSignalMarker(symbol, interval, sourceIds, marker.id) : null
 }
 
 export function toReplayTradeConnectionSpecs(symbol: SymbolId, interval: IntervalId, sourceIds: readonly string[], revealedThrough?: number): ReplayTradeConnectionSpec[] {

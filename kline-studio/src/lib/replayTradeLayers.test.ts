@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   REPLAY_TRADE_LAYERS_STORAGE_KEY, createDefaultReplayTradeLayer, createDefaultReplayTradeLayers, hasVisibleReplayTradeLayer,
-  loadReplayTradeLayers, parseReplayTradeLayerStore, saveReplayTradeLayers, sortReplayTradeLayers,
+  loadReplayTradeLayers, loadWeeklyMergedReplayTradeLayers, parseReplayTradeLayerStore, saveReplayTradeLayers, sortReplayTradeLayers,
 } from './replayTradeLayers'
 
 class MemoryStorage {
@@ -44,6 +44,16 @@ describe('replay trade layers', () => {
 
     saveReplayTradeLayers([], storage)
     expect(loadReplayTradeLayers(storage)).toEqual([])
+  })
+
+  it('starts the weekly merged object-tree layers hidden and persists that default', () => {
+    const storage = new MemoryStorage()
+    const firstLoad = loadWeeklyMergedReplayTradeLayers(storage)
+    expect(firstLoad.length).toBeGreaterThan(0)
+    expect(firstLoad.every((layer) => !layer.visible)).toBe(true)
+
+    const secondLoad = loadWeeklyMergedReplayTradeLayers(storage)
+    expect(secondLoad.every((layer) => !layer.visible)).toBe(true)
   })
 
   it('keeps the next-bar-confirmed version when an older named window is also present', () => {

@@ -35,7 +35,7 @@ import {
   replaySpeed, saveReplaySession,
 } from './lib/replay'
 import {
-  loadReplayTradeLayers, saveReplayTradeLayers,
+  loadWeeklyMergedReplayTradeLayers, saveWeeklyMergedReplayTradeLayers, WEEKLY_MERGED_REPLAY_SUFFIX,
   type ReplayTradeLayer,
 } from './lib/replayTradeLayers'
 import { deleteReplayRangeObjectFromLayers, loadReplayRangeLayers, saveReplayRangeLayers, toggleReplayRangeObjectInLayers, type ReplayRangeLayer } from './lib/replayRangeLayers'
@@ -52,25 +52,25 @@ import {
   sha256PortableWorkspace, type LocalSyncScope,
 } from './lib/localPrivateSync'
 import {
-  loadLocalCodeStatus, publishLocalCode, updateLocalCode,
+  LocalCodeDeployUnavailableError, loadLocalCodeStatus, publishLocalCode, updateLocalCode,
   type LocalCodeStatus,
 } from './lib/localCodeDeploy'
-import { replayDecisionCandidates, replayDecisionContextSourceIds, type ReplayDecisionCandidate } from './lib/replayTradeRegistry'
+import { latestReplayDecisionSignal, replayDecisionCandidates, replayDecisionContextSourceIds, replayTradeDatasetInfos, type ReplayDecisionCandidate } from './lib/replayTradeRegistry'
 import { createDecisionAnomalyReviewSession, findDecisionReplayAnomalies } from './lib/decisionReplayAnomalies'
 import {
   DECISION_REPLAY_INTERVALS, DECISION_REPLAY_STORAGE_KEY, adjacentDecisionExerciseTarget, advanceDecisionAttempt, buildDecisionResult, cancelPendingOrderAndAdvance, candleAtOrBefore, candlesKnownAt, createDecisionAttempt,
   createDecisionReviewSession, createDecisionSession, currentDecisionAttempt, currentDecisionCandidate, decisionShortcutAction, defaultDecisionLevels,
   decisionAttemptInitialStopLoss, decisionAttemptSide, decisionDayHistoryIsComplete, decisionSessionPracticeMode, decisionStopLossMode, decisionSessionPositionSizingModes, emptyDecisionReplayStore, filterDecisionCandidatesByScope, formatDecisionDay, historyCoversDecisionCandidate, intervalCutoffTime, intervalSeconds,
-  loadDecisionReplayStore, mergeDecisionReplayStores, nextCandleAfter, normalizeDecisionReplayStore, parseDecisionReplayStoreChecked, pnlForDecisionMode, restartPostExitDecisionAttempt, sampleDecisionCandidates, sampleDecisionDayCandidates,
+  loadDecisionReplayStore, mergeDecisionReplayStores, nextCandleAfter, normalizeDecisionPositionMultiplier, normalizeDecisionReplayStore, parseDecisionReplayStoreChecked, pnlForDecisionMode, restartPostExitDecisionAttempt, sampleDecisionCandidates, sampleDecisionDayCandidates, startNextDaySequenceTrade,
   saveDecisionReplayStoreSnapshot, sessionResults, updateDecisionSessionDrawings, validDecisionLevels, validOpenPositionLevels,
-  type DecisionAttempt, type DecisionExit, type DecisionPositionSizingMode, type DecisionPracticeMode, type DecisionReplayInterval, type DecisionReplaySession, type DecisionStopLossMode, type DecisionTradeResult,
+  type DecisionAttempt, type DecisionExit, type DecisionPositionMultiplier, type DecisionPositionSizingMode, type DecisionPracticeMode, type DecisionReplayInterval, type DecisionReplaySession, type DecisionStopLossMode, type DecisionTradeResult,
 } from './lib/decisionReplay'
 
 type ChartType = 'candles' | 'hollow' | 'line' | 'area'
 type Theme = 'dark' | 'light'
 type PrivateSyncStatus = 'checking' | 'ready' | 'syncing' | 'synced' | 'received' | 'unavailable' | 'error'
 type PrivateSyncOperation = 'sync' | 'receive' | 'history-sync' | 'history-receive' | null
-type CodeDeployPhase = 'checking' | 'ready' | 'publishing' | 'published' | 'updating' | 'unavailable' | 'error'
+type CodeDeployPhase = 'checking' | 'ready' | 'publishing' | 'published' | 'updating' | 'unavailable' | 'status-error' | 'error'
 
 const DEFAULT_INDICATORS: IndicatorSettings = {
   ma: false, ema: true, boll: false, volume: true,
@@ -178,7 +178,7 @@ function App() {
   const [lockedCursorTime, setLockedCursorTime] = useState<number | null>(null)
   const [chartAlerts, setChartAlerts] = useState<ChartAlert[]>(loadChartAlerts)
   const [paperOrders, setPaperOrders] = useState<PaperOrder[]>(loadPaperOrders)
-  const [replayTradeLayers, setReplayTradeLayers] = useState<ReplayTradeLayer[]>(loadReplayTradeLayers)
+  const [replayTradeLayers, setReplayTradeLayers] = useState<ReplayTradeLayer[]>(loadWeeklyMergedReplayTradeLayers)
   const [replayRangeLayers, setReplayRangeLayers] = useState<ReplayRangeLayer[]>(loadReplayRangeLayers)
   const [selectedReplayRangeId, setSelectedReplayRangeId] = useState<string | null>(null)
   const [drawingClipboardAvailable, setDrawingClipboardAvailable] = useState(false)
@@ -206,6 +206,8 @@ function App() {
   const [privateSyncOperation, setPrivateSyncOperation] = useState<PrivateSyncOperation>(null)
   const [codeDeployPhase, setCodeDeployPhase] = useState<CodeDeployPhase>('checking')
   const [codeDeployStatus, setCodeDeployStatus] = useState<LocalCodeStatus | null>(null)
+  const [codeDeployError, setCodeDeployError] = useState('')
+  const codeDeployStatusInFlightRef = useRef(false)
   const [remoteMarket, setRemoteMarket] = useState<{ symbol: SymbolId; bars: Candle[]; status: MarketDataStatus } | null>(null)
   const [decisionHistoryBySymbol, setDecisionHistoryBySymbol] = useState<Partial<Record<SymbolId, Candle[]>>>({})
   const [marketLoading, setMarketLoading] = useState<{ symbol: SymbolId; label: string } | null>(null)
@@ -373,10 +375,11 @@ function App() {
   const activeDecisionUserSide = activeDecisionCandidate && activeDecisionAttempt
     ? decisionAttemptSide(activeDecisionCandidate, activeDecisionAttempt)
     : null
+  const activeDecisionPositionMultiplier = normalizeDecisionPositionMultiplier(activeDecisionAttempt?.positionMultiplier)
   const decisionPositionPnlByMode = activeDecisionUserSide && activeDecisionCandidate && activeDecisionAttempt?.stage === 'position-open' && activeDecisionAttempt.fill && activeDecisionAttempt.stopLoss !== null && decisionPositionCandle
     ? {
-        'fixed-risk': pnlForDecisionMode('fixed-risk', activeDecisionUserSide, activeDecisionAttempt.fill.price, decisionPositionCandle.close, decisionAttemptInitialStopLoss(activeDecisionCandidate, activeDecisionAttempt) ?? activeDecisionAttempt.stopLoss),
-        'fixed-notional': pnlForDecisionMode('fixed-notional', activeDecisionUserSide, activeDecisionAttempt.fill.price, decisionPositionCandle.close, activeDecisionAttempt.stopLoss),
+        'fixed-risk': pnlForDecisionMode('fixed-risk', activeDecisionUserSide, activeDecisionAttempt.fill.price, decisionPositionCandle.close, decisionAttemptInitialStopLoss(activeDecisionCandidate, activeDecisionAttempt) ?? activeDecisionAttempt.stopLoss, activeDecisionPositionMultiplier),
+        'fixed-notional': pnlForDecisionMode('fixed-notional', activeDecisionUserSide, activeDecisionAttempt.fill.price, decisionPositionCandle.close, activeDecisionAttempt.stopLoss, activeDecisionPositionMultiplier),
       }
     : null
   // The system trade is also causal: once its entry candle is visible, show
@@ -418,7 +421,13 @@ function App() {
     () => replayTradeLayers.filter((layer) => layer.symbol === symbol && layer.interval === interval && layer.visible).map((layer) => layer.sourceId),
     [interval, replayTradeLayers, symbol],
   )
-  const registeredDecisionCandidates = useMemo(() => replayDecisionCandidates(replayTradeLayers.map((layer) => layer.sourceId)), [replayTradeLayers])
+  const weeklyDecisionSourceIds = useMemo(
+    () => replayTradeDatasetInfos()
+      .filter((source) => source.name.endsWith(WEEKLY_MERGED_REPLAY_SUFFIX))
+      .map((source) => source.sourceId),
+    [],
+  )
+  const registeredDecisionCandidates = useMemo(() => replayDecisionCandidates(weeklyDecisionSourceIds), [weeklyDecisionSourceIds])
   const allDecisionCandidates = useMemo(() => registeredDecisionCandidates.filter((candidate) => (
     historyCoversDecisionCandidate(candidate, availableDecisionHistoryBySymbol[candidate.symbol])
   )), [availableDecisionHistoryBySymbol, registeredDecisionCandidates])
@@ -441,6 +450,15 @@ function App() {
     // preceding context remains visible without leaking future signals.
     return decisionContextSourceIds
   }, [activeDecisionAttempt, activeDecisionCandidate, decisionContextSourceIds, decisionMode])
+  const latestRevealedDecisionSignal = useMemo(() => {
+    if (!decisionDayMode || !activeDecisionCandidate || !activeDecisionAttempt) return null
+    return latestReplayDecisionSignal(
+      activeDecisionCandidate.symbol,
+      activeDecisionCandidate.interval,
+      decisionSignalSourceIds,
+      activeDecisionAttempt.cursorTime,
+    )
+  }, [activeDecisionAttempt, activeDecisionCandidate, decisionDayMode, decisionSignalSourceIds])
   const decisionDayTradeSourceIds = useMemo(() => decisionDayMode && activeDecisionSession
     ? [...new Set(activeDecisionSession.candidates.map((candidate) => candidate.sourceId))]
     : [], [activeDecisionSession, decisionDayMode])
@@ -563,7 +581,7 @@ function App() {
 
   useEffect(() => saveChartAlerts(chartAlerts), [chartAlerts])
   useEffect(() => savePaperOrders(paperOrders), [paperOrders])
-  useEffect(() => saveReplayTradeLayers(replayTradeLayers), [replayTradeLayers])
+  useEffect(() => saveWeeklyMergedReplayTradeLayers(replayTradeLayers), [replayTradeLayers])
   useEffect(() => saveReplayRangeLayers(replayRangeLayers), [replayRangeLayers])
   useEffect(() => saveFavoriteTools(favoriteTools), [favoriteTools])
   useEffect(() => {
@@ -731,12 +749,14 @@ function App() {
       dispatchDecisionDrawing({ type: 'load', drawings: withoutTransientMeasurements(drawingsForContext) })
       window.setTimeout(() => {
         decisionDrawingLoadingRef.current = false
-        if (decisionDayMode) focusDecisionDayChart()
-        else focusDecisionChartLatest()
+        // A day-sequence session is one continuous chart. Candidate changes
+        // only swap the answer/drawing context and must not recenter the
+        // viewport. The initial day focus is handled by the mode effect below.
+        if (!decisionDayMode) focusDecisionChartLatest()
       }, 0)
     }, 0)
     return () => window.clearTimeout(timer)
-  }, [decisionContextInterval, decisionContextKey, decisionContextSymbol, decisionDayMode, focusDecisionChartLatest, focusDecisionDayChart])
+  }, [decisionContextInterval, decisionContextKey, decisionContextSymbol, decisionDayMode, focusDecisionChartLatest])
 
   useEffect(() => {
     const candidateKey = decisionDrawingContextRef.current
@@ -763,10 +783,9 @@ function App() {
     else focusDecisionChartLatest()
   }, [decisionDayMode, decisionMode, focusDecisionChartLatest, focusDecisionDayChart, interval])
 
-  useEffect(() => {
-    if (!decisionDayMode || decisionData.length === 0) return
-    focusDecisionDayChart()
-  }, [decisionData.length, decisionDayMode, focusDecisionDayChart])
+  // Do not focus the day chart when decisionData grows. ChartSurface preserves
+  // its visible logical range as key 1 reveals each candle, matching ordinary
+  // custom practice and preventing horizontal/vertical layout jumps.
 
   useEffect(() => {
     const chart = chartRef.current
@@ -963,8 +982,10 @@ function App() {
     setHoverCandle(null)
     const returnFromReview = isLast && activeDecisionSession.origin === 'review' && decisionReviewReturnSessionId !== null
     if (!advanceImmediately) {
-      notify(decisionDayMode && isLast
-        ? '当天最后一笔已经结算：按 1 继续逐根观看到收盘'
+      notify(decisionDayMode
+        ? isLast
+          ? '当天最后一笔已经结算：按 1 继续逐根观看到收盘'
+          : '本笔已经平仓：按 1 继续观看，按 2 开多，按 3 开空'
         : '本笔已经平仓：按 1 继续观看，按 4 进入下一笔')
     } else if (returnFromReview) {
       setDecisionResultsSessionId(null)
@@ -976,10 +997,12 @@ function App() {
       setDecisionResultsSessionId(sessionId)
       notify('本场决策已完成，系统结果现已揭晓')
     } else {
-      if (!decisionDayMode) setDecisionFocusTick((value) => value + 1)
-      focusCurrentDecisionChart()
+      if (!decisionDayMode) {
+        setDecisionFocusTick((value) => value + 1)
+        focusDecisionChartLatest()
+      }
     }
-  }, [activeDecisionCandidate, activeDecisionSession, decisionDayMode, decisionDrawings.present, decisionReviewReturnSessionId, focusCurrentDecisionChart, focusDecisionChartLatest, notify])
+  }, [activeDecisionCandidate, activeDecisionSession, decisionDayMode, decisionDrawings.present, decisionReviewReturnSessionId, focusDecisionChartLatest, notify])
 
   const goToNextDecisionTrade = useCallback(() => {
     if (!activeDecisionSession || !activeDecisionCandidate || !activeDecisionAttempt?.result || activeDecisionAttempt.stage !== 'post-exit') return
@@ -1047,11 +1070,13 @@ function App() {
       setDecisionResultsSessionId(sessionId)
       notify('本场决策已完成，系统结果现已揭晓')
     } else {
-      if (!decisionDayMode) setDecisionFocusTick((value) => value + 1)
+      if (!decisionDayMode) {
+        setDecisionFocusTick((value) => value + 1)
+        focusDecisionChartLatest()
+      }
       notify('已进入下一笔交易')
-      focusCurrentDecisionChart()
     }
-  }, [activeDecisionAttempt, activeDecisionCandidate, activeDecisionDaySequence, activeDecisionSession, decisionDayMode, decisionDrawings.present, decisionReviewReturnSessionId, focusCurrentDecisionChart, focusDecisionChartLatest, notify])
+  }, [activeDecisionAttempt, activeDecisionCandidate, activeDecisionDaySequence, activeDecisionSession, decisionDayMode, decisionDrawings.present, decisionReviewReturnSessionId, focusDecisionChartLatest, notify])
 
   const restartActiveDecisionTrade = useCallback(() => {
     if (!activeDecisionSession || !activeDecisionCandidate || activeDecisionAttempt?.stage !== 'post-exit') return
@@ -1108,7 +1133,9 @@ function App() {
           goToNextDecisionTrade()
           return
         }
-        notify('已经到达可用行情末尾；按 4 进入下一笔交易')
+        notify(decisionDayMode
+          ? '已经到达当天行情末尾；按 2 开多或按 3 开空进入下一笔交易'
+          : '已经到达可用行情末尾；按 4 进入下一笔交易')
         return
       }
       updateActiveDecisionAttempt((attempt) => ({ ...attempt, cursorTime: next.time, drawings: withoutTransientMeasurements(decisionDrawings.present) }))
@@ -1153,13 +1180,34 @@ function App() {
   }, [activeDecisionAttempt, decisionSignalReached, decisionSourceData, updateActiveDecisionAttempt])
 
   const chooseDayMarketOrder = useCallback((side: 'long' | 'short') => {
-    if (!decisionDayMode || !activeDecisionAttempt || !activeDecisionCandidate || activeDecisionAttempt.stage !== 'entry-decision') return
+    if (!decisionDayMode || !activeDecisionAttempt || !activeDecisionCandidate || !['entry-decision', 'post-exit'].includes(activeDecisionAttempt.stage)) return
     const current = candleAtOrBefore(decisionSourceData, activeDecisionAttempt.cursorTime)
     if (!current) return
     const price = current.close
     const levels = defaultDecisionLevels(side, price, null)
     setDecisionPriceDraft(price)
     setDecisionRiskDraft(levels)
+    if (activeDecisionAttempt.stage === 'post-exit') {
+      if (!activeDecisionSession) {
+        setDecisionPriceDraft(null)
+        setDecisionRiskDraft(null)
+        return
+      }
+      const sessionId = activeDecisionSession.id
+      const candidateKey = activeDecisionCandidate.key
+      const drawings = withoutTransientMeasurements(decisionDrawings.present)
+      setDecisionStore((store) => ({
+        ...store,
+        sessions: store.sessions.map((session) => (
+          session.id === sessionId && currentDecisionCandidate(session)?.key === candidateKey
+            ? startNextDaySequenceTrade(session, side, price, drawings)
+            : session
+        )),
+      }))
+      setHoverCandle(null)
+      notify(`本笔结果已保存，下一笔按当前收盘价${side === 'long' ? '开多' : '开空'}`)
+      return
+    }
     updateActiveDecisionAttempt((attempt) => ({
       ...attempt,
       userSide: side,
@@ -1170,12 +1218,12 @@ function App() {
       fill: { time: attempt.cursorTime, price },
       stage: 'risk-setup',
     }))
-  }, [activeDecisionAttempt, activeDecisionCandidate, decisionDayMode, decisionSourceData, updateActiveDecisionAttempt])
+  }, [activeDecisionAttempt, activeDecisionCandidate, activeDecisionSession, decisionDayMode, decisionDrawings.present, decisionSourceData, notify, updateActiveDecisionAttempt])
 
   const cancelDecisionSetup = useCallback(() => {
     setDecisionPriceDraft(null)
     setDecisionRiskDraft(null)
-    updateActiveDecisionAttempt((attempt) => ({ ...attempt, stage: 'entry-decision', userSide: undefined, stopLossMode: 'close', entryMode: null, orderKind: null, pendingEntryPrice: null, initialStopLoss: null, stopLoss: null, takeProfit: null, fill: null }))
+    updateActiveDecisionAttempt((attempt) => ({ ...attempt, stage: 'entry-decision', userSide: undefined, stopLossMode: 'close', entryMode: null, orderKind: null, pendingEntryPrice: null, initialStopLoss: null, stopLoss: null, takeProfit: null, positionMultiplier: 1, fill: null }))
   }, [updateActiveDecisionAttempt])
 
   const confirmDecisionPrice = useCallback(() => {
@@ -1238,6 +1286,12 @@ function App() {
   const updateDecisionStopLossMode = useCallback((mode: DecisionStopLossMode) => {
     updateActiveDecisionAttempt((attempt) => ['risk-setup', 'order-pending', 'position-open'].includes(attempt.stage)
       ? { ...attempt, stopLossMode: mode }
+      : attempt)
+  }, [updateActiveDecisionAttempt])
+
+  const updateDecisionPositionMultiplier = useCallback((positionMultiplier: DecisionPositionMultiplier) => {
+    updateActiveDecisionAttempt((attempt) => attempt.stage === 'risk-setup'
+      ? { ...attempt, positionMultiplier: normalizeDecisionPositionMultiplier(positionMultiplier) }
       : attempt)
   }, [updateActiveDecisionAttempt])
 
@@ -1484,9 +1538,12 @@ function App() {
   }, [])
 
   const refreshCodeDeployStatus = useCallback((announce = false) => {
+    if (codeDeployStatusInFlightRef.current) return
+    codeDeployStatusInFlightRef.current = true
     if (announce) setCodeDeployPhase('checking')
     void loadLocalCodeStatus().then((status) => {
       setCodeDeployStatus(status)
+      setCodeDeployError('')
       setCodeDeployPhase('ready')
       if (announce) notify(status.updateAvailable
         ? `发现新版本 ${status.remoteHead.slice(0, 7)}`
@@ -1494,8 +1551,12 @@ function App() {
           ? `代码已是最新版本 ${status.localHead.slice(0, 7)}`
           : `当前有 ${status.dirtyFiles.length} 项未发布代码修改`)
     }).catch((error) => {
-      setCodeDeployPhase('unavailable')
-      if (announce) notify(`代码状态检查失败：${error instanceof Error ? error.message : '未知错误'}`)
+      const message = error instanceof Error ? error.message : '未知错误'
+      setCodeDeployError(message)
+      setCodeDeployPhase(error instanceof LocalCodeDeployUnavailableError ? 'unavailable' : 'status-error')
+      if (announce) notify(`代码状态检查失败：${message}；页面会自动重试`)
+    }).finally(() => {
+      codeDeployStatusInFlightRef.current = false
     })
   }, [notify])
 
@@ -1504,8 +1565,15 @@ function App() {
     return () => window.clearTimeout(timer)
   }, [refreshCodeDeployStatus])
 
+  useEffect(() => {
+    if (codeDeployPhase !== 'unavailable' && codeDeployPhase !== 'status-error') return
+    const timer = window.setInterval(() => refreshCodeDeployStatus(false), 5_000)
+    return () => window.clearInterval(timer)
+  }, [codeDeployPhase, refreshCodeDeployStatus])
+
   const publishCodeDeployment = useCallback(() => {
     if (codeDeployPhase === 'publishing' || codeDeployPhase === 'updating') return
+    setCodeDeployError('')
     setCodeDeployPhase('publishing')
     void publishLocalCode().then((result) => {
       setCodeDeployStatus((current) => current ? {
@@ -1521,6 +1589,7 @@ function App() {
       setCodeDeployPhase('published')
       notify(`代码已部署到 GitHub：${result.commit.slice(0, 7)}，远程提交已回读验证`)
     }).catch((error) => {
+      setCodeDeployError(error instanceof Error ? error.message : '未知错误')
       setCodeDeployPhase('error')
       notify(`代码发布失败：${error instanceof Error ? error.message : '未知错误'}`)
     })
@@ -1530,6 +1599,7 @@ function App() {
     if (codeDeployPhase === 'publishing' || codeDeployPhase === 'updating') return
     saveDecisionReplayStoreSnapshot(decisionStoreRef.current)
     saveDecisionReplayFavorites(decisionFavoriteKeysRef.current)
+    setCodeDeployError('')
     setCodeDeployPhase('updating')
     void updateLocalCode().then((result) => {
       if (!result.restartRequired) {
@@ -1561,6 +1631,7 @@ function App() {
       }
       window.setTimeout(poll, 1500)
     }).catch((error) => {
+      setCodeDeployError(error instanceof Error ? error.message : '未知错误')
       setCodeDeployPhase('error')
       notify(`代码更新失败：${error instanceof Error ? error.message : '未知错误'}`)
     })
@@ -2028,7 +2099,7 @@ function App() {
                   </button>
                 ))}
               </div>
-              <div className="data-disclaimer">XAUUSD/XAGUSD/US500：OANDA 5 分钟快照；XAGUSD 决策回放：OANDA:XAGUSD 冻结 5 分钟数据；BTCUSDT.P：KUCOIN XBTUSDTM 近90天快照；ETHUSD：本地模拟</div>
+              <div className="data-disclaimer">XAUUSD/XAGUSD/US500：OANDA 5 分钟快照；XAGUSD 决策回放：OANDA:XAGUSD 冻结 5 分钟数据；BTCUSDT.P/ETHUSD：BYBIT 5 分钟回放快照</div>
             </div>
           )}
         </div>
@@ -2236,6 +2307,7 @@ function App() {
             />}
             {activeDecisionCandidate && activeDecisionAttempt && <DecisionReplayPanel
               candidate={activeDecisionCandidate}
+              latestSignal={latestRevealedDecisionSignal}
               attempt={activeDecisionAttempt}
               ordinal={(activeDecisionSession?.currentIndex ?? 0) + 1}
               total={activeDecisionSession?.candidates.length ?? 0}
@@ -2243,11 +2315,10 @@ function App() {
               currentPnlByMode={decisionPositionPnlByMode}
               positionSizingModes={activeDecisionPositionSizingModes}
               independentReview={activeDecisionSession?.origin === 'review'}
-              preSignal={!decisionSignalReached}
+              preSignal={decisionDayMode ? latestRevealedDecisionSignal === null : !decisionSignalReached}
               daySequenceMode={decisionDayMode}
               canAdvanceTrade={!decisionDayMode
-                || (activeDecisionSession?.currentIndex ?? 0) < (activeDecisionSession?.candidates.length ?? 0) - 1
-                || Boolean(activeDecisionDaySequence && activeDecisionAttempt.cursorTime >= activeDecisionDaySequence.endTime - intervalSeconds(activeDecisionCandidate.interval))}
+                || (activeDecisionSession?.currentIndex ?? 0) < (activeDecisionSession?.candidates.length ?? 0) - 1}
               favorite={decisionFavoriteKeys.includes(decisionReplayFavoriteKey('trade', activeDecisionCandidate.key))}
               onToggleFavorite={() => setDecisionFavoriteKeys((current) => toggleDecisionReplayFavorite(
                 current,
@@ -2282,6 +2353,8 @@ function App() {
               entryPrice={activeDecisionAttempt.pendingEntryPrice}
               stopLoss={effectiveDecisionRiskDraft.stopLoss}
               takeProfit={effectiveDecisionRiskDraft.takeProfit}
+              positionMultiplier={activeDecisionPositionMultiplier}
+              onPositionMultiplierChange={updateDecisionPositionMultiplier}
               currentCandleX={decisionCurrentCandleX}
               positionSizingModes={activeDecisionPositionSizingModes}
               toPrice={(y) => chartRef.current?.coordinateToPrice(y) ?? null}
@@ -2300,6 +2373,7 @@ function App() {
               entryLabel={activeDecisionAttempt.stage === 'position-open' ? '开仓' : '挂单'}
               stopLoss={activeDecisionAttempt.stopLoss}
               takeProfit={activeDecisionAttempt.takeProfit}
+              positionMultiplier={activeDecisionPositionMultiplier}
               initialStopLoss={decisionAttemptInitialStopLoss(activeDecisionCandidate, activeDecisionAttempt) ?? activeDecisionAttempt.stopLoss}
               currentCandleX={decisionCurrentCandleX}
               currentClose={activeDecisionAttempt.stage === 'position-open' ? decisionPositionCandle?.close ?? null : null}
@@ -2508,7 +2582,7 @@ function App() {
       />}
 
       {indicatorPanelOpen && <IndicatorPanel value={indicators} onChange={setIndicators} onClose={() => setIndicatorPanelOpen(false)} />}
-      {settingsOpen && <SettingsPanel theme={theme} onTheme={setTheme} onReset={resetWorkspace} onExportWorkspace={exportWorkspace} onMergeProgress={mergeWorkspaceProgress} onPrivateReceive={() => receivePrivateRepository('workspace')} onPrivateSync={() => syncPrivateRepository('workspace')} onHistoryReceive={() => receivePrivateRepository('history')} onHistorySync={() => syncPrivateRepository('history')} privateSyncBusy={privateSyncBusy} privateSyncOperation={privateSyncOperation} privateSyncStatus={privateSyncStatus} codeDeployPhase={codeDeployPhase} codeDeployStatus={codeDeployStatus} onCodeDeployRefresh={() => refreshCodeDeployStatus(true)} onCodePublish={publishCodeDeployment} onCodeUpdate={updateCodeDeployment} onImportWorkspace={importWorkspace} onRestoreLastImport={restoreLastWorkspaceImport} canRestoreWorkspace={Boolean(loadPortableWorkspaceRecovery())} onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <SettingsPanel theme={theme} onTheme={setTheme} onReset={resetWorkspace} onExportWorkspace={exportWorkspace} onMergeProgress={mergeWorkspaceProgress} onPrivateReceive={() => receivePrivateRepository('workspace')} onPrivateSync={() => syncPrivateRepository('workspace')} onHistoryReceive={() => receivePrivateRepository('history')} onHistorySync={() => syncPrivateRepository('history')} privateSyncBusy={privateSyncBusy} privateSyncOperation={privateSyncOperation} privateSyncStatus={privateSyncStatus} codeDeployPhase={codeDeployPhase} codeDeployStatus={codeDeployStatus} codeDeployError={codeDeployError} onCodeDeployRefresh={() => refreshCodeDeployStatus(true)} onCodePublish={publishCodeDeployment} onCodeUpdate={updateCodeDeployment} onImportWorkspace={importWorkspace} onRestoreLastImport={restoreLastWorkspaceImport} canRestoreWorkspace={Boolean(loadPortableWorkspaceRecovery())} onClose={() => setSettingsOpen(false)} />}
       {quickSearchOpen && <QuickSearchDialog items={quickSearchItems} query={quickSearchQuery} onQuery={setQuickSearchQuery} onSelect={runQuickSearchItem} onClose={() => setQuickSearchOpen(false)} />}
       {intervalDialogOpen && <IntervalShortcutDialog value={intervalDraft} onChange={setIntervalDraft} onApply={applyIntervalInput} onClose={() => setIntervalDialogOpen(false)} />}
       {goToDateOpen && <GoToDateDialog initialTime={data.at(-1)?.time ?? 0} onSelect={(time) => { chartRef.current?.goToTime(time); setGoToDateOpen(false); notify('已转到指定日期') }} onClose={() => setGoToDateOpen(false)} />}
@@ -2615,7 +2689,7 @@ function IndicatorPanel({ value, onChange, onClose }: { value: IndicatorSettings
   return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section className="modal indicator-modal" role="dialog" aria-modal="true" aria-label="指标设置"><div className="modal-header"><div><b>技术指标</b><small>叠加到主图的本地计算指标</small></div><button onClick={onClose} aria-label="关闭"><X size={18} /></button></div><div className="indicator-list">{rows.map((row) => <div className="indicator-row" key={row.key}><span className="indicator-color" style={{ background: row.color }} /><div><b>{row.name}</b><small>{row.detail}</small></div><label className="switch" aria-label={`${row.name}开关`} title={`${row.name}开关`}><input type="checkbox" checked={value[row.key]} onChange={(event) => onChange({ ...value, [row.key]: event.target.checked })} /><span /></label></div>)}</div><div className="parameter-grid"><label>MA 周期<input type="number" min="2" max="200" value={value.maPeriod} onChange={(event) => onChange({ ...value, maPeriod: Number(event.target.value) })} /></label><label>EMA 周期<input type="number" min="2" max="200" value={value.emaPeriod} onChange={(event) => onChange({ ...value, emaPeriod: Number(event.target.value) })} /></label><label>BOLL 周期<input type="number" min="2" max="200" value={value.bollPeriod} onChange={(event) => onChange({ ...value, bollPeriod: Number(event.target.value) })} /></label><label>标准差<input type="number" step="0.1" min="0.1" max="5" value={value.bollDeviation} onChange={(event) => onChange({ ...value, bollDeviation: Number(event.target.value) })} /></label></div><div className="modal-footer"><button onClick={() => onChange(DEFAULT_INDICATORS)}>恢复指标默认</button><button className="primary" onClick={onClose}>完成</button></div></section></div>
 }
 
-function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProgress, onPrivateReceive, onPrivateSync, onHistoryReceive, onHistorySync, privateSyncBusy, privateSyncOperation, privateSyncStatus, codeDeployPhase, codeDeployStatus, onCodeDeployRefresh, onCodePublish, onCodeUpdate, onImportWorkspace, onRestoreLastImport, canRestoreWorkspace, onClose }: {
+function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProgress, onPrivateReceive, onPrivateSync, onHistoryReceive, onHistorySync, privateSyncBusy, privateSyncOperation, privateSyncStatus, codeDeployPhase, codeDeployStatus, codeDeployError, onCodeDeployRefresh, onCodePublish, onCodeUpdate, onImportWorkspace, onRestoreLastImport, canRestoreWorkspace, onClose }: {
   theme: Theme
   onTheme: (theme: Theme) => void
   onReset: () => void
@@ -2630,6 +2704,7 @@ function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProg
   privateSyncStatus: PrivateSyncStatus
   codeDeployPhase: CodeDeployPhase
   codeDeployStatus: LocalCodeStatus | null
+  codeDeployError: string
   onCodeDeployRefresh: () => void
   onCodePublish: () => void
   onCodeUpdate: () => void
@@ -2640,6 +2715,7 @@ function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProg
 }) {
   const mergeInputRef = useRef<HTMLInputElement>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
+  const codeDeployStatusPending = codeDeployPhase === 'checking' || codeDeployPhase === 'unavailable' || codeDeployPhase === 'status-error'
   return <aside className="settings-panel">
     <div className="panel-heading"><div><b>图表设置</b><small>外观与工作区</small></div><button onClick={onClose} aria-label="关闭"><X size={18} /></button></div>
     <section><h3>外观</h3><div className="theme-options"><button className={theme === 'dark' ? 'active' : ''} onClick={() => onTheme('dark')}><Moon size={18} />深色</button><button className={theme === 'light' ? 'active' : ''} onClick={() => onTheme('light')}><Sun size={18} />亮色</button></div></section>
@@ -2658,12 +2734,12 @@ function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProg
     </div></section>
     <section className="code-deploy-section"><h3>跨电脑代码部署</h3><p>上面的数据同步按钮不包含网站代码。发布端会先运行完整验证，再把 Kline Studio 代码提交并推送到公开仓库；接收端只在工作区干净时快进更新，验证后自动重启 4173。不会读写浏览器做题历史。</p>
       <div className={`code-deploy-status ${codeDeployPhase}`}>
-        <span>{codeDeployPhase === 'publishing' ? '正在验证并发布代码…' : codeDeployPhase === 'updating' ? '正在验证新版本并重启…' : codeDeployPhase === 'unavailable' ? '代码部署服务不可用' : codeDeployPhase === 'error' ? '上次代码操作失败' : codeDeployStatus ? `本机 ${codeDeployStatus.localHead.slice(0, 7)} · 远程 ${codeDeployStatus.remoteHead.slice(0, 7)}` : '正在读取代码版本…'}</span>
-        {codeDeployStatus && <small>{codeDeployStatus.diverged ? '本机与远程已分叉，必须停止' : codeDeployStatus.updateAvailable ? '远程有新版本，可更新' : codeDeployStatus.dirtyFiles.length > 0 ? `${codeDeployStatus.dirtyFiles.length} 项未发布代码修改` : '本机与 GitHub 代码一致'}</small>}
+        <span>{codeDeployPhase === 'publishing' ? '正在验证并发布代码…' : codeDeployPhase === 'updating' ? '正在验证新版本并重启…' : codeDeployPhase === 'unavailable' ? '代码部署服务暂未连接，正在自动重试' : codeDeployPhase === 'status-error' ? '代码版本检查失败，正在自动重试' : codeDeployPhase === 'error' ? '上次代码操作失败' : codeDeployStatus ? `本机 ${codeDeployStatus.localHead.slice(0, 7)} · 远程 ${codeDeployStatus.remoteHead.slice(0, 7)}` : '正在读取代码版本…'}</span>
+        {codeDeployError ? <small>{codeDeployError}；也可点击“检查代码版本”立即重试</small> : codeDeployStatus && <small>{codeDeployStatus.diverged ? '本机与远程已分叉，必须停止' : codeDeployStatus.updateAvailable ? '远程有新版本，可更新' : codeDeployStatus.dirtyFiles.length > 0 ? `${codeDeployStatus.dirtyFiles.length} 项未发布代码修改` : '本机与 GitHub 代码一致'}</small>}
       </div>
       <div className="workspace-transfer-actions code-deploy-actions">
-        <button type="button" className="merge-progress" disabled={privateSyncBusy || codeDeployPhase === 'publishing' || codeDeployPhase === 'updating' || codeDeployPhase === 'unavailable'} onClick={onCodePublish}><Upload size={16} />{codeDeployPhase === 'publishing' ? '正在发布…' : '发布代码到 GitHub'}</button>
-        <button type="button" disabled={privateSyncBusy || codeDeployPhase === 'publishing' || codeDeployPhase === 'updating' || codeDeployPhase === 'unavailable'} onClick={onCodeUpdate}><Download size={16} />{codeDeployPhase === 'updating' ? '正在更新…' : '更新代码并重启'}</button>
+        <button type="button" className="merge-progress" disabled={privateSyncBusy || codeDeployStatusPending || codeDeployPhase === 'publishing' || codeDeployPhase === 'updating'} onClick={onCodePublish}><Upload size={16} />{codeDeployPhase === 'publishing' ? '正在发布…' : '发布代码到 GitHub'}</button>
+        <button type="button" disabled={privateSyncBusy || codeDeployStatusPending || codeDeployPhase === 'publishing' || codeDeployPhase === 'updating'} onClick={onCodeUpdate}><Download size={16} />{codeDeployPhase === 'updating' ? '正在更新…' : '更新代码并重启'}</button>
         <button type="button" className="code-status-refresh" disabled={codeDeployPhase === 'publishing' || codeDeployPhase === 'updating'} onClick={onCodeDeployRefresh}><RefreshCcw size={16} />检查代码版本</button>
       </div>
     </section>

@@ -25,7 +25,7 @@ export const SYMBOLS: SymbolInfo[] = [
   { id: 'XAGUSD', name: '白银现货/美元', exchange: 'OANDA', basePrice: 34, volatility: 0.0032, precision: 3, accent: '#b7c4d6' },
   { id: 'BTCUSDT.P', name: '比特币/泰达币永续', exchange: 'BYBIT', basePrice: 64800, volatility: 0.0054, precision: 1, accent: '#f7931a' },
   { id: 'US500', name: '标普500指数', exchange: 'ICMARKETS', basePrice: 6400, volatility: 0.0016, precision: 1, accent: '#6da7ff' },
-  { id: 'ETHUSD', name: '以太坊/美元', exchange: 'COINBASE', basePrice: 3890, volatility: 0.0065, precision: 2, accent: '#627eea' },
+  { id: 'ETHUSD', name: '以太坊/美元', exchange: 'BYBIT', basePrice: 3890, volatility: 0.0065, precision: 2, accent: '#627eea' },
 ]
 
 export const INTERVALS: Record<IntervalId, { label: string; seconds: number }> = {

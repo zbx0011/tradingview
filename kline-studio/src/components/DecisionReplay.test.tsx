@@ -7,7 +7,7 @@ import {
 import type { DecisionReplaySession } from '../lib/decisionReplay'
 import { decisionReplayFavoriteKey } from '../lib/decisionReplayFavorites'
 import {
-  DecisionChartAnnotations, DecisionChartStatus, DecisionHistoryDialog, DecisionReplayCenter, DecisionReplayPanel, DecisionResultsDialog, DecisionReviewPanel, DecisionRiskOverlay,
+  DecisionChartAnnotations, DecisionChartPnlBreakdown, DecisionChartStatus, DecisionHistoryDialog, DecisionReplayCenter, DecisionReplayPanel, DecisionResultsDialog, DecisionReviewPanel, DecisionRiskOverlay,
 } from './DecisionReplay'
 
 function candidate(): ReplayDecisionCandidate {
@@ -438,6 +438,7 @@ describe('decision replay components', () => {
     expect(markup).toContain('止盈金额')
     expect(markup).toContain('+$100.00')
     expect(markup).toContain('挂单 100.000 · 盈亏比 1 : 1.00')
+    expect(markup).toContain('仓位 1×')
     expect(markup).toContain('止损 95.000')
     expect(markup).toContain('data-testid="decision-stop-loss-amount"')
     expect(markup).toContain('止损线参考盈亏（非最大亏损）')
@@ -448,6 +449,20 @@ describe('decision replay components', () => {
     expect(markup).toContain('title="拖动调整止盈"')
     expect(markup).toContain('title="拖动调整止损；按钮只切换本笔模式，不移动价格"')
     expect(markup).toContain('拖动上下两个控制点')
+  })
+
+  it('renders position decrease and increase controls and scales setup amounts', () => {
+    const markup = renderToStaticMarkup(<DecisionRiskOverlay
+      candidate={candidate()} entryPrice={100} stopLoss={95} takeProfit={105}
+      positionMultiplier={2} onPositionMultiplierChange={noop}
+      toPrice={(y) => y} toY={(price) => price} onStopLoss={noop} onTakeProfit={noop}
+      onConfirm={noop} onCancel={noop}
+    />)
+    expect(markup).toContain('aria-label="减小仓位"')
+    expect(markup).toContain('aria-label="增加仓位"')
+    expect(markup).toContain('仓位 2×')
+    expect(markup).toContain('+$200.00')
+    expect(markup).toContain('-$200.00')
   })
 
   it('defaults the red-line selector to close mode and identifies touch as per-trade only', () => {
@@ -537,13 +552,57 @@ describe('decision replay components', () => {
     expect(markup).toContain('本场累计净盈亏')
     expect(markup).toContain('参与胜率 <strong>—</strong>')
     expect(markup).toContain('本场 AI 累计净盈亏')
+    expect(markup).toContain('data-testid="decision-chart-user-total"')
     expect(markup).toContain('data-testid="decision-chart-ai-total"')
+    expect(markup).toContain('aria-expanded="false"')
     expect(markup).toMatch(/data-testid="decision-chart-ai-total"[\s\S]*\$0\.00/)
     expect(markup).toContain('+$198.02')
     expect(markup).toContain('仓位 10,000U')
     expect(markup).not.toContain('风险 100U')
     expect(markup).toContain('data-testid="decision-chart-status-drag-handle"')
     expect(markup).toContain('拖动移动本场练习盈亏')
+  })
+
+  it('renders every settled trade in the expandable chart PnL breakdown', () => {
+    const first = candidate()
+    const second = {
+      ...candidate(),
+      key: 'XAUUSD:5m:long:6000:6300',
+      manualContinuation: true,
+      trade: { ...candidate().trade, tradeNumber: 13 },
+    }
+    const firstAttempt = {
+      ...createDecisionAttempt(first), stage: 'complete' as const, entryMode: 'signal-extreme' as const,
+      orderKind: 'stop' as const, pendingEntryPrice: 101, initialStopLoss: 95, stopLoss: 95,
+      fill: { time: 3300, price: 101 },
+    }
+    const secondAttempt = {
+      ...createDecisionAttempt(second), stage: 'complete' as const, entryMode: 'market-close' as const,
+      orderKind: null, pendingEntryPrice: 101, initialStopLoss: 95, stopLoss: 95,
+      fill: { time: 6300, price: 101 },
+    }
+    const firstResult = buildDecisionResult(first, firstAttempt, { time: 3600, price: 103, reason: 'manual-close' }, [])
+    const secondResult = buildDecisionResult(second, secondAttempt, { time: 6600, price: 99, reason: 'manual-close' }, [])
+    const session = {
+      ...createDecisionSession([first, second], 2, 1, ['fixed-notional']),
+      attempts: [{ ...firstAttempt, result: firstResult }, { ...secondAttempt, result: secondResult }],
+    }
+    const markup = renderToStaticMarkup(<DecisionChartPnlBreakdown
+      session={session}
+      results={[firstResult, secondResult]}
+      focusActor="user"
+      positionSizingModes={['fixed-notional']}
+    />)
+
+    expect(markup).toContain('data-testid="decision-chart-pnl-breakdown"')
+    expect(markup).toContain('共 2 笔已结算交易')
+    expect(markup).toContain('第 1 笔 · 多头')
+    expect(markup).toContain('第 2 笔 · 多头')
+    expect(markup).toContain('你的盈亏')
+    expect(markup).toContain('AI 盈亏')
+    expect(markup).toContain('差额')
+    expect(markup).toContain('手动续单')
+    expect(markup).toContain('无对应交易')
   })
 
   it('keeps the current system result floating until the next question is entered', () => {
@@ -564,7 +623,7 @@ describe('decision replay components', () => {
       systemCurrentPnlByMode={{ 'fixed-notional': 99.009900990099 }}
       positionSizingModes={['fixed-notional']}
     />)
-    const aiSection = markup.match(/<article class="ai-total[\s\S]*?<\/article>/)?.[0] ?? ''
+    const aiSection = markup.match(/<button[^>]*class="ai-total[\s\S]*?<\/button>/)?.[0] ?? ''
     expect(aiSection).toContain('已结算 0 笔 + 当前浮动')
     expect(aiSection).toContain('+$99.01')
     expect(aiSection).not.toContain('+$198.02')
@@ -589,7 +648,7 @@ describe('decision replay components', () => {
       systemCurrentPnlLocked
       positionSizingModes={['fixed-notional']}
     />)
-    const aiSection = markup.match(/<article class="ai-total[\s\S]*?<\/article>/)?.[0] ?? ''
+    const aiSection = markup.match(/<button[^>]*class="ai-total[\s\S]*?<\/button>/)?.[0] ?? ''
     expect(aiSection).toContain('全部已结算 1 笔题目')
     expect(aiSection).toContain('+$198.02')
     expect(aiSection).not.toContain('当前浮动')
@@ -1177,5 +1236,68 @@ describe('decision replay components', () => {
     expect(markup).toContain('继续观看下一根 K 线')
     expect(markup).toContain('进入下一笔交易')
     expect(markup).toContain('<kbd>5</kbd>重新开始这笔交易')
+  })
+
+  it('keeps day-sequence post-exit controls on keys 1, 2 and 3', () => {
+    const item = candidate()
+    const filled = {
+      ...createDecisionAttempt(item),
+      stage: 'position-open' as const,
+      userSide: 'long' as const,
+      entryMode: 'market-close' as const,
+      pendingEntryPrice: 101,
+      initialStopLoss: 95,
+      stopLoss: 95,
+      takeProfit: 107,
+      fill: { time: 3300, price: 101 },
+    }
+    const result = buildDecisionResult(item, filled, { time: 3600, price: 103, reason: 'manual-close' }, [])
+    const markup = renderToStaticMarkup(<DecisionReplayPanel
+      candidate={item} attempt={{ ...filled, stage: 'post-exit' as const, result }} ordinal={1} total={4}
+      daySequenceMode canAdvanceTrade={false}
+      onAdvance={noop} onSignalExtreme={noop} onFreePrice={noop} onSkip={noop}
+      onOpenLong={noop} onOpenShort={noop}
+      onManualClose={noop} onCancelPending={noop} onNextTrade={noop} onStop={noop}
+    />)
+    expect(markup).toContain('<kbd>1</kbd><span><b>播放下一根 K 线</b>')
+    expect(markup).toContain('<kbd>2</kbd><span><b>开多</b>')
+    expect(markup).toContain('<kbd>3</kbd><span><b>开空</b>')
+    expect(markup).not.toContain('当天已无下一笔系统交易')
+    expect(markup).not.toContain('disabled=""')
+    expect(markup).not.toContain('进入下一笔交易')
+    expect(markup).not.toContain('重新开始这笔交易')
+  })
+
+  it('shows the latest causally revealed signal in the day-sequence detail panel', () => {
+    const activeBase = candidate()
+    const active = { ...activeBase, key: 'active-signal:1', trade: { ...activeBase.trade, side: 'short' as const } }
+    const latestTrade = candidate().trade
+    const latestSignal = {
+      id: 'decision-signal-test-4200-long',
+      sourceId: 'test',
+      kind: 'entry' as const,
+      tradeMarkerId: 'replay-trade-test-2-entry',
+      signalSide: 'long' as const,
+      signalTime: 4200,
+      trade: {
+        ...latestTrade,
+        entry: { ...latestTrade.entry, signalTime: 4200, setup: '最新多头反转', reason: '这是最新已经揭示的多头信号' },
+      },
+    }
+    const markup = renderToStaticMarkup(<DecisionReplayPanel
+      candidate={active} latestSignal={latestSignal} attempt={createDecisionAttempt(active, 4500)} ordinal={2} total={4}
+      daySequenceMode
+      onAdvance={noop} onSignalExtreme={noop} onFreePrice={noop} onSkip={noop}
+      onOpenLong={noop} onOpenShort={noop}
+      onManualClose={noop} onCancelPending={noop} onNextTrade={noop} onStop={noop}
+    />)
+
+    expect(markup).toContain('最新信号 K')
+    expect(markup).toContain('当前 K：')
+    expect(markup).toContain('开多信号')
+    expect(markup).toContain('最新多头反转')
+    expect(markup).toContain('这是最新已经揭示的多头信号')
+    expect(markup).not.toContain(active.trade.entry.setup)
+    expect(markup).not.toContain(active.trade.entry.reason)
   })
 })

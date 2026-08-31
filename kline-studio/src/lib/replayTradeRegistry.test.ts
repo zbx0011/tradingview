@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  replayDecisionCandidates, replayDecisionContextSourceIds, replayTradeDatasetInfos, resolveReplayDecisionSignalMarker, resolveReplayTradeMarker,
+  latestReplayDecisionSignal, replayDecisionCandidates, replayDecisionContextSourceIds, replayTradeDatasetInfos, resolveReplayDecisionSignalMarker, resolveReplayTradeMarker,
   toReplayDecisionSignalSeriesMarkers, toReplayTradeConnectionSpecs, toReplayTradeSeriesMarkers,
 } from './replayTradeRegistry'
 
@@ -50,6 +50,16 @@ describe('replay trade dataset registry', () => {
     expect(trades.length).toBeGreaterThan(0)
     expect(trades.every((trade) => trade.entry.takeProfit === null && trade.entry.noFixedTakeProfitAtEntry)).toBe(true)
     expect(trades.some((trade) => trade.exit.reasonCode === 'COURSE_TARGET' || trade.exit.reasonCode === 'COURSE_TARGET_GAP')).toBe(false)
+  })
+
+  it('registers every weekly merged replay in the decision-bank source pool', () => {
+    const weeklySources = replayTradeDatasetInfos().filter((source) => source.name.endsWith(' · 周合并'))
+    const candidates = replayDecisionCandidates(weeklySources.map((source) => source.sourceId))
+
+    expect(weeklySources).toHaveLength(77)
+    expect(candidates).toHaveLength(5382)
+    expect(new Set(candidates.map((candidate) => candidate.symbol))).toEqual(new Set(['XAUUSD', 'XAGUSD', 'BTCUSDT.P', 'US500', 'ETHUSD']))
+    expect(new Set(candidates.map((candidate) => candidate.interval))).toEqual(new Set(['5m', '15m']))
   })
 
   it('reveals the later US500 decision signals only when their own signal candle is reached', () => {
@@ -106,5 +116,18 @@ describe('replay trade dataset registry', () => {
       trade: { exit: { signalTime: nextOppositeSignalTime } },
     })
     expect(selection?.tradeMarkerId).toContain('-exit')
+  })
+
+  it('returns the latest raw chart signal, including an opposite exit signal', () => {
+    const sourceId = 'us500-5m-conservative-stop-first-7e97f1718d2140c2'
+    const initialSignalTime = 1_786_086_300
+    const nextOppositeSignalTime = 1_786_090_500
+
+    expect(latestReplayDecisionSignal('US500', '5m', [sourceId], nextOppositeSignalTime - 1)).toMatchObject({
+      kind: 'entry', signalTime: initialSignalTime, signalSide: 'long',
+    })
+    expect(latestReplayDecisionSignal('US500', '5m', [sourceId], nextOppositeSignalTime)).toMatchObject({
+      kind: 'exit', signalTime: nextOppositeSignalTime, signalSide: 'short',
+    })
   })
 })

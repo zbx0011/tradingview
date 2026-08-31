@@ -105,7 +105,7 @@ function normalizedSymbol(value) {
   if (symbol.endsWith('XAUUSD')) return 'XAUUSD'
   if (symbol.endsWith('XAGUSD')) return 'XAGUSD'
   if (symbol.includes('BTCUSDT.P')) return 'BTCUSDT.P'
-  if (symbol.endsWith('US500')) return 'US500'
+  if (symbol.endsWith('US500') || symbol.endsWith('SPX500USD') || symbol.endsWith('US500USD')) return 'US500'
   // The website uses ETHUSD as its canonical symbol for the Bybit ETHUSDT.P feed.
   if (symbol.includes('ETHUSDT.P')) return 'ETHUSD'
   if (symbol.endsWith('ETHUSD')) return 'ETHUSD'

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { loadLocalCodeStatus, publishLocalCode, updateLocalCode } from './localCodeDeploy'
+import { LocalCodeDeployUnavailableError, loadLocalCodeStatus, publishLocalCode, updateLocalCode } from './localCodeDeploy'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -61,5 +61,22 @@ describe('local code deployment client', () => {
       dirtyFiles: [' M kline-studio/src/App.tsx'],
     }), { status: 409, headers: { 'Content-Type': 'application/json' } })))
     await expect(updateLocalCode()).rejects.toThrow('当前代码工作区不干净： M kline-studio/src/App.tsx')
+  })
+
+  it('distinguishes an unreachable local service from a backend operation error', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch') }))
+    await expect(loadLocalCodeStatus()).rejects.toBeInstanceOf(LocalCodeDeployUnavailableError)
+
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      ok: false,
+      error: 'git fetch origin master 失败',
+    }), { status: 500, headers: { 'Content-Type': 'application/json' } })))
+    await expect(loadLocalCodeStatus()).rejects.not.toBeInstanceOf(LocalCodeDeployUnavailableError)
+    await expect(loadLocalCodeStatus()).rejects.toThrow('git fetch origin master 失败')
+  })
+
+  it('treats a non-JSON endpoint response as an unavailable deployment service', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('<!doctype html>', { status: 404 })))
+    await expect(loadLocalCodeStatus()).rejects.toBeInstanceOf(LocalCodeDeployUnavailableError)
   })
 })

@@ -31,6 +31,12 @@ interface StorageLike {
 
 export const REPLAY_TRADE_LAYERS_STORAGE_KEY = 'kline-studio-replay-trade-layers-v1'
 
+// Weekly merged exports are the active object-tree view. The source replay
+// files remain registered on disk so historical versions can still be
+// audited or imported explicitly.
+export const WEEKLY_MERGED_REPLAY_SUFFIX = ' · 周合并'
+const WEEKLY_DEFAULT_HIDDEN_MIGRATION_KEY = 'kline-studio-replay-trade-layers-weekly-default-hidden-20260830'
+
 // The newer replay exports use this suffix while the older export keeps the
 // same symbol/interval/window name. They are two versions of the same object
 // tree entry, not two independent replay windows.
@@ -253,6 +259,10 @@ function browserStorage(): StorageLike | undefined {
   return typeof localStorage === 'undefined' ? undefined : localStorage
 }
 
+function isWeeklyMergedReplaySource(source: ReplayTradeDatasetInfo) {
+  return source.name.endsWith(WEEKLY_MERGED_REPLAY_SUFFIX)
+}
+
 function isReplayTradeLayer(value: unknown): value is ReplayTradeLayer {
   if (!value || typeof value !== 'object') return false
   const item = value as Partial<ReplayTradeLayer>
@@ -324,8 +334,12 @@ function isV4ReplayTradeLayer(layer: ReplayTradeLayer) {
   return /(?:^|[^A-Za-z0-9])V4(?:[^A-Za-z0-9]|$)/i.test(layer.name)
 }
 
-export function loadReplayTradeLayers(storage: StorageLike | undefined = browserStorage()): ReplayTradeLayer[] {
-  const available = replayTradeDatasetInfos()
+export function loadReplayTradeLayers(
+  storage: StorageLike | undefined = browserStorage(),
+  sourceFilter: (source: ReplayTradeDatasetInfo) => boolean = () => true,
+  defaultVisible = true,
+): ReplayTradeLayer[] {
+  const available = replayTradeDatasetInfos().filter(sourceFilter)
   const preferredSourceIds = preferredReplayTradeSourceIds(available)
   if (!storage) return sortReplayTradeLayers(keepLatestReplayTradeLayers(available.map(createDefaultReplayTradeLayer), preferredSourceIds))
   const raw = storage.getItem(REPLAY_TRADE_LAYERS_STORAGE_KEY)
@@ -343,9 +357,10 @@ export function loadReplayTradeLayers(storage: StorageLike | undefined = browser
       .filter((source) => !seen.has(source.sourceId))
       .filter((source) => !REMOVED_OBSOLETE_REPLAY_SOURCE_IDS.has(source.sourceId))
       .filter((source) => !removeV4MigrationPending || !REMOVED_V4_SOURCE_IDS.has(source.sourceId))
-      .map(createDefaultReplayTradeLayer)
+      .map((source) => ({ ...createDefaultReplayTradeLayer(source), visible: defaultVisible }))
     const availableBySourceId = new Map(available.map((source) => [source.sourceId, source]))
     const storedLayers = stored.layers
+      .filter((layer) => availableBySourceId.has(layer.sourceId))
       .filter((layer) => !REMOVED_OBSOLETE_REPLAY_SOURCE_IDS.has(layer.sourceId))
       .filter((layer) => !removeV4MigrationPending || (!REMOVED_V4_SOURCE_IDS.has(layer.sourceId) && !isV4ReplayTradeLayer(layer)))
       .map((layer) => {
@@ -371,16 +386,33 @@ export function loadReplayTradeLayers(storage: StorageLike | undefined = browser
     if (removeV4MigrationPending) storage.setItem(REMOVE_ALL_V4_MIGRATION_KEY, '1')
     return layers
   }
-  const layers = sortReplayTradeLayers(keepLatestReplayTradeLayers(available.map(createDefaultReplayTradeLayer), preferredSourceIds))
+  const layers = sortReplayTradeLayers(keepLatestReplayTradeLayers(available.map((source) => ({ ...createDefaultReplayTradeLayer(source), visible: defaultVisible })), preferredSourceIds))
   writeStore(layers, available.map((source) => source.sourceId), storage)
   return layers
 }
 
-export function saveReplayTradeLayers(layers: ReplayTradeLayer[], storage: StorageLike | undefined = browserStorage()) {
-  const available = replayTradeDatasetInfos()
+export function saveReplayTradeLayers(
+  layers: ReplayTradeLayer[],
+  storage: StorageLike | undefined = browserStorage(),
+  sourceFilter: (source: ReplayTradeDatasetInfo) => boolean = () => true,
+) {
+  const available = replayTradeDatasetInfos().filter(sourceFilter)
   const sortedLayers = sortReplayTradeLayers(keepLatestReplayTradeLayers(layers, preferredReplayTradeSourceIds(available)))
   writeStore(sortedLayers, [...available.map((source) => source.sourceId), ...sortedLayers.map((layer) => layer.sourceId)], storage)
   storage?.setItem(RESTORE_XAUUSD_5M_LAYERS_MIGRATION_KEY, '1')
+}
+
+export function loadWeeklyMergedReplayTradeLayers(storage: StorageLike | undefined = browserStorage()) {
+  const layers = loadReplayTradeLayers(storage, isWeeklyMergedReplaySource, false)
+  if (!storage || storage.getItem(WEEKLY_DEFAULT_HIDDEN_MIGRATION_KEY) === '1') return layers
+  const hiddenLayers = layers.map((layer) => ({ ...layer, visible: false }))
+  saveWeeklyMergedReplayTradeLayers(hiddenLayers, storage)
+  storage.setItem(WEEKLY_DEFAULT_HIDDEN_MIGRATION_KEY, '1')
+  return hiddenLayers
+}
+
+export function saveWeeklyMergedReplayTradeLayers(layers: ReplayTradeLayer[], storage: StorageLike | undefined = browserStorage()) {
+  saveReplayTradeLayers(layers, storage, isWeeklyMergedReplaySource)
 }
 
 export function hasVisibleReplayTradeLayer(layers: ReplayTradeLayer[], symbol: SymbolId, interval: IntervalId, sourceId: string) {

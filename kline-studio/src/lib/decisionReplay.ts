@@ -13,8 +13,10 @@ export const DECISION_REPLAY_STORAGE_KEY = 'kline-studio-decision-replay-v1'
 export const DECISION_REPLAY_VERSION = 1 as const
 export const DECISION_PLANNED_RISK_USD = 100
 export const DECISION_FIXED_NOTIONAL_USD = 10_000
+export const DECISION_POSITION_MULTIPLIERS = [0.5, 1, 2, 3] as const
 
 export type DecisionPositionSizingMode = 'fixed-risk' | 'fixed-notional'
+export type DecisionPositionMultiplier = (typeof DECISION_POSITION_MULTIPLIERS)[number]
 export type DecisionHistorySort = 'time-desc' | 'time-asc' | 'pnl-desc' | 'pnl-asc'
 export const DEFAULT_DECISION_POSITION_SIZING_MODES: readonly DecisionPositionSizingMode[] = ['fixed-risk', 'fixed-notional']
 export const DECISION_REPLAY_INTERVALS = ['5m', '15m', '1h'] as const
@@ -65,6 +67,8 @@ export interface DecisionTradeResult {
   stopLossMode?: DecisionStopLossMode
   stopLoss: number | null
   takeProfit: number | null
+  /** Per-order position multiplier. Missing legacy values mean the default 1x size. */
+  positionMultiplier?: DecisionPositionMultiplier
   plannedRiskUsd: number
   userPnlUsd: number
   userR: number
@@ -89,6 +93,8 @@ export interface DecisionAttempt {
   stopLossMode?: DecisionStopLossMode
   stopLoss: number | null
   takeProfit: number | null
+  /** Per-order position multiplier. Missing legacy values mean the default 1x size. */
+  positionMultiplier?: DecisionPositionMultiplier
   fill: DecisionFill | null
   drawings: Drawing[]
   result: DecisionTradeResult | null
@@ -188,6 +194,7 @@ function isDecisionSyncBranch(session: Pick<DecisionReplaySession, 'id'>) {
 }
 
 function safeDecisionResultPnl(result: DecisionTradeResult, mode: DecisionPositionSizingMode, actor: 'user' | 'system') {
+  if (actor === 'system' && !decisionResultHasSystemBenchmark(result)) return 0
   try {
     return decisionResultPnl(result, mode, actor)
   } catch {
@@ -206,10 +213,11 @@ function safeDecisionResultPnl(result: DecisionTradeResult, mode: DecisionPositi
 function decisionSessionResultSignature(session: DecisionReplaySession) {
   const results = session.attempts.flatMap((attempt) => attempt.result ? [attempt.result] : [])
   const participated = results.filter((result) => result.choice === 'traded')
+  const systemResults = results.filter(decisionResultHasSystemBenchmark)
   return decisionSessionPositionSizingModes(session).map((mode) => {
     const userPnlUsd = results.reduce((sum, result) => sum + safeDecisionResultPnl(result, mode, 'user'), 0)
     const systemPnlUsd = results.reduce((sum, result) => sum + safeDecisionResultPnl(result, mode, 'system'), 0)
-    const systemWins = results.filter((result) => safeDecisionResultPnl(result, mode, 'system') > 0).length
+    const systemWins = systemResults.filter((result) => safeDecisionResultPnl(result, mode, 'system') > 0).length
     const userWins = participated.filter((result) => safeDecisionResultPnl(result, mode, 'user') > 0).length
     return {
       mode,
@@ -220,7 +228,7 @@ function decisionSessionResultSignature(session: DecisionReplaySession) {
       userWins,
       userTotal: participated.length,
       systemWins,
-      systemTotal: results.length,
+      systemTotal: systemResults.length,
       userPnl: userPnlUsd.toFixed(2),
       systemPnl: systemPnlUsd.toFixed(2),
       differencePnl: (userPnlUsd - systemPnlUsd).toFixed(2),
@@ -394,6 +402,7 @@ export function parseDecisionReplayStoreChecked(raw: string | null): DecisionRep
           return {
             ...attempt,
             initialStopLoss,
+            positionMultiplier: normalizeDecisionPositionMultiplier(attempt.positionMultiplier),
             result: attempt.result ? normalizeDecisionTradeResult(attempt.result) : null,
           }
         }),
@@ -1196,9 +1205,109 @@ export function createDecisionAttempt(candidate: ReplayDecisionCandidate, cursor
     stopLossMode: 'close',
     stopLoss: null,
     takeProfit: null,
+    positionMultiplier: 1,
     fill: null,
     drawings: [],
     result: null,
+  }
+}
+
+/**
+ * Finish the settled day-sequence answer and immediately prepare the next
+ * chronological exercise at the candle the user is currently viewing.
+ * The settled result remains immutable; the new long/short choice belongs to
+ * the next candidate, so history statistics never overwrite the prior trade.
+ */
+export function startNextDaySequenceTrade(
+  session: DecisionReplaySession,
+  side: TradeSide,
+  entryPrice: number,
+  drawings: Drawing[],
+  now = Date.now(),
+): DecisionReplaySession {
+  if (decisionSessionPracticeMode(session) !== 'day-sequence' || session.status !== 'active') return session
+  const candidate = currentDecisionCandidate(session)
+  const attempt = currentDecisionAttempt(session)
+  if (!candidate || !attempt?.result || attempt.stage !== 'post-exit' || !Number.isFinite(entryPrice)) return session
+  const scheduledCandidate = session.candidates[session.currentIndex + 1]
+  const manualStopDistance = Math.max(Math.abs(entryPrice) * 0.002, 0.01)
+  const manualStopLoss = side === 'long' ? entryPrice - manualStopDistance : entryPrice + manualStopDistance
+  const manualExitTime = Math.max(
+    attempt.cursorTime,
+    (session.daySequence?.endTime ?? attempt.cursorTime + intervalSeconds(candidate.interval)) - intervalSeconds(candidate.interval),
+  )
+  const manualBeijingTime = (time: number) => new Date((time + BEIJING_UTC_OFFSET_SECONDS) * 1000).toISOString().slice(0, 16).replace('T', ' ')
+  const nextCandidate: ReplayDecisionCandidate = scheduledCandidate ?? {
+    ...candidate,
+    key: `${candidate.key}:manual:${session.id}:${attempt.cursorTime}:${session.candidates.length + 1}`,
+    sourceName: `${candidate.sourceName} · 日内手动续单`,
+    manualContinuation: true,
+    trade: {
+      ...candidate.trade,
+      tradeNumber: Math.max(...session.candidates.map((item) => item.trade.tradeNumber), 0) + 1,
+      side,
+      entry: {
+        ...candidate.trade.entry,
+        signalTime: attempt.cursorTime,
+        time: attempt.cursorTime,
+        beijingTime: manualBeijingTime(attempt.cursorTime),
+        price: entryPrice,
+        setup: '日内手动续单',
+        reason: '用户在日内逐根回放中按当前 K 线收盘价主动开仓；本笔没有对应的新增系统交易。',
+        stopLoss: manualStopLoss,
+      },
+      exit: {
+        ...candidate.trade.exit,
+        time: manualExitTime,
+        beijingTime: manualBeijingTime(manualExitTime),
+        price: entryPrice,
+        reasonCode: 'END_OF_DATA_MARK_TO_MARKET',
+        ambiguous: false,
+        finalActiveStop: manualStopLoss,
+        trailingActivated: false,
+        trailingActivationIdx: null,
+        trailingStructureIdx: null,
+        trailingStructureConfirmationIdx: null,
+        trailingStructurePrice: null,
+        signalIdx: undefined,
+        signalTime: undefined,
+        setup: undefined,
+        reason: undefined,
+      },
+      result: { barsHeld: 0, rMultiple: 0, pnlUsd: 0 },
+    },
+  }
+
+  const completedAttempt: DecisionAttempt = {
+    ...attempt,
+    stage: 'complete',
+    drawings,
+    result: { ...attempt.result, drawings },
+  }
+  const nextAttempt: DecisionAttempt = {
+    ...createDecisionAttempt(nextCandidate, attempt.cursorTime),
+    userSide: side,
+    entryMode: 'market-close',
+    pendingEntryPrice: entryPrice,
+    initialStopLoss: null,
+    stopLossMode: 'close',
+    stopLoss: null,
+    takeProfit: null,
+    fill: { time: attempt.cursorTime, price: entryPrice },
+    stage: 'risk-setup',
+  }
+
+  const attempts = session.attempts
+    .filter((item) => item.candidateKey !== nextCandidate.key)
+    .map((item) => item.candidateKey === candidate.key ? completedAttempt : item)
+
+  return {
+    ...session,
+    candidates: scheduledCandidate ? session.candidates : [...session.candidates, nextCandidate],
+    attempts: [...attempts, nextAttempt],
+    currentIndex: session.currentIndex + 1,
+    requestedCount: scheduledCandidate ? session.requestedCount : Math.max(session.requestedCount, session.candidates.length + 1),
+    updatedAt: now,
   }
 }
 
@@ -1568,6 +1677,7 @@ export function cancelPendingOrderAndAdvance(attempt: DecisionAttempt, nextCandl
     stopLossMode: 'close',
     stopLoss: null,
     takeProfit: null,
+    positionMultiplier: 1,
     fill: null,
     result: null,
   }
@@ -1594,16 +1704,33 @@ export function pnlForFixedNotional(
   return { pnlUsd: signedReturn * notionalUsd, returnPercent: signedReturn * 100 }
 }
 
+export function normalizeDecisionPositionMultiplier(value: unknown): DecisionPositionMultiplier {
+  return DECISION_POSITION_MULTIPLIERS.includes(value as DecisionPositionMultiplier)
+    ? value as DecisionPositionMultiplier
+    : 1
+}
+
+export function nextDecisionPositionMultiplier(
+  current: unknown,
+  direction: -1 | 1,
+): DecisionPositionMultiplier {
+  const normalized = normalizeDecisionPositionMultiplier(current)
+  const index = DECISION_POSITION_MULTIPLIERS.indexOf(normalized)
+  return DECISION_POSITION_MULTIPLIERS[Math.max(0, Math.min(DECISION_POSITION_MULTIPLIERS.length - 1, index + direction))]
+}
+
 export function pnlForDecisionMode(
   mode: DecisionPositionSizingMode,
   side: TradeSide,
   entryPrice: number,
   exitPrice: number,
   stopLoss: number,
+  positionMultiplier: unknown = 1,
 ) {
+  const multiplier = normalizeDecisionPositionMultiplier(positionMultiplier)
   return mode === 'fixed-risk'
-    ? pnlForDecision(side, entryPrice, exitPrice, stopLoss).pnlUsd
-    : pnlForFixedNotional(side, entryPrice, exitPrice).pnlUsd
+    ? pnlForDecision(side, entryPrice, exitPrice, stopLoss, DECISION_PLANNED_RISK_USD * multiplier).pnlUsd
+    : pnlForFixedNotional(side, entryPrice, exitPrice, DECISION_FIXED_NOTIONAL_USD * multiplier).pnlUsd
 }
 
 function isValidInitialStopLoss(side: TradeSide, entryPrice: number, stopLoss: number | null | undefined): stopLoss is number {
@@ -1643,21 +1770,29 @@ export function decisionResultInitialStopLoss(result: DecisionTradeResult) {
 }
 
 export function decisionResultR(result: DecisionTradeResult, actor: 'user' | 'system') {
-  if (actor === 'system') return result.systemR
+  if (actor === 'system') return decisionResultHasSystemBenchmark(result) ? result.systemR : 0
   if (result.choice !== 'traded' || !result.userEntry) return 0
   const initialStopLoss = decisionResultInitialStopLoss(result)
   if (initialStopLoss === null) return result.userR
   return pnlForDecision(decisionResultSide(result), result.userEntry.price, result.userExit.price, initialStopLoss, 1).rMultiple
 }
 
+export function decisionResultHasSystemBenchmark(result: Partial<Pick<DecisionTradeResult, 'candidate'>>) {
+  // Compact legacy/sync fixtures may omit the embedded candidate. Preserve
+  // their historical behavior; only an explicit manual continuation opts out.
+  return result.candidate?.manualContinuation !== true
+}
+
 export function normalizeDecisionTradeResult(result: DecisionTradeResult): DecisionTradeResult {
   const initialStopLoss = decisionResultInitialStopLoss(result)
-  if (result.choice !== 'traded' || !result.userEntry || initialStopLoss === null) return { ...result, initialStopLoss }
+  const positionMultiplier = normalizeDecisionPositionMultiplier(result.positionMultiplier)
+  if (result.choice !== 'traded' || !result.userEntry || initialStopLoss === null) return { ...result, initialStopLoss, positionMultiplier }
   const plannedRiskUsd = Number.isFinite(result.plannedRiskUsd) && result.plannedRiskUsd > 0 ? result.plannedRiskUsd : DECISION_PLANNED_RISK_USD
-  const user = pnlForDecision(decisionResultSide(result), result.userEntry.price, result.userExit.price, initialStopLoss, plannedRiskUsd)
+  const user = pnlForDecision(decisionResultSide(result), result.userEntry.price, result.userExit.price, initialStopLoss, plannedRiskUsd * positionMultiplier)
   return {
     ...result,
     initialStopLoss,
+    positionMultiplier,
     plannedRiskUsd,
     userPnlUsd: user.pnlUsd,
     userR: user.rMultiple,
@@ -1670,17 +1805,31 @@ export function decisionResultPnl(
   mode: DecisionPositionSizingMode,
   actor: 'user' | 'system',
 ) {
+  if (actor === 'system' && !decisionResultHasSystemBenchmark(result)) return 0
   if (mode === 'fixed-risk') {
     if (actor === 'system') return result.systemPnlUsd
     if (result.choice !== 'traded' || !result.userEntry) return 0
     const initialStopLoss = decisionResultInitialStopLoss(result)
     if (initialStopLoss === null) return result.userPnlUsd
     const plannedRiskUsd = Number.isFinite(result.plannedRiskUsd) && result.plannedRiskUsd > 0 ? result.plannedRiskUsd : DECISION_PLANNED_RISK_USD
-    return pnlForDecision(decisionResultSide(result), result.userEntry.price, result.userExit.price, initialStopLoss, plannedRiskUsd).pnlUsd
+    return pnlForDecision(
+      decisionResultSide(result),
+      result.userEntry.price,
+      result.userExit.price,
+      initialStopLoss,
+      plannedRiskUsd * normalizeDecisionPositionMultiplier(result.positionMultiplier),
+    ).pnlUsd
   }
   if (actor === 'user') {
     if (result.choice !== 'traded' || !result.userEntry) return 0
-    return pnlForDecisionMode('fixed-notional', decisionResultSide(result), result.userEntry.price, result.userExit.price, result.stopLoss ?? result.userEntry.price)
+    return pnlForDecisionMode(
+      'fixed-notional',
+      decisionResultSide(result),
+      result.userEntry.price,
+      result.userExit.price,
+      result.stopLoss ?? result.userEntry.price,
+      result.positionMultiplier,
+    )
   }
   return pnlForDecisionMode(
     'fixed-notional',
@@ -1704,9 +1853,13 @@ export function buildDecisionResult(candidate: ReplayDecisionCandidate, attempt:
     : exit.reason === 'skipped' || attempt.pendingEntryPrice === null ? 'skipped' : 'unfilled'
   const riskStopLoss = decisionAttemptInitialStopLoss(candidate, attempt) ?? attempt.stopLoss
   const userSide = decisionAttemptSide(candidate, attempt)
+  const positionMultiplier = normalizeDecisionPositionMultiplier(attempt.positionMultiplier)
   const user = traded
-    ? pnlForDecision(userSide, attempt.fill!.price, exit.price, riskStopLoss!, DECISION_PLANNED_RISK_USD)
+    ? pnlForDecision(userSide, attempt.fill!.price, exit.price, riskStopLoss!, DECISION_PLANNED_RISK_USD * positionMultiplier)
     : { pnlUsd: 0, rMultiple: 0 }
+  const hasSystemBenchmark = candidate.manualContinuation !== true
+  const systemPnlUsd = hasSystemBenchmark ? candidate.trade.result.pnlUsd : 0
+  const systemR = hasSystemBenchmark ? candidate.trade.result.rMultiple : 0
   return {
     candidateKey: candidate.key,
     candidate,
@@ -1721,12 +1874,13 @@ export function buildDecisionResult(candidate: ReplayDecisionCandidate, attempt:
     stopLossMode: decisionStopLossMode(attempt.stopLossMode),
     stopLoss: attempt.stopLoss,
     takeProfit: attempt.takeProfit,
+    positionMultiplier,
     plannedRiskUsd: DECISION_PLANNED_RISK_USD,
     userPnlUsd: user.pnlUsd,
     userR: user.rMultiple,
-    systemPnlUsd: candidate.trade.result.pnlUsd,
-    systemR: candidate.trade.result.rMultiple,
-    differenceUsd: user.pnlUsd - candidate.trade.result.pnlUsd,
+    systemPnlUsd,
+    systemR,
+    differenceUsd: user.pnlUsd - systemPnlUsd,
     drawings: drawings.map((drawing) => ({ ...drawing, points: drawing.points.map((point) => ({ ...point })) })),
   }
 }
@@ -1757,6 +1911,11 @@ export function decisionShortcutAction(stage: DecisionAttemptStage, key: string,
   }
   if (stage === 'post-exit') {
     if (key === '1') return 'advance'
+    if (practiceMode === 'day-sequence') {
+      if (key === '2') return 'open-long'
+      if (key === '3') return 'open-short'
+      return null
+    }
     if (key === '4') return 'next-trade'
     if (key === '5') return 'restart-trade'
   }

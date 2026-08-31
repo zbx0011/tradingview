@@ -10,7 +10,7 @@ import {
   adjacentDecisionExerciseTarget, advanceDecisionAttempt, buildDecisionResult, cancelPendingOrderAndAdvance, candlesKnownAt, compareDecisionHistorySortValues, createDecisionAttempt, createDecisionReviewSession, createDecisionSession,
   decisionAttemptSide, decisionDayCandidateGroups, decisionDayHistoryIsComplete, decisionResultSide, decisionSessionPracticeMode, decisionShortcutAction, defaultDecisionLevels, evaluatePositionBar, fillPendingOrder,
   decisionResultPnl, decisionResultR, decisionSessionUserRStats, decisionStopLossMode, emptyDecisionReplayStore, filterDecisionCandidatesByScope, historyCoversDecisionCandidate, intervalCutoffTime, parseDecisionReplayStore,
-  mergeDecisionReplayStores, normalizeDecisionReplayStore, persistDecisionReplayStoreAdditively, pnlForDecision, pnlForDecisionMode, restartPostExitDecisionAttempt, rewardRiskRatio, sampleDecisionCandidates, sampleDecisionDayCandidates,
+  mergeDecisionReplayStores, nextDecisionPositionMultiplier, normalizeDecisionPositionMultiplier, normalizeDecisionReplayStore, persistDecisionReplayStoreAdditively, pnlForDecision, pnlForDecisionMode, restartPostExitDecisionAttempt, rewardRiskRatio, sampleDecisionCandidates, sampleDecisionDayCandidates, startNextDaySequenceTrade,
   saveDecisionReplayStore, saveDecisionReplayStoreSnapshot, serializeDecisionReplayStore, updateDecisionSessionDrawings, validDecisionLevels, validOpenPositionLevels, type DecisionReplaySession,
 } from './decisionReplay'
 
@@ -224,9 +224,20 @@ describe('decision replay', () => {
   it('defaults new attempts to close stops while legacy mode values remain touch-compatible', () => {
     const item = candidate('mode-default:1')
     expect(createDecisionAttempt(item).stopLossMode).toBe('close')
+    expect(createDecisionAttempt(item).positionMultiplier).toBe(1)
     expect(decisionStopLossMode(undefined)).toBe('touch')
     expect(decisionStopLossMode('legacy-value')).toBe('touch')
     expect(decisionStopLossMode('close')).toBe('close')
+  })
+
+  it('steps position size through 0.5x, 1x, 2x and 3x with safe legacy defaults', () => {
+    expect(nextDecisionPositionMultiplier(1, -1)).toBe(0.5)
+    expect(nextDecisionPositionMultiplier(0.5, -1)).toBe(0.5)
+    expect(nextDecisionPositionMultiplier(1, 1)).toBe(2)
+    expect(nextDecisionPositionMultiplier(2, 1)).toBe(3)
+    expect(nextDecisionPositionMultiplier(3, 1)).toBe(3)
+    expect(normalizeDecisionPositionMultiplier(undefined)).toBe(1)
+    expect(normalizeDecisionPositionMultiplier(1.5)).toBe(1)
   })
 
   it('evaluates close stops from the actual close for both sides, with equality not triggering', () => {
@@ -311,7 +322,7 @@ describe('decision replay', () => {
     expect(historyCoversDecisionCandidate(candidate('a:1'), nativeFiveMinuteBars.filter((item) => item.time !== 4200))).toBe(false)
   })
 
-  it('has fully backed decision questions across the four imported markets', () => {
+  it('has fully backed decision questions across all five imported markets', () => {
     const historyBySymbol = new Map<string, Candle[] | null>()
     const eligible = replayDecisionCandidates().filter((item) => {
       if (!historyBySymbol.has(item.symbol)) {
@@ -323,7 +334,7 @@ describe('decision replay', () => {
     })
     const symbols = new Set(eligible.map((item) => item.symbol))
     expect(eligible.length).toBeGreaterThan(0)
-    expect([...symbols]).toEqual(expect.arrayContaining(['XAUUSD', 'XAGUSD', 'BTCUSDT.P', 'US500']))
+    expect([...symbols]).toEqual(expect.arrayContaining(['XAUUSD', 'XAGUSD', 'BTCUSDT.P', 'US500', 'ETHUSD']))
   })
 
   it('starts TP at one R and calculates a fixed 100 USD risk result', () => {
@@ -484,6 +495,41 @@ describe('decision replay', () => {
     expect(decisionResultPnl(result, 'fixed-notional', 'system')).toBeCloseTo(2 / 101 * 10000)
   })
 
+  it('scales only the user order PnL by its saved position multiplier', () => {
+    const item = candidate('size:1')
+    const attempt = {
+      ...createDecisionAttempt(item),
+      stage: 'position-open' as const,
+      entryMode: 'signal-extreme' as const,
+      orderKind: 'stop' as const,
+      pendingEntryPrice: 100,
+      initialStopLoss: 95,
+      stopLoss: 95,
+      takeProfit: 105,
+      positionMultiplier: 2 as const,
+      fill: { time: 3300, price: 100 },
+    }
+    const result = buildDecisionResult(item, attempt, { time: 3600, price: 105, reason: 'take-profit' }, [])
+
+    expect(result.positionMultiplier).toBe(2)
+    expect(result.userPnlUsd).toBe(200)
+    expect(result.systemPnlUsd).toBe(40)
+    expect(decisionResultPnl(result, 'fixed-risk', 'user')).toBe(200)
+    expect(decisionResultPnl(result, 'fixed-risk', 'system')).toBe(40)
+    expect(decisionResultPnl(result, 'fixed-notional', 'user')).toBe(1000)
+    expect(decisionResultPnl(result, 'fixed-notional', 'system')).toBeCloseTo(2 / 101 * 10000)
+  })
+
+  it('normalizes missing legacy position multipliers to the default 1x size', () => {
+    const item = candidate('legacy-size:1')
+    const attempt = createDecisionAttempt(item)
+    const legacyAttempt = { ...attempt, positionMultiplier: undefined }
+    const session = { ...createDecisionSession([item], 1, 1), attempts: [legacyAttempt] }
+    const parsed = parseDecisionReplayStore(JSON.stringify(storeWithSessions(session as DecisionReplaySession)))
+
+    expect(parsed.sessions[0].attempts[0].positionMultiplier).toBe(1)
+  })
+
   it('distinguishes an unfilled order from an intentional skip', () => {
     const item = candidate('a:1')
     const pending = { ...createDecisionAttempt(item), stage: 'order-pending' as const, entryMode: 'free-price' as const, orderKind: 'limit' as const, pendingEntryPrice: 90, stopLoss: 85, takeProfit: 95 }
@@ -539,6 +585,11 @@ describe('decision replay', () => {
     expect(decisionShortcutAction('entry-decision', '2', 'day-sequence')).toBe('open-long')
     expect(decisionShortcutAction('entry-decision', '3', 'day-sequence')).toBe('open-short')
     expect(decisionShortcutAction('entry-decision', '4', 'day-sequence')).toBeNull()
+    expect(decisionShortcutAction('post-exit', '1', 'day-sequence')).toBe('advance')
+    expect(decisionShortcutAction('post-exit', '2', 'day-sequence')).toBe('open-long')
+    expect(decisionShortcutAction('post-exit', '3', 'day-sequence')).toBe('open-short')
+    expect(decisionShortcutAction('post-exit', '4', 'day-sequence')).toBeNull()
+    expect(decisionShortcutAction('post-exit', '5', 'day-sequence')).toBeNull()
   })
 
   it('persists and calculates a day-sequence short independently of the long system candidate', () => {
@@ -567,6 +618,85 @@ describe('decision replay', () => {
     session.attempts = [{ ...evaluation.attempt, stage: 'complete', result }]
     const parsed = parseDecisionReplayStore(serializeDecisionReplayStore({ version: 1, seenTradeKeys: [item.key], activeSessionId: null, sessions: [session] }))
     expect(parsed.sessions[0].attempts[0]).toMatchObject({ userSide: 'short', result: { userSide: 'short', userPnlUsd: 100 } })
+  })
+
+  it('starts a new day-sequence trade without overwriting the settled result', () => {
+    const candidates = [candidate('day-next:1'), candidate('day-next:2')]
+    const session = createDecisionSession(candidates, 2, 123, ['fixed-risk'], {
+      practiceMode: 'day-sequence',
+      daySequence: { key: 'XAUUSD:5m:day-next', symbol: 'XAUUSD', interval: '5m', startTime: 600, endTime: 86_400 },
+    })
+    const first = {
+      ...createDecisionAttempt(candidates[0], 3900),
+      stage: 'position-open' as const,
+      userSide: 'long' as const,
+      entryMode: 'market-close' as const,
+      pendingEntryPrice: 100,
+      initialStopLoss: 95,
+      stopLoss: 95,
+      takeProfit: 105,
+      fill: { time: 3600, price: 100 },
+    }
+    const firstResult = buildDecisionResult(candidates[0], first, { time: 3900, price: 102, reason: 'manual-close' }, [])
+    session.attempts = [{ ...first, stage: 'post-exit', result: firstResult }]
+
+    const next = startNextDaySequenceTrade(session, 'short', 101, [], 456)
+
+    expect(next.currentIndex).toBe(1)
+    expect(next.updatedAt).toBe(456)
+    expect(next.attempts[0]).toMatchObject({ candidateKey: candidates[0].key, stage: 'complete', result: firstResult })
+    expect(next.attempts[1]).toMatchObject({
+      candidateKey: candidates[1].key,
+      cursorTime: 3900,
+      stage: 'risk-setup',
+      userSide: 'short',
+      entryMode: 'market-close',
+      pendingEntryPrice: 101,
+      fill: { time: 3900, price: 101 },
+      result: null,
+    })
+  })
+
+  it('appends a manual continuation after the final system trade without duplicating system pnl', () => {
+    const item = candidate('day-final:4')
+    const session = createDecisionSession([item], 1, 123, ['fixed-risk', 'fixed-notional'], {
+      practiceMode: 'day-sequence',
+      daySequence: { key: 'XAUUSD:5m:day-final', symbol: 'XAUUSD', interval: '5m', startTime: 600, endTime: 86_400 },
+    })
+    const first = {
+      ...createDecisionAttempt(item, 4500),
+      stage: 'position-open' as const,
+      userSide: 'long' as const,
+      entryMode: 'market-close' as const,
+      pendingEntryPrice: 100,
+      initialStopLoss: 95,
+      stopLoss: 95,
+      takeProfit: 105,
+      fill: { time: 4200, price: 100 },
+    }
+    const firstResult = buildDecisionResult(item, first, { time: 4500, price: 102, reason: 'manual-close' }, [])
+    session.attempts = [{ ...first, stage: 'post-exit', result: firstResult }]
+
+    const continued = startNextDaySequenceTrade(session, 'long', 101, [], 456)
+    const manualCandidate = continued.candidates[1]
+    const manualAttempt = {
+      ...continued.attempts[1],
+      stage: 'position-open' as const,
+      initialStopLoss: 96,
+      stopLoss: 96,
+      takeProfit: 106,
+    }
+    const manualResult = buildDecisionResult(manualCandidate, manualAttempt, { time: 4800, price: 103, reason: 'manual-close' }, [])
+
+    expect(continued.currentIndex).toBe(1)
+    expect(continued.requestedCount).toBe(2)
+    expect(continued.candidates).toHaveLength(2)
+    expect(manualCandidate).toMatchObject({ manualContinuation: true, trade: { side: 'long', result: { pnlUsd: 0, rMultiple: 0 } } })
+    expect(continued.attempts[0]).toMatchObject({ candidateKey: item.key, stage: 'complete', result: firstResult })
+    expect(continued.attempts[1]).toMatchObject({ candidateKey: manualCandidate.key, stage: 'risk-setup', userSide: 'long', pendingEntryPrice: 101 })
+    expect(decisionResultPnl(manualResult, 'fixed-risk', 'system')).toBe(0)
+    expect(decisionResultPnl(manualResult, 'fixed-notional', 'system')).toBe(0)
+    expect(decisionResultR(manualResult, 'system')).toBe(0)
   })
 
   it('navigates backward through completed exercises and only returns forward to the reached active exercise', () => {

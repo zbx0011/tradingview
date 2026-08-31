@@ -102,7 +102,9 @@ export async function loadSnapshotCandles(symbol: SymbolId, interval: IntervalId
       // React development mode intentionally mounts and cleans effects twice;
       // aborting that first subscriber must not cancel the cached request used
       // by the second mount or by decision-history hydration.
-      const response = await fetch(`${import.meta.env.BASE_URL}${series.file}`, { cache: 'force-cache' })
+      // Version the URL with the manifest endpoint so a refreshed snapshot
+      // cannot be masked by the browser's cache for the same compact file.
+      const response = await fetch(`${import.meta.env.BASE_URL}${series.file}?v=${series.lastTime}`, { cache: 'force-cache' })
       if (!response.ok) throw new Error(`${symbol} 历史数据 HTTP ${response.status}`)
       const bars = parseCompactHistory(await response.json())
       snapshotSourceCache.set(symbol, bars)
@@ -124,7 +126,7 @@ export function getSnapshotStatus(symbol: SymbolId): MarketDataStatus {
     label: `${series.vendor} 最新`,
     vendor: series.vendor,
     fetchedAt: series.lastTime,
-    detail: `${series.symbol} · ${series.vendor} 静态快照 · ${series.count.toLocaleString('zh-CN')} 根 1 分钟 K 线 · UTC`,
+    detail: `${series.symbol} · ${series.vendor} 静态快照 · ${series.count.toLocaleString('zh-CN')} 根 ${series.resolution} 分钟 K 线 · UTC`,
   }
 }
 
