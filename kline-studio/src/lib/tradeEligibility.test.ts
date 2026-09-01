@@ -7,12 +7,13 @@ const trade = (entryTime: number, exitTime: number, reasonCode = 'TRAILING_STOP'
 })
 
 describe('commodity trade eligibility', () => {
-  it('excludes closed-session trades that cross the Beijing date', () => {
-    expect(isExcludedCommodityTrade('XAUUSD', trade(57_300, 57_900))).toBe(true)
-    expect(isExcludedCommodityTrade('XAGUSD', trade(57_300, 57_900))).toBe(true)
-    expect(isExcludedCommodityTrade('US500', trade(57_300, 57_900))).toBe(true)
-    expect(isExcludedCommodityTrade('XAUUSD', trade(57_900, 58_200))).toBe(false)
-    expect(isExcludedCommodityTrade('BTCUSDT.P', trade(57_300, 57_900))).toBe(false)
+  it('uses the 06:00 Beijing session boundary instead of calendar midnight', () => {
+    const at = (date: string) => Math.floor(new Date(`${date}+08:00`).getTime() / 1000)
+    expect(isExcludedCommodityTrade('XAUUSD', trade(at('2026-06-30 23:20'), at('2026-07-01 01:35')))).toBe(false)
+    expect(isExcludedCommodityTrade('XAGUSD', trade(at('2026-06-30 23:20'), at('2026-07-01 01:35')))).toBe(false)
+    expect(isExcludedCommodityTrade('US500', trade(at('2026-06-30 23:20'), at('2026-07-01 01:35')))).toBe(false)
+    expect(isExcludedCommodityTrade('XAUUSD', trade(at('2026-07-01 04:00'), at('2026-07-01 06:50')))).toBe(true)
+    expect(isExcludedCommodityTrade('BTCUSDT.P', trade(at('2026-07-01 04:00'), at('2026-07-01 06:50')))).toBe(false)
   })
 
   it('excludes mark-to-market positions for every closed-session symbol', () => {

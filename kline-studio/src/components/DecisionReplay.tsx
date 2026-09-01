@@ -6,15 +6,15 @@ import {
 } from 'lucide-react'
 import type { ReplayDecisionCandidate, ReplayDecisionSignalMarkerSelection } from '../lib/replayTradeRegistry'
 import type {
-  DecisionAttempt, DecisionHistorySort, DecisionPositionMultiplier, DecisionPositionSizingMode, DecisionPracticeMode, DecisionReplayInterval, DecisionReplaySession, DecisionStopLossMode, DecisionTradeResult,
+  DecisionAttempt, DecisionHistorySort, DecisionPositionMultiplier, DecisionPositionSizingMode, DecisionPracticeMode, DecisionReplayInterval, DecisionReplaySession, DecisionStopLossMode, DecisionSystemTradeSnapshot, DecisionTradeResult,
 } from '../lib/decisionReplay'
 import {
   aggregateDecisionResults, compareDecisionHistorySortValues, decisionAttemptSide, decisionPositionSizingLabel, decisionResultHasSystemBenchmark, decisionResultInitialStopLoss, decisionResultPnl, decisionResultR, decisionResultSide,
-  decisionSessionPracticeMode, decisionStopLossMode, decisionSessionPositionSizingModes, decisionSessionUserRStats, DECISION_REPLAY_INTERVALS, DEFAULT_DECISION_POSITION_SIZING_MODES,
+  decisionSessionPracticeMode, decisionSessionSystemBenchmarkStats, decisionStopLossMode, decisionSessionPositionSizingModes, decisionSessionUserRStats, DECISION_REPLAY_INTERVALS, DEFAULT_DECISION_POSITION_SIZING_MODES,
   formatDecisionDate, formatDecisionDay, nextDecisionPositionMultiplier, normalizeDecisionPositionMultiplier, pnlForDecisionMode, rewardRiskRatio, sessionResults, symbolPrecision, toggleDecisionHistoryIntervalSelection, toggleDecisionHistorySymbolSelection,
 } from '../lib/decisionReplay'
 import { formatPrice, INTERVALS, SYMBOLS, type Candle, type IntervalId, type SymbolId } from '../lib/market'
-import type { TradeSide } from '../lib/tradeMarkers'
+import { exitReasonLabel as systemExitReasonLabel, type TradeSide } from '../lib/tradeMarkers'
 import { extractReasonCandleIndexes, resolveTradeCandleReferences } from '../lib/tradeCandleReferences'
 import {
   loadDecisionChartStatusPreferences, loadDecisionReplayCenterPreferences, loadDecisionReplayMenuPreferences, loadDecisionReplayPanelPreferences,
@@ -23,6 +23,7 @@ import {
   type TradeMarkerPanelPosition, type TradeMarkerPanelSize,
 } from '../lib/persistence'
 import { decisionReplayFavoriteKey } from '../lib/decisionReplayFavorites'
+import { DECISION_RISK_CONTROL_GAP, decisionRiskControlLeft } from '../lib/decisionRiskLayout'
 
 const DECISION_PANEL_EDGE = 8
 const DECISION_PANEL_MIN_WIDTH = 390
@@ -838,54 +839,85 @@ export const DecisionHistoryDialog = memo(function DecisionHistoryDialog({ open,
 
 type DecisionChartSummaryActor = 'user' | 'system'
 
-export function DecisionChartPnlBreakdown({ session, results, focusActor, currentResultCandidateKey = null, systemCurrentPnlByMode = null, systemCurrentPnlLocked = false, positionSizingModes = ['fixed-risk'], onClose }: {
+export function DecisionChartPnlBreakdown({ session, results, focusActor, systemTrades = null, currentResultCandidateKey = null, systemCurrentPnlByMode = null, systemCurrentPnlLocked = false, positionSizingModes = ['fixed-risk'], onClose }: {
   session: DecisionReplaySession
   results: readonly DecisionTradeResult[]
   focusActor: DecisionChartSummaryActor
+  systemTrades?: readonly DecisionSystemTradeSnapshot[] | null
   currentResultCandidateKey?: string | null
   systemCurrentPnlByMode?: Partial<Record<DecisionPositionSizingMode, number>> | null
   systemCurrentPnlLocked?: boolean
   positionSizingModes?: readonly DecisionPositionSizingMode[]
   onClose?: () => void
 }) {
-  return <section className={`decision-chart-pnl-breakdown focus-${focusActor}`} data-testid="decision-chart-pnl-breakdown" aria-label="本场逐笔盈亏明细">
+  const actorIsUser = focusActor === 'user'
+  const actorTitle = actorIsUser ? '你的逐笔交易明细' : 'AI 逐笔交易明细'
+  const legacySystemTrades = results.flatMap((result): DecisionSystemTradeSnapshot[] => {
+    if (!decisionResultHasSystemBenchmark(result)) return []
+    const currentSystemFloat = result.candidateKey === currentResultCandidateKey && !systemCurrentPnlLocked
+    return [{
+      candidateKey: result.candidateKey,
+      candidate: result.candidate,
+      closed: !currentSystemFloat,
+      pnlByMode: {
+        'fixed-risk': currentSystemFloat ? systemCurrentPnlByMode?.['fixed-risk'] ?? 0 : decisionResultPnl(result, 'fixed-risk', 'system'),
+        'fixed-notional': currentSystemFloat ? systemCurrentPnlByMode?.['fixed-notional'] ?? 0 : decisionResultPnl(result, 'fixed-notional', 'system'),
+      },
+    }]
+  })
+  const visibleSystemTrades = systemTrades ?? legacySystemTrades
+  const itemCount = actorIsUser ? results.length : visibleSystemTrades.length
+  return <section className={`decision-chart-pnl-breakdown focus-${focusActor}`} data-testid="decision-chart-pnl-breakdown" aria-label={actorTitle}>
     <header>
-      <div><b>本场逐笔盈亏明细</b><small>共 {results.length} 笔已结算交易 · 同时显示你的结果、AI 结果和差额</small></div>
+      <div><b>{actorTitle}</b><small>{actorIsUser
+        ? `共 ${results.length} 笔已结算题目 · 仅显示你的方向、开平仓与盈亏`
+        : `截至当前 K 线共 ${visibleSystemTrades.length} 笔 AI 交易 · 已平仓计实现盈亏，未平仓计实时浮动盈亏`}</small></div>
       {onClose && <button type="button" aria-label="收起逐笔盈亏明细" onClick={onClose}><X size={14} /></button>}
     </header>
-    {results.length === 0 ? <div className="decision-chart-pnl-empty">当前还没有已结算交易</div> : <div className="decision-chart-pnl-list">
-      {results.map((result, index) => {
+    {itemCount === 0 ? <div className="decision-chart-pnl-empty">当前还没有可显示的交易</div> : <div className="decision-chart-pnl-list">
+      {actorIsUser ? results.map((result, index) => {
         const candidateIndex = session.candidates.findIndex((candidate) => candidate.key === result.candidateKey)
         const ordinal = candidateIndex >= 0 ? candidateIndex + 1 : index + 1
-        const hasSystemBenchmark = decisionResultHasSystemBenchmark(result)
-        const currentSystemFloat = result.candidateKey === currentResultCandidateKey && !systemCurrentPnlLocked
         const choice = result.choice === 'traded' ? '已参与' : result.choice === 'unfilled' ? '未成交' : '未参与'
-        const side = decisionResultSide(result) === 'long' ? '多头' : '空头'
-        const systemValueFor = (mode: DecisionPositionSizingMode) => currentSystemFloat
-          ? systemCurrentPnlByMode?.[mode] ?? 0
-          : decisionResultPnl(result, mode, 'system')
+        const userSide = decisionResultSide(result) === 'long' ? '多头' : '空头'
         return <article key={`${result.candidateKey}:${index}`} className={result.candidate.manualContinuation ? 'manual-continuation' : undefined}>
           <div className="decision-chart-pnl-trade">
-            <b>第 {ordinal} 笔 · {side}</b>
-            <small>{formatDecisionDate(result.userExit.time)} · {choice}{result.candidate.manualContinuation ? ' · 手动续单' : ''}</small>
+            <b>第 {ordinal} 笔 · {userSide}</b>
+            <small>{choice}{result.candidate.manualContinuation ? ' · 手动续单' : ''}</small>
           </div>
-          <div className="decision-chart-pnl-user"><small>你的盈亏</small><DecisionModeMoneyStack modes={positionSizingModes} valueFor={(mode) => decisionResultPnl(result, mode, 'user')} compact /></div>
-          <div className="decision-chart-pnl-system"><small>{currentSystemFloat ? 'AI 当前浮动' : 'AI 盈亏'}</small>{hasSystemBenchmark
-            ? <DecisionModeMoneyStack modes={positionSizingModes} valueFor={systemValueFor} compact />
-            : <b className="decision-chart-pnl-na">无对应交易</b>}</div>
-          <div className="decision-chart-pnl-difference"><small>差额</small>{hasSystemBenchmark
-            ? <DecisionModeMoneyStack modes={positionSizingModes} valueFor={(mode) => decisionResultPnl(result, mode, 'user') - systemValueFor(mode)} compact />
+          <div className="decision-chart-pnl-execution"><small>你的开仓</small>{result.choice === 'traded' && result.userEntry
+            ? <><b>{formatPrice(result.userEntry.price, result.candidate.symbol)}</b><small>{formatDecisionDate(result.userEntry.time)}</small></>
             : <b className="decision-chart-pnl-na">—</b>}</div>
+          <div className="decision-chart-pnl-execution"><small>你的平仓</small>{result.choice === 'traded'
+            ? <><b>{formatPrice(result.userExit.price, result.candidate.symbol)}</b><small>{formatDecisionDate(result.userExit.time)} · {exitReasonLabel(result.userExit.reason, result.stopLossMode)}</small></>
+            : <b className="decision-chart-pnl-na">—</b>}</div>
+          <div className="decision-chart-pnl-user"><small>你的盈亏</small><DecisionModeMoneyStack modes={positionSizingModes} valueFor={(mode) => decisionResultPnl(result, mode, 'user')} compact /></div>
+        </article>
+      }) : visibleSystemTrades.map((snapshot, index) => {
+        const candidateIndex = session.candidates.findIndex((candidate) => candidate.key === snapshot.candidateKey)
+        const ordinal = candidateIndex >= 0 ? candidateIndex + 1 : index + 1
+        const { candidate } = snapshot
+        return <article key={`${snapshot.candidateKey}:${index}`}>
+          <div className="decision-chart-pnl-trade">
+            <b>第 {ordinal} 笔 · {candidate.trade.side === 'long' ? '多头' : '空头'}</b>
+            <small>信号 {formatDecisionDate(candidate.trade.entry.signalTime)}</small>
+          </div>
+          <div className="decision-chart-pnl-execution"><small>AI 开仓</small><b>{formatPrice(candidate.trade.entry.price, candidate.symbol)}</b><small>{formatDecisionDate(candidate.trade.entry.time)}</small></div>
+          <div className="decision-chart-pnl-execution"><small>AI 平仓</small>{snapshot.closed
+            ? <><b>{formatPrice(candidate.trade.exit.price, candidate.symbol)}</b><small>{formatDecisionDate(candidate.trade.exit.time)} · {systemExitReasonLabel(candidate.trade.exit.reasonCode)}</small></>
+            : <><b className="decision-chart-pnl-na">尚未平仓</b><small>按当前 K 线收盘价计算浮动盈亏</small></>}</div>
+          <div className="decision-chart-pnl-system"><small>{snapshot.closed ? 'AI 已实现盈亏' : 'AI 当前浮动盈亏'}</small><DecisionModeMoneyStack modes={positionSizingModes} valueFor={(mode) => snapshot.pnlByMode[mode]} compact /></div>
         </article>
       })}
     </div>}
   </section>
 }
 
-export function DecisionChartStatus({ session, attempt, currentPnlByMode = null, systemCurrentPnlByMode = null, systemCurrentPnlLocked = false, positionSizingModes = ['fixed-risk'] }: {
+export function DecisionChartStatus({ session, attempt, currentPnlByMode = null, systemTrades = null, systemCurrentPnlByMode = null, systemCurrentPnlLocked = false, positionSizingModes = ['fixed-risk'] }: {
   session: DecisionReplaySession
   attempt: DecisionAttempt
   currentPnlByMode?: Partial<Record<DecisionPositionSizingMode, number>> | null
+  systemTrades?: readonly DecisionSystemTradeSnapshot[] | null
   systemCurrentPnlByMode?: Partial<Record<DecisionPositionSizingMode, number>> | null
   systemCurrentPnlLocked?: boolean
   positionSizingModes?: readonly DecisionPositionSizingMode[]
@@ -910,8 +942,9 @@ export function DecisionChartStatus({ session, attempt, currentPnlByMode = null,
   const settledResults = currentResultIsUnsettled
     ? results.filter((result) => result.candidateKey !== attempt.candidateKey)
     : results
-  const aiHasCurrentFloat = !systemCurrentPnlLocked && (currentResultIsUnsettled || systemCurrentPnlByMode !== null)
-  const aiSettledCount = systemCurrentPnlLocked ? settledResults.length + 1 : settledResults.length
+  const aiHasCurrentFloat = systemTrades ? systemTrades.some((snapshot) => !snapshot.closed) : !systemCurrentPnlLocked && (currentResultIsUnsettled || systemCurrentPnlByMode !== null)
+  const aiClosedCount = systemTrades ? systemTrades.filter((snapshot) => snapshot.closed).length : settledResults.length
+  const aiTradeCount = systemTrades?.length ?? (systemCurrentPnlLocked ? settledResults.length + 1 : results.length)
   const stageLabel: Record<DecisionAttempt['stage'], string> = {
     'entry-decision': '等待你的决策',
     'entry-price': '选择挂单价',
@@ -926,8 +959,9 @@ export function DecisionChartStatus({ session, attempt, currentPnlByMode = null,
     : attempt.result ? decisionResultPnl(attempt.result, mode, 'user') : 0
   const totalValueFor = (mode: DecisionPositionSizingMode) => aggregateDecisionResults(results, mode).userPnlUsd
     + (positionOpen ? currentPnlByMode?.[mode] ?? 0 : 0)
-  const aiTotalValueFor = (mode: DecisionPositionSizingMode) => aggregateDecisionResults(settledResults, mode).systemPnlUsd
-    + (systemCurrentPnlByMode?.[mode] ?? 0)
+  const aiTotalValueFor = (mode: DecisionPositionSizingMode) => systemTrades
+    ? systemTrades.reduce((total, snapshot) => total + snapshot.pnlByMode[mode], 0)
+    : aggregateDecisionResults(settledResults, mode).systemPnlUsd + (systemCurrentPnlByMode?.[mode] ?? 0)
   const userWinRate = decisionWinRateText(decisionWinStats(participatedResults, positionSizingModes[0] ?? 'fixed-risk', 'user'))
 
   const clampCurrentStatus = useCallback(() => {
@@ -1028,6 +1062,17 @@ export function DecisionChartStatus({ session, attempt, currentPnlByMode = null,
       <strong><span className="decision-chart-status-grip" aria-hidden="true">⠿</span><CircleDollarSign size={15} />本场练习盈亏</strong>
       <span>{session.practiceMode === 'day-sequence' && session.daySequence ? `${formatDecisionDay(session.daySequence.startTime)} · 按日顺序 · ` : ''}第 {session.currentIndex + 1} / {session.candidates.length} 笔</span>
     </header>
+    {expandedSummary && <div id="decision-chart-pnl-breakdown"><DecisionChartPnlBreakdown
+      session={session}
+      results={results}
+      focusActor={expandedSummary}
+      systemTrades={systemTrades}
+      currentResultCandidateKey={currentResultIsUnsettled ? attempt.candidateKey : null}
+      systemCurrentPnlByMode={systemCurrentPnlByMode}
+      systemCurrentPnlLocked={systemCurrentPnlLocked}
+      positionSizingModes={positionSizingModes}
+      onClose={() => setExpandedSummaryState(null)}
+    /></div>}
     <div className="decision-chart-status-grid">
       <article className={`current-pnl${hasCurrentPnl ? ' has-value' : ''}`}>
         <div><span>{positionOpen ? '当前笔实时盈亏' : '当前笔盈亏'}</span><small>{preSignal ? '从开盘逐根等待信号' : stageLabel[attempt.stage]}</small></div>
@@ -1041,21 +1086,11 @@ export function DecisionChartStatus({ session, attempt, currentPnlByMode = null,
         <ChevronRight className="decision-chart-status-expand-icon" size={14} aria-hidden="true" />
       </button>
       <button type="button" className={`ai-total has-value${expandedSummary === 'system' ? ' is-expanded' : ''}`} data-testid="decision-chart-ai-total" aria-expanded={expandedSummary === 'system'} aria-controls="decision-chart-pnl-breakdown" onClick={() => setExpandedSummaryState((current) => current?.sessionId === session.id && current.actor === 'system' ? null : { sessionId: session.id, actor: 'system' })}>
-        <div><span>本场 AI 累计净盈亏</span><small>{aiHasCurrentFloat ? `已结算 ${settledResults.length} 笔 + 当前浮动` : `全部已结算 ${systemCurrentPnlLocked ? aiSettledCount : results.length} 笔题目`}</small></div>
+        <div><span>本场 AI 已揭示交易累计</span><small>{aiHasCurrentFloat ? `已平仓 ${aiClosedCount} 笔 + 当前持仓浮动盈亏` : `截至当前 K 线已统计 ${aiTradeCount} 笔`}</small></div>
         <DecisionModeMoneyStack modes={positionSizingModes} valueFor={aiTotalValueFor} compact />
         <ChevronRight className="decision-chart-status-expand-icon" size={14} aria-hidden="true" />
       </button>
     </div>
-    {expandedSummary && <div id="decision-chart-pnl-breakdown"><DecisionChartPnlBreakdown
-      session={session}
-      results={results}
-      focusActor={expandedSummary}
-      currentResultCandidateKey={currentResultIsUnsettled ? attempt.candidateKey : null}
-      systemCurrentPnlByMode={systemCurrentPnlByMode}
-      systemCurrentPnlLocked={systemCurrentPnlLocked}
-      positionSizingModes={positionSizingModes}
-      onClose={() => setExpandedSummaryState(null)}
-    /></div>}
   </aside>
 }
 
@@ -1544,7 +1579,7 @@ export function DecisionReplayPanel({ candidate, latestSignal = null, attempt, o
       <div ref={detailScrollRef} className="decision-detail-scroll">
         {preSignal ? <section className="decision-reason decision-pre-signal">
           <h3>从当天第一根 K 线开始</h3>
-          <p>按 1 逐根播放行情；按 2 以当前 K 线收盘价开多，按 3 开空。系统方向和理由只会在对应信号 K 到达后显示。</p>
+          <p>按 1 逐根播放行情；按 2 在当前 K 线最高价设置做多追单，按 3 在最低价设置做空追单。系统方向和理由只会在对应信号 K 到达后显示。</p>
         </section> : <><section className="decision-signal-summary">
           <div className={visibleSignalLong ? 'long' : 'short'}>{visibleSignalLong ? '开多信号' : '开空信号'}</div>
         </section>
@@ -1577,8 +1612,8 @@ export function DecisionReplayPanel({ candidate, latestSignal = null, attempt, o
       </div>
       {daySequenceMode && attempt.stage === 'entry-decision' && <div className="decision-choice-grid decision-day-choice-grid">
         <button onClick={onAdvance}><kbd>1</kbd><span><b>播放下一根 K 线</b><small>继续逐根观察</small></span></button>
-        <button onClick={onOpenLong}><kbd>2</kbd><span><b>开多</b><small>按当前 K 线收盘价</small></span></button>
-        <button onClick={onOpenShort}><kbd>3</kbd><span><b>开空</b><small>按当前 K 线收盘价</small></span></button>
+        <button onClick={onOpenLong}><kbd>2</kbd><span><b>开多</b><small>默认本 K 最高价追单</small></span></button>
+        <button onClick={onOpenShort}><kbd>3</kbd><span><b>开空</b><small>默认本 K 最低价追单</small></span></button>
       </div>}
       {!daySequenceMode && !preSignal && attempt.stage === 'entry-decision' && <div className="decision-choice-grid">
         <button onClick={onAdvance}><kbd>1</kbd><span><b>先观察</b><small>进入下一根 K 线</small></span></button>
@@ -1596,12 +1631,12 @@ export function DecisionReplayPanel({ candidate, latestSignal = null, attempt, o
       </>}
       {attempt.stage === 'post-exit' && daySequenceMode && <div className="decision-choice-grid decision-day-choice-grid">
         <button onClick={onAdvance}><kbd>1</kbd><span><b>播放下一根 K 线</b><small>继续逐根观察</small></span></button>
-        <button onClick={onOpenLong}><kbd>2</kbd><span><b>开多</b><small>保存本笔并按当前收盘价开仓</small></span></button>
-        <button onClick={onOpenShort}><kbd>3</kbd><span><b>开空</b><small>保存本笔并按当前收盘价开仓</small></span></button>
+        <button onClick={onOpenLong}><kbd>2</kbd><span><b>开多</b><small>保存本笔并在本 K 最高价追单</small></span></button>
+        <button onClick={onOpenShort}><kbd>3</kbd><span><b>开空</b><small>保存本笔并在本 K 最低价追单</small></span></button>
       </div>}
       {attempt.stage === 'post-exit' && !daySequenceMode && <div className={`decision-active-actions post-exit-actions${canAdvanceTrade ? '' : ' no-next'}`}><button onClick={onAdvance}><kbd>1</kbd>继续观看下一根 K 线</button>{canAdvanceTrade && <button className="close-position" onClick={onNextTrade}><kbd>4</kbd>进入下一笔交易</button>}<button className="restart-trade" onClick={onRestartTrade}><kbd>5</kbd>重新开始这笔交易</button></div>}
       {attempt.stage === 'entry-price' && <div className="decision-action-hint"><MousePointer2 size={18} />请在图表上完成挂单价设置，单击确认，Esc 可取消</div>}
-      {attempt.stage === 'risk-setup' && <div className="decision-action-hint"><MousePointer2 size={18} />设置好止盈止损后，按 <kbd>1</kbd> 确认，按 <kbd>2</kbd> 取消</div>}
+      {attempt.stage === 'risk-setup' && <div className="decision-action-hint"><MousePointer2 size={18} />拖动白色虚线设置挂单价或追单价；调整止盈止损后，按 <kbd>1</kbd> 确认，按 <kbd>2</kbd> 取消</div>}
     </nav>
   </>
 }
@@ -1676,11 +1711,11 @@ type DecisionRiskAmountPlacement = 'center' | 'left' | 'right'
 
 const DECISION_RISK_AMOUNT_GAP = 14
 
-export function DecisionRiskOverlay({ candidate, side, entryPrice, entryLabel = '挂单', stopLoss, takeProfit, positionMultiplier = 1, onPositionMultiplierChange, initialStopLoss = stopLoss, stopLossMode = 'close', onStopLossMode, currentCandleX = null, currentClose = null, currentPnlUsd = null, currentPnlByMode = null, positionSizingModes = ['fixed-risk'], toPrice, toY, onStopLoss, onTakeProfit, onConfirm, onCancel, editable = true, showConfirmControls = editable }: {
+export function DecisionRiskOverlay({ candidate, side, entryPrice, entryLabel = '挂单', stopLoss, takeProfit, positionMultiplier = 1, onPositionMultiplierChange, initialStopLoss = stopLoss, stopLossMode = 'close', onStopLossMode, currentCandleX = null, currentClose = null, currentPnlUsd = null, currentPnlByMode = null, positionSizingModes = ['fixed-risk'], toPrice, toY, onEntryPrice, onStopLoss, onTakeProfit, onConfirm, onCancel, editable = true, showConfirmControls = editable }: {
   candidate: ReplayDecisionCandidate
   side?: TradeSide
   entryPrice: number
-  entryLabel?: '挂单' | '开仓'
+  entryLabel?: '挂单' | '挂单价' | '追单价' | '开仓' | '开仓价'
   stopLoss: number
   takeProfit: number
   positionMultiplier?: DecisionPositionMultiplier
@@ -1697,6 +1732,7 @@ export function DecisionRiskOverlay({ candidate, side, entryPrice, entryLabel = 
   positionSizingModes?: readonly DecisionPositionSizingMode[]
   toPrice: (y: number) => number | null
   toY: (price: number) => number | null
+  onEntryPrice?: (price: number) => void
   onStopLoss?: (price: number) => void
   onTakeProfit?: (price: number) => void
   onConfirm?: () => void
@@ -1704,10 +1740,14 @@ export function DecisionRiskOverlay({ candidate, side, entryPrice, entryLabel = 
   editable?: boolean
   showConfirmControls?: boolean
 }) {
-  const [targetAmountPlacement, setTargetAmountPlacement] = useState<DecisionRiskAmountPlacement>('center')
-  const [stopAmountPlacement, setStopAmountPlacement] = useState<DecisionRiskAmountPlacement>('center')
+  const [targetAmountPlacement, setTargetAmountPlacement] = useState<DecisionRiskAmountPlacement>('right')
+  const [stopAmountPlacement, setStopAmountPlacement] = useState<DecisionRiskAmountPlacement>('right')
+  const [targetControlLeft, setTargetControlLeft] = useState<number | null>(null)
+  const [entryControlLeft, setEntryControlLeft] = useState<number | null>(null)
   const [stopControlLeft, setStopControlLeft] = useState<number | null>(null)
   const riskOverlayRef = useRef<HTMLDivElement>(null)
+  const targetControlRef = useRef<HTMLSpanElement>(null)
+  const entryControlRef = useRef<HTMLSpanElement>(null)
   const stopControlRef = useRef<HTMLSpanElement>(null)
   const targetAmountRef = useRef<HTMLDivElement>(null)
   const stopAmountRef = useRef<HTMLDivElement>(null)
@@ -1738,6 +1778,7 @@ export function DecisionRiskOverlay({ candidate, side, entryPrice, entryLabel = 
   useLayoutEffect(() => {
     const root = riskOverlayRef.current
     if (!root || currentCandleX === null || typeof window === 'undefined') return
+    const observedRoot = root.parentElement ?? root
     let frame: number | null = null
     let cancelled = false
     const schedule = () => {
@@ -1765,53 +1806,60 @@ export function DecisionRiskOverlay({ candidate, side, entryPrice, entryLabel = 
           '.decision-chart-status',
           '.decision-detail-panel',
         ].join(', ')
-        const obstacles = [...document.querySelectorAll<HTMLElement>(obstacleSelector)]
-          .filter((element) => !element.closest('.decision-risk-amount'))
+        const controls = new Set<HTMLElement>([targetControlRef.current, entryControlRef.current, stopControlRef.current].filter((element): element is HTMLElement => element !== null))
+        const obstacles = [...observedRoot.querySelectorAll<HTMLElement>(obstacleSelector)]
+          .filter((element) => !element.closest('.decision-risk-amount') && !controls.has(element))
           .map((element) => element.getBoundingClientRect())
           .filter((rect) => rect.width > 0 && rect.height > 0)
           .map((rect) => ({ left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom }))
         const reserved = [...obstacles]
-        const control = stopControlRef.current
-        if (control) {
-          const rect = control.getBoundingClientRect()
-          const blockers = [...document.querySelectorAll<HTMLElement>('.decision-detail-panel, .decision-action-menu, .decision-chart-status, .decision-risk-confirm')]
-            .map((element) => element.getBoundingClientRect())
-            .filter((item) => item.width > 0 && item.height > 0)
-          // Keep the selector on the red line, but out from under draggable panels.
-          // Prefer the existing drag handle area rather than covering the latest candle.
-          const preferred = rootRect.left + rootRect.width * .23 + 16
-          const minLeft = rootRect.left + 12
-          const maxLeft = Math.max(minLeft, rootRect.right - rect.width - 12)
-          const options = [preferred, minLeft, maxLeft, ...blockers.flatMap((item) => [item.left - rect.width - 12, item.right + 12])]
-            .map((left) => Math.max(minLeft, Math.min(maxLeft, left)))
-          const best = options.reduce((best, left) => {
-            const placed = { left, right: left + rect.width, top: rect.top, bottom: rect.bottom }
-            const score = blockers.reduce((sum, item) => sum + decisionAnnotationOverlap(placed, item), 0) * 1000 + Math.abs(left - preferred)
-            return score < best.score ? { left, score, rect: placed } : best
-          }, { left: minLeft, score: Infinity, rect: { left: minLeft, right: minLeft + rect.width, top: rect.top, bottom: rect.bottom } })
-          const localLeft = best.left - rootRect.left
-          setStopControlLeft((current) => current !== null && Math.abs(current - localLeft) < .5 ? current : localLeft)
+        // Keep the large risk controls in the chart's right-side workspace.
+        // The stop selector is vertically offset away from the entry selector,
+        // so both can stay to the right instead of forcing the stop control back
+        // over the most recent candles.
+        const rightSidePreferred = rootRect.left + Math.max(currentCandleX + 72, rootRect.width * .66)
+        const controlEntries = [
+          { key: 'entry' as const, element: entryControlRef.current, preferred: rightSidePreferred },
+          { key: 'stop' as const, element: stopControlRef.current, preferred: rightSidePreferred },
+          { key: 'target' as const, element: targetControlRef.current, preferred: rightSidePreferred },
+        ].filter((entry): entry is { key: 'entry' | 'stop' | 'target'; element: HTMLSpanElement; preferred: number } => entry.element !== null)
+        const nextControlLeft: Partial<Record<'entry' | 'stop' | 'target', number>> = {}
+        for (const entry of controlEntries) {
+          const rect = entry.element.getBoundingClientRect()
+          const best = decisionRiskControlLeft({
+            preferredLeft: entry.preferred,
+            minLeft: rootRect.left + DECISION_RISK_CONTROL_GAP,
+            maxLeft: rootRect.right - rect.width - DECISION_RISK_CONTROL_GAP,
+            width: rect.width,
+            top: rect.top,
+            bottom: rect.bottom,
+            blockers: reserved,
+          })
+          nextControlLeft[entry.key] = best.left - rootRect.left
           reserved.push(best.rect)
         }
+        if (nextControlLeft.entry !== undefined) setEntryControlLeft((current) => current !== null && Math.abs(current - nextControlLeft.entry!) < .5 ? current : nextControlLeft.entry!)
+        if (nextControlLeft.stop !== undefined) setStopControlLeft((current) => current !== null && Math.abs(current - nextControlLeft.stop!) < .5 ? current : nextControlLeft.stop!)
+        if (nextControlLeft.target !== undefined) setTargetControlLeft((current) => current !== null && Math.abs(current - nextControlLeft.target!) < .5 ? current : nextControlLeft.target!)
         const nextPlacement: Partial<Record<'target' | 'stop', DecisionRiskAmountPlacement>> = {}
         for (const entry of amountEntries) {
           const amountRect = entry.element.getBoundingClientRect()
           const base = { top: amountRect.top, bottom: amountRect.bottom }
           const candidates: Array<{ placement: DecisionRiskAmountPlacement; rect: DecisionAnnotationRect }> = [
             {
-              placement: 'center',
-              rect: {
-                ...base,
-                left: rootRect.left + currentCandleX - amountRect.width / 2,
-                right: rootRect.left + currentCandleX + amountRect.width / 2,
-              },
-            },
-            {
               placement: 'right',
               rect: {
                 ...base,
                 left: rootRect.left + currentCandleX + DECISION_RISK_AMOUNT_GAP,
                 right: rootRect.left + currentCandleX + DECISION_RISK_AMOUNT_GAP + amountRect.width,
+              },
+            },
+            {
+              placement: 'center',
+              rect: {
+                ...base,
+                left: rootRect.left + currentCandleX - amountRect.width / 2,
+                right: rootRect.left + currentCandleX + amountRect.width / 2,
               },
             },
             {
@@ -1841,7 +1889,6 @@ export function DecisionRiskOverlay({ candidate, side, entryPrice, entryLabel = 
       })
     }
     schedule()
-    const observedRoot = root.parentElement ?? root
     const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule)
     resizeObserver?.observe(observedRoot)
     const mutationObserver = typeof MutationObserver === 'undefined' ? null : new MutationObserver(schedule)
@@ -1853,12 +1900,13 @@ export function DecisionRiskOverlay({ candidate, side, entryPrice, entryLabel = 
       mutationObserver?.disconnect()
     }
   }, [amountModes, currentCandleX, currentY, editable, entryY, hasCurrentPnl, showConfirmControls, stopY, targetY, stopLossMode])
+  const dragEntry = useLineDrag(toPrice, onEntryPrice ?? (() => undefined))
   const dragStop = useLineDrag(toPrice, onStopLoss ?? (() => undefined))
   const dragTarget = useLineDrag(toPrice, onTakeProfit ?? (() => undefined))
   const precision = symbolPrecision(candidate.symbol)
   return <div ref={riskOverlayRef} className={`decision-risk-overlay ${editable ? 'editable' : 'locked'} ${positionSide}`} data-testid="decision-risk-overlay">
-    {targetY !== null && <div className="decision-risk-line target" data-testid="decision-take-profit-line" title={editable ? '拖动调整止盈' : undefined} style={{ top: targetY }} onPointerDown={editable ? dragTarget : undefined}><b className="decision-risk-hit-area" aria-hidden="true" /><i /><span><Target size={15} />止盈 {takeProfit.toFixed(precision)}</span><div ref={targetAmountRef} className={amountClassName(targetAmountPlacement)} data-testid="decision-take-profit-amount" style={amountPosition}><small>止盈金额</small><DecisionModeMoneyStack modes={amountModes} valueFor={(mode) => takeProfitAmountByMode[mode]} /></div></div>}
-    {entryY !== null && <div className={`decision-risk-line entry${entryLabel === '开仓' ? ' filled' : ''} has-position-controls`} style={{ top: entryY }}><span><span>{entryLabel} {entryPrice.toFixed(precision)} · 盈亏比 1 : {ratio.toFixed(2)}</span><span className="decision-position-size" role="group" aria-label="本笔仓位倍数" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}><button type="button" aria-label="减小仓位" title="减小仓位" disabled={!onPositionMultiplierChange || normalizedPositionMultiplier === 0.5} onClick={() => onPositionMultiplierChange?.(nextDecisionPositionMultiplier(normalizedPositionMultiplier, -1))}>−</button><b>仓位 {normalizedPositionMultiplier}×</b><button type="button" aria-label="增加仓位" title="增加仓位" disabled={!onPositionMultiplierChange || normalizedPositionMultiplier === 3} onClick={() => onPositionMultiplierChange?.(nextDecisionPositionMultiplier(normalizedPositionMultiplier, 1))}>+</button></span></span></div>}
+    {targetY !== null && <div className="decision-risk-line target" data-testid="decision-take-profit-line" title={editable ? '拖动调整止盈' : undefined} style={{ top: targetY }} onPointerDown={editable ? dragTarget : undefined}><b className="decision-risk-hit-area" aria-hidden="true" /><i /><span ref={targetControlRef} style={targetControlLeft === null ? undefined : { left: targetControlLeft, right: 'auto' }}><Target size={15} />止盈 {takeProfit.toFixed(precision)}</span><div ref={targetAmountRef} className={amountClassName(targetAmountPlacement)} data-testid="decision-take-profit-amount" style={amountPosition}><small>止盈金额</small><DecisionModeMoneyStack modes={amountModes} valueFor={(mode) => takeProfitAmountByMode[mode]} /></div></div>}
+    {entryY !== null && <div className={`decision-risk-line entry${entryLabel === '开仓' ? ' filled' : ''}${editable && onEntryPrice ? ' draggable' : ''} has-position-controls`} data-testid="decision-entry-price-line" title={editable && onEntryPrice ? '拖动白色虚线调整挂单价或追单价' : undefined} style={{ top: entryY }} onPointerDown={editable && onEntryPrice ? dragEntry : undefined}>{editable && onEntryPrice && <b className="decision-risk-hit-area" aria-hidden="true" />}<span ref={entryControlRef} style={entryControlLeft === null ? undefined : { left: entryControlLeft, right: 'auto', transform: 'none' }}><span>{entryLabel} {entryPrice.toFixed(precision)} · 盈亏比 1 : {ratio.toFixed(2)}</span><span className="decision-position-size" role="group" aria-label="本笔仓位倍数" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}><button type="button" aria-label="减小仓位" title="减小仓位" disabled={!onPositionMultiplierChange || normalizedPositionMultiplier === 0.5} onClick={() => onPositionMultiplierChange?.(nextDecisionPositionMultiplier(normalizedPositionMultiplier, -1))}>−</button><b>仓位 {normalizedPositionMultiplier}×</b><button type="button" aria-label="增加仓位" title="增加仓位" disabled={!onPositionMultiplierChange || normalizedPositionMultiplier === 3} onClick={() => onPositionMultiplierChange?.(nextDecisionPositionMultiplier(normalizedPositionMultiplier, 1))}>+</button></span></span></div>}
     {hasCurrentPnl && <div className={`decision-position-pnl-line${currentPnlValue === null ? '' : currentPnlValue >= 0 ? ' positive' : ' negative'}`} style={{ top: currentY! }} data-testid="decision-position-pnl-line"><span>收盘 {formatPrice(currentClose!, candidate.symbol)} · {currentPnlByMode !== null ? <DecisionModeMoneyStack modes={positionSizingModes} compact={false} valueFor={(mode) => currentPnlByMode[mode] ?? 0} valueLabel={(value) => value >= 0 ? '浮盈' : '浮亏'} /> : <>{currentPnlUsd! >= 0 ? '浮盈' : '浮亏'} {formatDecisionPnl(currentPnlUsd!)}</>}</span></div>}
     {stopY !== null && <div className="decision-risk-line stop" data-testid="decision-stop-loss-line" title={editable ? '拖动调整止损；按钮只切换本笔模式，不移动价格' : undefined} style={{ top: stopY }} onPointerDown={editable ? dragStop : undefined}>
       <b className="decision-risk-hit-area" aria-hidden="true" /><i />
@@ -1870,12 +1918,13 @@ export function DecisionRiskOverlay({ candidate, side, entryPrice, entryLabel = 
       </span>
       <div ref={stopAmountRef} className={amountClassName(stopAmountPlacement)} data-testid="decision-stop-loss-amount" style={amountPosition}><small>{stopLossMode === 'close' ? '止损线参考盈亏（非最大亏损）' : '止损金额'}</small><DecisionModeMoneyStack modes={amountModes} valueFor={(mode) => stopLossAmountByMode[mode]} /></div>
     </div>}
-    {editable && showConfirmControls && <div className="decision-risk-confirm"><div><b>拖动上下两个控制点</b><small>当前盈亏比 1 : {ratio.toFixed(2)} · 仓位 {normalizedPositionMultiplier}× · {decisionSizingLabels(positionSizingModes)}</small><small>{stopLossMode === 'close' ? '默认收盘止损：可能比止损线亏更多；系统平仓优先' : '触碰止损仅本笔生效，下笔默认收盘止损'}</small></div><button onClick={onCancel}>取消</button><button className="primary" onClick={onConfirm}><Check size={17} />确认并进入下一根 K 线</button></div>}
+    {editable && showConfirmControls && <div className="decision-risk-confirm"><div><b>{onEntryPrice ? '拖动白色开仓线、止盈线和止损线' : '拖动上下两个控制点'}</b><small>当前盈亏比 1 : {ratio.toFixed(2)} · 仓位 {normalizedPositionMultiplier}× · {decisionSizingLabels(positionSizingModes)}</small><small>{stopLossMode === 'close' ? '默认收盘止损：可能比止损线亏更多；系统平仓优先' : '触碰止损仅本笔生效，下笔默认收盘止损'}</small></div><button onClick={onCancel}>取消</button><button className="primary" onClick={onConfirm}><Check size={17} />确认并进入下一根 K 线</button></div>}
   </div>
 }
 
-export function DecisionChartAnnotations({ candidate, attempt, result, data, toX, toY, hidden = false }: {
+export function DecisionChartAnnotations({ candidate, latestSignal = null, attempt, result, data, toX, toY, hidden = false }: {
   candidate: ReplayDecisionCandidate
+  latestSignal?: ReplayDecisionSignalMarkerSelection | null
   attempt?: DecisionAttempt | null
   result?: DecisionTradeResult | null
   data: readonly Candle[]
@@ -1883,12 +1932,17 @@ export function DecisionChartAnnotations({ candidate, attempt, result, data, toX
   toY: (price: number) => number | null
   hidden?: boolean
 }) {
+  const reasonTrade = latestSignal?.trade ?? candidate.trade
+  const reasonSection = latestSignal?.kind ?? 'entry'
   const reasonReferences = useMemo(() => {
-    const references = resolveTradeCandleReferences(candidate.trade, data)
-    // The chart shows only the entry explanation. Keep hidden system-exit
-    // reasoning out of the chart, including after the user closes the trade.
-    return references.filter((reference) => reference.sections.includes('entry'))
-  }, [candidate.trade, data])
+    const references = resolveTradeCandleReferences(reasonTrade, data)
+    // Day-sequence playback can reveal several later entry/opposite signals
+    // while the exercise still belongs to its original candidate. Keep the
+    // evidence labels aligned with the same newest signal shown in the detail
+    // panel. Its causal AI fill/exit points follow that same revealed trade;
+    // the exercise totals remain tied to the question candidates below.
+    return references.filter((reference) => reference.sections.includes(reasonSection))
+  }, [data, reasonSection, reasonTrade])
   // A decision chart is a causal tape. The system's fill and exit may be
   // known from the replay data before the user has made the corresponding
   // decision, but they must not appear until their own candles arrive.
@@ -1913,13 +1967,15 @@ export function DecisionChartAnnotations({ candidate, attempt, result, data, toX
     const projected = projectTime(time)
     return projected === null ? null : toX(projected)
   }
-  const systemEntryVisible = candidate.trade.entry.time <= revealedThrough
-  const systemExitVisible = candidate.trade.exit.time <= revealedThrough
-  const signalX = projectX(candidate.trade.entry.signalTime)
-  const systemEntryX = systemEntryVisible ? projectX(candidate.trade.entry.time) : null
-  const systemEntryY = systemEntryVisible ? toY(candidate.trade.entry.price) : null
-  const systemExitX = systemExitVisible ? projectX(candidate.trade.exit.time) : null
-  const systemExitY = systemExitVisible ? toY(candidate.trade.exit.price) : null
+  const systemTrade = latestSignal?.trade ?? candidate.trade
+  const systemEntryVisible = systemTrade.entry.time <= revealedThrough
+  const systemExitVisible = systemTrade.exit.time <= revealedThrough
+  const signalTime = latestSignal?.signalTime ?? candidate.trade.entry.signalTime
+  const signalX = projectX(signalTime)
+  const systemEntryX = systemEntryVisible ? projectX(systemTrade.entry.time) : null
+  const systemEntryY = systemEntryVisible ? toY(systemTrade.entry.price) : null
+  const systemExitX = systemExitVisible ? projectX(systemTrade.exit.time) : null
+  const systemExitY = systemExitVisible ? toY(systemTrade.exit.price) : null
   const userEntry = result?.userEntry ?? attempt?.fill ?? null
   const userExit = result?.userExit ?? null
   const userEntryX = userEntry && userEntry.time <= revealedThrough ? projectX(userEntry.time) : null
@@ -1927,8 +1983,8 @@ export function DecisionChartAnnotations({ candidate, attempt, result, data, toX
   const userExitX = userExit && userExit.time <= revealedThrough ? projectX(userExit.time) : null
   const userExitY = userExit === null || userExitX === null ? null : toY(userExit.price)
   const pointSpecs = [
-    systemEntryX !== null && systemEntryY !== null ? { id: 'system-entry', x: systemEntryX, y: systemEntryY, time: candidate.trade.entry.time, kind: 'point' as const, preference: 'placement-above-right' as const, className: 'system entry', label: `系统开 ${formatPrice(candidate.trade.entry.price, candidate.symbol)}` } : null,
-    systemExitX !== null && systemExitY !== null ? { id: 'system-exit', x: systemExitX, y: systemExitY, time: candidate.trade.exit.time, kind: 'point' as const, preference: 'placement-above-right' as const, className: 'system exit', label: `系统平 ${formatPrice(candidate.trade.exit.price, candidate.symbol)}` } : null,
+    systemEntryX !== null && systemEntryY !== null ? { id: 'system-entry', x: systemEntryX, y: systemEntryY, time: systemTrade.entry.time, kind: 'point' as const, preference: 'placement-above-right' as const, className: 'system entry', label: `AI开 ${formatPrice(systemTrade.entry.price, candidate.symbol)}` } : null,
+    systemExitX !== null && systemExitY !== null ? { id: 'system-exit', x: systemExitX, y: systemExitY, time: systemTrade.exit.time, kind: 'point' as const, preference: 'placement-above-right' as const, className: 'system exit', label: `AI平 ${formatPrice(systemTrade.exit.price, candidate.symbol)}` } : null,
     userEntryX !== null && userEntryY !== null ? { id: 'user-entry', x: userEntryX, y: userEntryY, time: userEntry!.time, kind: 'point' as const, preference: 'placement-below-right' as const, className: 'user entry', label: `你的开仓 ${formatPrice(userEntry!.price, candidate.symbol)}` } : null,
     userExitX !== null && userExitY !== null ? { id: 'user-exit', x: userExitX, y: userExitY, time: userExit!.time, kind: 'point' as const, preference: 'placement-below-right' as const, className: 'user exit', label: `你的平仓 ${formatPrice(userExit!.price, candidate.symbol)}` } : null,
   ].filter((spec): spec is NonNullable<typeof spec> => spec !== null).map((spec) => {
@@ -1989,7 +2045,7 @@ export function DecisionChartAnnotations({ candidate, attempt, result, data, toX
     className={`decision-chart-annotations${hidden ? ' is-hidden' : ''}`}
     aria-hidden="true"
   >
-    {signalX !== null && candidate.trade.entry.signalTime <= revealedThrough && <div className="decision-signal-cursor" style={{ left: signalX }}><span>信号 K</span></div>}
+    {signalX !== null && signalTime <= revealedThrough && <div className="decision-signal-cursor" style={{ left: signalX }}><span>信号 K</span></div>}
     {reasonReferences.length > 0 && <svg className="decision-reason-connectors" width="100%" height="100%" preserveAspectRatio="none">
       {reasonReferences.map((reference) => {
         const exitOnly = reference.sections.length === 1 && reference.sections[0] === 'exit'
@@ -2050,8 +2106,9 @@ export function DecisionChartAnnotations({ candidate, attempt, result, data, toX
   </div>
 }
 
-export function DecisionResultsDialog({ session, onClose, onReview, onNew, onReturnToSource, favoriteKeys = [], onToggleFavorite = () => undefined }: {
+export function DecisionResultsDialog({ session, systemCandidates = null, onClose, onReview, onNew, onReturnToSource, favoriteKeys = [], onToggleFavorite = () => undefined }: {
   session: DecisionReplaySession | null
+  systemCandidates?: readonly ReplayDecisionCandidate[] | null
   onClose: () => void
   onReview: (result: DecisionTradeResult) => void
   onNew: () => void
@@ -2065,16 +2122,28 @@ export function DecisionResultsDialog({ session, onClose, onReview, onNew, onRet
   const userTrades = results.filter((result) => result.choice === 'traded')
   const userRStats = decisionSessionUserRStats(session)
   const skippedTradeCount = results.filter((result) => result.choice === 'skipped').length
+  const daySequenceMode = decisionSessionPracticeMode(session) === 'day-sequence'
+  const wholePaperSystemStats = (mode: DecisionPositionSizingMode) => daySequenceMode
+    ? decisionSessionSystemBenchmarkStats(session, mode, systemCandidates ?? session.candidates)
+    : {
+        pnlUsd: aggregateDecisionResults(results, mode).systemPnlUsd,
+        ...decisionWinStats(results, mode, 'system'),
+      }
   const userWinRateText = decisionModeMetricText(modes, (mode) => decisionWinRateText(decisionWinStats(userTrades, mode, 'user')))
   const systemParticipatedWinRateText = decisionModeMetricText(modes, (mode) => decisionWinRateText(decisionWinStats(userTrades, mode, 'system')))
-  const systemOverallWinRateText = decisionModeMetricText(modes, (mode) => decisionWinRateText(decisionWinStats(results, mode, 'system')))
+  const systemParticipatedTradeCount = decisionWinStats(userTrades, modes[0], 'system').total
+  const systemOverallWinRateText = decisionModeMetricText(modes, (mode) => decisionWinRateText({
+    ...wholePaperSystemStats(mode),
+    rate: wholePaperSystemStats(mode).total > 0 ? wholePaperSystemStats(mode).wins / wholePaperSystemStats(mode).total * 100 : null,
+  }))
+  const systemOverallTradeCount = wholePaperSystemStats(modes[0]).total
   return <div className="modal-backdrop decision-results-backdrop">
     <section className="decision-results" role="dialog" aria-modal="true" aria-label="决策回放盈亏对比">
       <header><BarChart3 size={25} /><div><h2>本场决策对比</h2><small>{statusLabel(session.status)} · 完成 {results.length} / {session.candidates.length} 笔</small></div><button aria-label="关闭结果" onClick={onClose}><X size={21} /></button></header>
       <div className="decision-result-summary">
         <article><span>你的净盈亏</span><DecisionModeMoneyStack modes={modes} compact={false} valueFor={(mode) => aggregateDecisionResults(results, mode).userPnlUsd} /><small>参与胜率 {userWinRateText} · 参与 {userTrades.length} 笔 · 未参与 {skippedTradeCount} 笔交易</small></article>
-        <article className="decision-system-summary"><span>V5 系统参与部分净盈亏</span><DecisionModeMoneyStack modes={modes} compact={false} valueFor={(mode) => aggregateDecisionResults(userTrades, mode).systemPnlUsd} /><small>参与部分胜率 {systemParticipatedWinRateText} · {userTrades.length} 笔</small><span className="decision-system-total-label">V5 系统总净盈亏</span><DecisionModeMoneyStack modes={modes} compact={false} valueFor={(mode) => aggregateDecisionResults(results, mode).systemPnlUsd} /><small>总胜率 {systemOverallWinRateText} · 全部 {results.length} 笔</small></article>
-        <article><span>相对系统</span><DecisionModeMoneyStack modes={modes} compact={false} valueFor={(mode) => aggregateDecisionResults(results, mode).differenceUsd} /><small>你的全部题目结果与系统全部题目结果相比</small></article>
+        <article className="decision-system-summary"><span>V5 系统参与部分净盈亏</span><DecisionModeMoneyStack modes={modes} compact={false} valueFor={(mode) => aggregateDecisionResults(userTrades, mode).systemPnlUsd} /><small>参与部分胜率 {systemParticipatedWinRateText} · 对应 {systemParticipatedTradeCount} 笔</small><span className="decision-system-total-label">V5 系统全卷总净盈亏</span><DecisionModeMoneyStack modes={modes} compact={false} valueFor={(mode) => wholePaperSystemStats(mode).pnlUsd} /><small>全卷胜率 {systemOverallWinRateText} · 全部 {systemOverallTradeCount} 笔</small></article>
+        <article><span>{daySequenceMode ? '相对V5系统本交易日' : '相对系统全卷'}</span><DecisionModeMoneyStack modes={modes} compact={false} valueFor={(mode) => aggregateDecisionResults(results, mode).userPnlUsd - wholePaperSystemStats(mode).pnlUsd} /><small>你的已结算 {results.length} 笔与系统{daySequenceMode ? '实际' : '全卷'} {systemOverallTradeCount} 笔相比</small></article>
         <div className="decision-result-r-summary" data-testid="decision-result-r-summary">
           <article>
             <span>你的总盈亏（R）</span>
@@ -2108,8 +2177,12 @@ export function DecisionResultsDialog({ session, onClose, onReview, onNew, onRet
           <span><b>{index + 1}. {result.candidate.symbol}</b><small>{INTERVALS[result.candidate.interval].label} · {decisionResultSide(result) === 'long' ? '多' : '空'}</small></span>
           <span>{choiceLabel(result)}</span>
           <DecisionModeMoneyStack modes={modes} valueFor={(mode) => decisionResultPnl(result, mode, 'user')} />
-          <DecisionModeMoneyStack modes={modes} valueFor={(mode) => decisionResultPnl(result, mode, 'system')} />
-          <DecisionModeMoneyStack modes={modes} valueFor={(mode) => decisionResultPnl(result, mode, 'user') - decisionResultPnl(result, mode, 'system')} />
+          {decisionResultHasSystemBenchmark(result)
+            ? <DecisionModeMoneyStack modes={modes} valueFor={(mode) => decisionResultPnl(result, mode, 'system')} />
+            : <span className="decision-result-system-na"><b>—</b><small>无对应AI交易</small></span>}
+          {decisionResultHasSystemBenchmark(result)
+            ? <DecisionModeMoneyStack modes={modes} valueFor={(mode) => decisionResultPnl(result, mode, 'user') - decisionResultPnl(result, mode, 'system')} />
+            : <span className="decision-result-system-na"><b>—</b></span>}
            <span className="decision-list-actions"><DecisionFavoriteButton favorite={favoriteKeys.includes(favoriteKey)} onToggle={() => onToggleFavorite(favoriteKey)} label={favoriteKeys.includes(favoriteKey) ? '取消收藏本笔交易' : '收藏本笔交易'} /><button type="button" className="decision-result-replay-action" onClick={(event) => { event.stopPropagation(); onReview(result) }}>回看并重新做</button><Eye size={18} /></span>
         </div>
         })}

@@ -19,9 +19,12 @@ interface TradeTiming {
 }
 
 function beijingTradingDay(time: number) {
-  // Replay timestamps are Unix seconds. Beijing has a fixed UTC+8 offset, so
-  // this avoids locale-dependent date parsing and daylight-saving surprises.
-  return Math.floor((time + 8 * 60 * 60) / (24 * 60 * 60))
+  // A commodity trading day starts at 06:00 Beijing and remains the same
+  // trading day through the overnight session until the next 05:00 close.
+  // Shift the local clock back to the session open before taking the day key;
+  // otherwise a perfectly valid 23:20 -> 01:35 trade is mistaken for a
+  // cross-session trade merely because the calendar date changed at midnight.
+  return Math.floor((time + 8 * 60 * 60 - SESSION_OPEN_BEIJING_SECONDS) / (24 * 60 * 60))
 }
 
 function beijingSecondsSinceMidnight(time: number) {
@@ -59,8 +62,8 @@ function isSessionEdgeEntry(time: number, interval: IntervalId | undefined) {
 }
 
 /**
- * Closed-session exercises are intraday-only. A position that crosses the
- * Beijing calendar date, starts in the first ten candles after the 06:00
+ * Closed-session exercises are trading-day-only. A position that crosses the
+ * 06:00 Beijing trading-day boundary, starts in the first ten candles after the 06:00
  * session open, starts in the final ten candles before the 05:00 close, or is
  * only marked to market because the source tape ended, is not a completed
  * trade for the chart, replay, or statistics.

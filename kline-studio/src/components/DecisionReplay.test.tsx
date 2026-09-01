@@ -1,11 +1,12 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import type { ReplayDecisionCandidate } from '../lib/replayTradeRegistry'
+import type { ReplayDecisionCandidate, ReplayDecisionSignalMarkerSelection } from '../lib/replayTradeRegistry'
 import {
   buildDecisionResult, createDecisionAttempt, createDecisionSession, formatDecisionDate, toggleDecisionHistoryIntervalSelection, toggleDecisionHistorySymbolSelection,
 } from '../lib/decisionReplay'
 import type { DecisionReplaySession } from '../lib/decisionReplay'
 import { decisionReplayFavoriteKey } from '../lib/decisionReplayFavorites'
+import { decisionRiskControlLeft } from '../lib/decisionRiskLayout'
 import {
   DecisionChartAnnotations, DecisionChartPnlBreakdown, DecisionChartStatus, DecisionHistoryDialog, DecisionReplayCenter, DecisionReplayPanel, DecisionResultsDialog, DecisionReviewPanel, DecisionRiskOverlay,
 } from './DecisionReplay'
@@ -32,6 +33,29 @@ function candidate(): ReplayDecisionCandidate {
 }
 
 const noop = () => undefined
+
+describe('decision risk control collision placement', () => {
+  it('keeps the preferred horizontal position when it is clear', () => {
+    expect(decisionRiskControlLeft({
+      preferredLeft: 140, minLeft: 12, maxLeft: 500, width: 160, top: 100, bottom: 140, blockers: [],
+    }).left).toBe(140)
+  })
+
+  it('moves a wide control completely away from overlapping chart labels', () => {
+    const blockers = [
+      { left: 110, right: 330, top: 90, bottom: 150 },
+      { left: 345, right: 430, top: 95, bottom: 145 },
+    ]
+    const placed = decisionRiskControlLeft({
+      preferredLeft: 140, minLeft: 12, maxLeft: 620, width: 180, top: 100, bottom: 140, blockers,
+    }).rect
+    for (const blocker of blockers) {
+      const overlaps = placed.left < blocker.right && placed.right > blocker.left
+        && placed.top < blocker.bottom && placed.bottom > blocker.top
+      expect(overlaps).toBe(false)
+    }
+  })
+})
 
 type AnnotationPoint = { time: number; price: number }
 
@@ -196,7 +220,8 @@ describe('decision replay components', () => {
     expect(markup).toContain('播放下一根 K 线')
     expect(markup).toContain('<kbd>2</kbd><span><b>开多</b>')
     expect(markup).toContain('<kbd>3</kbd><span><b>开空</b>')
-    expect(markup).toContain('按当前 K 线收盘价')
+    expect(markup).toContain('默认本 K 最高价追单')
+    expect(markup).toContain('默认本 K 最低价追单')
     expect(markup).toContain('未来信息保持隐藏')
     expect(markup).not.toContain('开多信号')
     expect(markup).not.toContain('震荡区间向上真突破')
@@ -257,8 +282,8 @@ describe('decision replay components', () => {
     expect(markup).toContain('x1="30" y1="103"')
     expect(markup).toContain('>K8</span>')
     expect(markup).toContain('>K10</span>')
-    expect(markup).toContain('系统开 101.000')
-    expect(markup).toContain('系统平 103.000')
+    expect(markup).toContain('AI开 101.000')
+    expect(markup).toContain('AI平 103.000')
     expect(markup).not.toContain('K14')
 
     const hiddenMarkup = renderToStaticMarkup(<DecisionChartAnnotations
@@ -280,8 +305,101 @@ describe('decision replay components', () => {
       toX={(time) => time / 100}
       toY={(price) => price}
     />)
-    expect(beforeSystemExit).toContain('系统开 101.000')
-    expect(beforeSystemExit).not.toContain('系统平 103.000')
+    expect(beforeSystemExit).toContain('AI开 101.000')
+    expect(beforeSystemExit).not.toContain('AI平 103.000')
+  })
+
+  it('updates chart evidence labels and the signal cursor to the latest day-sequence entry signal', () => {
+    const item = candidate()
+    const data = [2400, 2700, 3000, 3300, 3600, 3900, 4200].map((time, index) => ({
+      time, open: 100 + index, high: 101 + index, low: 99 + index, close: 100.5 + index, volume: 10,
+    }))
+    const latestTrade = {
+      ...item.trade,
+      entry: {
+        ...item.trade.entry,
+        time: 4200,
+        price: 116,
+        signalIdx: 14,
+        signalTime: 4200,
+        reason: '最新信号参考 K11 与 K14。',
+      },
+      exit: {
+        ...item.trade.exit,
+        time: 4500,
+        price: 117,
+      },
+    }
+    const latestSignal: ReplayDecisionSignalMarkerSelection = {
+      id: 'decision-signal-v5-4200-long',
+      sourceId: 'v5',
+      kind: 'entry',
+      tradeMarkerId: 'replay-trade-v5-13-entry',
+      trade: latestTrade,
+      signalSide: 'long',
+      signalTime: 4200,
+    }
+
+    const markup = renderToStaticMarkup(<DecisionChartAnnotations
+      candidate={item}
+      latestSignal={latestSignal}
+      attempt={createDecisionAttempt(item, 4200)}
+      result={null}
+      data={data}
+      toX={(time) => time / 100}
+      toY={(price) => price}
+    />)
+
+    expect(markup).toContain('>K11</span>')
+    expect(markup).toContain('>K14</span>')
+    expect(markup).not.toContain('>K8</span>')
+    expect(markup).not.toContain('>K10</span>')
+    expect(markup).toContain('class="decision-signal-cursor" style="left:42px"')
+    expect(markup).toContain('AI开 116.000')
+    expect(markup).not.toContain('AI开 101.000')
+    expect(markup).not.toContain('AI平 117.000')
+  })
+
+  it('uses exit evidence labels when the latest day-sequence signal is an opposite exit signal', () => {
+    const item = candidate()
+    const data = [2400, 2700, 3000, 3300, 3600, 3900, 4200].map((time, index) => ({
+      time, open: 100 + index, high: 101 + index, low: 99 + index, close: 100.5 + index, volume: 10,
+    }))
+    const latestTrade = {
+      ...item.trade,
+      exit: {
+        ...item.trade.exit,
+        reasonCode: 'OPPOSITE_SIGNAL_CLOSE' as const,
+        signalIdx: 13,
+        signalTime: 3900,
+        reason: '最新反向信号参考 K12 与 K13。',
+      },
+    }
+    const latestSignal: ReplayDecisionSignalMarkerSelection = {
+      id: 'decision-signal-v5-3900-short',
+      sourceId: 'v5',
+      kind: 'exit',
+      tradeMarkerId: 'replay-trade-v5-12-exit',
+      trade: latestTrade,
+      signalSide: 'short',
+      signalTime: 3900,
+    }
+
+    const markup = renderToStaticMarkup(<DecisionChartAnnotations
+      candidate={item}
+      latestSignal={latestSignal}
+      attempt={createDecisionAttempt(item, 3900)}
+      result={null}
+      data={data}
+      toX={(time) => time / 100}
+      toY={(price) => price}
+    />)
+
+    expect(markup).toContain('>K12</span>')
+    expect(markup).toContain('>K13</span>')
+    expect(markup).not.toContain('>K8</span>')
+    expect(markup).not.toContain('>K10</span>')
+    expect(markup).toContain('class="decision-signal-cursor" style="left:39px"')
   })
 
   it('centers nearby system entry and exit labels on their candles in time order', () => {
@@ -428,12 +546,12 @@ describe('decision replay components', () => {
     const markup = renderToStaticMarkup(<DecisionRiskOverlay
       candidate={candidate()} entryPrice={100} stopLoss={95} takeProfit={105}
       currentCandleX={42}
-      toPrice={(y) => y} toY={(price) => price} onStopLoss={noop} onTakeProfit={noop}
+      toPrice={(y) => y} toY={(price) => price} onEntryPrice={noop} onStopLoss={noop} onTakeProfit={noop}
       onConfirm={noop} onCancel={noop}
     />)
     expect(markup).toContain('止盈 105.000')
     expect(markup).toContain('data-testid="decision-take-profit-amount"')
-    expect(markup).toContain('class="decision-risk-amount is-anchored"')
+    expect(markup).toContain('class="decision-risk-amount is-anchored is-shifted-right"')
     expect(markup).toContain('style="left:42px;right:auto"')
     expect(markup).toContain('止盈金额')
     expect(markup).toContain('+$100.00')
@@ -445,10 +563,13 @@ describe('decision replay components', () => {
     expect(markup).toContain('-$100.00')
     expect(markup).toContain('data-testid="decision-take-profit-line"')
     expect(markup).toContain('data-testid="decision-stop-loss-line"')
-    expect(markup.match(/decision-risk-hit-area/g)).toHaveLength(2)
+    expect(markup).toContain('data-testid="decision-entry-price-line"')
+    expect(markup).toContain('entry draggable has-position-controls')
+    expect(markup.match(/decision-risk-hit-area/g)).toHaveLength(3)
+    expect(markup).toContain('title="拖动白色虚线调整挂单价或追单价"')
     expect(markup).toContain('title="拖动调整止盈"')
     expect(markup).toContain('title="拖动调整止损；按钮只切换本笔模式，不移动价格"')
-    expect(markup).toContain('拖动上下两个控制点')
+    expect(markup).toContain('拖动白色开仓线、止盈线和止损线')
   })
 
   it('renders position decrease and increase controls and scales setup amounts', () => {
@@ -551,7 +672,7 @@ describe('decision replay components', () => {
     expect(markup).toContain('当前笔实时盈亏')
     expect(markup).toContain('本场累计净盈亏')
     expect(markup).toContain('参与胜率 <strong>—</strong>')
-    expect(markup).toContain('本场 AI 累计净盈亏')
+    expect(markup).toContain('本场 AI 已揭示交易累计')
     expect(markup).toContain('data-testid="decision-chart-user-total"')
     expect(markup).toContain('data-testid="decision-chart-ai-total"')
     expect(markup).toContain('aria-expanded="false"')
@@ -561,6 +682,43 @@ describe('decision replay components', () => {
     expect(markup).not.toContain('风险 100U')
     expect(markup).toContain('data-testid="decision-chart-status-drag-handle"')
     expect(markup).toContain('拖动移动本场练习盈亏')
+  })
+
+  it('counts later revealed AI fills even before the user enters their question', () => {
+    const first = candidate()
+    const second = { ...candidate(), key: 'ai:2', trade: { ...candidate().trade, tradeNumber: 2 } }
+    const third = { ...candidate(), key: 'ai:3', trade: { ...candidate().trade, tradeNumber: 3 } }
+    const attempt = createDecisionAttempt(first)
+    const session = createDecisionSession([first, second, third], 3, 1, ['fixed-notional'])
+    const systemTrades = [
+      { candidateKey: first.key, candidate: first, closed: true, pnlByMode: { 'fixed-risk': -1, 'fixed-notional': -.771407171100463 } },
+      { candidateKey: second.key, candidate: second, closed: true, pnlByMode: { 'fixed-risk': -10, 'fixed-notional': -9.30566300046 } },
+      { candidateKey: third.key, candidate: third, closed: false, pnlByMode: { 'fixed-risk': 40, 'fixed-notional': 39.3629072906844 } },
+    ]
+    const markup = renderToStaticMarkup(<DecisionChartStatus
+      session={session}
+      attempt={attempt}
+      systemTrades={systemTrades}
+      positionSizingModes={['fixed-notional']}
+    />)
+
+    const aiSection = markup.match(/<button[^>]*class="ai-total[\s\S]*?<\/button>/)?.[0] ?? ''
+    expect(aiSection).toContain('本场 AI 已揭示交易累计')
+    expect(aiSection).toContain('已平仓 2 笔 + 当前持仓浮动盈亏')
+    expect(aiSection).toContain('+$29.29')
+
+    const details = renderToStaticMarkup(<DecisionChartPnlBreakdown
+      session={session}
+      results={[]}
+      focusActor="system"
+      systemTrades={systemTrades}
+      positionSizingModes={['fixed-notional']}
+    />)
+    expect(details).toContain('截至当前 K 线共 3 笔 AI 交易')
+    expect((details.match(/AI 开仓/g) ?? [])).toHaveLength(3)
+    expect(details).toContain('尚未平仓')
+    expect(details).toContain('AI 当前浮动盈亏')
+    expect(details).toContain('+$39.36')
   })
 
   it('renders every settled trade in the expandable chart PnL breakdown', () => {
@@ -595,14 +753,46 @@ describe('decision replay components', () => {
     />)
 
     expect(markup).toContain('data-testid="decision-chart-pnl-breakdown"')
-    expect(markup).toContain('共 2 笔已结算交易')
+    expect(markup).toContain('你的逐笔交易明细')
+    expect(markup).toContain('共 2 笔已结算题目')
     expect(markup).toContain('第 1 笔 · 多头')
     expect(markup).toContain('第 2 笔 · 多头')
+    expect(markup).toContain('你的开仓')
+    expect(markup).toContain('你的平仓')
     expect(markup).toContain('你的盈亏')
-    expect(markup).toContain('AI 盈亏')
-    expect(markup).toContain('差额')
+    expect(markup).not.toContain('AI 开仓')
+    expect(markup).not.toContain('AI 盈亏')
+    expect(markup).not.toContain('差额')
     expect(markup).toContain('手动续单')
-    expect(markup).toContain('无对应交易')
+
+    const systemMarkup = renderToStaticMarkup(<DecisionChartPnlBreakdown
+      session={session}
+      results={[firstResult, secondResult]}
+      focusActor="system"
+      positionSizingModes={['fixed-notional']}
+    />)
+    expect(systemMarkup).toContain('AI 逐笔交易明细')
+    expect(systemMarkup).toContain('AI 开仓')
+    expect(systemMarkup).toContain('AI 平仓')
+    expect(systemMarkup).toContain('AI 已实现盈亏')
+    expect(systemMarkup).toContain('101.000')
+    expect(systemMarkup).toContain('103.000')
+    expect(systemMarkup).not.toContain('无对应交易')
+    expect(systemMarkup).not.toContain('你的开仓')
+    expect(systemMarkup).not.toContain('你的盈亏')
+    expect(systemMarkup).not.toContain('差额')
+
+    const floatingSystemMarkup = renderToStaticMarkup(<DecisionChartPnlBreakdown
+      session={session}
+      results={[firstResult]}
+      focusActor="system"
+      currentResultCandidateKey={first.key}
+      systemCurrentPnlByMode={{ 'fixed-notional': -5 }}
+      positionSizingModes={['fixed-notional']}
+    />)
+    expect(floatingSystemMarkup).toContain('尚未平仓')
+    expect(floatingSystemMarkup).toContain('按当前 K 线收盘价计算浮动盈亏')
+    expect(floatingSystemMarkup).not.toContain('103.000')
   })
 
   it('keeps the current system result floating until the next question is entered', () => {
@@ -624,7 +814,7 @@ describe('decision replay components', () => {
       positionSizingModes={['fixed-notional']}
     />)
     const aiSection = markup.match(/<button[^>]*class="ai-total[\s\S]*?<\/button>/)?.[0] ?? ''
-    expect(aiSection).toContain('已结算 0 笔 + 当前浮动')
+    expect(aiSection).toContain('已平仓 0 笔 + 当前持仓浮动盈亏')
     expect(aiSection).toContain('+$99.01')
     expect(aiSection).not.toContain('+$198.02')
   })
@@ -649,7 +839,7 @@ describe('decision replay components', () => {
       positionSizingModes={['fixed-notional']}
     />)
     const aiSection = markup.match(/<button[^>]*class="ai-total[\s\S]*?<\/button>/)?.[0] ?? ''
-    expect(aiSection).toContain('全部已结算 1 笔题目')
+    expect(aiSection).toContain('截至当前 K 线已统计 1 笔')
     expect(aiSection).toContain('+$198.02')
     expect(aiSection).not.toContain('当前浮动')
   })
@@ -734,6 +924,51 @@ describe('decision replay components', () => {
     expect(markup).toContain('固定仓位 10,000U')
     expect(markup).toContain('+$33.33')
     expect(markup).toContain('+$198.02')
+  })
+
+  it('keeps both the corresponding AI participation result and the complete actual system day', () => {
+    const first = candidate()
+    const second: ReplayDecisionCandidate = {
+      ...candidate(),
+      key: 'XAUUSD:5m:short:3600:3900',
+      trade: {
+        ...candidate().trade,
+        tradeNumber: 13,
+        side: 'short',
+        result: { ...candidate().trade.result, pnlUsd: -15 },
+      },
+    }
+    const third: ReplayDecisionCandidate = {
+      ...second,
+      key: 'XAUUSD:5m:long:4200:4500',
+      trade: {
+        ...second.trade,
+        tradeNumber: 14,
+        side: 'long',
+        result: { ...second.trade.result, pnlUsd: 10 },
+      },
+    }
+    const filled = {
+      ...createDecisionAttempt(first), stage: 'position-open' as const, entryMode: 'signal-extreme' as const,
+      orderKind: 'stop' as const, pendingEntryPrice: 101, initialStopLoss: 95, stopLoss: 95, takeProfit: 107,
+      fill: { time: 3300, price: 101 },
+    }
+    const result = buildDecisionResult(first, filled, { time: 3600, price: 103, reason: 'manual-close' }, [])
+    const session = {
+      ...createDecisionSession([first, second], 2, 1, ['fixed-risk'], { practiceMode: 'day-sequence' }),
+      status: 'completed' as const,
+      attempts: [{ ...filled, stage: 'complete' as const, result }],
+      finishedAt: 2,
+    }
+    const markup = renderToStaticMarkup(<DecisionResultsDialog session={session} systemCandidates={[first, second, third]} onClose={noop} onReview={noop} onNew={noop} />)
+
+    expect(markup).toContain('V5 系统参与部分净盈亏')
+    expect(markup).toContain('参与部分胜率 风险 100U 100.0% · 对应 1 笔')
+    expect(markup).toContain('V5 系统全卷总净盈亏')
+    expect(markup).toContain('+$40.00')
+    expect(markup).toContain('+$35.00')
+    expect(markup).toContain('全部 3 笔')
+    expect(markup).toContain('你的已结算 1 笔与系统实际 3 笔相比')
   })
 
   it('shows current-symbol history with user and system earnings comparison', () => {
@@ -1262,6 +1497,8 @@ describe('decision replay components', () => {
     expect(markup).toContain('<kbd>1</kbd><span><b>播放下一根 K 线</b>')
     expect(markup).toContain('<kbd>2</kbd><span><b>开多</b>')
     expect(markup).toContain('<kbd>3</kbd><span><b>开空</b>')
+    expect(markup).toContain('保存本笔并在本 K 最高价追单')
+    expect(markup).toContain('保存本笔并在本 K 最低价追单')
     expect(markup).not.toContain('当天已无下一笔系统交易')
     expect(markup).not.toContain('disabled=""')
     expect(markup).not.toContain('进入下一笔交易')

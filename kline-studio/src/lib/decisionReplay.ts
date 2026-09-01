@@ -78,6 +78,13 @@ export interface DecisionTradeResult {
   drawings: Drawing[]
 }
 
+export interface DecisionSystemTradeSnapshot {
+  candidateKey: string
+  candidate: ReplayDecisionCandidate
+  closed: boolean
+  pnlByMode: Record<DecisionPositionSizingMode, number>
+}
+
 export interface DecisionAttempt {
   candidateKey: string
   cursorTime: number
@@ -788,6 +795,18 @@ function mergeDecisionReplaySession(left: DecisionReplaySession, right: Decision
     const rightAttempt = rightAttempts.get(candidate.key)
     if (!leftAttempt) return rightAttempt ? [rightAttempt] : []
     if (!rightAttempt) return [leftAttempt]
+    const sameCausalPlaybackStage = leftAttempt.stage === rightAttempt.stage
+      && (leftAttempt.stage === 'entry-decision' || leftAttempt.stage === 'post-exit')
+    const sameCausalOutcome = (!leftAttempt.result && !rightAttempt.result)
+      || Boolean(leftAttempt.result && rightAttempt.result && sameDecisionResult(leftAttempt.result, rightAttempt.result))
+    // A second Edge tab can save an older cursor after the active tab has
+    // already revealed another candle. Wall-clock updatedAt is not causal
+    // progress, so the newer save must never move an otherwise identical
+    // entry-decision/post-exit playback backward. An explicit restart raises
+    // correctionRevision and is handled before this merge.
+    if (sameCausalPlaybackStage && sameCausalOutcome && leftAttempt.cursorTime !== rightAttempt.cursorTime) {
+      return [leftAttempt.cursorTime > rightAttempt.cursorTime ? leftAttempt : rightAttempt]
+    }
     if (leftAttempt.result && rightAttempt.result && !sameDecisionResult(leftAttempt.result, rightAttempt.result)) {
       const alternativeAttempt = alternativeAttempts.get(candidate.key)
       if (alternativeAttempt?.result) conflictingAlternatives.push(alternativeAttempt)
@@ -1253,7 +1272,7 @@ export function startNextDaySequenceTrade(
         beijingTime: manualBeijingTime(attempt.cursorTime),
         price: entryPrice,
         setup: '日内手动续单',
-        reason: '用户在日内逐根回放中按当前 K 线收盘价主动开仓；本笔没有对应的新增系统交易。',
+        reason: `用户在日内逐根回放中以当前 K 线${side === 'long' ? '最高价' : '最低价'}设置突破追单；本笔没有对应的新增系统交易。`,
         stopLoss: manualStopLoss,
       },
       exit: {
@@ -1287,13 +1306,14 @@ export function startNextDaySequenceTrade(
   const nextAttempt: DecisionAttempt = {
     ...createDecisionAttempt(nextCandidate, attempt.cursorTime),
     userSide: side,
-    entryMode: 'market-close',
+    entryMode: 'signal-extreme',
+    orderKind: 'stop',
     pendingEntryPrice: entryPrice,
     initialStopLoss: null,
     stopLossMode: 'close',
     stopLoss: null,
     takeProfit: null,
-    fill: { time: attempt.cursorTime, price: entryPrice },
+    fill: null,
     stage: 'risk-setup',
   }
 
@@ -1331,6 +1351,48 @@ export function restartPostExitDecisionAttempt(session: DecisionReplaySession, c
     updatedAt: now,
     finishedAt: null,
     correctionRevision,
+  }
+}
+
+/**
+ * Finish a day-sequence paper when its final market candle has been revealed.
+ * The caller may provide a newly settled result (forced close or unfilled
+ * order), or an existing post-exit attempt that only needs to be finalized.
+ * Later unanswered candidates are deliberately left untouched: reaching the
+ * end of the tape ends the paper instead of fabricating answers for them.
+ */
+export function finishDecisionSessionAtMarketEnd(
+  session: DecisionReplaySession,
+  marketEndCandle: Pick<Candle, 'time' | 'close'>,
+  drawings: Drawing[],
+  now = Date.now(),
+): DecisionReplaySession {
+  if (session.status !== 'active') return session
+  const candidate = currentDecisionCandidate(session)
+  const attempt = currentDecisionAttempt(session)
+  if (!candidate || !attempt || candidate.key !== attempt.candidateKey) return session
+  const atMarketEnd = { ...attempt, cursorTime: marketEndCandle.time, drawings }
+  const shouldSettleCurrentOrder = attempt.stage === 'position-open' || attempt.stage === 'order-pending'
+  const result = shouldSettleCurrentOrder
+    ? buildDecisionResult(candidate, atMarketEnd, {
+        time: marketEndCandle.time,
+        price: marketEndCandle.close,
+        reason: 'end-of-data',
+      }, drawings)
+    : attempt.result
+      ? { ...attempt.result, drawings }
+      : null
+  const finalizedAttempt = result
+    ? { ...atMarketEnd, stage: 'complete' as const, result, drawings: result.drawings }
+    : { ...atMarketEnd, result }
+  return {
+    ...session,
+    attempts: session.attempts.map((attempt) => attempt.candidateKey === finalizedAttempt.candidateKey
+      ? finalizedAttempt
+      : attempt),
+    status: 'completed',
+    updatedAt: now,
+    finishedAt: now,
   }
 }
 
@@ -1579,6 +1641,50 @@ export function defaultDecisionLevels(side: TradeSide, entryPrice: number, sugge
   const distance = Math.abs(entryPrice - stopLoss)
   const takeProfit = side === 'long' ? entryPrice + distance : entryPrice - distance
   return { stopLoss, takeProfit }
+}
+
+/**
+ * Builds a causal structure stop from the latest candles that are already
+ * visible to the learner. Long trades protect below the recent lows; short
+ * trades protect above the recent highs. The current candle is included so
+ * the default remains useful early in a replay day.
+ */
+export function recentDecisionStructureStop(
+  side: TradeSide,
+  entryPrice: number,
+  candles: readonly Candle[],
+  cursorTime: number,
+  lookback = 5,
+) {
+  const recent = candlesKnownAt(candles, cursorTime).slice(-Math.max(1, Math.floor(lookback)))
+  if (!recent.length) return null
+  const stopLoss = side === 'long'
+    ? Math.min(...recent.map((candle) => candle.low))
+    : Math.max(...recent.map((candle) => candle.high))
+  if (!Number.isFinite(stopLoss)) return null
+  if (side === 'long' && stopLoss >= entryPrice) return null
+  if (side === 'short' && stopLoss <= entryPrice) return null
+  return stopLoss
+}
+
+export function decisionExtremeEntryPrice(side: TradeSide, candle: Pick<Candle, 'high' | 'low'>) {
+  return side === 'long' ? candle.high : candle.low
+}
+
+export function adjustDecisionPendingEntry(
+  side: TradeSide,
+  nextEntryPrice: number,
+  referencePrice: number,
+  levels: { stopLoss: number; takeProfit: number },
+) {
+  const orderKind: DecisionOrderKind = side === 'long'
+    ? nextEntryPrice >= referencePrice ? 'stop' : 'limit'
+    : nextEntryPrice <= referencePrice ? 'stop' : 'limit'
+  return {
+    orderKind,
+    stopLoss: levels.stopLoss,
+    takeProfit: levels.takeProfit,
+  }
 }
 
 export function validDecisionLevels(side: TradeSide, entryPrice: number, stopLoss: number, takeProfit: number) {
@@ -1838,6 +1944,114 @@ export function decisionResultPnl(
     result.candidate.trade.exit.price,
     result.candidate.trade.entry.stopLoss ?? result.candidate.trade.entry.price,
   )
+}
+
+export interface DecisionSystemBenchmarkStats {
+  pnlUsd: number
+  wins: number
+  total: number
+}
+
+/** Calculate the system side from every original question in one paper. */
+export function decisionSessionSystemBenchmarkStats(
+  session: DecisionReplaySession,
+  mode: DecisionPositionSizingMode,
+  completeSystemCandidates: readonly ReplayDecisionCandidate[] = session.candidates,
+): DecisionSystemBenchmarkStats {
+  const candidates = [...new Map(completeSystemCandidates
+    .filter((candidate) => candidate.manualContinuation !== true)
+    .map((candidate) => [candidate.key, candidate] as const)).values()]
+  const values = candidates.map((candidate) => mode === 'fixed-risk'
+    ? candidate.trade.result.pnlUsd
+    : pnlForDecisionMode(
+        'fixed-notional',
+        candidate.trade.side,
+        candidate.trade.entry.price,
+        candidate.trade.exit.price,
+        candidate.trade.entry.stopLoss ?? candidate.trade.entry.price,
+      ))
+  return {
+    pnlUsd: values.reduce((sum, value) => sum + value, 0),
+    wins: values.filter((value) => value > 0).length,
+    total: values.length,
+  }
+}
+
+/**
+ * Select every original system trade belonging to the paper's market day.
+ * The input may be the complete source registry rather than only the unseen
+ * questions sampled into this practice session. This keeps the AI ledger in
+ * sync with the system markers that are visible on the chart.
+ */
+export function decisionSystemCandidatesForDay(
+  candidates: readonly ReplayDecisionCandidate[],
+  daySequence: DecisionDaySequence,
+) {
+  return [...new Map(candidates
+    .filter((candidate) => (
+      candidate.manualContinuation !== true
+      && candidate.symbol === daySequence.symbol
+      && candidate.interval === daySequence.interval
+      && candidate.trade.entry.signalTime >= daySequence.startTime
+      && candidate.trade.entry.signalTime < daySequence.endTime
+      && candidate.trade.entry.time >= daySequence.startTime
+      && candidate.trade.entry.time < daySequence.endTime
+      && candidate.trade.exit.time >= daySequence.startTime
+      && candidate.trade.exit.time < daySequence.endTime
+    ))
+    .map((candidate) => [candidate.key, candidate] as const)).values()]
+    .sort((left, right) => (
+      left.trade.entry.signalTime - right.trade.entry.signalTime
+      || left.trade.entry.time - right.trade.entry.time
+      || left.key.localeCompare(right.key)
+    ))
+}
+
+/**
+ * Build the causal AI trade ledger for day-sequence replay.
+ *
+ * A trade enters the ledger only after its actual system fill is revealed.
+ * Closed trades use their immutable exit result; the one currently open trade
+ * is marked to the latest revealed candle close without reading its future exit.
+ */
+export function revealedDecisionSystemTrades(
+  candidates: readonly ReplayDecisionCandidate[],
+  revealedThrough: number,
+  currentClose: number,
+): DecisionSystemTradeSnapshot[] {
+  const uniqueCandidates = [...new Map(candidates
+    .filter((candidate) => candidate.manualContinuation !== true)
+    .map((candidate) => [candidate.key, candidate] as const)).values()]
+  return uniqueCandidates
+    .filter((candidate) => candidate.trade.entry.signalTime <= revealedThrough && candidate.trade.entry.time <= revealedThrough)
+    .sort((left, right) => left.trade.entry.time - right.trade.entry.time || left.key.localeCompare(right.key))
+    .map((candidate) => {
+      const closed = candidate.trade.exit.time <= revealedThrough
+      const markPrice = closed ? candidate.trade.exit.price : currentClose
+      return {
+        candidateKey: candidate.key,
+        candidate,
+        closed,
+        pnlByMode: {
+          'fixed-risk': closed
+            ? candidate.trade.result.pnlUsd
+            : pnlForDecisionMode(
+                'fixed-risk',
+                candidate.trade.side,
+                candidate.trade.entry.price,
+                markPrice,
+                candidate.trade.entry.stopLoss,
+              ),
+          'fixed-notional': pnlForDecisionMode(
+            'fixed-notional',
+            candidate.trade.side,
+            candidate.trade.entry.price,
+            markPrice,
+            candidate.trade.entry.stopLoss,
+          ),
+        },
+      }
+    })
 }
 
 export function aggregateDecisionResults(results: readonly DecisionTradeResult[], mode: DecisionPositionSizingMode) {

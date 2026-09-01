@@ -14,17 +14,17 @@ describe('replay trade dataset registry', () => {
       name: 'XAUUSD 回放交易',
       symbol: 'XAUUSD',
       interval: '5m',
-      tradeCount: 87,
-      markerCount: 174,
+      tradeCount: 88,
+      markerCount: 176,
     }))
   })
 
   it('renders only requested layers with source-unique marker and connection IDs', () => {
     const markers = toReplayTradeSeriesMarkers('XAUUSD', '5m', [sourceId])
     const connections = toReplayTradeConnectionSpecs('XAUUSD', '5m', [sourceId])
-    expect(markers).toHaveLength(174)
-    expect(connections).toHaveLength(87)
-    expect(new Set(markers.map((marker) => marker.id)).size).toBe(174)
+    expect(markers).toHaveLength(176)
+    expect(connections).toHaveLength(88)
+    expect(new Set(markers.map((marker) => marker.id)).size).toBe(176)
     expect(markers[0].id).toContain(sourceId)
     expect(connections[0].sourceId).toBe(sourceId)
     expect(toReplayTradeSeriesMarkers('XAUUSD', '5m', [])).toEqual([])
@@ -57,9 +57,26 @@ describe('replay trade dataset registry', () => {
     const candidates = replayDecisionCandidates(weeklySources.map((source) => source.sourceId))
 
     expect(weeklySources).toHaveLength(77)
-    expect(candidates).toHaveLength(5382)
+    expect(candidates).toHaveLength(5486)
     expect(new Set(candidates.map((candidate) => candidate.symbol))).toEqual(new Set(['XAUUSD', 'XAGUSD', 'BTCUSDT.P', 'US500', 'ETHUSD']))
     expect(new Set(candidates.map((candidate) => candidate.interval))).toEqual(new Set(['5m', '15m']))
+  })
+
+  it('keeps an overnight XAUUSD trade inside the same 06:00 Beijing trading day', () => {
+    const sourceId = 'xauusd-5m-weekly-v5-0818-a174bc0ef9d6c31a'
+    const signalTime = 1_782_832_500 // 2026-06-30 23:15 Asia/Shanghai
+    const candidate = replayDecisionCandidates([sourceId]).find((item) => item.trade.entry.signalTime === signalTime)
+
+    expect(candidate).toMatchObject({
+      trade: {
+        tradeNumber: 43,
+        side: 'short',
+        entry: { signalTime, beijingTime: '2026-06-30 23:20', price: 4026.135 },
+        exit: { beijingTime: '2026-07-01 01:35' },
+      },
+    })
+    expect(toReplayDecisionSignalSeriesMarkers('XAUUSD', '5m', [sourceId], 1_782_838_200))
+      .toContainEqual(expect.objectContaining({ time: signalTime, text: '空头信号' }))
   })
 
   it('reveals the later US500 decision signals only when their own signal candle is reached', () => {

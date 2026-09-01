@@ -7,11 +7,11 @@ import { replayDecisionCandidates } from './replayTradeRegistry'
 import type { Candle } from './market'
 import { parseCompactHistory } from './liveMarket'
 import {
-  adjacentDecisionExerciseTarget, advanceDecisionAttempt, buildDecisionResult, cancelPendingOrderAndAdvance, candlesKnownAt, compareDecisionHistorySortValues, createDecisionAttempt, createDecisionReviewSession, createDecisionSession,
-  decisionAttemptSide, decisionDayCandidateGroups, decisionDayHistoryIsComplete, decisionResultSide, decisionSessionPracticeMode, decisionShortcutAction, defaultDecisionLevels, evaluatePositionBar, fillPendingOrder,
-  decisionResultPnl, decisionResultR, decisionSessionUserRStats, decisionStopLossMode, emptyDecisionReplayStore, filterDecisionCandidatesByScope, historyCoversDecisionCandidate, intervalCutoffTime, parseDecisionReplayStore,
-  mergeDecisionReplayStores, nextDecisionPositionMultiplier, normalizeDecisionPositionMultiplier, normalizeDecisionReplayStore, persistDecisionReplayStoreAdditively, pnlForDecision, pnlForDecisionMode, restartPostExitDecisionAttempt, rewardRiskRatio, sampleDecisionCandidates, sampleDecisionDayCandidates, startNextDaySequenceTrade,
-  saveDecisionReplayStore, saveDecisionReplayStoreSnapshot, serializeDecisionReplayStore, updateDecisionSessionDrawings, validDecisionLevels, validOpenPositionLevels, type DecisionReplaySession,
+  adjacentDecisionExerciseTarget, adjustDecisionPendingEntry, advanceDecisionAttempt, buildDecisionResult, cancelPendingOrderAndAdvance, candlesKnownAt, compareDecisionHistorySortValues, createDecisionAttempt, createDecisionReviewSession, createDecisionSession,
+  decisionAttemptSide, decisionDayCandidateGroups, decisionDayHistoryIsComplete, decisionExtremeEntryPrice, decisionResultSide, decisionSessionPracticeMode, decisionShortcutAction, defaultDecisionLevels, evaluatePositionBar, fillPendingOrder, finishDecisionSessionAtMarketEnd,
+  decisionResultPnl, decisionResultR, decisionSessionSystemBenchmarkStats, decisionSessionUserRStats, decisionStopLossMode, decisionSystemCandidatesForDay, emptyDecisionReplayStore, filterDecisionCandidatesByScope, historyCoversDecisionCandidate, intervalCutoffTime, parseDecisionReplayStore,
+  mergeDecisionReplayStores, nextDecisionPositionMultiplier, normalizeDecisionPositionMultiplier, normalizeDecisionReplayStore, persistDecisionReplayStoreAdditively, pnlForDecision, pnlForDecisionMode, recentDecisionStructureStop, restartPostExitDecisionAttempt, revealedDecisionSystemTrades, rewardRiskRatio, sampleDecisionCandidates, sampleDecisionDayCandidates, startNextDaySequenceTrade,
+  saveDecisionReplayStore, saveDecisionReplayStoreSnapshot, serializeDecisionReplayStore, sessionResults, updateDecisionSessionDrawings, validDecisionLevels, validOpenPositionLevels, type DecisionAttempt, type DecisionExit, type DecisionReplaySession,
 } from './decisionReplay'
 
 function candidate(key: string, side: 'long' | 'short' = 'long'): ReplayDecisionCandidate {
@@ -47,6 +47,27 @@ function storeWithSessions(...sessions: DecisionReplaySession[]) {
 const bar = (time: number, open: number, high: number, low: number, close: number): Candle => ({ time, open, high, low, close, volume: 1 })
 
 describe('decision replay', () => {
+  it('uses the current candle extreme as the default breakout price for either side', () => {
+    const candle = bar(300, 100, 108, 94, 102)
+    expect(decisionExtremeEntryPrice('long', candle)).toBe(108)
+    expect(decisionExtremeEntryPrice('short', candle)).toBe(94)
+  })
+
+  it('moves only the entry price, keeps stop and target fixed, and derives limit versus chase order', () => {
+    expect(adjustDecisionPendingEntry('long', 102, 101, { stopLoss: 95, takeProfit: 105 })).toEqual({
+      orderKind: 'stop', stopLoss: 95, takeProfit: 105,
+    })
+    expect(adjustDecisionPendingEntry('long', 99, 101, { stopLoss: 95, takeProfit: 105 })).toEqual({
+      orderKind: 'limit', stopLoss: 95, takeProfit: 105,
+    })
+    expect(adjustDecisionPendingEntry('short', 98, 99, { stopLoss: 105, takeProfit: 95 })).toEqual({
+      orderKind: 'stop', stopLoss: 105, takeProfit: 95,
+    })
+    expect(adjustDecisionPendingEntry('short', 101, 99, { stopLoss: 105, takeProfit: 95 })).toEqual({
+      orderKind: 'limit', stopLoss: 105, takeProfit: 95,
+    })
+  })
+
   it('sorts per-trade history by time or selected-position PnL in either direction', () => {
     const olderLoss = { startedAt: 100, ordinal: 1, pnlUsd: -20 }
     const newerWin = { startedAt: 200, ordinal: 1, pnlUsd: 30 }
@@ -344,6 +365,21 @@ describe('decision replay', () => {
     expect(pnlForDecision('long', 100, 110, 95)).toEqual({ pnlUsd: 200, rMultiple: 2 })
   })
 
+  it('defaults user-selected directions to the latest five visible candle extremes', () => {
+    const candles = [
+      bar(100, 100, 104, 98, 102),
+      bar(200, 102, 106, 99, 105),
+      bar(300, 105, 107, 101, 103),
+      bar(400, 103, 108, 100, 107),
+      bar(500, 107, 109, 102, 108),
+      bar(600, 108, 120, 90, 110),
+    ]
+    expect(recentDecisionStructureStop('long', 109, candles, 500)).toBe(98)
+    expect(recentDecisionStructureStop('short', 102, candles, 500)).toBe(109)
+    // Future candles must not leak into the default setup.
+    expect(recentDecisionStructureStop('long', 109, candles, 500, 3)).toBe(100)
+  })
+
   it('allows a filled position stop to lock profit while retaining its initial fixed-risk sizing', () => {
     expect(validDecisionLevels('long', 100, 102, 105)).toBe(false)
     expect(validOpenPositionLevels('long', 100, 102, 105)).toBe(true)
@@ -453,7 +489,7 @@ describe('decision replay', () => {
     expect(stats.averageR).toBeCloseTo(0.4)
   })
 
-  it('removes overnight commodity questions from previously saved replay sessions', () => {
+  it('keeps overnight questions inside one trading day and removes only trades crossing 06:00', () => {
     const overnightBase = candidate('overnight:1')
     const overnight = {
       ...overnightBase,
@@ -463,20 +499,29 @@ describe('decision replay', () => {
         exit: { ...overnightBase.trade.exit, time: 57_900 },
       },
     }
+    const crossSessionBase = candidate('cross-session:1')
+    const crossSession = {
+      ...crossSessionBase,
+      trade: {
+        ...crossSessionBase.trade,
+        entry: { ...crossSessionBase.trade.entry, time: 72_000 },
+        exit: { ...crossSessionBase.trade.exit, time: 82_200 },
+      },
+    }
     const kept = candidate('kept:1')
     const session = {
-      ...createDecisionSession([overnight, kept], 2, 1000),
+      ...createDecisionSession([overnight, crossSession, kept], 3, 1000),
       id: 'overnight-session',
-      currentIndex: 1,
-      attempts: [createDecisionAttempt(overnight), createDecisionAttempt(kept)],
+      currentIndex: 2,
+      attempts: [createDecisionAttempt(overnight), createDecisionAttempt(crossSession), createDecisionAttempt(kept)],
     }
 
     const parsed = parseDecisionReplayStore(JSON.stringify(storeWithSessions(session)))
 
     expect(parsed.sessions).toHaveLength(1)
-    expect(parsed.sessions[0].candidates.map((item) => item.key)).toEqual(['kept:1'])
-    expect(parsed.sessions[0].attempts.map((item) => item.candidateKey)).toEqual(['kept:1'])
-    expect(parsed.seenTradeKeys).toEqual(['kept:1'])
+    expect(parsed.sessions[0].candidates.map((item) => item.key)).toEqual(['overnight:1', 'kept:1'])
+    expect(parsed.sessions[0].attempts.map((item) => item.candidateKey)).toEqual(['overnight:1', 'kept:1'])
+    expect(parsed.seenTradeKeys).toEqual(['overnight:1', 'kept:1'])
   })
 
   it('advances pending orders and finalizes comparable results without future data', () => {
@@ -535,6 +580,51 @@ describe('decision replay', () => {
     const pending = { ...createDecisionAttempt(item), stage: 'order-pending' as const, entryMode: 'free-price' as const, orderKind: 'limit' as const, pendingEntryPrice: 90, stopLoss: 85, takeProfit: 95 }
     expect(buildDecisionResult(item, pending, { time: 4500, price: 103, reason: 'end-of-data' }, []).choice).toBe('unfilled')
     expect(buildDecisionResult(item, createDecisionAttempt(item), { time: 3000, price: 100, reason: 'skipped' }, []).choice).toBe('skipped')
+  })
+
+  it('finishes a day paper at the final candle without manufacturing answers for later candidates', () => {
+    const first = candidate('market-end:1', 'short')
+    const later = candidate('market-end:2', 'long')
+    const base = createDecisionSession([first, later], 2, 100, undefined, { practiceMode: 'day-sequence' })
+    const openAttempt: DecisionAttempt = {
+      ...base.attempts[0],
+      cursorTime: 4500,
+      stage: 'position-open',
+      userSide: 'short',
+      entryMode: 'free-price',
+      orderKind: 'stop',
+      pendingEntryPrice: 103,
+      initialStopLoss: 108,
+      stopLoss: 108,
+      takeProfit: 93,
+      fill: { time: 4200, price: 103 },
+    }
+    const exit: DecisionExit = { time: 4800, price: 99, reason: 'end-of-data' }
+    const finished = finishDecisionSessionAtMarketEnd({ ...base, attempts: [openAttempt] }, { time: exit.time, close: exit.price }, [], 999)
+
+    expect(finished).toMatchObject({ status: 'completed', currentIndex: 0, finishedAt: 999, updatedAt: 999 })
+    expect(finished.attempts).toHaveLength(1)
+    expect(finished.attempts[0]).toMatchObject({ stage: 'complete', result: { choice: 'traded', userExit: exit } })
+    expect(finished.candidates.map((item) => item.key)).toEqual([first.key, later.key])
+  })
+
+  it('can end the paper at the final candle before the current question is answered', () => {
+    const items = [candidate('market-end-unanswered:1'), candidate('market-end-unanswered:2')]
+    const base = createDecisionSession(items, 2, 100, undefined, { practiceMode: 'day-sequence' })
+    const finished = finishDecisionSessionAtMarketEnd(base, { time: 4800, close: 99 }, [], 999)
+
+    expect(finished.status).toBe('completed')
+    expect(finished.attempts[0]).toMatchObject({ stage: 'entry-decision', result: null, cursorTime: 4800 })
+    expect(sessionResults(finished)).toHaveLength(0)
+  })
+
+  it('calculates the system whole-paper score independently of user-completed attempts', () => {
+    const first = candidate('system-paper:1')
+    const secondBase = candidate('system-paper:2', 'short')
+    const second = { ...secondBase, trade: { ...secondBase.trade, result: { ...secondBase.trade.result, pnlUsd: -15 } } }
+    const session = createDecisionSession([first, second], 2, 100, undefined, { practiceMode: 'day-sequence' })
+
+    expect(decisionSessionSystemBenchmarkStats(session, 'fixed-risk')).toEqual({ pnlUsd: 25, wins: 1, total: 2 })
   })
 
   it('cancels a pending order and advances one candle without completing the exercise', () => {
@@ -650,11 +740,21 @@ describe('decision replay', () => {
       cursorTime: 3900,
       stage: 'risk-setup',
       userSide: 'short',
-      entryMode: 'market-close',
+      entryMode: 'signal-extreme',
+      orderKind: 'stop',
       pendingEntryPrice: 101,
-      fill: { time: 3900, price: 101 },
+      fill: null,
       result: null,
     })
+    const configured = {
+      ...next.attempts[1],
+      stage: 'order-pending' as const,
+      initialStopLoss: 106,
+      stopLoss: 106,
+      takeProfit: 96,
+    }
+    const triggered = advanceDecisionAttempt(candidates[1], configured, bar(4200, 103, 104, 100, 100.5))
+    expect(triggered.attempt).toMatchObject({ stage: 'position-open', fill: { time: 4200, price: 101 } })
   })
 
   it('appends a manual continuation after the final system trade without duplicating system pnl', () => {
@@ -685,6 +785,7 @@ describe('decision replay', () => {
       initialStopLoss: 96,
       stopLoss: 96,
       takeProfit: 106,
+      fill: { time: 4800, price: 101 },
     }
     const manualResult = buildDecisionResult(manualCandidate, manualAttempt, { time: 4800, price: 103, reason: 'manual-close' }, [])
 
@@ -693,7 +794,7 @@ describe('decision replay', () => {
     expect(continued.candidates).toHaveLength(2)
     expect(manualCandidate).toMatchObject({ manualContinuation: true, trade: { side: 'long', result: { pnlUsd: 0, rMultiple: 0 } } })
     expect(continued.attempts[0]).toMatchObject({ candidateKey: item.key, stage: 'complete', result: firstResult })
-    expect(continued.attempts[1]).toMatchObject({ candidateKey: manualCandidate.key, stage: 'risk-setup', userSide: 'long', pendingEntryPrice: 101 })
+    expect(continued.attempts[1]).toMatchObject({ candidateKey: manualCandidate.key, stage: 'risk-setup', userSide: 'long', entryMode: 'signal-extreme', orderKind: 'stop', pendingEntryPrice: 101, fill: null })
     expect(decisionResultPnl(manualResult, 'fixed-risk', 'system')).toBe(0)
     expect(decisionResultPnl(manualResult, 'fixed-notional', 'system')).toBe(0)
     expect(decisionResultR(manualResult, 'system')).toBe(0)
@@ -1114,6 +1215,112 @@ describe('decision replay', () => {
     expect(session).toMatchObject({ status: 'active', currentIndex: 0 })
     expect(session.attempts[0]).toMatchObject({ stage: 'post-exit', result: { choice: 'skipped' } })
     expect(session.attempts.some((attempt) => attempt.candidateKey === candidates[1].key)).toBe(false)
+  })
+
+  it('includes every causally revealed AI fill and marks only the open trade to the current close', () => {
+    const closedLong = candidate('ai-ledger:1')
+    const closedShortBase = candidate('ai-ledger:2', 'short')
+    const closedShort = {
+      ...closedShortBase,
+      trade: {
+        ...closedShortBase.trade,
+        entry: { ...closedShortBase.trade.entry, signalTime: 3600, time: 3900 },
+        exit: { ...closedShortBase.trade.exit, time: 4200, price: 104 },
+        result: { ...closedShortBase.trade.result, pnlUsd: -30 },
+      },
+    }
+    const openShortBase = candidate('ai-ledger:3', 'short')
+    const openShort = {
+      ...openShortBase,
+      trade: {
+        ...openShortBase.trade,
+        entry: { ...openShortBase.trade.entry, signalTime: 4200, time: 4500 },
+        // The future exit is deliberately adverse. It must not affect the
+        // snapshot while only the profitable current close is revealed.
+        exit: { ...openShortBase.trade.exit, time: 5400, price: 120 },
+        result: { ...openShortBase.trade.result, pnlUsd: -475 },
+      },
+    }
+    const future = {
+      ...candidate('ai-ledger:4'),
+      trade: {
+        ...candidate('ai-ledger:4').trade,
+        entry: { ...candidate('ai-ledger:4').trade.entry, signalTime: 5700, time: 6000 },
+        exit: { ...candidate('ai-ledger:4').trade.exit, time: 6300 },
+      },
+    }
+
+    const snapshots = revealedDecisionSystemTrades(
+      [closedLong, closedShort, openShort, openShort, future],
+      4799,
+      90,
+    )
+
+    expect(snapshots.map(({ candidateKey, closed }) => ({ candidateKey, closed }))).toEqual([
+      { candidateKey: 'ai-ledger:1', closed: true },
+      { candidateKey: 'ai-ledger:2', closed: true },
+      { candidateKey: 'ai-ledger:3', closed: false },
+    ])
+    expect(snapshots[0].pnlByMode['fixed-risk']).toBe(40)
+    expect(snapshots[1].pnlByMode['fixed-risk']).toBe(-30)
+    expect(snapshots[2].pnlByMode['fixed-risk']).toBe(275)
+    expect(snapshots[2].pnlByMode['fixed-notional']).toBeCloseTo((101 - 90) / 101 * 10_000)
+
+    expect(revealedDecisionSystemTrades([closedLong, closedShort, openShort], 4499, 90)).toHaveLength(2)
+    const afterExit = revealedDecisionSystemTrades([closedLong, closedShort, openShort], 5699, 120)
+    expect(afterExit[2].closed).toBe(true)
+    expect(afterExit[2].pnlByMode['fixed-risk']).toBe(-475)
+  })
+
+  it('builds the day AI ledger from the complete source pool, including previously seen trades', () => {
+    const first = candidate('day-ledger:1')
+    const secondBase = candidate('day-ledger:2', 'short')
+    const second = {
+      ...secondBase,
+      trade: {
+        ...secondBase.trade,
+        entry: { ...secondBase.trade.entry, signalTime: 3900, time: 4200 },
+        exit: { ...secondBase.trade.exit, time: 4800 },
+      },
+    }
+    const nextDayBase = candidate('day-ledger:3')
+    const nextDay = {
+      ...nextDayBase,
+      trade: {
+        ...nextDayBase.trade,
+        entry: { ...nextDayBase.trade.entry, signalTime: 90_000, time: 90_300 },
+        exit: { ...nextDayBase.trade.exit, time: 90_600 },
+      },
+    }
+    const daySequence = { key: 'XAUUSD:5m:test', symbol: 'XAUUSD' as const, interval: '5m' as const, startTime: 0, endTime: 86_400 }
+
+    // Even if the actual exercise sampled only `second`, the chart source also
+    // contains `first`; both must be available to the causal AI ledger.
+    const completeDay = decisionSystemCandidatesForDay([first, second, nextDay], daySequence)
+    expect(completeDay.map((item) => item.key)).toEqual(['day-ledger:1', 'day-ledger:2'])
+    expect(revealedDecisionSystemTrades(completeDay, 4499, 100)).toHaveLength(2)
+  })
+
+  it('never moves an in-progress causal playback cursor backward when a stale tab saves later', () => {
+    const item = candidate('cursor-monotonic:1')
+    const base = { ...createDecisionSession([item], 1, 1000), id: 'cursor-monotonic' }
+    const advanced = {
+      ...base,
+      attempts: [{ ...base.attempts[0], cursorTime: 4200 }],
+      updatedAt: 3000,
+    }
+    const staleButSavedLater = {
+      ...base,
+      attempts: [{ ...base.attempts[0], cursorTime: 3600 }],
+      updatedAt: 4000,
+    }
+
+    const merged = mergeDecisionReplayStores(
+      storeWithSessions(advanced),
+      storeWithSessions(staleButSavedLater),
+    )
+
+    expect(merged.sessions[0].attempts[0].cursorTime).toBe(4200)
   })
 
   it('repairs an active exercise that an older additive save advanced past post-exit', () => {
