@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { DECISION_REPLAY_STORAGE_KEY, parseDecisionReplayStore, type DecisionReplaySession, type DecisionReplayStore } from './decisionReplay'
 import { DECISION_REPLAY_FAVORITES_STORAGE_KEY } from './decisionReplayFavorites'
 import { PORTABLE_WORKSPACE_RECOVERY_STORAGE_KEY, loadPortableWorkspaceRecovery, type PortableWorkspace } from './portableWorkspace'
-import { mergePortableWorkspaceProgress, receivePortableWorkspaceSafely, receivePortableWorkspaceSnapshotsSafely } from './workspaceProgressSync'
+import { mergePortableWorkspaceProgress, mergePortableWorkspaceProgressSnapshots, receivePortableWorkspaceSafely, receivePortableWorkspaceSnapshotsSafely } from './workspaceProgressSync'
 
 function session(id: string, startedAt: number): DecisionReplaySession {
   return {
@@ -64,6 +64,18 @@ function createStorage(initial: Record<string, string>, failOnceFor?: string) {
 }
 
 describe('workspace progress sync', () => {
+  it('compacts cumulative repository backups without dropping older unique progress', () => {
+    const compacted = mergePortableWorkspaceProgressSnapshots([
+      snapshot(store(session('older-only', 1000)), ['trade:older']),
+      snapshot(store(session('newer-only', 2000)), ['trade:newer']),
+    ])
+    const compactedStore = parseDecisionReplayStore(compacted.entries[DECISION_REPLAY_STORAGE_KEY])
+
+    expect(compactedStore.sessions.map((item) => item.id)).toEqual(['newer-only', 'older-only'])
+    expect(JSON.parse(compacted.entries[DECISION_REPLAY_FAVORITES_STORAGE_KEY])).toEqual(['trade:older', 'trade:newer'])
+    expect(Object.keys(compacted.entries)).toEqual([DECISION_REPLAY_STORAGE_KEY, DECISION_REPLAY_FAVORITES_STORAGE_KEY])
+  })
+
   it('merges multiple computer backups, preserves local settings, and creates a rollback point', () => {
     const local = store(session('local', 1000))
     const storage = createStorage({

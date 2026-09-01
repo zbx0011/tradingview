@@ -135,6 +135,25 @@ export function mergePortableWorkspaceProgress(
 }
 
 /**
+ * Collapse many cumulative repository backups into one history-only snapshot.
+ * The server uses this before responding so the browser receives the exact same
+ * merged progress without downloading and reprocessing every historical copy.
+ */
+export function mergePortableWorkspaceProgressSnapshots(
+  snapshots: readonly PortableWorkspace[],
+): PortableWorkspace {
+  if (snapshots.length === 0) throw new Error('没有可合并的工作区备份')
+  const storage = workspaceMemoryStorage({
+    app: snapshots[0].app,
+    version: snapshots[0].version,
+    exportedAt: new Date().toISOString(),
+    entries: {},
+  })
+  mergePortableWorkspaceProgress(snapshots, storage, { persistRecovery: false })
+  return decisionHistoryWorkspace(collectPortableWorkspace(storage))
+}
+
+/**
  * Receive remote workspace settings while preserving and merging both computers' decision history.
  * The complete result is staged in memory before the real browser storage is touched.
  */

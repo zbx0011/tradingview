@@ -46,8 +46,10 @@ interface LocalRecoveryFile {
 
 type SyncMode = 'manual' | 'background'
 type SyncScope = 'workspace' | 'history'
+type ProgressSnapshotCompactor = (snapshots: readonly PortableWorkspace[]) => Promise<PortableWorkspace>
 
 let recentBackgroundLease: { fingerprint: string; expiresAt: number } | null = null
+let compactProgressSnapshots: ProgressSnapshotCompactor | null = null
 
 class HttpError extends Error {
   constructor(public readonly status: number, message: string, public readonly details?: Record<string, unknown>) {
@@ -353,7 +355,11 @@ async function collectProgressSnapshots(repositoryPath: string) {
     })
     sourcePaths.push(path.relative(repositoryPath, file).replaceAll(path.sep, '/'))
   }
-  return { snapshots, sourcePaths }
+  if (!compactProgressSnapshots && snapshots.length > 0) throw new HttpError(500, '做题历史合并器未就绪，已停止同步')
+  return {
+    snapshots: snapshots.length > 0 ? [await compactProgressSnapshots!(snapshots)] : [],
+    sourcePaths,
+  }
 }
 
 function timestamp() {
@@ -510,6 +516,15 @@ export function localPrivateSyncPlugin(): Plugin {
     name: 'kline-studio-local-private-sync',
     apply: 'serve',
     configureServer(server) {
+      compactProgressSnapshots = async (snapshots) => {
+        const module = await server.ssrLoadModule('/src/lib/workspaceProgressSync.ts') as {
+          mergePortableWorkspaceProgressSnapshots?: (values: readonly PortableWorkspace[]) => PortableWorkspace
+        }
+        if (typeof module.mergePortableWorkspaceProgressSnapshots !== 'function') {
+          throw new HttpError(500, '做题历史合并器加载失败，已停止同步')
+        }
+        return module.mergePortableWorkspaceProgressSnapshots(snapshots)
+      }
       server.middlewares.use(API_PATH, async (request, response) => {
         try {
           verifyLocalRequest(request)
