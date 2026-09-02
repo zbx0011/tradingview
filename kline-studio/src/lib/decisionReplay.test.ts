@@ -8,7 +8,7 @@ import type { Candle } from './market'
 import { parseCompactHistory } from './liveMarket'
 import {
   adjacentDecisionExerciseTarget, adjustDecisionPendingEntry, advanceDecisionAttempt, buildDecisionResult, cancelPendingOrderAndAdvance, candlesKnownAt, compareDecisionHistorySortValues, createDecisionAttempt, createDecisionReviewSession, createDecisionSession,
-  decisionAttemptSide, decisionDayCandidateGroups, decisionDayHistoryIsComplete, decisionExtremeEntryPrice, decisionResultSide, decisionSessionPracticeMode, decisionShortcutAction, defaultDecisionLevels, evaluatePositionBar, fillPendingOrder, finishDecisionSessionAtMarketEnd,
+  decisionAiWeekSummaries, decisionAttemptSide, decisionCandidateTradingWeek, decisionDayCandidateGroups, decisionDayHistoryIsComplete, decisionExtremeEntryPrice, decisionResultSide, decisionSessionPracticeMode, decisionShortcutAction, defaultDecisionLevels, evaluatePositionBar, fillPendingOrder, filterDecisionCandidatesByTradingWeek, finishDecisionSessionAtMarketEnd,
   decisionResultPnl, decisionResultR, decisionSessionSystemBenchmarkStats, decisionSessionUserRStats, decisionStopLossMode, decisionSystemCandidatesForDay, emptyDecisionReplayStore, filterDecisionCandidatesByScope, historyCoversDecisionCandidate, intervalCutoffTime, parseDecisionReplayStore,
   mergeDecisionReplayStores, nextDecisionPositionMultiplier, normalizeDecisionPositionMultiplier, normalizeDecisionReplayStore, persistDecisionReplayStoreAdditively, pnlForDecision, pnlForDecisionMode, recentDecisionStructureStop, restartPostExitDecisionAttempt, revealedDecisionSystemTrades, rewardRiskRatio, sampleDecisionCandidates, sampleDecisionDayCandidates, startNextDaySequenceTrade,
   saveDecisionReplayStore, saveDecisionReplayStoreSnapshot, serializeDecisionReplayStore, sessionResults, updateDecisionSessionDrawings, validDecisionLevels, validOpenPositionLevels, type DecisionAttempt, type DecisionExit, type DecisionReplaySession,
@@ -102,6 +102,38 @@ describe('decision replay', () => {
     expect(filterDecisionCandidatesByScope(candidates, ['XAUUSD'], ['15m']).map((item) => item.key)).toEqual(['fifteen:1'])
     expect(filterDecisionCandidatesByScope(candidates, ['XAUUSD', 'XAGUSD'], ['5m', '1h']).map((item) => item.key)).toEqual(['five:1', 'hour:1'])
     expect(filterDecisionCandidatesByScope(candidates, ['XAGUSD'], ['15m'])).toEqual([])
+  })
+
+  it('groups AI PnL by Monday trading week without splitting the closed session at Beijing midnight', () => {
+    const mondayBeijingMidnight = Date.UTC(2026, 5, 28, 16) / 1000
+    const mondaySessionOpen = mondayBeijingMidnight + 6 * 60 * 60
+    const setTrade = (item: ReplayDecisionCandidate, signalTime: number, pnlUsd: number): ReplayDecisionCandidate => ({
+      ...item,
+      trade: {
+        ...item.trade,
+        entry: { ...item.trade.entry, signalTime, time: signalTime + 300 },
+        exit: { ...item.trade.exit, time: signalTime + 900 },
+        result: { ...item.trade.result, pnlUsd },
+      },
+    })
+    const beforeMidnight = setTrade(candidate('week:1'), mondaySessionOpen + 17 * 60 * 60, -80)
+    const afterMidnight = setTrade(candidate('week:2'), mondaySessionOpen + 19 * 60 * 60, 20)
+    const duplicate = { ...beforeMidnight, sourceId: 'overlap-copy' }
+
+    expect(decisionCandidateTradingWeek(beforeMidnight).key).toBe(decisionCandidateTradingWeek(afterMidnight).key)
+    const selectedWeekKey = decisionCandidateTradingWeek(beforeMidnight).key
+    expect(filterDecisionCandidatesByTradingWeek([beforeMidnight, afterMidnight], selectedWeekKey)).toHaveLength(2)
+    expect(decisionAiWeekSummaries([beforeMidnight, afterMidnight, duplicate])).toEqual([expect.objectContaining({
+      startTime: mondayBeijingMidnight,
+      pnlUsd: -60,
+      wins: 1,
+      total: 2,
+    })])
+    expect(decisionAiWeekSummaries([beforeMidnight, afterMidnight, duplicate], 'fixed-notional')[0]).toEqual(expect.objectContaining({
+      wins: 2,
+      total: 2,
+    }))
+    expect(decisionAiWeekSummaries([beforeMidnight, afterMidnight, duplicate], 'fixed-notional')[0].pnlUsd).toBeGreaterThan(0)
   })
 
   it('groups one Beijing date by symbol and timeframe, then orders its questions chronologically', () => {

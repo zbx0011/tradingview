@@ -61,7 +61,7 @@ import { createDecisionAnomalyReviewSession, findDecisionReplayAnomalies } from 
 import {
   DECISION_REPLAY_INTERVALS, DECISION_REPLAY_STORAGE_KEY, adjacentDecisionExerciseTarget, adjustDecisionPendingEntry, advanceDecisionAttempt, buildDecisionResult, cancelPendingOrderAndAdvance, candleAtOrBefore, candlesKnownAt, createDecisionAttempt,
   createDecisionReviewSession, createDecisionSession, currentDecisionAttempt, currentDecisionCandidate, decisionExtremeEntryPrice, decisionShortcutAction, defaultDecisionLevels,
-  decisionAttemptInitialStopLoss, decisionAttemptSide, decisionDayHistoryIsComplete, decisionSessionPracticeMode, decisionStopLossMode, decisionSessionPositionSizingModes, decisionSystemCandidatesForDay, emptyDecisionReplayStore, filterDecisionCandidatesByScope, formatDecisionDay, historyCoversDecisionCandidate, intervalCutoffTime, intervalSeconds,
+  decisionAiWeekSummaries, decisionAttemptInitialStopLoss, decisionAttemptSide, decisionDayHistoryIsComplete, decisionSessionPracticeMode, decisionStopLossMode, decisionSessionPositionSizingModes, decisionSystemCandidatesForDay, emptyDecisionReplayStore, filterDecisionCandidatesByScope, filterDecisionCandidatesByTradingWeek, formatDecisionDay, formatDecisionWeek, historyCoversDecisionCandidate, intervalCutoffTime, intervalSeconds,
   finishDecisionSessionAtMarketEnd, loadDecisionReplayStore, mergeDecisionReplayStores, nextCandleAfter, normalizeDecisionPositionMultiplier, normalizeDecisionReplayStore, parseDecisionReplayStoreChecked, pnlForDecisionMode, recentDecisionStructureStop, restartPostExitDecisionAttempt, revealedDecisionSystemTrades, sampleDecisionCandidates, sampleDecisionDayCandidates, startNextDaySequenceTrade,
   saveDecisionReplayStoreSnapshot, sessionResults, updateDecisionSessionDrawings, validDecisionLevels, validOpenPositionLevels,
   type DecisionAttempt, type DecisionExit, type DecisionPositionMultiplier, type DecisionPositionSizingMode, type DecisionPracticeMode, type DecisionReplayInterval, type DecisionReplaySession, type DecisionStopLossMode, type DecisionTradeResult,
@@ -471,6 +471,10 @@ function App() {
   const allDecisionCandidates = useMemo(() => registeredDecisionCandidates.filter((candidate) => (
     historyCoversDecisionCandidate(candidate, availableDecisionHistoryBySymbol[candidate.symbol])
   )), [availableDecisionHistoryBySymbol, registeredDecisionCandidates])
+  const decisionAiWeekSummariesByMode = useMemo(() => ({
+    'fixed-risk': decisionAiWeekSummaries(registeredDecisionCandidates, 'fixed-risk'),
+    'fixed-notional': decisionAiWeekSummaries(registeredDecisionCandidates, 'fixed-notional'),
+  }), [registeredDecisionCandidates])
   const decisionContextSourceIds = useMemo(() => {
     if (!decisionMode || !activeDecisionCandidate) return []
     if (!decisionDayMode) return [activeDecisionCandidate.sourceId]
@@ -892,11 +896,16 @@ function App() {
     })
   }, [])
 
-  const beginDecisionSession = useCallback((requestedCount: number, selectedSymbols: SymbolId[], selectedIntervals: DecisionReplayInterval[], positionSizingModes: DecisionPositionSizingMode[], practiceMode: DecisionPracticeMode) => {
+  const beginDecisionSession = useCallback((requestedCount: number, selectedSymbols: SymbolId[], selectedIntervals: DecisionReplayInterval[], positionSizingModes: DecisionPositionSizingMode[], practiceMode: DecisionPracticeMode, lossWeekKey: string | null = null, lossWeekSizingMode: DecisionPositionSizingMode = 'fixed-risk') => {
     if (decisionSessionStartLockRef.current) return
     decisionSessionStartLockRef.current = true
     window.setTimeout(() => { decisionSessionStartLockRef.current = false }, 0)
-    const candidates = filterDecisionCandidatesByScope(allDecisionCandidates, selectedSymbols, selectedIntervals)
+    const scopedCandidates = filterDecisionCandidatesByScope(allDecisionCandidates, selectedSymbols, selectedIntervals)
+    const lossWeeks = decisionAiWeekSummariesByMode[lossWeekSizingMode].filter((week) => week.pnlUsd < 0)
+    const validLossWeekKey = lossWeekKey && lossWeeks.some((week) => week.key === lossWeekKey) ? lossWeekKey : null
+    const candidates = validLossWeekKey
+      ? filterDecisionCandidatesByTradingWeek(scopedCandidates, validLossWeekKey)
+      : scopedCandidates
     const sampledDay = practiceMode === 'day-sequence'
       ? sampleDecisionDayCandidates(
         candidates,
@@ -911,7 +920,7 @@ function App() {
       ? sampledDay?.candidates ?? []
       : sampleDecisionCandidates(candidates, normalizedDecisionStore.seenTradeKeys, requestedCount)
     if (selected.length === 0) {
-      notify(practiceMode === 'day-sequence' ? '当前筛选范围没有可组成完整交易日的未练习交易' : '没有尚未练习的模拟交易')
+      notify(practiceMode === 'day-sequence' ? `${validLossWeekKey ? '所选AI亏损周' : '当前筛选范围'}没有可组成完整交易日的未练习交易` : '没有尚未练习的模拟交易')
       return
     }
     const session = createDecisionSession(selected, practiceMode === 'day-sequence' ? selected.length : requestedCount, Date.now(), positionSizingModes, {
@@ -933,10 +942,11 @@ function App() {
     setDecisionRiskDraft(null)
     decisionDayModeRef.current = practiceMode === 'day-sequence'
     if (practiceMode !== 'day-sequence') setDecisionFocusTick((value) => value + 1)
+    const selectedLossWeek = validLossWeekKey ? lossWeeks.find((week) => week.key === validLossWeekKey) : null
     notify(sampledDay
-      ? `已随机选择 ${formatDecisionDay(sampledDay.daySequence.startTime)}，按时间顺序练习 ${selected.length} 笔`
+      ? `${selectedLossWeek ? `AI亏损周 ${formatDecisionWeek(selectedLossWeek.startTime, selectedLossWeek.endTime)} · ` : ''}已随机选择 ${formatDecisionDay(sampledDay.daySequence.startTime)}，按时间顺序练习 ${selected.length} 笔`
       : `已随机抽取 ${selected.length} 笔，开始严格因果决策回放`)
-  }, [allDecisionCandidates, availableDecisionHistoryBySymbol, normalizedDecisionStore.seenTradeKeys, notify])
+  }, [allDecisionCandidates, availableDecisionHistoryBySymbol, decisionAiWeekSummariesByMode, normalizedDecisionStore.seenTradeKeys, notify])
 
   const beginAnomalyReview = useCallback((positionSizingModes: DecisionPositionSizingMode[]) => {
     if (decisionSessionStartLockRef.current || replayableDecisionAnomalies.length === 0) return
@@ -2736,6 +2746,9 @@ function App() {
         availableCount={availableDecisionCount}
         totalCount={decisionSymbolStats.reduce((sum, item) => sum + item.total, 0)}
         symbolStats={decisionSymbolStats}
+        aiWeekSummariesByMode={decisionAiWeekSummariesByMode}
+        availableCandidateKeys={allDecisionCandidates.map((candidate) => candidate.key)}
+        seenTradeKeys={normalizedDecisionStore.seenTradeKeys}
         sessions={normalizedDecisionStore.sessions}
         activeSessionId={normalizedDecisionStore.activeSessionId}
         favoriteKeys={decisionFavoriteKeys}

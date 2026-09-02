@@ -149,6 +149,9 @@ describe('decision replay center preferences', () => {
       selectedIntervals: ['5m'],
       selectedModes: ['fixed-notional'],
       practiceMode: 'random-count',
+      daySequenceScope: 'all-days',
+      selectedLossWeekKey: null,
+      lossWeekSizingMode: 'fixed-risk',
     })
   })
 
@@ -164,6 +167,9 @@ describe('decision replay center preferences', () => {
       selectedIntervals: ['15m', '1h'],
       selectedModes: ['fixed-risk'],
       practiceMode: 'random-count',
+      daySequenceScope: 'all-days',
+      selectedLossWeekKey: null,
+      lossWeekSizingMode: 'fixed-risk',
     })
   })
 
@@ -175,6 +181,24 @@ describe('decision replay center preferences', () => {
       selectedModes: ['fixed-risk'],
       practiceMode: 'day-sequence',
     }))?.practiceMode).toBe('day-sequence')
+  })
+
+  it('restores the AI loss-week replay scope and selected week', () => {
+    expect(parseDecisionReplayCenterPreferences(JSON.stringify({
+      count: 30,
+      selectedSymbols: ['XAUUSD'],
+      selectedIntervals: ['5m'],
+      selectedModes: ['fixed-risk'],
+      practiceMode: 'day-sequence',
+      daySequenceScope: 'loss-week',
+      selectedLossWeekKey: 'ai-trading-week:123',
+      lossWeekSizingMode: 'fixed-notional',
+    }))).toMatchObject({
+      practiceMode: 'day-sequence',
+      daySequenceScope: 'loss-week',
+      selectedLossWeekKey: 'ai-trading-week:123',
+      lossWeekSizingMode: 'fixed-notional',
+    })
   })
 
   it('rejects malformed replay center preferences', () => {

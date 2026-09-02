@@ -59,6 +59,9 @@ export interface DecisionReplayCenterPreferences {
   selectedIntervals: DecisionReplayInterval[]
   selectedModes: DecisionPositionSizingMode[]
   practiceMode: DecisionPracticeMode
+  daySequenceScope: 'all-days' | 'loss-week'
+  selectedLossWeekKey: string | null
+  lossWeekSizingMode: DecisionPositionSizingMode
 }
 
 export const STORAGE_KEY = 'kline-studio-workspace-v1'
@@ -255,12 +258,20 @@ export function parseDecisionReplayCenterPreferences(raw: string | null): Decisi
     const selectedIntervals = (value.selectedIntervals ?? ['5m']).filter((interval): interval is DecisionReplayInterval => DECISION_REPLAY_INTERVALS.includes(interval as DecisionReplayInterval))
     const selectedModes = value.selectedModes.filter((mode): mode is DecisionPositionSizingMode => DECISION_REPLAY_POSITION_MODES.includes(mode as DecisionPositionSizingMode))
     const practiceMode: DecisionPracticeMode = value.practiceMode === 'day-sequence' ? 'day-sequence' : 'random-count'
+    const daySequenceScope = value.daySequenceScope === 'loss-week' ? 'loss-week' : 'all-days'
+    const selectedLossWeekKey = typeof value.selectedLossWeekKey === 'string' && value.selectedLossWeekKey.length > 0
+      ? value.selectedLossWeekKey
+      : null
+    const lossWeekSizingMode: DecisionPositionSizingMode = value.lossWeekSizingMode === 'fixed-notional' ? 'fixed-notional' : 'fixed-risk'
     return {
       count: Math.floor(value.count!),
       selectedSymbols: [...new Set(selectedSymbols)],
       selectedIntervals: [...new Set(selectedIntervals)],
       selectedModes: [...new Set(selectedModes)],
       practiceMode,
+      daySequenceScope,
+      selectedLossWeekKey,
+      lossWeekSizingMode,
     }
   } catch {
     return null

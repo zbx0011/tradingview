@@ -117,6 +117,26 @@ export interface DecisionDaySequence {
   endTime: number
 }
 
+export interface DecisionAiWeekTradeRef {
+  key: string
+  symbol: SymbolId
+  interval: DecisionReplayInterval
+  replayableAsDay: boolean
+}
+
+export interface DecisionAiWeekSummary {
+  key: string
+  /** Monday 00:00 in Beijing, used as the stable week label boundary. */
+  startTime: number
+  /** The following Monday 00:00 in Beijing. */
+  endTime: number
+  /** AI result for the requested sizing mode, deduplicated by candidate key. */
+  pnlUsd: number
+  wins: number
+  total: number
+  trades: DecisionAiWeekTradeRef[]
+}
+
 export interface DecisionReplaySession {
   id: string
   requestedCount: number
@@ -1084,6 +1104,11 @@ export function sampleDecisionCandidates(candidates: readonly ReplayDecisionCand
 
 const BEIJING_UTC_OFFSET_SECONDS = 8 * 60 * 60
 const DAY_SECONDS = 24 * 60 * 60
+const WEEK_SECONDS = 7 * DAY_SECONDS
+
+function positiveModulo(value: number, divisor: number) {
+  return ((value % divisor) + divisor) % divisor
+}
 
 function decisionDaySequenceForCandidate(candidate: ReplayDecisionCandidate): DecisionDaySequence | null {
   const closedSession = CLOSED_SESSION_SYMBOLS.includes(candidate.symbol)
@@ -1352,6 +1377,72 @@ export function restartPostExitDecisionAttempt(session: DecisionReplaySession, c
     finishedAt: null,
     correctionRevision,
   }
+}
+
+/**
+ * Assign a signal to its market trading week. Closed-session instruments shift
+ * the clock back to their 06:00 Beijing session open before resolving Monday;
+ * an overnight trade therefore never changes week at Beijing midnight.
+ */
+export function decisionCandidateTradingWeek(candidate: ReplayDecisionCandidate) {
+  const sessionOpen = CLOSED_SESSION_SYMBOLS.includes(candidate.symbol) ? SESSION_OPEN_BEIJING_SECONDS : 0
+  const tradingDay = Math.floor((candidate.trade.entry.signalTime + BEIJING_UTC_OFFSET_SECONDS - sessionOpen) / DAY_SECONDS)
+  // Unix day zero (1970-01-01) was Thursday, three days after Monday.
+  const mondayTradingDay = tradingDay - positiveModulo(tradingDay + 3, 7)
+  const startTime = mondayTradingDay * DAY_SECONDS - BEIJING_UTC_OFFSET_SECONDS
+  return {
+    key: `ai-trading-week:${mondayTradingDay}`,
+    startTime,
+    endTime: startTime + WEEK_SECONDS,
+  }
+}
+
+export function filterDecisionCandidatesByTradingWeek(
+  candidates: readonly ReplayDecisionCandidate[],
+  weekKey: string,
+) {
+  return candidates.filter((candidate) => decisionCandidateTradingWeek(candidate).key === weekKey)
+}
+
+/** Aggregate every original AI result once, regardless of overlapping source files. */
+export function decisionAiWeekSummaries(
+  candidates: readonly ReplayDecisionCandidate[],
+  mode: DecisionPositionSizingMode = 'fixed-risk',
+): DecisionAiWeekSummary[] {
+  const uniqueCandidates = [...new Map(candidates
+    .filter((candidate) => candidate.manualContinuation !== true)
+    .map((candidate) => [candidate.key, candidate] as const)).values()]
+  const groups = new Map<string, DecisionAiWeekSummary>()
+  uniqueCandidates.forEach((candidate) => {
+    const week = decisionCandidateTradingWeek(candidate)
+    const current = groups.get(week.key) ?? {
+      ...week,
+      pnlUsd: 0,
+      wins: 0,
+      total: 0,
+      trades: [],
+    }
+    const pnlUsd = mode === 'fixed-risk'
+      ? (Number.isFinite(candidate.trade.result.pnlUsd) ? candidate.trade.result.pnlUsd : 0)
+      : pnlForDecisionMode(
+          'fixed-notional',
+          candidate.trade.side,
+          candidate.trade.entry.price,
+          candidate.trade.exit.price,
+          candidate.trade.entry.stopLoss,
+        )
+    current.pnlUsd += pnlUsd
+    current.wins += pnlUsd > 0 ? 1 : 0
+    current.total += 1
+    current.trades.push({
+      key: candidate.key,
+      symbol: candidate.symbol,
+      interval: candidate.interval as DecisionReplayInterval,
+      replayableAsDay: decisionDaySequenceForCandidate(candidate) !== null,
+    })
+    groups.set(week.key, current)
+  })
+  return [...groups.values()].sort((left, right) => right.startTime - left.startTime)
 }
 
 /**
@@ -2234,6 +2325,13 @@ export function formatDecisionDay(epochSeconds: number) {
   return new Intl.DateTimeFormat('zh-CN', {
     timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
   }).format(new Date(epochSeconds * 1000))
+}
+
+export function formatDecisionWeek(startTime: number, endTime: number) {
+  const format = (time: number) => new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit',
+  }).format(new Date(time * 1000))
+  return `${format(startTime)}–${format(endTime - DAY_SECONDS)}`
 }
 
 export function resultReviewCutoff(result: DecisionTradeResult) {
