@@ -120,7 +120,16 @@ describe('decision replay', () => {
     expect(retried.activeSessionId).toBe(retry.id)
     expect(retried.sessions.map((session) => session.id)).toEqual(expect.arrayContaining(['stopped-day', 'retry-day']))
 
-    const completed = { ...retry, status: 'completed' as const, currentIndex: items.length, updatedAt: 4000, finishedAt: 4000 }
+    const completedAttempts = items.map((item) => {
+      const attempt = createDecisionAttempt(item)
+      const result = buildDecisionResult(item, attempt, {
+        time: attempt.cursorTime,
+        price: item.trade.entry.price,
+        reason: 'skipped',
+      }, [])
+      return { ...attempt, stage: 'complete' as const, result }
+    })
+    const completed = { ...retry, attempts: completedAttempts, status: 'completed' as const, currentIndex: items.length, updatedAt: 4000, finishedAt: 4000 }
     const committed = normalizeDecisionReplayStore({
       version: 1,
       seenTradeKeys: [],
@@ -728,14 +737,36 @@ describe('decision replay', () => {
     expect(finished.candidates.map((item) => item.key)).toEqual([first.key, later.key])
   })
 
-  it('can end the paper at the final candle before the current question is answered', () => {
+  it('does not mark a day paper completed while the current question is unanswered', () => {
     const items = [candidate('market-end-unanswered:1'), candidate('market-end-unanswered:2')]
     const base = createDecisionSession(items, 2, 100, undefined, { practiceMode: 'day-sequence' })
     const finished = finishDecisionSessionAtMarketEnd(base, { time: 4800, close: 99 }, [], 999)
 
-    expect(finished.status).toBe('completed')
-    expect(finished.attempts[0]).toMatchObject({ stage: 'entry-decision', result: null, cursorTime: 4800 })
+    expect(finished).toBe(base)
+    expect(finished.status).toBe('active')
+    expect(finished.attempts[0]).toMatchObject({ stage: 'entry-decision', result: null })
     expect(sessionResults(finished)).toHaveLength(0)
+  })
+
+  it('repairs an older falsely completed unanswered day paper as resumable', () => {
+    const items = [candidate('market-end-repair:1'), candidate('market-end-repair:2')]
+    const base = createDecisionSession(items, 2, 100, undefined, { practiceMode: 'day-sequence' })
+    const broken = {
+      ...base,
+      status: 'completed' as const,
+      finishedAt: 999,
+      updatedAt: 999,
+    }
+    const repairedStore = parseDecisionReplayStore(JSON.stringify({
+      version: 1,
+      seenTradeKeys: items.map((item) => item.key),
+      activeSessionId: null,
+      sessions: [broken],
+    }))
+
+    expect(repairedStore.sessions[0]).toMatchObject({ status: 'stopped', currentIndex: 0 })
+    expect(repairedStore.seenTradeKeys).toEqual([])
+    expect(latestResumableDecisionDaySession(repairedStore.sessions, ['XAUUSD'], ['5m'])?.id).toBe(base.id)
   })
 
   it('calculates the system whole-paper score independently of user-completed attempts', () => {

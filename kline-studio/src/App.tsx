@@ -62,7 +62,7 @@ import {
   DECISION_REPLAY_INTERVALS, DECISION_REPLAY_STORAGE_KEY, adjacentDecisionExerciseTarget, adjustDecisionPendingEntry, advanceDecisionAttempt, buildDecisionResult, cancelPendingOrderAndAdvance, candleAtOrBefore, candlesKnownAt, createDecisionAttempt,
   createDecisionReviewSession, createDecisionSession, currentDecisionAttempt, currentDecisionCandidate, decisionExtremeEntryPrice, decisionShortcutAction, defaultDecisionLevels,
   decisionAiDaySummaries, decisionAttemptInitialStopLoss, decisionAttemptSide, decisionDayHistoryIsComplete, decisionSessionPracticeMode, decisionStopLossMode, decisionSessionPositionSizingModes, decisionSystemCandidatesForDay, emptyDecisionReplayStore, filterDecisionCandidatesByScope, filterDecisionCandidatesByTradingDay, formatDecisionDay, historyCoversDecisionCandidate, intervalCutoffTime, intervalSeconds,
-  finishDecisionSessionAtMarketEnd, latestResumableDecisionDaySession, loadDecisionReplayStore, mergeDecisionReplayStores, nextCandleAfter, normalizeDecisionPositionMultiplier, normalizeDecisionReplayStore, parseDecisionReplayStoreChecked, pnlForDecisionMode, recentDecisionStructureStop, restartPostExitDecisionAttempt, revealedDecisionSystemTrades, sampleDecisionCandidates, sampleDecisionDayCandidates, startNextDaySequenceTrade,
+  canFinishDecisionSessionAtMarketEnd, finishDecisionSessionAtMarketEnd, latestResumableDecisionDaySession, loadDecisionReplayStore, mergeDecisionReplayStores, nextCandleAfter, normalizeDecisionPositionMultiplier, normalizeDecisionReplayStore, parseDecisionReplayStoreChecked, pnlForDecisionMode, recentDecisionStructureStop, restartPostExitDecisionAttempt, revealedDecisionSystemTrades, sampleDecisionCandidates, sampleDecisionDayCandidates, startNextDaySequenceTrade,
   saveDecisionReplayStoreSnapshot, sessionResults, updateDecisionSessionDrawings, validDecisionLevels, validOpenPositionLevels,
   type DecisionAttempt, type DecisionExit, type DecisionPositionMultiplier, type DecisionPositionSizingMode, type DecisionPracticeMode, type DecisionReplayInterval, type DecisionReplaySession, type DecisionStopLossMode, type DecisionTradeResult,
 } from './lib/decisionReplay'
@@ -1226,6 +1226,7 @@ function App() {
 
   const finishDecisionRoundAtMarketEnd = useCallback((marketEndCandle: Candle) => {
     if (!decisionDayMode || !activeDecisionSession || !activeDecisionCandidate || !activeDecisionAttempt) return
+    if (!canFinishDecisionSessionAtMarketEnd(activeDecisionAttempt)) return
     const sessionId = activeDecisionSession.id
     const candidateKey = activeDecisionCandidate.key
     const drawingSnapshot = withoutTransientMeasurements(decisionDrawings.present)

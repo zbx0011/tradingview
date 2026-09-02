@@ -473,7 +473,20 @@ export function parseDecisionReplayStore(raw: string | null): DecisionReplayStor
  * are left untouched.
  */
 function repairDecisionReplaySession(rawSession: DecisionReplaySession): DecisionReplaySession {
-  const session = normalizeDecisionDaySequence(rawSession)
+  let session = normalizeDecisionDaySequence(rawSession)
+  const storedCurrentIndex = Math.max(0, Math.min(session.candidates.length - 1, Math.trunc(session.currentIndex || 0)))
+  const storedCurrentCandidate = session.candidates[storedCurrentIndex]
+  const storedCurrentAttempt = storedCurrentCandidate
+    ? session.attempts.find((attempt) => attempt.candidateKey === storedCurrentCandidate.key)
+    : undefined
+  // Older market-end handling could archive an unanswered last candle as a
+  // completed whole-day paper. Restore that detectable bad state as resumable;
+  // a genuinely completed paper always crossed the explicit `complete` stage.
+  if (session.status === 'completed'
+    && decisionSessionPracticeMode(session) === 'day-sequence'
+    && storedCurrentAttempt?.stage !== 'complete') {
+    session = { ...session, status: 'stopped' }
+  }
   if (session.status !== 'active' || session.candidates.length === 0) return session
 
   const rawIndex = Number.isFinite(session.currentIndex) ? Math.trunc(session.currentIndex) : 0
@@ -1478,6 +1491,14 @@ export function decisionAiDaySummaries(
  * Later unanswered candidates are deliberately left untouched: reaching the
  * end of the tape ends the paper instead of fabricating answers for them.
  */
+export function canFinishDecisionSessionAtMarketEnd(attempt: DecisionAttempt | null | undefined) {
+  return Boolean(attempt && (
+    attempt.stage === 'position-open'
+    || attempt.stage === 'order-pending'
+    || attempt.result
+  ))
+}
+
 export function finishDecisionSessionAtMarketEnd(
   session: DecisionReplaySession,
   marketEndCandle: Pick<Candle, 'time' | 'close'>,
@@ -1488,6 +1509,11 @@ export function finishDecisionSessionAtMarketEnd(
   const candidate = currentDecisionCandidate(session)
   const attempt = currentDecisionAttempt(session)
   if (!candidate || !attempt || candidate.key !== attempt.candidateKey) return session
+  // Merely revealing the final candle does not answer an entry/risk question.
+  // Keep that paper active so it can be resumed instead of falsely archiving it
+  // as completed. Open positions and pending orders are the only unresolved
+  // states that the market close itself can settle automatically.
+  if (!canFinishDecisionSessionAtMarketEnd(attempt)) return session
   const atMarketEnd = { ...attempt, cursorTime: marketEndCandle.time, drawings }
   const shouldSettleCurrentOrder = attempt.stage === 'position-open' || attempt.stage === 'order-pending'
   const result = shouldSettleCurrentOrder
