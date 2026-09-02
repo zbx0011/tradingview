@@ -1276,6 +1276,23 @@ describe('decision replay components', () => {
     expect(markup).not.toContain('完成：')
   })
 
+  it('labels a stopped session with an exit time instead of a completion time', () => {
+    const item = candidate()
+    const session = {
+      ...createDecisionSession([item], 1, 1000),
+      status: 'stopped' as const,
+      updatedAt: 3000,
+      finishedAt: 3000,
+    }
+    const markup = renderToStaticMarkup(<DecisionHistoryDialog
+      open currentSymbol="XAUUSD" sessions={[session]} onClose={noop} onOpenSession={noop}
+      defaultHistoryView="sessions"
+    />)
+
+    expect(markup).toContain('退出：')
+    expect(markup).not.toContain('完成：')
+  })
+
   it('shows per-symbol total and remaining counts in the new exercise selector', () => {
     const markup = renderToStaticMarkup(<DecisionReplayCenter
       open availableCount={5} totalCount={8}

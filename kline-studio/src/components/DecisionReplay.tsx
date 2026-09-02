@@ -147,7 +147,7 @@ function statusLabel(status: DecisionReplaySession['status']) {
 function decisionSessionTimeLabel(session: Pick<DecisionReplaySession, 'startedAt' | 'updatedAt' | 'finishedAt' | 'status'>) {
   const startedAt = new Date(session.startedAt).toLocaleString('zh-CN')
   const endLabel = session.status !== 'active' && typeof session.finishedAt === 'number'
-    ? `完成：${new Date(session.finishedAt).toLocaleString('zh-CN')}`
+    ? `${session.status === 'completed' ? '完成' : '退出'}：${new Date(session.finishedAt).toLocaleString('zh-CN')}`
     : `最后作答：${new Date(session.updatedAt).toLocaleString('zh-CN')}`
   return `开始：${startedAt} · ${endLabel}`
 }
