@@ -258,6 +258,15 @@ function App() {
     ? activeDecisionSession?.daySequence ?? null
     : null
   const decisionDayMode = activeDecisionDaySequence !== null
+  const activeDecisionHistoricalResults = useMemo(() => {
+    if (!activeDecisionSession || !decisionDayMode) return []
+    return activeDecisionSession.candidates
+      .slice(0, activeDecisionSession.currentIndex)
+      .flatMap((candidate) => {
+        const result = activeDecisionSession.attempts.find((attempt) => attempt.candidateKey === candidate.key)?.result
+        return result ? [result] : []
+      })
+  }, [activeDecisionSession, decisionDayMode])
   const decisionSignalReached = Boolean(activeDecisionCandidate && activeDecisionAttempt && (
     !decisionDayMode || activeDecisionAttempt.cursorTime >= activeDecisionCandidate.trade.entry.signalTime
   ))
@@ -2488,6 +2497,7 @@ function App() {
               latestSignal={latestRevealedDecisionSignal}
               attempt={activeDecisionAttempt}
               result={activeDecisionAttempt?.result ?? null}
+              historicalResults={activeDecisionHistoricalResults}
               data={data}
               toX={(time) => chartRef.current?.timeToCoordinate(time) ?? null}
               toY={(price) => chartRef.current?.priceToCoordinate(price) ?? null}
