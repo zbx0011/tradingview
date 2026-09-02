@@ -247,7 +247,7 @@ export function DecisionReplayCenter({ open, availableCount, totalCount, symbolS
   sessions: DecisionReplaySession[]
   activeSessionId: string | null
   onClose: () => void
-  onStart: (count: number, symbols: SymbolId[], intervals: DecisionReplayInterval[], positionSizingModes: DecisionPositionSizingMode[], practiceMode: DecisionPracticeMode, lossDayKey: string | null, lossDaySizingMode: DecisionPositionSizingMode) => void
+  onStart: (count: number, symbols: SymbolId[], intervals: DecisionReplayInterval[], positionSizingModes: DecisionPositionSizingMode[], practiceMode: DecisionPracticeMode, lossDayOnly: boolean, lossDaySizingMode: DecisionPositionSizingMode) => void
   onContinue: () => void
   onResults: (sessionId: string) => void
   favoriteKeys?: readonly string[]
@@ -264,10 +264,9 @@ export function DecisionReplayCenter({ open, availableCount, totalCount, symbolS
     selectedModes: [...DEFAULT_DECISION_POSITION_SIZING_MODES],
     practiceMode: 'random-count' as DecisionPracticeMode,
     daySequenceScope: 'all-days' as const,
-    selectedLossDayKey: null,
     lossDaySizingMode: 'fixed-risk' as DecisionPositionSizingMode,
   }))
-  const { count, selectedSymbols, selectedIntervals, selectedModes, practiceMode, daySequenceScope, selectedLossDayKey, lossDaySizingMode } = newSessionPreferences
+  const { count, selectedSymbols, selectedIntervals, selectedModes, practiceMode, daySequenceScope, lossDaySizingMode } = newSessionPreferences
   useEffect(() => saveDecisionReplayCenterPreferences(newSessionPreferences), [newSessionPreferences])
   const selectedStats = symbolStats.filter((item) => selectedSymbols.includes(item.symbol))
   const selectedAvailableCount = selectedStats.reduce((sum, item) => sum + item.intervals
@@ -293,11 +292,10 @@ export function DecisionReplayCenter({ open, availableCount, totalCount, symbolS
       availableRemaining: availableTrades.filter((trade) => !seenTradeKeySet.has(trade.key)).length,
     }
   })
-  const effectiveLossDay = lossDayOptions.find((day) => day.key === selectedLossDayKey)
-    ?? lossDayOptions.find((day) => day.availableRemaining > 0)
-    ?? lossDayOptions[0]
-    ?? null
+  const availableLossDayCount = lossDayOptions.filter((day) => day.availableRemaining > 0).length
+  const availableLossDayTradeCount = lossDayOptions.reduce((sum, day) => sum + day.availableRemaining, 0)
   const lossDayMode = practiceMode === 'day-sequence' && daySequenceScope === 'loss-day'
+  const displayedAvailableCount = lossDayMode ? availableLossDayTradeCount : effectiveAvailableCount
   const intervalOptionStats = DECISION_REPLAY_INTERVALS.map((interval) => {
     const scopedSymbols = selectedSymbols.length > 0 ? selectedStats : symbolStats
     return scopedSymbols.reduce((totals, item) => {
@@ -349,27 +347,17 @@ export function DecisionReplayCenter({ open, availableCount, totalCount, symbolS
                 ...current,
                 practiceMode: 'day-sequence',
                 daySequenceScope: 'loss-day',
-                selectedLossDayKey: current.selectedLossDayKey ?? effectiveLossDay?.key ?? null,
               }))}
-            ><BarChart3 size={18} /><span><b>只做AI亏损日</b><small>选择标的、周期及AI日净盈亏为负的交易日</small></span></button>
+            ><BarChart3 size={18} /><span><b>只做AI亏损日</b><small>从符合条件的AI亏损交易日中随机抽取一天</small></span></button>
           </div>
-          {lossDayMode && <div className="decision-loss-day-filter" aria-label="选择AI亏损交易日">
-            <div className="decision-symbol-filter-head"><b>选择AI亏损交易日</b><span>{decisionPositionSizingLabel(lossDaySizingMode)} · 商品交易日06:00至次日05:00 · 共 {lossDayOptions.length} 日</span></div>
+          {lossDayMode && <div className="decision-loss-day-filter" aria-label="AI亏损日随机池">
+            <div className="decision-symbol-filter-head"><b>AI亏损日随机池</b><span>{decisionPositionSizingLabel(lossDaySizingMode)} · 商品交易日06:00至次日05:00</span></div>
             <div className="decision-loss-day-sizing" role="group" aria-label="选择AI亏损日统计口径">
-              {(['fixed-risk', 'fixed-notional'] as const).map((mode) => <button type="button" className={lossDaySizingMode === mode ? 'active' : ''} aria-pressed={lossDaySizingMode === mode} key={mode} onClick={() => setNewSessionPreferences((current) => ({ ...current, lossDaySizingMode: mode, selectedLossDayKey: null }))}>{decisionPositionSizingLabel(mode)}</button>)}
+              {(['fixed-risk', 'fixed-notional'] as const).map((mode) => <button type="button" className={lossDaySizingMode === mode ? 'active' : ''} aria-pressed={lossDaySizingMode === mode} key={mode} onClick={() => setNewSessionPreferences((current) => ({ ...current, lossDaySizingMode: mode }))}>{decisionPositionSizingLabel(mode)}</button>)}
             </div>
             {lossDayOptions.length === 0
               ? <div className="decision-loss-day-empty">当前标的和周期没有AI净亏损交易日</div>
-              : <div className="decision-loss-day-options">{lossDayOptions.map((day) => {
-                const checked = effectiveLossDay?.key === day.key
-                const disabled = day.availableRemaining === 0
-                const winRate = day.total > 0 ? day.wins / day.total * 100 : 0
-                return <label key={day.key} className={`decision-loss-day-option${checked ? ' active' : ''}${disabled ? ' is-disabled' : ''}`}>
-                  <input type="radio" name="decision-loss-day" checked={checked} disabled={disabled} onChange={() => setNewSessionPreferences((current) => ({ ...current, selectedLossDayKey: day.key }))} />
-                  <span><b>{day.symbol} · {INTERVALS[day.interval].label} · {formatDecisionDay(day.startTime)} 交易日</b><small>AI {formatDecisionPnl(day.pnlUsd)} · {day.total} 笔 · 胜率 {winRate.toFixed(1)}%</small></span>
-                  <em>{day.availableRemaining} 笔可练{day.availableTotal !== day.total ? ` / 可回放 ${day.availableTotal} 笔` : ''}</em>
-                </label>
-              })}</div>}
+              : <div className="decision-loss-day-summary"><BarChart3 size={18} /><span><b>当前筛选共有 {lossDayOptions.length} 个AI亏损交易日</b><small>{availableLossDayCount > 0 ? `其中 ${availableLossDayCount} 个交易日尚未全部练习；开始时随机抽取一天` : '这些交易日均已练习完成'}</small></span></div>}
           </div>}
           <div className="decision-symbol-filter" aria-label="选择练习标的">
             <div className="decision-symbol-filter-head"><b>选择标的</b><span>可多选，随机抽取只使用已勾选的标的</span></div>
@@ -445,8 +433,10 @@ export function DecisionReplayCenter({ open, availableCount, totalCount, symbolS
           {practiceMode === 'random-count'
             ? <label><span>交易数量 N</span><input className="decision-count-input" type="number" min="1" max={Math.max(1, effectiveAvailableCount)} value={boundedCount} disabled={effectiveAvailableCount === 0} onChange={(event) => setNewSessionPreferences((current) => ({ ...current, count: Math.max(1, Number(event.target.value) || 1) }))} /></label>
             : <div className="decision-day-mode-note"><CalendarDays size={17} /><span><b>题数按当天实际交易</b><small>{lossDayMode ? '精确回放所选AI亏损交易日；' : ''}同一标的、同一周期按信号时间顺序练习；有休市的品种从06:00开盘 K 线开始</small></span></div>}
-          <div className="decision-availability"><b>{effectiveAvailableCount.toLocaleString('zh-CN')}</b> 笔未练习 / 共 {effectiveTotalCount.toLocaleString('zh-CN')} 笔</div>
-          <button className="decision-primary" disabled={effectiveAvailableCount === 0 || selectedSymbols.length === 0 || selectedIntervals.length === 0 || selectedModes.length === 0 || (lossDayMode && (!effectiveLossDay || effectiveLossDay.availableRemaining === 0))} onClick={() => onStart(boundedCount, selectedSymbols, selectedIntervals, selectedModes, practiceMode, lossDayMode ? effectiveLossDay?.key ?? null : null, lossDaySizingMode)}>{lossDayMode ? '开始所选亏损日逐根回放' : practiceMode === 'day-sequence' ? '随机选一天并按顺序开始' : '随机抽取并开始'}</button>
+          <div className="decision-availability">{lossDayMode
+            ? <><b>{displayedAvailableCount.toLocaleString('zh-CN')}</b> 笔亏损日交易尚未练习</>
+            : <><b>{displayedAvailableCount.toLocaleString('zh-CN')}</b> 笔未练习 / 共 {effectiveTotalCount.toLocaleString('zh-CN')} 笔</>}</div>
+          <button className="decision-primary" disabled={displayedAvailableCount === 0 || selectedSymbols.length === 0 || selectedIntervals.length === 0 || selectedModes.length === 0 || (lossDayMode && availableLossDayCount === 0)} onClick={() => onStart(boundedCount, selectedSymbols, selectedIntervals, selectedModes, practiceMode, lossDayMode, lossDaySizingMode)}>{lossDayMode ? '随机抽取一个亏损日并开始' : practiceMode === 'day-sequence' ? '随机选一天并按顺序开始' : '随机抽取并开始'}</button>
         </section>
         <section className="decision-archives">
           <div className="decision-section-heading"><Archive size={18} /><h3>永久练习存档</h3><span>{sessions.length} 场</span></div>

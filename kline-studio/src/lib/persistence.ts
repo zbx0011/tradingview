@@ -60,7 +60,6 @@ export interface DecisionReplayCenterPreferences {
   selectedModes: DecisionPositionSizingMode[]
   practiceMode: DecisionPracticeMode
   daySequenceScope: 'all-days' | 'loss-day'
-  selectedLossDayKey: string | null
   lossDaySizingMode: DecisionPositionSizingMode
 }
 
@@ -262,9 +261,6 @@ export function parseDecisionReplayCenterPreferences(raw: string | null): Decisi
     const selectedModes = value.selectedModes.filter((mode): mode is DecisionPositionSizingMode => DECISION_REPLAY_POSITION_MODES.includes(mode as DecisionPositionSizingMode))
     const practiceMode: DecisionPracticeMode = value.practiceMode === 'day-sequence' ? 'day-sequence' : 'random-count'
     const daySequenceScope = value.daySequenceScope === 'loss-day' || value.daySequenceScope === 'loss-week' ? 'loss-day' : 'all-days'
-    const selectedLossDayKey = typeof value.selectedLossDayKey === 'string' && value.selectedLossDayKey.length > 0
-      ? value.selectedLossDayKey
-      : null
     const lossDaySizingMode: DecisionPositionSizingMode = value.lossDaySizingMode === 'fixed-notional' || value.lossWeekSizingMode === 'fixed-notional' ? 'fixed-notional' : 'fixed-risk'
     return {
       count: Math.floor(value.count!),
@@ -273,7 +269,6 @@ export function parseDecisionReplayCenterPreferences(raw: string | null): Decisi
       selectedModes: [...new Set(selectedModes)],
       practiceMode,
       daySequenceScope,
-      selectedLossDayKey,
       lossDaySizingMode,
     }
   } catch {

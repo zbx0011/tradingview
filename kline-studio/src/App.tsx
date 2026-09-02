@@ -896,15 +896,18 @@ function App() {
     })
   }, [])
 
-  const beginDecisionSession = useCallback((requestedCount: number, selectedSymbols: SymbolId[], selectedIntervals: DecisionReplayInterval[], positionSizingModes: DecisionPositionSizingMode[], practiceMode: DecisionPracticeMode, lossDayKey: string | null = null, lossDaySizingMode: DecisionPositionSizingMode = 'fixed-risk') => {
+  const beginDecisionSession = useCallback((requestedCount: number, selectedSymbols: SymbolId[], selectedIntervals: DecisionReplayInterval[], positionSizingModes: DecisionPositionSizingMode[], practiceMode: DecisionPracticeMode, lossDayOnly = false, lossDaySizingMode: DecisionPositionSizingMode = 'fixed-risk') => {
     if (decisionSessionStartLockRef.current) return
     decisionSessionStartLockRef.current = true
     window.setTimeout(() => { decisionSessionStartLockRef.current = false }, 0)
     const scopedCandidates = filterDecisionCandidatesByScope(allDecisionCandidates, selectedSymbols, selectedIntervals)
-    const lossDays = decisionAiDaySummariesByMode[lossDaySizingMode].filter((day) => day.pnlUsd < 0)
-    const validLossDayKey = lossDayKey && lossDays.some((day) => day.key === lossDayKey) ? lossDayKey : null
-    const candidates = validLossDayKey
-      ? filterDecisionCandidatesByTradingDay(scopedCandidates, validLossDayKey)
+    const lossDays = decisionAiDaySummariesByMode[lossDaySizingMode].filter((day) => (
+      day.pnlUsd < 0
+      && selectedSymbols.includes(day.symbol)
+      && selectedIntervals.includes(day.interval)
+    ))
+    const candidates = lossDayOnly
+      ? lossDays.flatMap((day) => filterDecisionCandidatesByTradingDay(scopedCandidates, day.key))
       : scopedCandidates
     const sampledDay = practiceMode === 'day-sequence'
       ? sampleDecisionDayCandidates(
@@ -920,7 +923,7 @@ function App() {
       ? sampledDay?.candidates ?? []
       : sampleDecisionCandidates(candidates, normalizedDecisionStore.seenTradeKeys, requestedCount)
     if (selected.length === 0) {
-      notify(practiceMode === 'day-sequence' ? `${validLossDayKey ? '所选AI亏损交易日' : '当前筛选范围'}没有可组成完整交易日的未练习交易` : '没有尚未练习的模拟交易')
+      notify(practiceMode === 'day-sequence' ? `${lossDayOnly ? '当前筛选范围的AI亏损日' : '当前筛选范围'}没有可组成完整交易日的未练习交易` : '没有尚未练习的模拟交易')
       return
     }
     const session = createDecisionSession(selected, practiceMode === 'day-sequence' ? selected.length : requestedCount, Date.now(), positionSizingModes, {
@@ -942,9 +945,9 @@ function App() {
     setDecisionRiskDraft(null)
     decisionDayModeRef.current = practiceMode === 'day-sequence'
     if (practiceMode !== 'day-sequence') setDecisionFocusTick((value) => value + 1)
-    const selectedLossDay = validLossDayKey ? lossDays.find((day) => day.key === validLossDayKey) : null
+    const selectedLossDay = lossDayOnly && sampledDay ? lossDays.find((day) => day.key === sampledDay.daySequence.key) : null
     notify(sampledDay
-      ? `${selectedLossDay ? `AI亏损日 ${selectedLossDay.symbol} ${INTERVALS[selectedLossDay.interval].label} ${formatDecisionDay(selectedLossDay.startTime)} · ` : ''}按时间顺序练习 ${selected.length} 笔`
+      ? `${selectedLossDay ? `已随机抽取AI亏损日 ${selectedLossDay.symbol} ${INTERVALS[selectedLossDay.interval].label} ${formatDecisionDay(selectedLossDay.startTime)} · ` : ''}按时间顺序练习 ${selected.length} 笔`
       : `已随机抽取 ${selected.length} 笔，开始严格因果决策回放`)
   }, [allDecisionCandidates, availableDecisionHistoryBySymbol, decisionAiDaySummariesByMode, normalizedDecisionStore.seenTradeKeys, notify])
 

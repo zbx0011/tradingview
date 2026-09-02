@@ -150,7 +150,6 @@ describe('decision replay center preferences', () => {
       selectedModes: ['fixed-notional'],
       practiceMode: 'random-count',
       daySequenceScope: 'all-days',
-      selectedLossDayKey: null,
       lossDaySizingMode: 'fixed-risk',
     })
   })
@@ -168,7 +167,6 @@ describe('decision replay center preferences', () => {
       selectedModes: ['fixed-risk'],
       practiceMode: 'random-count',
       daySequenceScope: 'all-days',
-      selectedLossDayKey: null,
       lossDaySizingMode: 'fixed-risk',
     })
   })
@@ -183,7 +181,7 @@ describe('decision replay center preferences', () => {
     }))?.practiceMode).toBe('day-sequence')
   })
 
-  it('restores the AI loss-day replay scope and selected trading day', () => {
+  it('restores the AI loss-day replay scope without requiring a selected date', () => {
     expect(parseDecisionReplayCenterPreferences(JSON.stringify({
       count: 30,
       selectedSymbols: ['XAUUSD'],
@@ -191,12 +189,10 @@ describe('decision replay center preferences', () => {
       selectedModes: ['fixed-risk'],
       practiceMode: 'day-sequence',
       daySequenceScope: 'loss-day',
-      selectedLossDayKey: 'XAUUSD:5m:1783288800',
       lossDaySizingMode: 'fixed-notional',
     }))).toMatchObject({
       practiceMode: 'day-sequence',
       daySequenceScope: 'loss-day',
-      selectedLossDayKey: 'XAUUSD:5m:1783288800',
       lossDaySizingMode: 'fixed-notional',
     })
   })
@@ -214,7 +210,6 @@ describe('decision replay center preferences', () => {
     }))).toMatchObject({
       practiceMode: 'day-sequence',
       daySequenceScope: 'loss-day',
-      selectedLossDayKey: null,
       lossDaySizingMode: 'fixed-notional',
     })
   })
