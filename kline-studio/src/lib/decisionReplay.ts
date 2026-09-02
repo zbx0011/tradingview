@@ -1252,10 +1252,9 @@ export function latestResumableDecisionDaySession(
   eligibleDayKeys?: readonly string[],
 ) {
   const eligible = eligibleDayKeys ? new Set(eligibleDayKeys) : null
-  return [...sessions]
+  const latest = [...sessions]
     .filter((session) => (
-      session.status === 'stopped'
-      && session.origin !== 'review'
+      session.origin !== 'review'
       && !isDecisionSyncBranch(session)
       && decisionSessionPracticeMode(session) === 'day-sequence'
       && session.candidates.length > 0
@@ -1265,6 +1264,7 @@ export function latestResumableDecisionDaySession(
       && (!eligible || eligible.has(session.daySequence!.key))
     ))
     .sort((left, right) => right.updatedAt - left.updatedAt || right.startedAt - left.startedAt)[0] ?? null
+  return latest?.status === 'stopped' ? latest : null
 }
 
 export function filterDecisionCandidatesByScope(

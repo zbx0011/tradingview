@@ -142,7 +142,9 @@ describe('decision replay', () => {
     const newer = { ...older, id: 'resume-newer', startedAt: 3000, updatedAt: 4000, finishedAt: 4000 }
     const completed = { ...older, id: 'resume-completed', status: 'completed' as const, updatedAt: 5000 }
 
-    expect(latestResumableDecisionDaySession([older, completed, newer], ['XAUUSD'], ['5m'])?.id).toBe('resume-newer')
+    expect(latestResumableDecisionDaySession([older, newer], ['XAUUSD'], ['5m'])?.id).toBe('resume-newer')
+    expect(latestResumableDecisionDaySession([older, newer, completed], ['XAUUSD'], ['5m'])).toBeNull()
+    expect(latestResumableDecisionDaySession([{ ...newer, updatedAt: 6000 }, completed], ['XAUUSD'], ['5m'])?.id).toBe('resume-newer')
     expect(latestResumableDecisionDaySession([older, newer], ['XAGUSD'], ['5m'])).toBeNull()
     expect(latestResumableDecisionDaySession([older, newer], ['XAUUSD'], ['15m'])).toBeNull()
     expect(latestResumableDecisionDaySession([older, newer], ['XAUUSD'], ['5m'], ['another-day'])).toBeNull()
