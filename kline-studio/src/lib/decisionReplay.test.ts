@@ -10,7 +10,7 @@ import {
   adjacentDecisionExerciseTarget, adjustDecisionPendingEntry, advanceDecisionAttempt, buildDecisionResult, cancelPendingOrderAndAdvance, candlesKnownAt, compareDecisionHistorySortValues, createDecisionAttempt, createDecisionReviewSession, createDecisionSession,
   decisionAiDaySummaries, decisionAttemptSide, decisionDayCandidateGroups, decisionDayHistoryIsComplete, decisionExtremeEntryPrice, decisionResultSide, decisionSessionPracticeMode, decisionShortcutAction, defaultDecisionLevels, evaluatePositionBar, fillPendingOrder, filterDecisionCandidatesByTradingDay, finishDecisionSessionAtMarketEnd,
   decisionResultPnl, decisionResultR, decisionSessionSystemBenchmarkStats, decisionSessionUserRStats, decisionStopLossMode, decisionSystemCandidatesForDay, emptyDecisionReplayStore, filterDecisionCandidatesByScope, historyCoversDecisionCandidate, intervalCutoffTime, parseDecisionReplayStore,
-  mergeDecisionReplayStores, nextDecisionPositionMultiplier, normalizeDecisionPositionMultiplier, normalizeDecisionReplayStore, persistDecisionReplayStoreAdditively, pnlForDecision, pnlForDecisionMode, recentDecisionStructureStop, restartPostExitDecisionAttempt, revealedDecisionSystemTrades, rewardRiskRatio, sampleDecisionCandidates, sampleDecisionDayCandidates, startNextDaySequenceTrade,
+  latestResumableDecisionDaySession, mergeDecisionReplayStores, nextDecisionPositionMultiplier, normalizeDecisionPositionMultiplier, normalizeDecisionReplayStore, persistDecisionReplayStoreAdditively, pnlForDecision, pnlForDecisionMode, recentDecisionStructureStop, restartPostExitDecisionAttempt, revealedDecisionSystemTrades, rewardRiskRatio, sampleDecisionCandidates, sampleDecisionDayCandidates, startNextDaySequenceTrade,
   saveDecisionReplayStore, saveDecisionReplayStoreSnapshot, serializeDecisionReplayStore, sessionResults, updateDecisionSessionDrawings, validDecisionLevels, validOpenPositionLevels, type DecisionAttempt, type DecisionExit, type DecisionReplaySession,
 } from './decisionReplay'
 
@@ -130,6 +130,23 @@ describe('decision replay', () => {
 
     expect(new Set(committed.seenTradeKeys)).toEqual(new Set(items.map((item) => item.key)))
     expect(sampleDecisionDayCandidates(items, committed.seenTradeKeys)).toBeNull()
+  })
+
+  it('resumes the newest stopped whole-day exercise only when it matches the selected pool', () => {
+    const xauItems = [candidate('resume-xau:1'), candidate('resume-xau:2')]
+    const xauDay = decisionDayCandidateGroups(xauItems, [])[0].daySequence
+    const older = {
+      ...createDecisionSession(xauItems, 2, 1000, undefined, { practiceMode: 'day-sequence', daySequence: xauDay }),
+      id: 'resume-older', status: 'stopped' as const, updatedAt: 2000, finishedAt: 2000,
+    }
+    const newer = { ...older, id: 'resume-newer', startedAt: 3000, updatedAt: 4000, finishedAt: 4000 }
+    const completed = { ...older, id: 'resume-completed', status: 'completed' as const, updatedAt: 5000 }
+
+    expect(latestResumableDecisionDaySession([older, completed, newer], ['XAUUSD'], ['5m'])?.id).toBe('resume-newer')
+    expect(latestResumableDecisionDaySession([older, newer], ['XAGUSD'], ['5m'])).toBeNull()
+    expect(latestResumableDecisionDaySession([older, newer], ['XAUUSD'], ['15m'])).toBeNull()
+    expect(latestResumableDecisionDaySession([older, newer], ['XAUUSD'], ['5m'], ['another-day'])).toBeNull()
+    expect(latestResumableDecisionDaySession([older, newer], ['XAUUSD'], ['5m'], [xauDay.key])?.id).toBe('resume-newer')
   })
 
   it('filters random exercises by both selected symbol and timeframe', () => {

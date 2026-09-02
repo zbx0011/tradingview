@@ -62,7 +62,7 @@ import {
   DECISION_REPLAY_INTERVALS, DECISION_REPLAY_STORAGE_KEY, adjacentDecisionExerciseTarget, adjustDecisionPendingEntry, advanceDecisionAttempt, buildDecisionResult, cancelPendingOrderAndAdvance, candleAtOrBefore, candlesKnownAt, createDecisionAttempt,
   createDecisionReviewSession, createDecisionSession, currentDecisionAttempt, currentDecisionCandidate, decisionExtremeEntryPrice, decisionShortcutAction, defaultDecisionLevels,
   decisionAiDaySummaries, decisionAttemptInitialStopLoss, decisionAttemptSide, decisionDayHistoryIsComplete, decisionSessionPracticeMode, decisionStopLossMode, decisionSessionPositionSizingModes, decisionSystemCandidatesForDay, emptyDecisionReplayStore, filterDecisionCandidatesByScope, filterDecisionCandidatesByTradingDay, formatDecisionDay, historyCoversDecisionCandidate, intervalCutoffTime, intervalSeconds,
-  finishDecisionSessionAtMarketEnd, loadDecisionReplayStore, mergeDecisionReplayStores, nextCandleAfter, normalizeDecisionPositionMultiplier, normalizeDecisionReplayStore, parseDecisionReplayStoreChecked, pnlForDecisionMode, recentDecisionStructureStop, restartPostExitDecisionAttempt, revealedDecisionSystemTrades, sampleDecisionCandidates, sampleDecisionDayCandidates, startNextDaySequenceTrade,
+  finishDecisionSessionAtMarketEnd, latestResumableDecisionDaySession, loadDecisionReplayStore, mergeDecisionReplayStores, nextCandleAfter, normalizeDecisionPositionMultiplier, normalizeDecisionReplayStore, parseDecisionReplayStoreChecked, pnlForDecisionMode, recentDecisionStructureStop, restartPostExitDecisionAttempt, revealedDecisionSystemTrades, sampleDecisionCandidates, sampleDecisionDayCandidates, startNextDaySequenceTrade,
   saveDecisionReplayStoreSnapshot, sessionResults, updateDecisionSessionDrawings, validDecisionLevels, validOpenPositionLevels,
   type DecisionAttempt, type DecisionExit, type DecisionPositionMultiplier, type DecisionPositionSizingMode, type DecisionPracticeMode, type DecisionReplayInterval, type DecisionReplaySession, type DecisionStopLossMode, type DecisionTradeResult,
 } from './lib/decisionReplay'
@@ -909,6 +909,33 @@ function App() {
     const candidates = lossDayOnly
       ? lossDays.flatMap((day) => filterDecisionCandidatesByTradingDay(scopedCandidates, day.key))
       : scopedCandidates
+    const resumableDaySession = practiceMode === 'day-sequence'
+      ? latestResumableDecisionDaySession(
+          normalizedDecisionStore.sessions,
+          selectedSymbols,
+          selectedIntervals,
+          lossDayOnly ? lossDays.map((day) => day.key) : undefined,
+        )
+      : null
+    if (resumableDaySession) {
+      const now = Date.now()
+      setDecisionStore((current) => ({
+        ...current,
+        activeSessionId: resumableDaySession.id,
+        sessions: current.sessions.map((session) => session.id === resumableDaySession.id
+          ? { ...session, status: 'active', updatedAt: now, finishedAt: null }
+          : session),
+      }))
+      setDecisionCenterOpen(false)
+      setDecisionResultsSessionId(null)
+      setDecisionReviewReturnSessionId(null)
+      setDecisionPriceDraft(null)
+      setDecisionRiskDraft(null)
+      setHoverCandle(null)
+      decisionDayModeRef.current = true
+      notify(`已自动接上 ${resumableDaySession.daySequence ? formatDecisionDay(resumableDaySession.daySequence.startTime) : '上次'} 未完成的逐K练习`)
+      return
+    }
     const sampledDay = practiceMode === 'day-sequence'
       ? sampleDecisionDayCandidates(
         candidates,
@@ -952,7 +979,7 @@ function App() {
     notify(sampledDay
       ? `${selectedLossDay ? `已随机抽取AI亏损日 ${selectedLossDay.symbol} ${INTERVALS[selectedLossDay.interval].label} ${formatDecisionDay(selectedLossDay.startTime)} · ` : ''}按时间顺序练习 ${selected.length} 笔`
       : `已随机抽取 ${selected.length} 笔，开始严格因果决策回放`)
-  }, [allDecisionCandidates, availableDecisionHistoryBySymbol, decisionAiDaySummariesByMode, normalizedDecisionStore.seenTradeKeys, notify])
+  }, [allDecisionCandidates, availableDecisionHistoryBySymbol, decisionAiDaySummariesByMode, normalizedDecisionStore.seenTradeKeys, normalizedDecisionStore.sessions, notify])
 
   const beginAnomalyReview = useCallback((positionSizingModes: DecisionPositionSizingMode[]) => {
     if (decisionSessionStartLockRef.current || replayableDecisionAnomalies.length === 0) return

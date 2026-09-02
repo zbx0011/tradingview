@@ -11,7 +11,7 @@ import type {
 import {
   aggregateDecisionResults, compareDecisionHistorySortValues, decisionAttemptSide, decisionPositionSizingLabel, decisionResultHasSystemBenchmark, decisionResultInitialStopLoss, decisionResultPnl, decisionResultR, decisionResultSide,
   decisionSessionPracticeMode, decisionSessionSystemBenchmarkStats, decisionStopLossMode, decisionSessionPositionSizingModes, decisionSessionUserRStats, DECISION_REPLAY_INTERVALS, DEFAULT_DECISION_POSITION_SIZING_MODES,
-  formatDecisionDate, formatDecisionDay, nextDecisionPositionMultiplier, normalizeDecisionPositionMultiplier, pnlForDecisionMode, rewardRiskRatio, sessionResults, symbolPrecision, toggleDecisionHistoryIntervalSelection, toggleDecisionHistorySymbolSelection,
+  formatDecisionDate, formatDecisionDay, latestResumableDecisionDaySession, nextDecisionPositionMultiplier, normalizeDecisionPositionMultiplier, pnlForDecisionMode, rewardRiskRatio, sessionResults, symbolPrecision, toggleDecisionHistoryIntervalSelection, toggleDecisionHistorySymbolSelection,
 } from '../lib/decisionReplay'
 import { formatPrice, INTERVALS, SYMBOLS, type Candle, type IntervalId, type SymbolId } from '../lib/market'
 import { exitReasonLabel as systemExitReasonLabel, type TradeSide } from '../lib/tradeMarkers'
@@ -295,6 +295,14 @@ export function DecisionReplayCenter({ open, availableCount, totalCount, symbolS
   const availableLossDayCount = lossDayOptions.filter((day) => day.availableRemaining > 0).length
   const availableLossDayTradeCount = lossDayOptions.reduce((sum, day) => sum + day.availableRemaining, 0)
   const lossDayMode = practiceMode === 'day-sequence' && daySequenceScope === 'loss-day'
+  const resumableDaySession = practiceMode === 'day-sequence'
+    ? latestResumableDecisionDaySession(
+        sessions,
+        selectedSymbols,
+        selectedIntervals,
+        lossDayMode ? lossDayOptions.map((day) => day.key) : undefined,
+      )
+    : null
   const displayedAvailableCount = lossDayMode ? availableLossDayTradeCount : effectiveAvailableCount
   const intervalOptionStats = DECISION_REPLAY_INTERVALS.map((interval) => {
     const scopedSymbols = selectedSymbols.length > 0 ? selectedStats : symbolStats
@@ -318,7 +326,7 @@ export function DecisionReplayCenter({ open, availableCount, totalCount, symbolS
         </button>}
         <section className="decision-new-session">
           <div className="decision-new-session-head">
-            <div><h3>开始新的决策练习</h3><p>{lossDayMode ? '选择一个标的、周期和AI净亏损交易日，直接按该交易日的信号顺序逐根练习。' : practiceMode === 'day-sequence' ? '随机选择一个交易日，按当天信号时间顺序逐笔练习；图表保持整日时间轴，不跳到开仓点。' : '从所有可用模拟订单中打乱抽取，已经出现过的交易不会再次抽到。'}</p></div>
+            <div><h3>开始新的决策练习</h3><p>{resumableDaySession ? '检测到符合当前筛选的未完成逐K练习，开始后会自动接上原交易日和原进度。' : lossDayMode ? '从当前标的、周期的AI净亏损交易日中随机抽取一天，按信号顺序逐根练习。' : practiceMode === 'day-sequence' ? '随机选择一个交易日，按当天信号时间顺序逐笔练习；图表保持整日时间轴，不跳到开仓点。' : '从所有可用模拟订单中打乱抽取，已经出现过的交易不会再次抽到。'}</p></div>
             <div className="decision-anomaly-entry">
               <button className="decision-anomaly-redo" data-testid="decision-anomaly-redo" disabled={anomalyLoading || anomalyCount === 0 || selectedModes.length === 0 || !onRedoAnomalies} onClick={() => onRedoAnomalies?.(selectedModes)} title="按本机 XAUUSD 5分钟历史识别异常题目，创建独立重做卷；原记录和收藏保留，同一道题不重复抽取。">
                 <RotateCcw size={17} />{anomalyLoading ? '正在核对异常订单…' : `重做异常订单（${anomalyCount}题）`}
@@ -357,7 +365,7 @@ export function DecisionReplayCenter({ open, availableCount, totalCount, symbolS
             </div>
             {lossDayOptions.length === 0
               ? <div className="decision-loss-day-empty">当前标的和周期没有AI净亏损交易日</div>
-              : <div className="decision-loss-day-summary"><BarChart3 size={18} /><span><b>当前筛选共有 {lossDayOptions.length} 个AI亏损交易日</b><small>{availableLossDayCount > 0 ? `其中 ${availableLossDayCount} 个交易日尚未全部练习；开始时随机抽取一天` : '这些交易日均已练习完成'}</small></span></div>}
+              : <div className="decision-loss-day-summary"><BarChart3 size={18} /><span><b>当前筛选共有 {lossDayOptions.length} 个AI亏损交易日</b><small>{resumableDaySession ? `将自动接上 ${formatDecisionDay(resumableDaySession.daySequence!.startTime)} 的未完成进度` : availableLossDayCount > 0 ? `其中 ${availableLossDayCount} 个交易日尚未全部练习；开始时随机抽取一天` : '这些交易日均已练习完成'}</small></span></div>}
           </div>}
           <div className="decision-symbol-filter" aria-label="选择练习标的">
             <div className="decision-symbol-filter-head"><b>选择标的</b><span>可多选，随机抽取只使用已勾选的标的</span></div>
@@ -432,11 +440,11 @@ export function DecisionReplayCenter({ open, availableCount, totalCount, symbolS
           </div>
           {practiceMode === 'random-count'
             ? <label><span>交易数量 N</span><input className="decision-count-input" type="number" min="1" max={Math.max(1, effectiveAvailableCount)} value={boundedCount} disabled={effectiveAvailableCount === 0} onChange={(event) => setNewSessionPreferences((current) => ({ ...current, count: Math.max(1, Number(event.target.value) || 1) }))} /></label>
-            : <div className="decision-day-mode-note"><CalendarDays size={17} /><span><b>题数按当天实际交易</b><small>{lossDayMode ? '精确回放所选AI亏损交易日；' : ''}同一标的、同一周期按信号时间顺序练习；有休市的品种从06:00开盘 K 线开始</small></span></div>}
+            : <div className="decision-day-mode-note"><CalendarDays size={17} /><span><b>{resumableDaySession ? '继续上次未完成进度' : '题数按当天实际交易'}</b><small>{resumableDaySession ? '保留原交易日、当前K线、订单和已完成结果；' : lossDayMode ? '从AI亏损交易日中随机抽取；' : ''}同一标的、同一周期按信号时间顺序练习</small></span></div>}
           <div className="decision-availability">{lossDayMode
             ? <><b>{displayedAvailableCount.toLocaleString('zh-CN')}</b> 笔亏损日交易尚未练习</>
             : <><b>{displayedAvailableCount.toLocaleString('zh-CN')}</b> 笔未练习 / 共 {effectiveTotalCount.toLocaleString('zh-CN')} 笔</>}</div>
-          <button className="decision-primary" disabled={displayedAvailableCount === 0 || selectedSymbols.length === 0 || selectedIntervals.length === 0 || selectedModes.length === 0 || (lossDayMode && availableLossDayCount === 0)} onClick={() => onStart(boundedCount, selectedSymbols, selectedIntervals, selectedModes, practiceMode, lossDayMode, lossDaySizingMode)}>{lossDayMode ? '随机抽取一个亏损日并开始' : practiceMode === 'day-sequence' ? '随机选一天并按顺序开始' : '随机抽取并开始'}</button>
+          <button className="decision-primary" disabled={!resumableDaySession && (displayedAvailableCount === 0 || selectedSymbols.length === 0 || selectedIntervals.length === 0 || selectedModes.length === 0 || (lossDayMode && availableLossDayCount === 0))} onClick={() => onStart(boundedCount, selectedSymbols, selectedIntervals, selectedModes, practiceMode, lossDayMode, lossDaySizingMode)}>{resumableDaySession ? '自动接上未完成的逐K练习' : lossDayMode ? '随机抽取一个亏损日并开始' : practiceMode === 'day-sequence' ? '随机选一天并按顺序开始' : '随机抽取并开始'}</button>
         </section>
         <section className="decision-archives">
           <div className="decision-section-heading"><Archive size={18} /><h3>永久练习存档</h3><span>{sessions.length} 场</span></div>

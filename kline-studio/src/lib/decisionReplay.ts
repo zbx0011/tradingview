@@ -1244,6 +1244,29 @@ export function sampleDecisionDayCandidates(
   return groups.length > 0 ? groups[randomIndex(groups.length)] : null
 }
 
+/** Resume the newest explicitly exited whole-day session that matches the current pool. */
+export function latestResumableDecisionDaySession(
+  sessions: readonly DecisionReplaySession[],
+  symbols: readonly SymbolId[],
+  intervals: readonly DecisionReplayInterval[],
+  eligibleDayKeys?: readonly string[],
+) {
+  const eligible = eligibleDayKeys ? new Set(eligibleDayKeys) : null
+  return [...sessions]
+    .filter((session) => (
+      session.status === 'stopped'
+      && session.origin !== 'review'
+      && !isDecisionSyncBranch(session)
+      && decisionSessionPracticeMode(session) === 'day-sequence'
+      && session.candidates.length > 0
+      && Boolean(session.daySequence)
+      && symbols.includes(session.daySequence!.symbol)
+      && intervals.includes(session.daySequence!.interval)
+      && (!eligible || eligible.has(session.daySequence!.key))
+    ))
+    .sort((left, right) => right.updatedAt - left.updatedAt || right.startedAt - left.startedAt)[0] ?? null
+}
+
 export function filterDecisionCandidatesByScope(
   candidates: readonly ReplayDecisionCandidate[],
   selectedSymbols: readonly SymbolId[],
