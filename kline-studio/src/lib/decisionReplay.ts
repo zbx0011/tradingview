@@ -353,7 +353,12 @@ function isCompletedDecisionAttempt(attempt: DecisionAttempt | undefined) {
 
 function removeExcludedCommodityTradesFromSession(session: DecisionReplaySession): DecisionReplaySession | null {
   const excludedKeys = new Set(session.candidates
-    .filter((candidate) => isExcludedCommodityTrade(candidate.symbol, candidate.trade, candidate.interval))
+    // Manual day-replay continuations intentionally use an end-of-data
+    // placeholder for their synthetic system side. They are real user answers
+    // and must survive persistence even though that placeholder is excluded
+    // from the imported system-trade registry.
+    .filter((candidate) => candidate.manualContinuation !== true
+      && isExcludedCommodityTrade(candidate.symbol, candidate.trade, candidate.interval))
     .map((candidate) => candidate.key))
   if (excludedKeys.size === 0) return session
 
@@ -391,7 +396,8 @@ function removeExcludedCommodityTradesFromStore(store: DecisionReplayStore): Dec
   })
   const excludedKeys = new Set(store.sessions
     .flatMap((session) => session.candidates)
-    .filter((candidate) => isExcludedCommodityTrade(candidate.symbol, candidate.trade, candidate.interval))
+    .filter((candidate) => candidate.manualContinuation !== true
+      && isExcludedCommodityTrade(candidate.symbol, candidate.trade, candidate.interval))
     .map((candidate) => candidate.key))
   const activeSessionId = store.activeSessionId && sessions.some((session) => session.id === store.activeSessionId && session.status === 'active')
     ? store.activeSessionId
@@ -440,7 +446,8 @@ export function parseDecisionReplayStoreChecked(raw: string | null): DecisionRep
     })
     const excludedKeys = new Set(normalizedSessions
       .flatMap((session) => session.candidates)
-    .filter((candidate) => isExcludedCommodityTrade(candidate.symbol, candidate.trade, candidate.interval))
+      .filter((candidate) => candidate.manualContinuation !== true
+        && isExcludedCommodityTrade(candidate.symbol, candidate.trade, candidate.interval))
       .map((candidate) => candidate.key))
     const sessions = normalizedSessions.flatMap((session) => {
       const filtered = removeExcludedCommodityTradesFromSession(session)

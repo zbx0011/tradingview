@@ -984,6 +984,10 @@ describe('decision replay', () => {
     expect(decisionResultPnl(manualResult, 'fixed-risk', 'system')).toBe(0)
     expect(decisionResultPnl(manualResult, 'fixed-notional', 'system')).toBe(0)
     expect(decisionResultR(manualResult, 'system')).toBe(0)
+
+    const restored = parseDecisionReplayStore(JSON.stringify(storeWithSessions(continued)))
+    expect(restored.sessions[0].candidates.map((candidate) => candidate.key)).toEqual([item.key, manualCandidate.key])
+    expect(restored.sessions[0].attempts.map((attempt) => attempt.candidateKey)).toEqual([item.key, manualCandidate.key])
   })
 
   it('navigates backward through completed exercises and only returns forward to the reached active exercise', () => {
