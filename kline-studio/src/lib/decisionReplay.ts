@@ -530,6 +530,17 @@ function isPracticeTradeDedupSession(session: DecisionReplaySession) {
   return session.origin !== 'review' && !isDecisionSyncBranch(session)
 }
 
+function isIncompleteDaySequencePracticeSession(session: DecisionReplaySession) {
+  return isPracticeTradeDedupSession(session)
+    && decisionSessionPracticeMode(session) === 'day-sequence'
+    && session.status !== 'completed'
+}
+
+/** A whole-day exercise becomes deduplicated and seen only after the round completes. */
+function shouldCommitPracticeSessionCandidates(session: DecisionReplaySession) {
+  return isPracticeTradeDedupSession(session) && !isIncompleteDaySequencePracticeSession(session)
+}
+
 function decisionPracticeTradeDedupKey(session: DecisionReplaySession, candidateKey: string) {
   return `${decisionSessionPracticeMode(session)}\u0000${candidateKey}`
 }
@@ -568,7 +579,7 @@ function deduplicatePracticeDecisionTrades(store: DecisionReplayStore): Decision
   const winnersByModeAndKey = new Map<string, DecisionTradeOccurrence>()
 
   store.sessions.forEach((session) => {
-    if (!isPracticeTradeDedupSession(session)) return
+    if (!shouldCommitPracticeSessionCandidates(session)) return
     const occurrences = session.candidates.map((candidate, candidateIndex) => {
       const occurrence: DecisionTradeOccurrence = {
         id: `${session.id}\u0000${candidate.key}\u0000${candidateIndex}`,
@@ -586,7 +597,7 @@ function deduplicatePracticeDecisionTrades(store: DecisionReplayStore): Decision
   })
 
   const sessions = store.sessions.flatMap((session) => {
-    if (!isPracticeTradeDedupSession(session)) return [session]
+    if (!shouldCommitPracticeSessionCandidates(session)) return [session]
     // Preserve legacy/imported records whose result attempts are present but
     // whose candidate array was never serialized. There is no safe identity
     // to deduplicate until the candidate data is available.
@@ -651,20 +662,30 @@ function deduplicatePracticeDecisionTrades(store: DecisionReplayStore): Decision
     return [repairDecisionReplaySession(next)]
   })
 
-  // A candidate that was already selected in a practice session must remain
-  // seen even if its duplicate occurrence was removed from another session.
-  // This closes the old gap where only the first item of a newly sampled batch
-  // was marked as seen.
+  // Count custom-count batches immediately, but commit a day-sequence batch
+  // atomically only when the whole day is complete. Older versions reserved
+  // all day keys at session start, so explicitly release those legacy keys
+  // when their only owner is an active/stopped incomplete day.
   const seen = new Set<string>()
   const seenTradeKeys: string[] = []
+  const incompleteDayKeys = new Set(store.sessions
+    .filter(isIncompleteDaySequencePracticeSession)
+    .flatMap((session) => session.candidates.map((candidate) => candidate.key)))
+  const committedSessionKeys = new Set(store.sessions
+    .filter(shouldCommitPracticeSessionCandidates)
+    .flatMap((session) => session.candidates.map((candidate) => candidate.key)))
   const addSeen = (key: string) => {
     if (seen.has(key)) return
     seen.add(key)
     seenTradeKeys.push(key)
   }
-  store.seenTradeKeys.forEach((key) => { if (typeof key === 'string') addSeen(key) })
+  store.seenTradeKeys.forEach((key) => {
+    if (typeof key !== 'string') return
+    if (incompleteDayKeys.has(key) && !committedSessionKeys.has(key)) return
+    addSeen(key)
+  })
   store.sessions.forEach((session) => {
-    if (!isPracticeTradeDedupSession(session)) return
+    if (!shouldCommitPracticeSessionCandidates(session)) return
     session.candidates.forEach((candidate) => addSeen(candidate.key))
   })
 

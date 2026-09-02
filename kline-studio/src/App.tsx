@@ -933,9 +933,12 @@ function App() {
     setDecisionStore((current) => normalizeDecisionReplayStore({
       ...current,
       activeSessionId: session.id,
-      // Reserve the whole sampled batch immediately. Otherwise a second tab
-      // or a repeated start click can sample the still-unreached tail again.
-      seenTradeKeys: [...new Set([...current.seenTradeKeys, ...selected.map((candidate) => candidate.key)])],
+      // Custom-count batches keep their historical immediate reservation.
+      // Whole-day practice is atomic: it becomes seen only after the entire
+      // round completes, so an unfinished day can be randomly sampled again.
+      seenTradeKeys: practiceMode === 'day-sequence'
+        ? current.seenTradeKeys
+        : [...new Set([...current.seenTradeKeys, ...selected.map((candidate) => candidate.key)])],
       sessions: [session, ...current.sessions],
     }))
     setDecisionCenterOpen(false)
@@ -1012,10 +1015,15 @@ function App() {
           nextCandidate,
           decisionSessionPracticeMode(session) === 'day-sequence' ? resolved.cursorTime : undefined,
         )]
-        seenTradeKeys = [...new Set([...seenTradeKeys, nextCandidate.key])]
+        if (decisionSessionPracticeMode(session) !== 'day-sequence') {
+          seenTradeKeys = [...new Set([...seenTradeKeys, nextCandidate.key])]
+        }
       } else {
         status = 'completed'
         activeSessionId = session.origin === 'review' ? decisionReviewReturnSessionId : null
+        if (decisionSessionPracticeMode(session) === 'day-sequence') {
+          seenTradeKeys = [...new Set([...seenTradeKeys, ...session.candidates.map((candidate) => candidate.key)])]
+        }
       }
       const now = Date.now()
       return {
@@ -1093,10 +1101,15 @@ function App() {
           nextCandidate,
           decisionSessionPracticeMode(session) === 'day-sequence' ? currentAttempt.cursorTime : undefined,
         )]
-        seenTradeKeys = [...new Set([...seenTradeKeys, nextCandidate.key])]
+        if (decisionSessionPracticeMode(session) !== 'day-sequence') {
+          seenTradeKeys = [...new Set([...seenTradeKeys, nextCandidate.key])]
+        }
       } else {
         status = 'completed'
         activeSessionId = session.origin === 'review' ? decisionReviewReturnSessionId : null
+        if (decisionSessionPracticeMode(session) === 'day-sequence') {
+          seenTradeKeys = [...new Set([...seenTradeKeys, ...session.candidates.map((candidate) => candidate.key)])]
+        }
       }
       const now = Date.now()
       return {
@@ -1162,7 +1175,7 @@ function App() {
     const sessionId = activeDecisionSession.id
     const now = Date.now()
     const restoreSessionId = activeDecisionSession.origin === 'review' ? decisionReviewReturnSessionId : null
-    setDecisionStore((current) => ({
+    setDecisionStore((current) => normalizeDecisionReplayStore({
       ...current,
       activeSessionId: current.activeSessionId === sessionId ? restoreSessionId : current.activeSessionId,
       sessions: current.sessions.map((session) => session.id === sessionId ? { ...session, status: 'stopped', updatedAt: now, finishedAt: now } : session),
@@ -1170,7 +1183,9 @@ function App() {
     setDecisionResultsSessionId(sessionId)
     setDecisionPriceDraft(null)
     setDecisionRiskDraft(null)
-    notify(`已提前退出，保留 ${sessionResults(activeDecisionSession).length} 笔已完成结果`)
+    notify(decisionSessionPracticeMode(activeDecisionSession) === 'day-sequence'
+      ? '已提前退出：本交易日不计为已练习，之后仍可随机抽到'
+      : `已提前退出，保留 ${sessionResults(activeDecisionSession).length} 笔已完成结果`)
   }, [activeDecisionSession, decisionReviewReturnSessionId, notify])
 
   const finishDecisionRoundAtMarketEnd = useCallback((marketEndCandle: Candle) => {
@@ -1189,6 +1204,9 @@ function App() {
       return {
         ...current,
         activeSessionId: current.activeSessionId === sessionId ? restoreSessionId : current.activeSessionId,
+        seenTradeKeys: finished.status === 'completed'
+          ? [...new Set([...current.seenTradeKeys, ...finished.candidates.map((candidate) => candidate.key)])]
+          : current.seenTradeKeys,
         sessions: current.sessions.map((item) => item.id === sessionId ? finished : item),
       }
     })

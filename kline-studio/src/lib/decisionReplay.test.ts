@@ -93,6 +93,45 @@ describe('decision replay', () => {
     expect(new Set(selected.map((item) => item.key))).toEqual(new Set(['same:1', 'other:1']))
   })
 
+  it('commits a whole-day exercise as seen only after the entire round completes', () => {
+    const items = [candidate('atomic-day:1'), candidate('atomic-day:2')]
+    const daySequence = decisionDayCandidateGroups(items, [])[0].daySequence
+    const active = createDecisionSession(items, items.length, 1000, undefined, { practiceMode: 'day-sequence', daySequence })
+    const legacyReserved = normalizeDecisionReplayStore({
+      version: 1,
+      seenTradeKeys: items.map((item) => item.key),
+      activeSessionId: active.id,
+      sessions: [active],
+    })
+
+    expect(legacyReserved.seenTradeKeys).toEqual([])
+    expect(sampleDecisionDayCandidates(items, legacyReserved.seenTradeKeys)?.candidates).toHaveLength(2)
+
+    const stopped = { ...active, id: 'stopped-day', status: 'stopped' as const, updatedAt: 2000, finishedAt: 2000 }
+    const retry = { ...createDecisionSession(items, items.length, 3000, undefined, { practiceMode: 'day-sequence', daySequence }), id: 'retry-day' }
+    const retried = normalizeDecisionReplayStore({
+      version: 1,
+      seenTradeKeys: items.map((item) => item.key),
+      activeSessionId: retry.id,
+      sessions: [stopped, retry],
+    })
+
+    expect(retried.seenTradeKeys).toEqual([])
+    expect(retried.activeSessionId).toBe(retry.id)
+    expect(retried.sessions.map((session) => session.id)).toEqual(expect.arrayContaining(['stopped-day', 'retry-day']))
+
+    const completed = { ...retry, status: 'completed' as const, currentIndex: items.length, updatedAt: 4000, finishedAt: 4000 }
+    const committed = normalizeDecisionReplayStore({
+      version: 1,
+      seenTradeKeys: [],
+      activeSessionId: null,
+      sessions: [stopped, completed],
+    })
+
+    expect(new Set(committed.seenTradeKeys)).toEqual(new Set(items.map((item) => item.key)))
+    expect(sampleDecisionDayCandidates(items, committed.seenTradeKeys)).toBeNull()
+  })
+
   it('filters random exercises by both selected symbol and timeframe', () => {
     const fiveMinute = candidate('five:1')
     const fifteenMinute = { ...candidate('fifteen:1'), interval: '15m' as const }
