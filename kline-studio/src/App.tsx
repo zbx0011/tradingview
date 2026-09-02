@@ -10,6 +10,7 @@ import { IndicatorLegend } from './components/IndicatorLegend'
 import { ChartContextMenu, type ChartContextData } from './components/TradingViewContextMenu'
 import { DrawingOverlay } from './components/DrawingOverlay'
 import { DrawingToolbar, type MagnetMode } from './components/DrawingToolbar'
+import { QuickDrawingToolbar } from './components/QuickDrawingToolbar'
 import { FibSettingsDialog } from './components/FibSettingsDialog'
 import { ReplayToolbar, type ReplayStartMode } from './components/ReplayToolbar'
 import {
@@ -2296,7 +2297,7 @@ function App() {
               setSelectedReplayRangeId(null)
               if (activeDefinition.behavior !== 'cursor' || target?.closest('.drawing-overlay')) return
               setQuickMeasurement(null)
-              if (target?.closest('button, input, select, textarea, .popover, .floating-tool-options')) return
+              if (target?.closest('button, input, select, textarea, .popover, .floating-tool-options, .reference-quick-tools')) return
               const bounds = event.currentTarget.getBoundingClientRect()
               const point = { x: (event.clientX - bounds.left) / bounds.width, y: (event.clientY - bounds.top) / bounds.height }
               const drawing = [...uiDrawings.present].reverse().find((item) => {
@@ -2402,14 +2403,11 @@ function App() {
                 onClick={() => { setPriceScaleLog((value) => !value); setPriceScalePercent(false) }}
               >L</button>
             </div>
-            {activeDefinition.behavior === 'cursor' && !selectedDrawing && favoriteTools.length > 0 && <div className="reference-quick-tools" aria-label="快捷绘图工具">
-              <span className="quick-tool-grip" aria-hidden="true">⠿</span>
-              {favoriteTools.map((toolId) => {
-                const tool = getTool(toolId)
-                return <button key={toolId} type="button" data-testid={`quick-tool-${toolId}`} aria-label={tool.label} title={tool.label} onClick={() => { setQuickMeasurement(null); setActiveTool(toolId) }}>{tool.glyph}</button>
-              })}
-              <button type="button" aria-label="绘图设置" title="绘图设置" onClick={() => setSettingsOpen(true)}>—</button>
-            </div>}
+            {activeDefinition.behavior === 'cursor' && !selectedDrawing && favoriteTools.length > 0 && <QuickDrawingToolbar
+              favoriteTools={favoriteTools}
+              onSelectTool={(toolId) => { setQuickMeasurement(null); setActiveTool(toolId) }}
+              onOpenSettings={() => setSettingsOpen(true)}
+            />}
             <DrawingOverlay
               key={`${decisionContextKey ?? 'normal'}-${effectiveDrawingTool}-${drawingsLocked}-${drawingsHidden}`}
               activeTool={effectiveDrawingTool} history={uiDrawings} dispatch={dispatchUiDrawing} color={drawingColor}
