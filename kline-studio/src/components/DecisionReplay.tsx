@@ -152,6 +152,24 @@ function decisionSessionTimeLabel(session: Pick<DecisionReplaySession, 'startedA
   return `开始：${startedAt} · ${endLabel}`
 }
 
+function formatDecisionCandleTimestamp(epochSeconds: number) {
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(new Date(epochSeconds * 1000))
+}
+
+function decisionSessionCandleProgressLabel(session: DecisionReplaySession) {
+  if (!session.daySequence) return null
+  const currentIndex = Math.max(0, Math.min(session.candidates.length - 1, Math.trunc(session.currentIndex || 0)))
+  const currentCandidate = session.candidates[currentIndex]
+  const currentAttempt = currentCandidate
+    ? session.attempts.find((attempt) => attempt.candidateKey === currentCandidate.key)
+    : undefined
+  const furthestAttemptTime = session.attempts.reduce((latest, attempt) => Math.max(latest, attempt.cursorTime), session.daySequence.startTime)
+  const progressTime = Math.max(session.daySequence.startTime, currentAttempt?.cursorTime ?? furthestAttemptTime)
+  return `K线起点：${formatDecisionCandleTimestamp(session.daySequence.startTime)} · 已做到：${formatDecisionCandleTimestamp(progressTime)}`
+}
+
 type DecisionHistoryViewMode = 'trades' | 'sessions'
 
 function orderKindLabel(kind: DecisionAttempt['orderKind']) {
@@ -467,7 +485,7 @@ export function DecisionReplayCenter({ open, availableCount, totalCount, symbolS
                 }}
               >
                 <span className={`decision-session-status ${session.status}`}>{statusLabel(session.status)}</span>
-                <span><b>{session.reviewKind === 'stop-anomalies' ? '异常订单重做 · ' : session.practiceMode === 'day-sequence' ? '按日顺序 · ' : ''}{results.length} / {session.candidates.length} 笔</b><small>{session.daySequence ? `${formatDecisionDay(session.daySequence.startTime)} · ` : ''}{decisionSessionTimeLabel(session)}</small></span>
+                <span><b>{session.reviewKind === 'stop-anomalies' ? '异常订单重做 · ' : session.practiceMode === 'day-sequence' ? '按日顺序 · ' : ''}{results.length} / {session.candidates.length} 笔</b>{session.daySequence && <small>{decisionSessionCandleProgressLabel(session)}</small>}<small>{decisionSessionTimeLabel(session)}</small></span>
                 <DecisionModeMoneyStack modes={modes} valueFor={(mode) => aggregateDecisionResults(results, mode).userPnlUsd} />
                 <span className="decision-list-actions"><DecisionFavoriteButton favorite={favoriteKeys.includes(favoriteKey)} onToggle={() => onToggleFavorite(favoriteKey)} label={favoriteKeys.includes(favoriteKey) ? '取消收藏本场练习' : '收藏本场练习'} /><ChevronRight size={18} /></span>
               </div>
@@ -813,6 +831,7 @@ export const DecisionHistoryDialog = memo(function DecisionHistoryDialog({ open,
                 <span className={`decision-session-status ${session.status}`}>{statusLabel(session.status)}</span>
                 <span>
                   <b>{symbols.join(' / ')} · {decisionSessionPracticeMode(session) === 'day-sequence' ? '日内逐根回放' : '决策练习'}</b>
+                  {session.daySequence && <small>{decisionSessionCandleProgressLabel(session)}</small>}
                   <small>{decisionSessionTimeLabel(session)} · {progressCount} 笔有记录 · {decisionSizingLabels(decisionSessionPositionSizingModes(session))}</small>
                 </span>
                 {favoriteCount > 0 ? <span className="decision-history-favorite-count"><Star size={13} fill="currentColor" />{favoriteCount} 笔</span> : <span />}

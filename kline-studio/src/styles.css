@@ -562,7 +562,7 @@ button:disabled { opacity: .32; cursor: not-allowed; }
 .decision-section-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; color: #aeb7c8; }
 .decision-section-heading span { margin-left: auto; color: #717b8e; font-size: 11px; }
 .decision-session-list { display: grid; gap: 7px; }
-.decision-session-list > .decision-session-row { min-height: 62px; display: grid; grid-template-columns: 76px minmax(0,1fr) 120px 48px; align-items: center; gap: 10px; padding: 8px 12px; color: #cdd4e1; text-align: left; border: 1px solid #333b4a; border-radius: 8px; background: #222833; cursor: pointer; }
+.decision-session-list > .decision-session-row { min-height: 76px; display: grid; grid-template-columns: 76px minmax(0,1fr) 120px 48px; align-items: center; gap: 10px; padding: 8px 12px; color: #cdd4e1; text-align: left; border: 1px solid #333b4a; border-radius: 8px; background: #222833; cursor: pointer; }
 .decision-session-list > .decision-session-row:hover, .decision-session-list > .decision-session-row:focus-visible { border-color: #4a5974; background: #29303d; outline: none; }
 .decision-session-row > span:nth-child(2) { display: flex; flex-direction: column; gap: 4px; }
 .decision-list-actions { display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; color: #8da5d8; }

@@ -9,7 +9,7 @@ import { parseCompactHistory } from './liveMarket'
 import {
   adjacentDecisionExerciseTarget, adjustDecisionPendingEntry, advanceDecisionAttempt, buildDecisionResult, cancelPendingOrderAndAdvance, candlesKnownAt, compareDecisionHistorySortValues, createDecisionAttempt, createDecisionReviewSession, createDecisionSession,
   decisionAiDaySummaries, decisionAttemptSide, decisionDayCandidateGroups, decisionDayHistoryIsComplete, decisionExtremeEntryPrice, decisionResultSide, decisionSessionPracticeMode, decisionShortcutAction, defaultDecisionLevels, evaluatePositionBar, fillPendingOrder, filterDecisionCandidatesByTradingDay, finishDecisionSessionAtMarketEnd,
-  decisionResultPnl, decisionResultR, decisionSessionSystemBenchmarkStats, decisionSessionUserRStats, decisionStopLossMode, decisionSystemCandidatesForDay, emptyDecisionReplayStore, filterDecisionCandidatesByScope, historyCoversDecisionCandidate, intervalCutoffTime, parseDecisionReplayStore,
+  decisionResultPnl, decisionResultR, decisionSessionSystemBenchmarkStats, decisionSessionUserRStats, decisionStopLossMode, decisionSystemCandidatesForDay, emptyDecisionReplayStore, filterDecisionCandidatesByScope, historyCoversDecisionCandidate, intervalCutoffTime, intervalSeconds, parseDecisionReplayStore,
   latestResumableDecisionDaySession, mergeDecisionReplayStores, nextDecisionPositionMultiplier, normalizeDecisionPositionMultiplier, normalizeDecisionReplayStore, persistDecisionReplayStoreAdditively, pnlForDecision, pnlForDecisionMode, recentDecisionStructureStop, restartPostExitDecisionAttempt, revealedDecisionSystemTrades, rewardRiskRatio, sampleDecisionCandidates, sampleDecisionDayCandidates, startNextDaySequenceTrade,
   saveDecisionReplayStore, saveDecisionReplayStoreSnapshot, serializeDecisionReplayStore, sessionResults, updateDecisionSessionDrawings, validDecisionLevels, validOpenPositionLevels, type DecisionAttempt, type DecisionExit, type DecisionReplaySession,
 } from './decisionReplay'
@@ -129,6 +129,7 @@ describe('decision replay', () => {
       }, [])
       return { ...attempt, stage: 'complete' as const, result }
     })
+    completedAttempts[completedAttempts.length - 1].cursorTime = daySequence.endTime - intervalSeconds(daySequence.interval)
     const completed = { ...retry, attempts: completedAttempts, status: 'completed' as const, currentIndex: items.length, updatedAt: 4000, finishedAt: 4000 }
     const committed = normalizeDecisionReplayStore({
       version: 1,
@@ -765,6 +766,40 @@ describe('decision replay', () => {
     }))
 
     expect(repairedStore.sessions[0]).toMatchObject({ status: 'stopped', currentIndex: 0 })
+    expect(repairedStore.seenTradeKeys).toEqual([])
+    expect(latestResumableDecisionDaySession(repairedStore.sessions, ['XAUUSD'], ['5m'])?.id).toBe(base.id)
+  })
+
+  it('repairs a falsely completed day paper whose final attempt was marked complete before the last candle', () => {
+    const items = [candidate('market-end-complete-repair:1'), candidate('market-end-complete-repair:2')]
+    const daySequence = decisionDayCandidateGroups(items, [])[0].daySequence
+    const base = createDecisionSession(items, 2, 100, undefined, { practiceMode: 'day-sequence', daySequence })
+    const completedAttempts = items.map((item) => {
+      const attempt = createDecisionAttempt(item)
+      const result = buildDecisionResult(item, attempt, {
+        time: attempt.cursorTime,
+        price: item.trade.entry.price,
+        reason: 'skipped',
+      }, [])
+      return { ...attempt, stage: 'complete' as const, result }
+    })
+    const broken = {
+      ...base,
+      status: 'completed' as const,
+      currentIndex: items.length,
+      attempts: completedAttempts,
+      finishedAt: 999,
+      updatedAt: 999,
+    }
+    const repairedStore = parseDecisionReplayStore(JSON.stringify({
+      version: 1,
+      seenTradeKeys: items.map((item) => item.key),
+      activeSessionId: null,
+      sessions: [broken],
+    }))
+
+    expect(repairedStore.sessions[0]).toMatchObject({ status: 'stopped', currentIndex: 1 })
+    expect(repairedStore.sessions[0].attempts[1]).toMatchObject({ stage: 'post-exit' })
     expect(repairedStore.seenTradeKeys).toEqual([])
     expect(latestResumableDecisionDaySession(repairedStore.sessions, ['XAUUSD'], ['5m'])?.id).toBe(base.id)
   })

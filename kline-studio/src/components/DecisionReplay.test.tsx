@@ -1317,6 +1317,23 @@ describe('decision replay components', () => {
     expect(markup).toContain('2026/01/01 · 按日顺序 · 第 1 / 1 笔')
   })
 
+  it('shows the actual replay candle start and progress times in a day-session archive', () => {
+    const item = candidate()
+    const dayStart = Date.UTC(2025, 11, 31, 22) / 1000
+    const session = createDecisionSession([item], 1, 1, ['fixed-risk'], {
+      practiceMode: 'day-sequence',
+      daySequence: { key: 'XAUUSD:5m:archive-day', symbol: 'XAUUSD', interval: '5m', startTime: dayStart, endTime: dayStart + 86_400 },
+    })
+    const markup = renderToStaticMarkup(<DecisionReplayCenter
+      open availableCount={0} totalCount={1} symbolStats={[]} sessions={[session]} activeSessionId={session.id}
+      onClose={noop} onStart={noop} onContinue={noop} onResults={noop}
+    />)
+
+    expect(markup).toContain('K线起点：')
+    expect(markup).toContain('已做到：')
+    expect(markup).toContain('2026/01/01 06:00')
+  })
+
   it('shows the independent anomaly redo entry with its verified count and safe disabled states', () => {
     const props = {
       open: true, availableCount: 5, totalCount: 8, symbolStats: [], sessions: [], activeSessionId: null,

@@ -479,13 +479,27 @@ function repairDecisionReplaySession(rawSession: DecisionReplaySession): Decisio
   const storedCurrentAttempt = storedCurrentCandidate
     ? session.attempts.find((attempt) => attempt.candidateKey === storedCurrentCandidate.key)
     : undefined
-  // Older market-end handling could archive an unanswered last candle as a
-  // completed whole-day paper. Restore that detectable bad state as resumable;
-  // a genuinely completed paper always crossed the explicit `complete` stage.
+  const expectedLastDayCandleTime = session.daySequence
+    ? session.daySequence.endTime - intervalSeconds(session.daySequence.interval)
+    : null
+  const completedBeforeDayEnd = expectedLastDayCandleTime !== null
+    && storedCurrentAttempt !== undefined
+    && storedCurrentAttempt.cursorTime < expectedLastDayCandleTime
+  // Older market-end handling could archive the current question as a
+  // completed whole-day paper before playback reached the trading day's last
+  // candle. Some affected records had already had their final attempt changed
+  // to `complete`, so validate the actual candle cursor instead of trusting the
+  // stored stage/status pair. Restore the final result as post-exit so replay
+  // can continue from the exact candle at which it stopped.
   if (session.status === 'completed'
     && decisionSessionPracticeMode(session) === 'day-sequence'
-    && storedCurrentAttempt?.stage !== 'complete') {
-    session = { ...session, status: 'stopped' }
+    && (storedCurrentAttempt?.stage !== 'complete' || completedBeforeDayEnd)) {
+    const attempts = storedCurrentAttempt?.stage === 'complete' && storedCurrentAttempt.result
+      ? session.attempts.map((attempt) => attempt.candidateKey === storedCurrentAttempt.candidateKey
+        ? { ...attempt, stage: 'post-exit' as const }
+        : attempt)
+      : session.attempts
+    session = { ...session, attempts, currentIndex: storedCurrentIndex, status: 'stopped' }
   }
   if (session.status !== 'active' || session.candidates.length === 0) return session
 
