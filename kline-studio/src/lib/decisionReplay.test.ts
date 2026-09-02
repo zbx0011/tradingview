@@ -8,7 +8,7 @@ import type { Candle } from './market'
 import { parseCompactHistory } from './liveMarket'
 import {
   adjacentDecisionExerciseTarget, adjustDecisionPendingEntry, advanceDecisionAttempt, buildDecisionResult, cancelPendingOrderAndAdvance, candlesKnownAt, compareDecisionHistorySortValues, createDecisionAttempt, createDecisionReviewSession, createDecisionSession,
-  decisionAiWeekSummaries, decisionAttemptSide, decisionCandidateTradingWeek, decisionDayCandidateGroups, decisionDayHistoryIsComplete, decisionExtremeEntryPrice, decisionResultSide, decisionSessionPracticeMode, decisionShortcutAction, defaultDecisionLevels, evaluatePositionBar, fillPendingOrder, filterDecisionCandidatesByTradingWeek, finishDecisionSessionAtMarketEnd,
+  decisionAiDaySummaries, decisionAttemptSide, decisionDayCandidateGroups, decisionDayHistoryIsComplete, decisionExtremeEntryPrice, decisionResultSide, decisionSessionPracticeMode, decisionShortcutAction, defaultDecisionLevels, evaluatePositionBar, fillPendingOrder, filterDecisionCandidatesByTradingDay, finishDecisionSessionAtMarketEnd,
   decisionResultPnl, decisionResultR, decisionSessionSystemBenchmarkStats, decisionSessionUserRStats, decisionStopLossMode, decisionSystemCandidatesForDay, emptyDecisionReplayStore, filterDecisionCandidatesByScope, historyCoversDecisionCandidate, intervalCutoffTime, parseDecisionReplayStore,
   mergeDecisionReplayStores, nextDecisionPositionMultiplier, normalizeDecisionPositionMultiplier, normalizeDecisionReplayStore, persistDecisionReplayStoreAdditively, pnlForDecision, pnlForDecisionMode, recentDecisionStructureStop, restartPostExitDecisionAttempt, revealedDecisionSystemTrades, rewardRiskRatio, sampleDecisionCandidates, sampleDecisionDayCandidates, startNextDaySequenceTrade,
   saveDecisionReplayStore, saveDecisionReplayStoreSnapshot, serializeDecisionReplayStore, sessionResults, updateDecisionSessionDrawings, validDecisionLevels, validOpenPositionLevels, type DecisionAttempt, type DecisionExit, type DecisionReplaySession,
@@ -104,9 +104,9 @@ describe('decision replay', () => {
     expect(filterDecisionCandidatesByScope(candidates, ['XAGUSD'], ['15m'])).toEqual([])
   })
 
-  it('groups AI PnL by Monday trading week without splitting the closed session at Beijing midnight', () => {
-    const mondayBeijingMidnight = Date.UTC(2026, 5, 28, 16) / 1000
-    const mondaySessionOpen = mondayBeijingMidnight + 6 * 60 * 60
+  it('groups AI PnL by market trading day without splitting the commodity session at Beijing midnight', () => {
+    const beijingMidnight = Date.UTC(2026, 5, 28, 16) / 1000
+    const sessionOpen = beijingMidnight + 6 * 60 * 60
     const setTrade = (item: ReplayDecisionCandidate, signalTime: number, pnlUsd: number): ReplayDecisionCandidate => ({
       ...item,
       trade: {
@@ -116,24 +116,54 @@ describe('decision replay', () => {
         result: { ...item.trade.result, pnlUsd },
       },
     })
-    const beforeMidnight = setTrade(candidate('week:1'), mondaySessionOpen + 17 * 60 * 60, -80)
-    const afterMidnight = setTrade(candidate('week:2'), mondaySessionOpen + 19 * 60 * 60, 20)
+    const beforeMidnight = setTrade(candidate('day-loss:1'), sessionOpen + 17 * 60 * 60, -80)
+    const afterMidnight = setTrade(candidate('day-loss:2'), sessionOpen + 19 * 60 * 60, 20)
     const duplicate = { ...beforeMidnight, sourceId: 'overlap-copy' }
 
-    expect(decisionCandidateTradingWeek(beforeMidnight).key).toBe(decisionCandidateTradingWeek(afterMidnight).key)
-    const selectedWeekKey = decisionCandidateTradingWeek(beforeMidnight).key
-    expect(filterDecisionCandidatesByTradingWeek([beforeMidnight, afterMidnight], selectedWeekKey)).toHaveLength(2)
-    expect(decisionAiWeekSummaries([beforeMidnight, afterMidnight, duplicate])).toEqual([expect.objectContaining({
-      startTime: mondayBeijingMidnight,
+    const summaries = decisionAiDaySummaries([beforeMidnight, afterMidnight, duplicate])
+    expect(summaries).toHaveLength(1)
+    expect(filterDecisionCandidatesByTradingDay([beforeMidnight, afterMidnight], summaries[0].key)).toHaveLength(2)
+    expect(summaries).toEqual([expect.objectContaining({
+      symbol: 'XAUUSD',
+      interval: '5m',
+      startTime: sessionOpen,
       pnlUsd: -60,
       wins: 1,
       total: 2,
     })])
-    expect(decisionAiWeekSummaries([beforeMidnight, afterMidnight, duplicate], 'fixed-notional')[0]).toEqual(expect.objectContaining({
+    expect(decisionAiDaySummaries([beforeMidnight, afterMidnight, duplicate], 'fixed-notional')[0]).toEqual(expect.objectContaining({
       wins: 2,
       total: 2,
     }))
-    expect(decisionAiWeekSummaries([beforeMidnight, afterMidnight, duplicate], 'fixed-notional')[0].pnlUsd).toBeGreaterThan(0)
+    expect(decisionAiDaySummaries([beforeMidnight, afterMidnight, duplicate], 'fixed-notional')[0].pnlUsd).toBeGreaterThan(0)
+  })
+
+  it('never merges AI day PnL across symbols or timeframes', () => {
+    const beijingMidnight = Date.UTC(2026, 6, 5, 16) / 1000
+    const sessionOpen = beijingMidnight + 6 * 60 * 60
+    const timed = (key: string, symbol: ReplayDecisionCandidate['symbol'], interval: ReplayDecisionCandidate['interval']) => {
+      const item = candidate(key)
+      return {
+        ...item,
+        symbol,
+        interval,
+        trade: {
+          ...item.trade,
+          entry: { ...item.trade.entry, signalTime: sessionOpen + 600, time: sessionOpen + 900 },
+          exit: { ...item.trade.exit, time: sessionOpen + 1_200 },
+          result: { ...item.trade.result, pnlUsd: -25 },
+        },
+      }
+    }
+    const summaries = decisionAiDaySummaries([
+      timed('xau-5m:1', 'XAUUSD', '5m'),
+      timed('xag-5m:1', 'XAGUSD', '5m'),
+      timed('xau-15m:1', 'XAUUSD', '15m'),
+    ])
+
+    expect(summaries).toHaveLength(3)
+    expect(new Set(summaries.map((day) => `${day.symbol}:${day.interval}`))).toEqual(new Set(['XAUUSD:5m', 'XAGUSD:5m', 'XAUUSD:15m']))
+    expect(summaries.every((day) => day.total === 1 && day.pnlUsd === -25)).toBe(true)
   })
 
   it('groups one Beijing date by symbol and timeframe, then orders its questions chronologically', () => {

@@ -150,8 +150,8 @@ describe('decision replay center preferences', () => {
       selectedModes: ['fixed-notional'],
       practiceMode: 'random-count',
       daySequenceScope: 'all-days',
-      selectedLossWeekKey: null,
-      lossWeekSizingMode: 'fixed-risk',
+      selectedLossDayKey: null,
+      lossDaySizingMode: 'fixed-risk',
     })
   })
 
@@ -168,8 +168,8 @@ describe('decision replay center preferences', () => {
       selectedModes: ['fixed-risk'],
       practiceMode: 'random-count',
       daySequenceScope: 'all-days',
-      selectedLossWeekKey: null,
-      lossWeekSizingMode: 'fixed-risk',
+      selectedLossDayKey: null,
+      lossDaySizingMode: 'fixed-risk',
     })
   })
 
@@ -183,7 +183,25 @@ describe('decision replay center preferences', () => {
     }))?.practiceMode).toBe('day-sequence')
   })
 
-  it('restores the AI loss-week replay scope and selected week', () => {
+  it('restores the AI loss-day replay scope and selected trading day', () => {
+    expect(parseDecisionReplayCenterPreferences(JSON.stringify({
+      count: 30,
+      selectedSymbols: ['XAUUSD'],
+      selectedIntervals: ['5m'],
+      selectedModes: ['fixed-risk'],
+      practiceMode: 'day-sequence',
+      daySequenceScope: 'loss-day',
+      selectedLossDayKey: 'XAUUSD:5m:1783288800',
+      lossDaySizingMode: 'fixed-notional',
+    }))).toMatchObject({
+      practiceMode: 'day-sequence',
+      daySequenceScope: 'loss-day',
+      selectedLossDayKey: 'XAUUSD:5m:1783288800',
+      lossDaySizingMode: 'fixed-notional',
+    })
+  })
+
+  it('migrates the retired AI loss-week preference without reusing its invalid week key', () => {
     expect(parseDecisionReplayCenterPreferences(JSON.stringify({
       count: 30,
       selectedSymbols: ['XAUUSD'],
@@ -195,9 +213,9 @@ describe('decision replay center preferences', () => {
       lossWeekSizingMode: 'fixed-notional',
     }))).toMatchObject({
       practiceMode: 'day-sequence',
-      daySequenceScope: 'loss-week',
-      selectedLossWeekKey: 'ai-trading-week:123',
-      lossWeekSizingMode: 'fixed-notional',
+      daySequenceScope: 'loss-day',
+      selectedLossDayKey: null,
+      lossDaySizingMode: 'fixed-notional',
     })
   })
 

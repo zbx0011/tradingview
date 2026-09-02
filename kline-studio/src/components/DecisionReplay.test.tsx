@@ -1256,7 +1256,7 @@ describe('decision replay components', () => {
     expect(markup).toContain('aria-label="选择决策回放模式"')
     expect(markup).toContain('自定义题目数量')
     expect(markup).toContain('随机交易日顺序回放')
-    expect(markup).toContain('只做AI亏损周')
+    expect(markup).toContain('只做AI亏损日')
     expect(markup).toContain('跨日期随机抽题，题量由你设置')
     expect(markup).toContain('随机一天，按信号时间从早到晚逐笔练习')
     expect(markup).toContain('XAUUSD')

@@ -59,9 +59,9 @@ export interface DecisionReplayCenterPreferences {
   selectedIntervals: DecisionReplayInterval[]
   selectedModes: DecisionPositionSizingMode[]
   practiceMode: DecisionPracticeMode
-  daySequenceScope: 'all-days' | 'loss-week'
-  selectedLossWeekKey: string | null
-  lossWeekSizingMode: DecisionPositionSizingMode
+  daySequenceScope: 'all-days' | 'loss-day'
+  selectedLossDayKey: string | null
+  lossDaySizingMode: DecisionPositionSizingMode
 }
 
 export const STORAGE_KEY = 'kline-studio-workspace-v1'
@@ -251,18 +251,21 @@ export function saveDecisionChartStatusPreferences(value: DecisionChartStatusPre
 export function parseDecisionReplayCenterPreferences(raw: string | null): DecisionReplayCenterPreferences | null {
   if (!raw) return null
   try {
-    const value = JSON.parse(raw) as Partial<DecisionReplayCenterPreferences>
+    const value = JSON.parse(raw) as Omit<Partial<DecisionReplayCenterPreferences>, 'daySequenceScope'> & {
+      daySequenceScope?: DecisionReplayCenterPreferences['daySequenceScope'] | 'loss-week'
+      lossWeekSizingMode?: DecisionPositionSizingMode
+    }
     if (!Number.isFinite(value.count) || value.count! < 1 || !Array.isArray(value.selectedSymbols) || !Array.isArray(value.selectedModes)) return null
     if (value.selectedIntervals !== undefined && !Array.isArray(value.selectedIntervals)) return null
     const selectedSymbols = value.selectedSymbols.filter((symbol): symbol is SymbolId => DECISION_REPLAY_SYMBOLS.includes(symbol as SymbolId))
     const selectedIntervals = (value.selectedIntervals ?? ['5m']).filter((interval): interval is DecisionReplayInterval => DECISION_REPLAY_INTERVALS.includes(interval as DecisionReplayInterval))
     const selectedModes = value.selectedModes.filter((mode): mode is DecisionPositionSizingMode => DECISION_REPLAY_POSITION_MODES.includes(mode as DecisionPositionSizingMode))
     const practiceMode: DecisionPracticeMode = value.practiceMode === 'day-sequence' ? 'day-sequence' : 'random-count'
-    const daySequenceScope = value.daySequenceScope === 'loss-week' ? 'loss-week' : 'all-days'
-    const selectedLossWeekKey = typeof value.selectedLossWeekKey === 'string' && value.selectedLossWeekKey.length > 0
-      ? value.selectedLossWeekKey
+    const daySequenceScope = value.daySequenceScope === 'loss-day' || value.daySequenceScope === 'loss-week' ? 'loss-day' : 'all-days'
+    const selectedLossDayKey = typeof value.selectedLossDayKey === 'string' && value.selectedLossDayKey.length > 0
+      ? value.selectedLossDayKey
       : null
-    const lossWeekSizingMode: DecisionPositionSizingMode = value.lossWeekSizingMode === 'fixed-notional' ? 'fixed-notional' : 'fixed-risk'
+    const lossDaySizingMode: DecisionPositionSizingMode = value.lossDaySizingMode === 'fixed-notional' || value.lossWeekSizingMode === 'fixed-notional' ? 'fixed-notional' : 'fixed-risk'
     return {
       count: Math.floor(value.count!),
       selectedSymbols: [...new Set(selectedSymbols)],
@@ -270,8 +273,8 @@ export function parseDecisionReplayCenterPreferences(raw: string | null): Decisi
       selectedModes: [...new Set(selectedModes)],
       practiceMode,
       daySequenceScope,
-      selectedLossWeekKey,
-      lossWeekSizingMode,
+      selectedLossDayKey,
+      lossDaySizingMode,
     }
   } catch {
     return null
