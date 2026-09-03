@@ -81,6 +81,9 @@ export interface LocalCodeUpdateResult {
   commit: string
   updated: boolean
   restartRequired: boolean
+  preservedLocalChanges?: boolean
+  backupBranch?: string
+  backupStash?: string
 }
 
 async function request<T>(action: 'status' | 'publish-code' | 'update-code'): Promise<T> {

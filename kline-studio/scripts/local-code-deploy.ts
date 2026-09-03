@@ -153,6 +153,28 @@ async function validateCommitInTemporaryWorktree(state: RepositoryState, commit:
   }
 }
 
+async function mergeDirtyProjectChangesInTemporaryWorktree(state: RepositoryState, candidateCommit: string) {
+  const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'kline-studio-code-merge-'))
+  const worktree = path.join(temporaryRoot, 'checkout')
+  let added = false
+  try {
+    await runFile('git', ['worktree', 'add', '--detach', worktree, state.remoteHead], { cwd: state.repositoryRoot })
+    added = true
+    try {
+      await runFile('git', ['cherry-pick', candidateCommit], { cwd: worktree })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '未知冲突'
+      throw new HttpError(409, `GitHub 新版本与本机修改存在冲突，未改动当前工作区：${message}`)
+    }
+    await validateProject(path.join(worktree, state.projectRelativePath))
+    return (await runFile('git', ['rev-parse', 'HEAD'], { cwd: worktree })).stdout.trim()
+  } finally {
+    if (added) await runFile('git', ['worktree', 'remove', '--force', worktree], { cwd: state.repositoryRoot }).catch(() => undefined)
+    const temporaryBase = path.resolve(os.tmpdir()) + path.sep
+    if (path.resolve(temporaryRoot).startsWith(temporaryBase)) await fs.rm(temporaryRoot, { recursive: true, force: true })
+  }
+}
+
 async function createCandidateCommit(state: RepositoryState, message: string) {
   const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'kline-studio-code-index-'))
   const indexFile = path.join(temporaryRoot, 'index')
@@ -219,10 +241,37 @@ function scheduleRestart(response: ServerResponse, projectRoot: string, port: nu
 
 async function updateCode() {
   const state = await repositoryState(true)
-  if (!state.clean) throw new HttpError(409, '当前代码工作区不干净，已停止更新，不会覆盖本机修改', { dirtyFiles: state.dirtyFiles })
   if (state.diverged || state.aheadOfRemote) throw new HttpError(409, '当前代码不能快进到远程 master，已停止更新')
   if (state.localHead === state.remoteHead) {
     return { ok: true, action: 'update-code', commit: state.localHead, updated: false, restartRequired: false, projectRoot: state.projectRoot }
+  }
+  if (!state.clean) {
+    assertOnlyProjectChanges(state)
+    await runFile('git', ['diff', '--check'], { cwd: state.repositoryRoot })
+    const stamp = new Date().toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, ' UTC')
+    const candidateCommit = await createCandidateCommit(state, `update: preserve local Kline Studio changes ${stamp}`)
+    const mergedCommit = await mergeDirtyProjectChangesInTemporaryWorktree(state, candidateCommit)
+    const backupBranch = `kline-studio-backup/update-${Date.now()}`
+    await runFile('git', ['branch', backupBranch, candidateCommit], { cwd: state.repositoryRoot })
+    await runFile('git', ['stash', 'push', '--include-untracked', '-m', `Kline Studio update backup ${stamp}`, '--', state.projectRelativePath], { cwd: state.repositoryRoot })
+    const backupStash = (await runFile('git', ['stash', 'list', '-1', '--format=%gd'], { cwd: state.repositoryRoot })).stdout.trim()
+    await runFile('git', ['merge', '--ff-only', mergedCommit], { cwd: state.repositoryRoot })
+    await runNpm(['ci'], state.projectRoot)
+    const updated = await repositoryState(false)
+    if (!updated.clean || updated.localHead !== mergedCommit) {
+      throw new HttpError(500, '安全合并后代码状态校验失败；本机修改仍保存在备份分支和 stash 中', { backupBranch, backupStash })
+    }
+    return {
+      ok: true,
+      action: 'update-code',
+      commit: updated.localHead,
+      updated: true,
+      restartRequired: true,
+      projectRoot: updated.projectRoot,
+      preservedLocalChanges: true,
+      backupBranch,
+      backupStash,
+    }
   }
   await validateCommitInTemporaryWorktree(state, state.remoteHead)
   await runFile('git', ['merge', '--ff-only', `origin/${EXPECTED_BRANCH}`], { cwd: state.repositoryRoot })
