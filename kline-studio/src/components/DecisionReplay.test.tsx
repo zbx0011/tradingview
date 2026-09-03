@@ -542,7 +542,7 @@ describe('decision replay components', () => {
     expect(markup).toContain('class="user-path"')
   })
 
-  it('keeps earlier user executions visible while advancing through a day replay', () => {
+  it('keeps earlier user execution paths but removes their historical labels while advancing', () => {
     const item = candidate()
     const historicalAttempt = {
       ...createDecisionAttempt(item),
@@ -569,11 +569,13 @@ describe('decision replay components', () => {
       toY={(price) => price}
     />)
 
-    expect(markup).toContain('data-testid="decision-point-label-historical-user-entry-')
-    expect(markup).toContain('data-testid="decision-point-label-historical-user-exit-')
-    expect(markup).toContain('你的开仓 101.000')
-    expect(markup).toContain('你的平仓 102.000')
+    expect(markup).not.toContain('data-testid="decision-point-label-historical-user-entry-')
+    expect(markup).not.toContain('data-testid="decision-point-label-historical-user-exit-')
+    expect(markup).not.toContain('你的开仓 101.000')
+    expect(markup).not.toContain('你的平仓 102.000')
+    expect(markup).toContain('data-testid="decision-historical-user-path-')
     expect(markup).toContain('class="user-path historical"')
+    expect(markup).toContain('class="system-path"')
   })
 
   it('renders three price levels, a draggable setup hint and the one-R default', () => {

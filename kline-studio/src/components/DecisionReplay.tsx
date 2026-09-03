@@ -2079,10 +2079,6 @@ export function DecisionChartAnnotations({ candidate, latestSignal = null, attem
     systemExitX !== null && systemExitY !== null ? { id: 'system-exit', x: systemExitX, y: systemExitY, time: systemTrade.exit.time, kind: 'point' as const, preference: 'placement-above-right' as const, className: 'system exit', label: `AI平 ${formatPrice(systemTrade.exit.price, candidate.symbol)}` } : null,
     userEntryX !== null && userEntryY !== null ? { id: 'user-entry', x: userEntryX, y: userEntryY, time: userEntry!.time, kind: 'point' as const, preference: 'placement-below-right' as const, className: 'user entry', label: `你的开仓 ${formatPrice(userEntry!.price, candidate.symbol)}` } : null,
     userExitX !== null && userExitY !== null ? { id: 'user-exit', x: userExitX, y: userExitY, time: userExit!.time, kind: 'point' as const, preference: 'placement-below-right' as const, className: 'user exit', label: `你的平仓 ${formatPrice(userExit!.price, candidate.symbol)}` } : null,
-    ...historicalUserTrades.flatMap((trade) => [
-      { id: `historical-user-entry-${trade.id}`, x: trade.entryX, y: trade.entryY, time: trade.entry.time, kind: 'point' as const, preference: 'placement-below-right' as const, className: 'user entry historical', label: `你的开仓 ${formatPrice(trade.entry.price, trade.symbol)}` },
-      { id: `historical-user-exit-${trade.id}`, x: trade.exitX, y: trade.exitY, time: trade.exit.time, kind: 'point' as const, preference: 'placement-below-right' as const, className: 'user exit historical', label: `你的平仓 ${formatPrice(trade.exit.price, trade.symbol)}` },
-    ]),
   ].filter((spec): spec is NonNullable<typeof spec> => spec !== null).map((spec) => {
     const candleTime = projectTime(spec.time)!
     const index = data.findIndex((candle) => candle.time === candleTime)
@@ -2177,7 +2173,7 @@ export function DecisionChartAnnotations({ candidate, latestSignal = null, attem
     {userEntryX !== null && userEntryY !== null && userExitX !== null && userExitY !== null && <>
       <svg width="100%" height="100%" preserveAspectRatio="none"><line className="user-path" x1={userEntryX} y1={userEntryY} x2={userExitX} y2={userExitY} /></svg>
     </>}
-    {historicalUserTrades.map((trade) => <svg key={`historical-user-path-${trade.id}`} width="100%" height="100%" preserveAspectRatio="none"><line className="user-path historical" x1={trade.entryX} y1={trade.entryY} x2={trade.exitX} y2={trade.exitY} /></svg>)}
+    {historicalUserTrades.map((trade) => <svg key={`historical-user-path-${trade.id}`} width="100%" height="100%" preserveAspectRatio="none"><line data-testid={`decision-historical-user-path-${trade.id}`} className="user-path historical" x1={trade.entryX} y1={trade.entryY} x2={trade.exitX} y2={trade.exitY} /></svg>)}
     <svg className="decision-point-connectors" width="100%" height="100%" preserveAspectRatio="none">
       {pointSpecs.map((spec) => {
         const rect = annotationPlacements.get(spec.id)!.rect
