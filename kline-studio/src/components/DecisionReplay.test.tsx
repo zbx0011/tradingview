@@ -539,10 +539,10 @@ describe('decision replay components', () => {
     />)
     expect(markup).toContain('你的开仓 101.000')
     expect(markup).toContain('你的平仓 102.000')
-    expect(markup).toContain('class="user-path"')
+    expect(markup).toContain('class="user-path long"')
   })
 
-  it('keeps earlier user execution paths but removes their historical labels while advancing', () => {
+  it('keeps earlier user execution paths but removes their historical labels while advancing or hiding annotations', () => {
     const item = candidate()
     const historicalAttempt = {
       ...createDecisionAttempt(item),
@@ -556,6 +556,16 @@ describe('decision replay components', () => {
       fill: { time: 3300, price: 101 },
     }
     const historicalResult = buildDecisionResult(item, historicalAttempt, { time: 3900, price: 102, reason: 'manual-close' }, [])
+    const historicalShortAttempt = {
+      ...historicalAttempt,
+      userSide: 'short' as const,
+      pendingEntryPrice: 103,
+      initialStopLoss: 107,
+      stopLoss: 107,
+      takeProfit: 99,
+      fill: { time: 3600, price: 103 },
+    }
+    const historicalShortResult = buildDecisionResult(item, historicalShortAttempt, { time: 4200, price: 102, reason: 'manual-close' }, [])
     const data = [2400, 2700, 3000, 3300, 3600, 3900, 4200].map((time, index) => ({
       time, open: 100 + index, high: 101 + index, low: 99 + index, close: 100.5 + index, volume: 10,
     }))
@@ -563,18 +573,22 @@ describe('decision replay components', () => {
       candidate={item}
       attempt={createDecisionAttempt(item, 4200)}
       result={null}
-      historicalResults={[historicalResult]}
+      historicalResults={[historicalResult, historicalShortResult]}
       data={data}
       toX={(time) => time / 100}
       toY={(price) => price}
+      hidden
     />)
 
+    expect(markup).toContain('class="decision-chart-annotations is-hidden"')
     expect(markup).not.toContain('data-testid="decision-point-label-historical-user-entry-')
     expect(markup).not.toContain('data-testid="decision-point-label-historical-user-exit-')
     expect(markup).not.toContain('你的开仓 101.000')
     expect(markup).not.toContain('你的平仓 102.000')
     expect(markup).toContain('data-testid="decision-historical-user-path-')
-    expect(markup).toContain('class="user-path historical"')
+    expect(markup).toContain('class="decision-execution-path"')
+    expect(markup).toContain('class="user-path historical long"')
+    expect(markup).toContain('class="user-path historical short"')
     expect(markup).toContain('class="system-path"')
   })
 

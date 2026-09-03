@@ -2055,6 +2055,11 @@ export function DecisionChartAnnotations({ candidate, latestSignal = null, attem
   const userEntryY = userEntry === null || userEntryX === null ? null : toY(userEntry.price)
   const userExitX = userExit && userExit.time <= revealedThrough ? projectX(userExit.time) : null
   const userExitY = userExit === null || userExitX === null ? null : toY(userExit.price)
+  const userTradeSide = result
+    ? decisionResultSide(result)
+    : attempt
+      ? decisionAttemptSide(candidate, attempt)
+      : candidate.trade.side
   const historicalUserTrades = historicalResults.flatMap((historicalResult, index) => {
     if (historicalResult.choice !== 'traded' || !historicalResult.userEntry) return []
     const entryX = historicalResult.userEntry.time <= revealedThrough ? projectX(historicalResult.userEntry.time) : null
@@ -2072,6 +2077,7 @@ export function DecisionChartAnnotations({ candidate, latestSignal = null, attem
       exitX,
       exitY,
       symbol: historicalResult.candidate.symbol,
+      side: decisionResultSide(historicalResult),
     }]
   })
   const pointSpecs = [
@@ -2168,12 +2174,12 @@ export function DecisionChartAnnotations({ candidate, latestSignal = null, attem
       >K{reference.index}</span>
     })}
     {systemEntryX !== null && systemEntryY !== null && systemExitX !== null && systemExitY !== null && <>
-      <svg width="100%" height="100%" preserveAspectRatio="none"><line className="system-path" x1={systemEntryX} y1={systemEntryY} x2={systemExitX} y2={systemExitY} /></svg>
+      <svg className="decision-execution-path" width="100%" height="100%" preserveAspectRatio="none"><line className="system-path" x1={systemEntryX} y1={systemEntryY} x2={systemExitX} y2={systemExitY} /></svg>
     </>}
     {userEntryX !== null && userEntryY !== null && userExitX !== null && userExitY !== null && <>
-      <svg width="100%" height="100%" preserveAspectRatio="none"><line className="user-path" x1={userEntryX} y1={userEntryY} x2={userExitX} y2={userExitY} /></svg>
+      <svg className="decision-execution-path" width="100%" height="100%" preserveAspectRatio="none"><line className={`user-path ${userTradeSide}`} x1={userEntryX} y1={userEntryY} x2={userExitX} y2={userExitY} /></svg>
     </>}
-    {historicalUserTrades.map((trade) => <svg key={`historical-user-path-${trade.id}`} width="100%" height="100%" preserveAspectRatio="none"><line data-testid={`decision-historical-user-path-${trade.id}`} className="user-path historical" x1={trade.entryX} y1={trade.entryY} x2={trade.exitX} y2={trade.exitY} /></svg>)}
+    {historicalUserTrades.map((trade) => <svg className="decision-execution-path" key={`historical-user-path-${trade.id}`} width="100%" height="100%" preserveAspectRatio="none"><line data-testid={`decision-historical-user-path-${trade.id}`} className={`user-path historical ${trade.side}`} x1={trade.entryX} y1={trade.entryY} x2={trade.exitX} y2={trade.exitY} /></svg>)}
     <svg className="decision-point-connectors" width="100%" height="100%" preserveAspectRatio="none">
       {pointSpecs.map((spec) => {
         const rect = annotationPlacements.get(spec.id)!.rect

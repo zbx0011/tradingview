@@ -263,11 +263,12 @@ function App() {
     // Use the same settled-result source as the PnL summary. Candidate arrays
     // can be reordered or repaired after persistence, so slicing candidates
     // could report nine settled trades below while drawing none of them here.
-    // The current result is rendered separately by DecisionChartAnnotations.
-    return sessionResults(activeDecisionSession).filter((result) => (
-      result.candidateKey !== activeDecisionCandidate?.key
-    ))
-  }, [activeDecisionCandidate?.key, activeDecisionSession, decisionDayMode])
+    // Do not filter by candidate key: legacy/sync-repaired attempts can retain a
+    // duplicate key even though their immutable result contains a different
+    // execution. Drawing the current result twice is visually harmless, while
+    // filtering it can erase every historical user path.
+    return sessionResults(activeDecisionSession)
+  }, [activeDecisionSession, decisionDayMode])
   const decisionSignalReached = Boolean(activeDecisionCandidate && activeDecisionAttempt && (
     !decisionDayMode || activeDecisionAttempt.cursorTime >= activeDecisionCandidate.trade.entry.signalTime
   ))
