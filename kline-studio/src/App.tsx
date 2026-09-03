@@ -793,7 +793,17 @@ function App() {
       setObjectTreeOpen(false)
       const store = decisionStoreRef.current
       const activeSession = store.activeSessionId ? store.sessions.find((session) => session.id === store.activeSessionId) : null
-      const drawingsForContext = currentDecisionAttempt(activeSession)?.drawings ?? []
+      const currentAttempt = currentDecisionAttempt(activeSession)
+      const currentIndex = activeSession?.currentIndex ?? 0
+      const previousAttempt = activeSession && currentIndex > 0
+        ? activeSession.attempts.find((attempt) => attempt.candidateKey === activeSession.candidates[currentIndex - 1]?.key)
+        : null
+      // Recover day-chart drawings saved by the previous question before this
+      // fix. New day attempts inherit the snapshot directly, but existing
+      // active sessions may already have an empty current attempt.
+      const drawingsForContext = decisionDayMode && currentAttempt?.drawings.length === 0
+        ? previousAttempt?.drawings ?? []
+        : currentAttempt?.drawings ?? []
       decisionDrawingLoadingRef.current = true
       const separator = decisionContextKey.indexOf('|')
       decisionDrawingContextRef.current = separator >= 0
@@ -1049,10 +1059,11 @@ function App() {
       const nextCandidate = session.candidates[session.currentIndex + 1]
       if (nextCandidate) {
         nextIndex = session.currentIndex + 1
-        if (!attempts.some((attempt) => attempt.candidateKey === nextCandidate.key)) attempts = [...attempts, createDecisionAttempt(
-          nextCandidate,
-          decisionSessionPracticeMode(session) === 'day-sequence' ? resolved.cursorTime : undefined,
-        )]
+        if (!attempts.some((attempt) => attempt.candidateKey === nextCandidate.key)) {
+          const daySequenceMode = decisionSessionPracticeMode(session) === 'day-sequence'
+          const nextAttempt = createDecisionAttempt(nextCandidate, daySequenceMode ? resolved.cursorTime : undefined)
+          attempts = [...attempts, daySequenceMode ? { ...nextAttempt, drawings: drawingSnapshot } : nextAttempt]
+        }
         if (decisionSessionPracticeMode(session) !== 'day-sequence') {
           seenTradeKeys = [...new Set([...seenTradeKeys, nextCandidate.key])]
         }
@@ -1135,10 +1146,11 @@ function App() {
       const nextCandidate = session.candidates[session.currentIndex + 1]
       if (nextCandidate) {
         nextIndex = session.currentIndex + 1
-        if (!attempts.some((attempt) => attempt.candidateKey === nextCandidate.key)) attempts = [...attempts, createDecisionAttempt(
-          nextCandidate,
-          decisionSessionPracticeMode(session) === 'day-sequence' ? currentAttempt.cursorTime : undefined,
-        )]
+        if (!attempts.some((attempt) => attempt.candidateKey === nextCandidate.key)) {
+          const daySequenceMode = decisionSessionPracticeMode(session) === 'day-sequence'
+          const nextAttempt = createDecisionAttempt(nextCandidate, daySequenceMode ? currentAttempt.cursorTime : undefined)
+          attempts = [...attempts, daySequenceMode ? { ...nextAttempt, drawings: drawingSnapshot } : nextAttempt]
+        }
         if (decisionSessionPracticeMode(session) !== 'day-sequence') {
           seenTradeKeys = [...new Set([...seenTradeKeys, nextCandidate.key])]
         }

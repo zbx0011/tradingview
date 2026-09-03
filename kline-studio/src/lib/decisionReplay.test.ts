@@ -916,11 +916,25 @@ describe('decision replay', () => {
     const firstResult = buildDecisionResult(candidates[0], first, { time: 3900, price: 102, reason: 'manual-close' }, [])
     session.attempts = [{ ...first, stage: 'post-exit', result: firstResult }]
 
-    const next = startNextDaySequenceTrade(session, 'short', 101, [], 456)
+    const dayDrawing = {
+      id: 'day-drawing-1', tool: 'trend-line', behavior: 'line' as const, label: '趋势线',
+      points: [{ x: .2, y: .3, time: 3300, price: 99 }, { x: .5, y: .4, time: 3900, price: 101 }],
+      color: '#a7c7ff', width: 2,
+    }
+    const next = startNextDaySequenceTrade(session, 'short', 101, [dayDrawing], 456)
 
     expect(next.currentIndex).toBe(1)
     expect(next.updatedAt).toBe(456)
-    expect(next.attempts[0]).toMatchObject({ candidateKey: candidates[0].key, stage: 'complete', result: firstResult })
+    expect(next.attempts[0]).toMatchObject({
+      candidateKey: candidates[0].key,
+      stage: 'complete',
+      drawings: [dayDrawing],
+      result: {
+        choice: firstResult.choice,
+        userPnlUsd: firstResult.userPnlUsd,
+        drawings: [dayDrawing],
+      },
+    })
     expect(next.attempts[1]).toMatchObject({
       candidateKey: candidates[1].key,
       cursorTime: 3900,
@@ -931,6 +945,7 @@ describe('decision replay', () => {
       pendingEntryPrice: 101,
       fill: null,
       result: null,
+      drawings: [dayDrawing],
     })
     const configured = {
       ...next.attempts[1],
@@ -1383,6 +1398,31 @@ describe('decision replay', () => {
     expect(currentAttempt).toMatchObject({ candidateKey: candidates[1].key, stage: 'entry-decision', result: null })
   })
 
+  it('carries the continuous day chart drawings when repairing a missing next attempt', () => {
+    const candidates = [candidate('day-drawing-repair:1'), candidate('day-drawing-repair:2')]
+    const dayDrawing = {
+      id: 'day-drawing-repair', tool: 'trend-line', behavior: 'line' as const, label: '趋势线',
+      points: [{ x: .2, y: .3, time: 3300, price: 99 }, { x: .5, y: .4, time: 3900, price: 101 }],
+      color: '#a7c7ff', width: 2,
+    }
+    const base = createDecisionSession(candidates, 2, 1000, ['fixed-risk'], {
+      practiceMode: 'day-sequence',
+      daySequence: { key: 'XAUUSD:5m:drawing-repair', symbol: 'XAUUSD', interval: '5m', startTime: 600, endTime: 86_400 },
+    })
+    const firstAttempt = { ...base.attempts[0], cursorTime: 3900, drawings: [dayDrawing] }
+    const completedFirst = {
+      ...firstAttempt,
+      stage: 'complete' as const,
+      result: buildDecisionResult(candidates[0], firstAttempt, { time: 3900, price: candidates[0].trade.entry.price, reason: 'skipped' }, [dayDrawing]),
+    }
+    const broken = { ...base, currentIndex: 1, attempts: [completedFirst] }
+
+    const repaired = parseDecisionReplayStore(JSON.stringify(storeWithSessions(broken)))
+    const currentAttempt = repaired.sessions[0].attempts.find((attempt) => attempt.candidateKey === candidates[1].key)
+
+    expect(currentAttempt).toMatchObject({ stage: 'entry-decision', cursorTime: 3900, drawings: [dayDrawing] })
+  })
+
   it('does not advance a post-exit exercise during a background sync merge', () => {
     const candidates = [candidate('post-exit-sync:1'), candidate('post-exit-sync:2')]
     const base = { ...createDecisionSession(candidates, 2, 1000), id: 'post-exit-sync' }
@@ -1674,6 +1714,27 @@ describe('decision replay', () => {
     const session = createDecisionSession([item], 1, 1000)
     expect(updateDecisionSessionDrawings(session, item.key, [], 2000)).toBe(session)
     expect(updateDecisionSessionDrawings(session, 'missing', [], 2000)).toBe(session)
+  })
+
+  it('keeps one drawing canvas across every attempt in a day-sequence session', () => {
+    const candidates = [candidate('day-drawings:1'), candidate('day-drawings:2')]
+    const session = createDecisionSession(candidates, 2, 1000, ['fixed-risk'], {
+      practiceMode: 'day-sequence',
+      daySequence: { key: 'XAUUSD:5m:day-drawings', symbol: 'XAUUSD', interval: '5m', startTime: 600, endTime: 86_400 },
+    })
+    session.attempts.push(createDecisionAttempt(candidates[1], 3900))
+    session.currentIndex = 1
+    const dayDrawing = {
+      id: 'shared-day-drawing', tool: 'trend-line', behavior: 'line' as const, label: '趋势线',
+      points: [{ x: .2, y: .3 }, { x: .5, y: .4 }], color: '#a7c7ff', width: 2,
+    }
+
+    const updated = updateDecisionSessionDrawings(session, candidates[1].key, [dayDrawing], 2000)
+
+    expect(updated.updatedAt).toBe(2000)
+    expect(updated.attempts.every((attempt) => attempt.drawings[0]?.id === dayDrawing.id)).toBe(true)
+    const cleared = updateDecisionSessionDrawings(updated, candidates[1].key, [], 3000)
+    expect(cleared.attempts.every((attempt) => attempt.drawings.length === 0)).toBe(true)
   })
 
   it('unions non-conflicting attempts when the same session continued on two computers', () => {

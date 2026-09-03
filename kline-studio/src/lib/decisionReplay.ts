@@ -536,16 +536,26 @@ function repairDecisionReplaySession(rawSession: DecisionReplaySession): Decisio
   const currentCandidate = session.candidates[currentIndex]
   if (attemptsByKey.has(currentCandidate.key) && currentIndex === rawIndex) return session
 
-  const attempts = attemptsByKey.has(currentCandidate.key)
-    ? session.attempts
-    : [...session.attempts, createDecisionAttempt(
+  const daySequenceMode = decisionSessionPracticeMode(session) === 'day-sequence'
+  const previousAttempt = currentIndex > 0
+    ? attemptsByKey.get(session.candidates[currentIndex - 1]?.key)
+    : undefined
+  const repairedAttempt = {
+    ...createDecisionAttempt(
       currentCandidate,
-      decisionSessionPracticeMode(session) === 'day-sequence'
+      daySequenceMode
         ? currentIndex === 0
           ? session.daySequence?.startTime
-          : attemptsByKey.get(session.candidates[currentIndex - 1]?.key)?.cursorTime
+          : previousAttempt?.cursorTime
         : undefined,
-    )]
+    ),
+    // A day-sequence session is one continuous chart. If sync/repair has to
+    // recreate its current attempt, retain the latest drawing snapshot too.
+    drawings: daySequenceMode ? previousAttempt?.drawings ?? [] : [],
+  }
+  const attempts = attemptsByKey.has(currentCandidate.key)
+    ? session.attempts
+    : [...session.attempts, repairedAttempt]
   return { ...session, currentIndex, attempts }
 }
 
@@ -1404,6 +1414,9 @@ export function startNextDaySequenceTrade(
   }
   const nextAttempt: DecisionAttempt = {
     ...createDecisionAttempt(nextCandidate, attempt.cursorTime),
+    // The whole trading day shares one continuous chart; drawings made before
+    // this trade must remain visible when the question advances.
+    drawings,
     userSide: side,
     entryMode: 'signal-extreme',
     orderKind: 'stop',
@@ -1725,12 +1738,17 @@ export function updateDecisionSessionDrawings(
   const attempt = session.attempts.find((item) => item.candidateKey === candidateKey)
   if (!attempt) return session
   const drawingsJson = JSON.stringify(drawings)
-  if (JSON.stringify(attempt.drawings) === drawingsJson
-    && (!attempt.result || JSON.stringify(attempt.result.drawings) === drawingsJson)) return session
+  const daySequenceMode = decisionSessionPracticeMode(session) === 'day-sequence'
+  const targets = daySequenceMode ? session.attempts : [attempt]
+  if (targets.every((item) => JSON.stringify(item.drawings) === drawingsJson
+    && (!item.result || JSON.stringify(item.result.drawings) === drawingsJson))) return session
   return {
     ...session,
     updatedAt: now,
-    attempts: session.attempts.map((item) => item.candidateKey === candidateKey ? {
+    // A day-sequence is one continuous drawing canvas. Mirror its latest
+    // snapshot across the attempts so deleting/editing an earlier drawing is
+    // preserved too; ordinary random questions remain isolated.
+    attempts: session.attempts.map((item) => (daySequenceMode || item.candidateKey === candidateKey) ? {
       ...item,
       drawings,
       result: item.result ? { ...item.result, drawings } : null,
