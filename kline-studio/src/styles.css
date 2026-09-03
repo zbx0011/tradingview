@@ -777,8 +777,8 @@ button:disabled { opacity: .32; cursor: not-allowed; }
 .decision-chart-annotations > svg { position: absolute; inset: 0; overflow: visible; }
 .decision-chart-annotations line { vector-effect: non-scaling-stroke; stroke-width: 2; pointer-events: stroke; }
 .decision-chart-annotations .system-path { stroke: #f59e0b; stroke-width: 2.25; stroke-dasharray: 8 5; opacity: .9; }
-.decision-chart-annotations .user-path { stroke: #22d3ee; stroke-width: 2.5; opacity: 1; }
-.decision-chart-annotations .user-path.historical { stroke: #22d3ee; stroke-width: 2.25; opacity: .9; }
+.decision-chart-annotations .user-path { stroke: #22d3ee; stroke-width: 4; opacity: 1; }
+.decision-chart-annotations .user-path.historical { stroke: #22d3ee; stroke-width: 4; opacity: .95; }
 .decision-signal-cursor { position: absolute; top: 72px; bottom: 52px; width: 0; border-left: 1px dashed rgba(250,204,21,.84); }
 .decision-signal-cursor span { position: absolute; top: 2px; left: 7px; padding: 4px 7px; color: #111827; background: #facc15; border-radius: 4px; font-size: 10px; font-weight: 800; white-space: nowrap; pointer-events: auto; }
 .decision-chart-annotations .decision-reason-connectors { pointer-events: none; }
