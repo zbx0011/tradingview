@@ -260,13 +260,14 @@ function App() {
   const decisionDayMode = activeDecisionDaySequence !== null
   const activeDecisionHistoricalResults = useMemo(() => {
     if (!activeDecisionSession || !decisionDayMode) return []
-    return activeDecisionSession.candidates
-      .slice(0, activeDecisionSession.currentIndex)
-      .flatMap((candidate) => {
-        const result = activeDecisionSession.attempts.find((attempt) => attempt.candidateKey === candidate.key)?.result
-        return result ? [result] : []
-      })
-  }, [activeDecisionSession, decisionDayMode])
+    // Use the same settled-result source as the PnL summary. Candidate arrays
+    // can be reordered or repaired after persistence, so slicing candidates
+    // could report nine settled trades below while drawing none of them here.
+    // The current result is rendered separately by DecisionChartAnnotations.
+    return sessionResults(activeDecisionSession).filter((result) => (
+      result.candidateKey !== activeDecisionCandidate?.key
+    ))
+  }, [activeDecisionCandidate?.key, activeDecisionSession, decisionDayMode])
   const decisionSignalReached = Boolean(activeDecisionCandidate && activeDecisionAttempt && (
     !decisionDayMode || activeDecisionAttempt.cursorTime >= activeDecisionCandidate.trade.entry.signalTime
   ))
