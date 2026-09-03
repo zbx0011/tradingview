@@ -2936,11 +2936,12 @@ function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProg
   const mergeInputRef = useRef<HTMLInputElement>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
   const codeDeployStatusPending = codeDeployPhase === 'checking' || codeDeployPhase === 'unavailable' || codeDeployPhase === 'status-error'
+  const codeUpdateBlockedByLocalChanges = Boolean(codeDeployStatus && !codeDeployStatus.clean)
   const codeDeploySyncState = !codeDeployStatus ? null
     : codeDeployStatus.diverged ? { tone: 'danger', label: '同步异常', detail: '本机与 GitHub 已分叉，必须停止' }
-      : codeDeployStatus.updateAvailable ? { tone: 'warning', label: '尚未同步', detail: 'GitHub 有新版本等待更新' }
-        : codeDeployStatus.aheadOfRemote ? { tone: 'warning', label: '尚未同步', detail: '本机提交尚未发布到 GitHub' }
-          : codeDeployStatus.dirtyFiles.length > 0 ? { tone: 'warning', label: '尚未同步', detail: `${codeDeployStatus.dirtyFiles.length} 项本机修改尚未发布` }
+      : codeDeployStatus.dirtyFiles.length > 0 ? { tone: 'warning', label: '尚未同步', detail: `${codeDeployStatus.dirtyFiles.length} 项本机修改尚未发布，已锁定从 GitHub 更新` }
+        : codeDeployStatus.updateAvailable ? { tone: 'warning', label: '尚未同步', detail: 'GitHub 有新版本等待更新' }
+          : codeDeployStatus.aheadOfRemote ? { tone: 'warning', label: '尚未同步', detail: '本机提交尚未发布到 GitHub' }
             : codeDeployStatus.localHead === codeDeployStatus.remoteHead ? { tone: 'success', label: '同步成功', detail: '本机与 GitHub 代码完全一致' }
               : { tone: 'warning', label: '需要检查', detail: '本机与 GitHub 提交不一致' }
   return <aside className="settings-panel">
@@ -2971,9 +2972,15 @@ function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProg
       </div>
       <div className="workspace-transfer-actions code-deploy-actions">
         <button type="button" className="merge-progress" disabled={privateSyncBusy || codeDeployStatusPending || codeDeployPhase === 'publishing' || codeDeployPhase === 'updating'} onClick={onCodePublish}><Upload size={16} />{codeDeployPhase === 'publishing' ? '正在发布…' : '发布代码到 GitHub'}</button>
-        <button type="button" disabled={privateSyncBusy || codeDeployStatusPending || codeDeployPhase === 'publishing' || codeDeployPhase === 'updating'} onClick={onCodeUpdate}><Download size={16} />{codeDeployPhase === 'updating' ? '正在更新…' : '更新代码并重启'}</button>
+        <button
+          type="button"
+          disabled={privateSyncBusy || codeDeployStatusPending || codeUpdateBlockedByLocalChanges || codeDeployPhase === 'publishing' || codeDeployPhase === 'updating'}
+          title={codeUpdateBlockedByLocalChanges ? '本机有未发布修改；为避免覆盖，请先发布代码到 GitHub' : '从 GitHub 获取最新代码并重启本地服务'}
+          onClick={onCodeUpdate}
+        ><Download size={16} />{codeDeployPhase === 'updating' ? '正在更新…' : '从 GitHub 更新并重启'}</button>
         <button type="button" className="code-status-refresh" disabled={codeDeployPhase === 'publishing' || codeDeployPhase === 'updating'} onClick={onCodeDeployRefresh}><RefreshCcw size={16} />检查代码版本</button>
       </div>
+      {codeUpdateBlockedByLocalChanges && <small>本机有未发布修改。请先使用“发布代码到 GitHub”；为避免覆盖这些修改，暂不能从 GitHub 更新。</small>}
     </section>
     <section className="danger-section"><h3>工作区</h3><p>品种、周期、指标、绘图和回放进度会自动保存在当前浏览器。</p><button onClick={() => { onReset(); onClose() }}><RefreshCcw size={16} />恢复所有默认设置</button></section>
   </aside>

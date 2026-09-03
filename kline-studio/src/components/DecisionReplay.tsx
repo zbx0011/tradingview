@@ -2076,15 +2076,12 @@ export function DecisionChartAnnotations({ candidate, latestSignal = null, attem
       entryY,
       exitX,
       exitY,
-      symbol: historicalResult.candidate.symbol,
       side: decisionResultSide(historicalResult),
     }]
   })
   const pointSpecs = [
     systemEntryX !== null && systemEntryY !== null ? { id: 'system-entry', x: systemEntryX, y: systemEntryY, time: systemTrade.entry.time, kind: 'point' as const, preference: 'placement-above-right' as const, className: 'system entry', label: `AI开 ${formatPrice(systemTrade.entry.price, candidate.symbol)}` } : null,
     systemExitX !== null && systemExitY !== null ? { id: 'system-exit', x: systemExitX, y: systemExitY, time: systemTrade.exit.time, kind: 'point' as const, preference: 'placement-above-right' as const, className: 'system exit', label: `AI平 ${formatPrice(systemTrade.exit.price, candidate.symbol)}` } : null,
-    userEntryX !== null && userEntryY !== null ? { id: 'user-entry', x: userEntryX, y: userEntryY, time: userEntry!.time, kind: 'point' as const, preference: 'placement-below-right' as const, className: 'user entry', label: `你的开仓 ${formatPrice(userEntry!.price, candidate.symbol)}` } : null,
-    userExitX !== null && userExitY !== null ? { id: 'user-exit', x: userExitX, y: userExitY, time: userExit!.time, kind: 'point' as const, preference: 'placement-below-right' as const, className: 'user exit', label: `你的平仓 ${formatPrice(userExit!.price, candidate.symbol)}` } : null,
   ].filter((spec): spec is NonNullable<typeof spec> => spec !== null).map((spec) => {
     const candleTime = projectTime(spec.time)!
     const index = data.findIndex((candle) => candle.time === candleTime)
@@ -2123,8 +2120,7 @@ export function DecisionChartAnnotations({ candidate, latestSignal = null, attem
   const systemLabelY = Math.min(...pointSpecs.map((point) => point.candleHighY), ...nearbyCandles.map((candle) => candle.high), ...candleMarkers.map((marker) => marker.y - 10)) - 12
   const systemBandHeight = candleMarkers.length * DECISION_POINT_LABEL_HEIGHT + Math.max(0, candleMarkers.length - 1) * 8
   const systemBandTop = Math.max(8, systemLabelY - DECISION_ANNOTATION_GAP - systemBandHeight)
-  const userLabelY = Math.max(...pointSpecs.map((point) => point.candleLowY), ...nearbyCandles.map((candle) => candle.low))
-  const labelSpecs = pointSpecs.map((spec) => ({ ...spec, labelY: spec.className.startsWith('system') ? systemBandTop + DECISION_POINT_LABEL_HEIGHT + DECISION_ANNOTATION_GAP : userLabelY }))
+  const labelSpecs = pointSpecs.map((spec) => ({ ...spec, labelY: systemBandTop + DECISION_POINT_LABEL_HEIGHT + DECISION_ANNOTATION_GAP }))
   const reasonSpecs = reasonReferences.flatMap((reference) => {
     const exitOnly = reference.sections.length === 1 && reference.sections[0] === 'exit'
     const x = projectX(reference.time)

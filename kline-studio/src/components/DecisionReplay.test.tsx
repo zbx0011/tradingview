@@ -421,7 +421,7 @@ describe('decision replay components', () => {
     expect(entryRect.left).toBeLessThan(exitRect.left)
   })
 
-  it('centers all same-bar system and user labels on their anchors without overlap', () => {
+  it('keeps only AI point labels when system and user executions share one candle', () => {
     const candleTime = 1_785_723_900
     const systemEntry = { time: candleTime, price: 4048.530 }
     const systemExit = { time: candleTime, price: 4048.920 }
@@ -442,7 +442,6 @@ describe('decision replay components', () => {
     const result = buildDecisionResult(item, attempt, { ...userExit, reason: 'manual-close' }, [])
     const toY = (price: number) => 180 - (price - 4048) * 20
     const candleHighY = toY(4049.5)
-    const candleLowY = toY(4047.0)
     const markup = renderToStaticMarkup(<DecisionChartAnnotations
       candidate={item}
       attempt={attempt}
@@ -455,13 +454,14 @@ describe('decision replay components', () => {
     const rects = [
       assertDecisionPoint(markup, 'system-entry', 64, toY(systemEntry.price), candleTime),
       assertDecisionPoint(markup, 'system-exit', 64, toY(systemExit.price), candleTime),
-      assertDecisionPoint(markup, 'user-entry', 64, toY(userEntry.price), candleTime),
-      assertDecisionPoint(markup, 'user-exit', 64, toY(userExit.price), candleTime),
     ]
+    expect(markup).not.toContain('decision-point-label-user-entry')
+    expect(markup).not.toContain('decision-point-label-user-exit')
+    expect(markup).not.toContain('decision-point-anchor-user-entry')
+    expect(markup).not.toContain('decision-point-anchor-user-exit')
+    expect(markup).toContain('class="user-path long"')
     expect(rects[0].bottom).toBeLessThanOrEqual(candleHighY)
     expect(rects[1].bottom).toBeLessThanOrEqual(candleHighY)
-    expect(rects[2].top).toBeGreaterThanOrEqual(candleLowY)
-    expect(rects[3].top).toBeGreaterThanOrEqual(candleLowY)
     const entryBadgeY = assertSystemCandleMarker(markup, 'system-entry', 64, candleTime, candleHighY, '开')
     const exitBadgeY = assertSystemCandleMarker(markup, 'system-exit', 64, candleTime, candleHighY, '平')
     expect(Math.abs(entryBadgeY - exitBadgeY)).toBeGreaterThanOrEqual(20)
@@ -512,7 +512,7 @@ describe('decision replay components', () => {
     expect(markup).toContain('class="decision-chart-annotations is-hidden"')
   })
 
-  it('keeps the user open/close visible when reviewing a completed trade', () => {
+  it('shows a completed user execution as a line without open/close labels', () => {
     const item = candidate()
     const attempt = {
       ...createDecisionAttempt(item),
@@ -537,8 +537,10 @@ describe('decision replay components', () => {
       toX={(time) => time / 100}
       toY={(price) => price}
     />)
-    expect(markup).toContain('你的开仓 101.000')
-    expect(markup).toContain('你的平仓 102.000')
+    expect(markup).not.toContain('你的开仓 101.000')
+    expect(markup).not.toContain('你的平仓 102.000')
+    expect(markup).not.toContain('decision-point-label-user-entry')
+    expect(markup).not.toContain('decision-point-label-user-exit')
     expect(markup).toContain('class="user-path long"')
   })
 
