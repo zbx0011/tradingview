@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { makeDrawing } from './drawings'
-import { ACTION_TOOLS, ALL_DRAWING_TOOLS, getTool, shouldExitDrawingMode, TOOL_GROUPS } from './toolCatalog'
+import { ACTION_TOOLS, ALL_DRAWING_TOOLS, getTool, shouldExitDrawingMode, supportsDrawingProperties, TOOL_GROUPS } from './toolCatalog'
 
 describe('TradingView-style drawing catalog', () => {
   it('contains all eight expandable groups and action tools', () => {
@@ -30,5 +30,11 @@ describe('TradingView-style drawing catalog', () => {
     expect(shouldExitDrawingMode('rectangle', true)).toBe(true)
     expect(shouldExitDrawingMode('trend', true)).toBe(false)
     expect(shouldExitDrawingMode('trend', false)).toBe(true)
+  })
+
+  it('exposes the full properties dialog for Fibonacci drawings', () => {
+    expect(supportsDrawingProperties('fib')).toBe(true)
+    expect(supportsDrawingProperties('fib-extension')).toBe(true)
+    expect(supportsDrawingProperties('line')).toBe(false)
   })
 })

@@ -13,7 +13,7 @@ import {
   resolvePositionGeometry, updatePositionPoints,
   type PositionHandle,
 } from '../lib/positionDrawing'
-import { getTool, type ToolBehavior } from '../lib/toolCatalog'
+import { getTool, supportsDrawingProperties, type ToolBehavior } from '../lib/toolCatalog'
 import type { MagnetMode } from './DrawingToolbar'
 
 interface Props {
@@ -31,7 +31,7 @@ interface Props {
   onMeasurePoint: (point: DrawingPoint) => { time: number; price: number } | null
   onProjectPoint: (point: { time: number; price: number }) => { x: number; y: number } | null
   onQuickMeasurementChange: (drawing: Drawing | null) => void
-  onToolComplete: () => void
+  onToolComplete: (drawing?: Drawing) => void
   onZoomSelection: (from: number, to: number) => void
   onOpenProperties: (drawing: Drawing) => void
 }
@@ -175,7 +175,7 @@ export function DrawingOverlay({
       dispatch({ type: 'add', drawing })
     }
     cancelDraft()
-    onToolComplete()
+    onToolComplete(drawing.behavior !== 'zoom' && drawing.tool !== 'measure' && drawing.points.length > 1 && distance(first, last) > 0.003 ? drawing : undefined)
   }
 
   const handlePointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -372,6 +372,7 @@ export function DrawingOverlay({
   }
 
   const selectOrErase = (drawing: Drawing) => (event: ReactPointerEvent<SVGGElement>) => {
+    if (event.button !== 0) return
     if (activeDefinition.behavior === 'eraser') {
       event.stopPropagation()
       if ((event.ctrlKey || event.metaKey) && freehandBehaviors.includes(drawing.behavior) && drawing.points.length > 3) {
@@ -779,7 +780,7 @@ export function DrawingOverlay({
         aria-label={`绘图对象：${getTool(drawing.tool).label}`}
         onPointerDown={selectOrErase(drawing)}
         onDoubleClick={(event) => {
-          if (behavior === 'fib' || behavior === 'fib-extension') {
+          if (supportsDrawingProperties(behavior)) {
             event.stopPropagation()
             onOpenProperties(drawing)
             return
@@ -790,6 +791,13 @@ export function DrawingOverlay({
             dispatch({ type: 'checkpoint' })
             dispatch({ type: 'update', id: drawing.id, patch: { text } })
           }
+        }}
+        onContextMenu={(event) => {
+          if (!supportsDrawingProperties(behavior)) return
+          event.preventDefault()
+          event.stopPropagation()
+          if (!selectedDrawingIds.includes(drawing.id)) dispatch({ type: 'select', id: drawing.id })
+          onOpenProperties(drawing)
         }}
         style={{ pointerEvents: isDraft || forceSelected ? 'none' : 'all', cursor: activeDefinition.behavior === 'eraser' ? 'not-allowed' : activeDefinition.behavior === 'cursor' && !drawingsLocked ? 'move' : 'crosshair' }}
       >

@@ -420,6 +420,8 @@ button:disabled { opacity: .32; cursor: not-allowed; }
 .property-tool-glyph { width: 25px; height: 25px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 4px; font-weight: 600; }
 .property-tool-glyph.property-settings-trigger { color: inherit; background: transparent; cursor: pointer; }
 .property-tool-glyph.property-settings-trigger:hover { background: var(--surface-hover); }
+.floating-tool-options .drawing-settings-button { width: auto; display: inline-flex; grid-template-columns: none; gap: 5px; padding: 0 8px; color: #dbe7ff; border: 1px solid rgba(41,98,255,.68); background: rgba(41,98,255,.18); font-weight: 650; white-space: nowrap; }
+.floating-tool-options .drawing-settings-button:hover { background: rgba(41,98,255,.34); }
 .chart-watermark { position: absolute; left: 22px; bottom: 24px; z-index: 2; opacity: .19; display: flex; align-items: center; gap: 10px; pointer-events: none; }
 .chart-watermark > span { display: grid; place-items: center; width: 44px; height: 44px; border: 3px solid currentColor; border-radius: 12px; font-size: 25px; font-weight: 800; }
 .chart-watermark div { display: flex; flex-direction: column; }

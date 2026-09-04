@@ -209,6 +209,11 @@ export function shouldExitDrawingMode(toolId: string, keepDrawing: boolean): boo
   return !keepDrawing || toolId === 'rectangle'
 }
 
+/** Drawings that expose the full style / coordinates / visibility dialog. */
+export function supportsDrawingProperties(behavior: ToolBehavior): boolean {
+  return behavior === 'fib' || behavior === 'fib-extension'
+}
+
 export function getToolGroupForTool(id: string): ToolGroup | undefined {
   return TOOL_GROUPS.find((group) => group.tools.some((item) => item.id === id))
 }

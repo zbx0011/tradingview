@@ -23,7 +23,7 @@ import {
   clampContextMenuPosition, countActiveIndicators, loadChartAlerts, loadPaperOrders, saveChartAlerts, savePaperOrders,
   type ChartAlert, type PaperOrder,
 } from './lib/chartContext'
-import { ALL_DRAWING_TOOLS, getTool, shouldExitDrawingMode } from './lib/toolCatalog'
+import { ALL_DRAWING_TOOLS, getTool, shouldExitDrawingMode, supportsDrawingProperties } from './lib/toolCatalog'
 import { clearWorkspace, loadWorkspace, saveWorkspace } from './lib/persistence'
 import { decisionExerciseNavigationDirection, isChartAnnotationVisibilityShortcut, isEditableShortcutTarget, parseIntervalShortcut, resolveHistoryShortcut, TRADINGVIEW_SHORTCUTS } from './lib/shortcuts'
 import { aggregateCandles, formatPrice, generateCandles, INTERVALS, SYMBOLS, type Candle, type IntervalId, type SymbolId } from './lib/market'
@@ -2503,7 +2503,10 @@ function App() {
                 return typeof x === 'number' && typeof y === 'number' ? { x, y } : null
               }}
               onQuickMeasurementChange={setQuickMeasurement}
-              onToolComplete={() => { if (shouldExitDrawingMode(effectiveDrawingTool, keepDrawing)) setActiveTool('cursor') }}
+              onToolComplete={(drawing) => {
+                if (drawing && supportsDrawingProperties(drawing.behavior)) setDrawingSettingsId(drawing.id)
+                if (shouldExitDrawingMode(effectiveDrawingTool, keepDrawing)) setActiveTool('cursor')
+              }}
               onZoomSelection={(from, to) => chartRef.current?.zoomToFraction(from, to)}
               onOpenProperties={(drawing) => setDrawingSettingsId(drawing.id)}
             />
@@ -2638,8 +2641,8 @@ function App() {
               onRefresh={() => notify('指标已重新计算')}
             />
             {selectedDrawing && <div className="floating-tool-options drawing-properties" data-testid="drawing-properties">
-              {['fib', 'fib-extension'].includes(selectedDrawing.behavior)
-                ? <button type="button" className="property-tool-glyph property-settings-trigger" aria-label="打开斐波那契设置" title="斐波那契设置" onClick={() => setDrawingSettingsId(selectedDrawing.id)}>{getTool(selectedDrawing.tool).glyph}</button>
+              {supportsDrawingProperties(selectedDrawing.behavior)
+                ? <button type="button" className="drawing-settings-button" aria-label="打开斐波那契设置" title="斐波那契设置" onClick={() => setDrawingSettingsId(selectedDrawing.id)}><Settings2 size={15} /><span>设置</span></button>
                 : <span className="property-tool-glyph">{getTool(selectedDrawing.tool).glyph}</span>}
               <strong>{selectedDrawing.label}</strong>
               <input aria-label="绘图颜色" type="color" value={selectedDrawing.color} onPointerDown={() => dispatchUiDrawing({ type: 'checkpoint' })} onChange={(event) => { setDrawingColor(event.target.value); dispatchUiDrawing({ type: 'update', id: selectedDrawing.id, patch: { color: event.target.value } }) }} />
@@ -2802,7 +2805,7 @@ function App() {
       {intervalDialogOpen && <IntervalShortcutDialog value={intervalDraft} onChange={setIntervalDraft} onApply={applyIntervalInput} onClose={() => setIntervalDialogOpen(false)} />}
       {goToDateOpen && <GoToDateDialog initialTime={data.at(-1)?.time ?? 0} onSelect={(time) => { chartRef.current?.goToTime(time); setGoToDateOpen(false); notify('已转到指定日期') }} onClose={() => setGoToDateOpen(false)} />}
       {shortcutsOpen && <ShortcutHelpDialog onClose={() => setShortcutsOpen(false)} />}
-      {drawingSettingsTarget && ['fib', 'fib-extension'].includes(drawingSettingsTarget.behavior) && <FibSettingsDialog
+      {drawingSettingsTarget && supportsDrawingProperties(drawingSettingsTarget.behavior) && <FibSettingsDialog
         drawing={drawingSettingsTarget}
         logScale={priceScaleLog}
         onApply={(settings, points, label) => {
