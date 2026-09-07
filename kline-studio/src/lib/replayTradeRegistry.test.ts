@@ -62,6 +62,27 @@ describe('replay trade dataset registry', () => {
     expect(new Set(candidates.map((candidate) => candidate.interval))).toEqual(new Set(['5m', '15m']))
   })
 
+  it('shows the July 22 short exit once across raw and weekly layers, preserving active selection and reveal time', () => {
+    const sources = [
+      'xauusd-5m-conservative-stop-first-734e2cb85706d081',
+      'xauusd-5m-conservative-stop-first-a5fb63305b8a82d9',
+      'xauusd-5m-weekly-v5-0818-067eced5532b83bf',
+    ]
+    const exitTime = 1784718600
+    for (const activeSource of sources) {
+      const markers = toReplayTradeSeriesMarkers('XAUUSD', '5m', sources, exitTime, { sourceId: activeSource, tradeNumber: 40 })
+      const exits = markers.filter((marker) => Number(marker.time) === exitTime && marker.text === '平空')
+      expect(exits).toHaveLength(1)
+      expect(exits[0]).toMatchObject({ size: 2, color: '#facc15' })
+      expect(resolveReplayTradeMarker('XAUUSD', '5m', sources, exits[0].id)).toMatchObject({
+        sourceId: activeSource, trade: { tradeNumber: 40, exit: { price: 4118.93 } },
+      })
+      expect(markers.filter((marker) => Number(marker.time) === 1784712900 && marker.text === '开空')).toHaveLength(1)
+    }
+    expect(toReplayTradeSeriesMarkers('XAUUSD', '5m', sources, exitTime - 1)
+      .some((marker) => Number(marker.time) === exitTime)).toBe(false)
+  })
+
   it('keeps an overnight XAUUSD trade inside the same 06:00 Beijing trading day', () => {
     const sourceId = 'xauusd-5m-weekly-v5-0818-a174bc0ef9d6c31a'
     const signalTime = 1_782_832_500 // 2026-06-30 23:15 Asia/Shanghai

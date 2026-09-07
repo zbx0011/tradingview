@@ -253,9 +253,22 @@ function markerFor(sourceId: string, trade: XauTradeMarker, kind: TradeMarkerKin
 }
 
 export function toReplayTradeSeriesMarkers(symbol: SymbolId, interval: IntervalId, sourceIds: readonly string[], revealedThrough?: number, active?: ReplayTradeActiveSelection | null) {
-  return datasetsFor(symbol, interval, sourceIds)
-    .flatMap((dataset) => dataset.trades.flatMap((trade) => [markerFor(dataset.sourceId, trade, 'entry', active), markerFor(dataset.sourceId, trade, 'exit', active)]))
-    .filter((marker) => revealedThrough === undefined || Number(marker.time) <= revealedThrough)
+  const markers = new Map<string, SeriesMarker<UTCTimestamp>>()
+  for (const dataset of datasetsFor(symbol, interval, sourceIds)) {
+    for (const trade of dataset.trades) {
+      for (const kind of ['entry', 'exit'] as const) {
+        const endpoint = trade[kind]
+        if (revealedThrough !== undefined && endpoint.time > revealedThrough) continue
+        // Raw and weekly layers can contain the same execution under different
+        // source IDs. Match the trade and endpoint, not merely the label/time:
+        // distinct positions closing on one candle must remain visible.
+        const key = JSON.stringify([trade.side, trade.entry.signalTime, trade.entry.time, trade.entry.price, kind, endpoint.time, endpoint.price])
+        const isActive = active?.sourceId === dataset.sourceId && active.tradeNumber === trade.tradeNumber
+        if (!markers.has(key) || isActive) markers.set(key, markerFor(dataset.sourceId, trade, kind, active))
+      }
+    }
+  }
+  return [...markers.values()]
     .sort((left, right) => Number(left.time) - Number(right.time) || String(left.id).localeCompare(String(right.id)))
 }
 
