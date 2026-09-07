@@ -1,0 +1,37 @@
+{
+  "canonical_combined_sha256": "60619931bebe8c8b1c1f1f2554a2632201cb0e44ea60b350849256c362fd02b4",
+  "source_documents": [
+    {
+      "path": "D:\\项目\\tradingview\\价格行为学\\1.《价格行为学》（基础篇1-36章）.pdf",
+      "archive_path": "_external/1.《价格行为学》（基础篇1-36章）.pdf",
+      "bytes": 231598681,
+      "sha256": "743c0869eb1e5247d74ec98218f206a936780a2d732527f90da6b606a041aa3c"
+    },
+    {
+      "path": "D:\\项目\\tradingview\\价格行为学\\2.《价格行为学》（进阶篇37-52章）.pdf",
+      "archive_path": "_external/2.《价格行为学》（进阶篇37-52章）.pdf",
+      "bytes": 191257832,
+      "sha256": "714aca93aaa7396daea54a10165abaecaf284a63fb7845df88a1a466e6564781"
+    },
+    {
+      "path": "D:\\codex\\price-action-course-0126-read\\main\\all_files.jsonl",
+      "archive_path": "_external/all_files.jsonl",
+      "bytes": 207205,
+      "sha256": "75bf4040bc3bc0e61f10dce5838be976c27c6459a64e808f20d82e3e56816bb2"
+    },
+    {
+      "path": "D:\\codex\\price-action-course-0126-read\\READING_REPORT.md",
+      "archive_path": "_external/READING_REPORT.md",
+      "bytes": 4941,
+      "sha256": "cb4835d574d231467ecf9cd6a9ca4b86cec9725ae800ff0948e257a4e7903bc5"
+    },
+    {
+      "path": "D:\\codex\\price-action-course-0126-read\\unified-index\\verification.txt",
+      "archive_path": "_external/verification.txt",
+      "bytes": 253,
+      "sha256": "c31f0fc4727cb2a1d2e9d19e6dd1b5a55355a563415f683ea599e92bdfdd6671"
+    }
+  ],
+  "raw_sources_packaged": false,
+  "raw_sources_note": "V6 package carries the frozen source identities and derived rule texts, not the original course PDFs or media."
+}

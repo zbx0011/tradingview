@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "identity": "al_brooks_full_corpus_20260830",
+  "source_root": "F:\\课程\\价格行为学\\价格行为学（1.26）",
+  "inventory_path": "D:\\codex\\price-action-course-0126-read\\main\\all_files.jsonl",
+  "inventory_bytes": 207205,
+  "inventory_sha256": "75bf4040bc3bc0e61f10dce5838be976c27c6459a64e808f20d82e3e56816bb2",
+  "include_prefixes": [
+    "阿布图表百科全书\\",
+    "第一部分1-18\\",
+    "第二部分 19-29\\",
+    "第三部分 30-36\\",
+    "第四部分37-42\\",
+    "第五部分43-47\\"
+  ],
+  "exclude_prefixes": [
+    "太妃价格行为课程\\"
+  ],
+  "excluded_incomplete_artifacts": [
+    {
+      "relative_path": "第三部分 30-36\\BTC PAF 33E Protective Stops.srt.baiduyun.p.downloading",
+      "bytes": 35604,
+      "sha256": "2e6f9c63070eb0d107f32706007b01a3afc5e80749a4a858c1d41551ec0ecc4c",
+      "reason": "unfinished all-NUL download placeholder; the completed SRT, English SRT and MP4 remain included"
+    }
+  ],
+  "completed_content": {
+    "files": 479,
+    "bytes": 43856749473,
+    "extension_counts": {
+      ".mp4": 165,
+      ".pdf": 70,
+      ".srt": 244
+    },
+    "unique_content_hashes": 474,
+    "duplicate_file_instances": 5,
+    "duplicate_groups": 5,
+    "canonical_root_algorithm": "SHA-256 of UTF-8 newline-delimited canonical JSON records sorted by relative_path; each record contains relative_path, bytes and sha256 with compact separators",
+    "canonical_root_sha256": "f0d8a6186280cd44b95997c7d3c6349fa6971b22cfbe38b2ee656995f294f9b6"
+  },
+  "structured_read_evidence": {
+    "report_path": "D:\\codex\\price-action-course-0126-read\\READING_REPORT.md",
+    "report_bytes": 4941,
+    "report_sha256": "cb4835d574d231467ecf9cd6a9ca4b86cec9725ae800ff0948e257a4e7903bc5",
+    "index_verification_path": "D:\\codex\\price-action-course-0126-read\\unified-index\\verification.txt",
+    "index_verification_bytes": 253,
+    "index_verification_sha256": "c31f0fc4727cb2a1d2e9d19e6dd1b5a55355a563415f683ea599e92bdfdd6671",
+    "brooks_filtered_index_records": 93704,
+    "brooks_filtered_index_record_counts": {
+      "pdf_page": 57444,
+      "video_cue": 33182,
+      "video_keyframe": 3078
+    }
+  },
+  "runtime_policy": {
+    "use": "interpretation_and_audit_only",
+    "market_data_access": "frozen causal PNG and released bars only",
+    "external_index_access_during_replay": false,
+    "execution_parent": "louie_case_supplemented_ema20_structural_trailing_v5_nextbar_opposite_20260818",
+    "execution_changes": []
+  }
+}
