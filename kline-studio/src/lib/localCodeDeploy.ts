@@ -21,6 +21,7 @@ export interface LocalCodeStatus {
   updateAvailable: boolean
   aheadOfRemote: boolean
   diverged: boolean
+  serverInstanceId?: string
 }
 
 export interface LocalCodeDeployActivity {
@@ -81,12 +82,13 @@ export interface LocalCodeUpdateResult {
   commit: string
   updated: boolean
   restartRequired: boolean
+  previousServerInstanceId?: string
   preservedLocalChanges?: boolean
   backupBranch?: string
   backupStash?: string
 }
 
-async function request<T>(action: 'status' | 'publish-code' | 'update-code'): Promise<T> {
+async function request<T>(action: 'status' | 'health' | 'publish-code' | 'update-code'): Promise<T> {
   let response: Response
   try {
     response = await fetch(LOCAL_CODE_DEPLOY_ENDPOINT, {
@@ -131,5 +133,20 @@ export async function updateLocalCode() {
   if (typeof result.commit !== 'string' || typeof result.updated !== 'boolean' || typeof result.restartRequired !== 'boolean') {
     throw new Error('本机代码更新结果缺少必要字段')
   }
+  if (result.restartRequired && !result.previousServerInstanceId) throw new Error('部署服务需要重启后再更新：缺少服务实例标识')
   return result
+}
+
+export interface LocalCodeHealth {
+  localHead: string
+  serverInstanceId: string
+}
+
+export function isUpdatedCodeServerReady(status: Pick<LocalCodeStatus, 'localHead' | 'serverInstanceId'>, result: LocalCodeUpdateResult): boolean {
+  return Boolean(result.previousServerInstanceId && status.serverInstanceId
+    && status.serverInstanceId !== result.previousServerInstanceId && status.localHead === result.commit)
+}
+
+export async function loadLocalCodeHealth() {
+  return request<LocalCodeHealth>('health')
 }

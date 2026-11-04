@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import os from 'node:os'
@@ -224,7 +225,7 @@ async function publishCode() {
   }
 }
 
-function scheduleRestart(response: ServerResponse, projectRoot: string, port: number, expectedCommit: string) {
+function scheduleRestart(response: ServerResponse, projectRoot: string, port: number, expectedCommit: string, previousServerInstanceId: string, installDependencies: boolean) {
   const helper = path.join(projectRoot, 'scripts', 'restart-after-code-update.ps1')
   response.once('finish', () => {
     const child = spawn('powershell.exe', [
@@ -233,6 +234,8 @@ function scheduleRestart(response: ServerResponse, projectRoot: string, port: nu
       '-Port', String(port),
       '-ParentPid', String(process.pid),
       '-ExpectedCommit', expectedCommit,
+      '-PreviousServerInstanceId', previousServerInstanceId,
+      ...(installDependencies ? ['-InstallDependencies'] : []),
     ], { detached: true, stdio: 'ignore', windowsHide: true })
     child.unref()
     setTimeout(() => process.exit(0), 900)
@@ -266,7 +269,9 @@ async function updateCode() {
       backupStash = (await runFile('git', ['stash', 'list', '-1', '--format=%gd'], { cwd: state.repositoryRoot })).stdout.trim()
     }
     await runFile('git', ['merge', '--ff-only', mergedCommit], { cwd: state.repositoryRoot })
-    await runNpm(['ci'], state.projectRoot)
+    // Windows locks native modules loaded by this running Vite process.
+    // Dependency installation belongs to the restart helper after this process exits.
+    const installDependencies = await dependencyFilesChanged(state, mergedCommit)
     const updated = await repositoryState(false)
     if (!updated.clean || updated.localHead !== mergedCommit) {
       throw new HttpError(500, '安全合并后代码状态校验失败；本机修改仍保存在备份分支和 stash 中', { backupBranch, backupStash })
@@ -277,6 +282,7 @@ async function updateCode() {
       commit: updated.localHead,
       updated: true,
       restartRequired: true,
+      installDependencies,
       projectRoot: updated.projectRoot,
       preservedLocalChanges: true,
       backupBranch,
@@ -285,10 +291,15 @@ async function updateCode() {
   }
   await validateCommitInTemporaryWorktree(state, state.remoteHead)
   await runFile('git', ['merge', '--ff-only', `origin/${EXPECTED_BRANCH}`], { cwd: state.repositoryRoot })
-  await runNpm(['ci'], state.projectRoot)
+  const installDependencies = await dependencyFilesChanged(state, state.remoteHead)
   const updated = await repositoryState(false)
   if (!updated.clean || updated.localHead !== state.remoteHead) throw new HttpError(500, '更新后代码状态校验失败，已停止自动重启')
-  return { ok: true, action: 'update-code', commit: updated.localHead, updated: true, restartRequired: true, projectRoot: updated.projectRoot }
+  return { ok: true, action: 'update-code', commit: updated.localHead, updated: true, restartRequired: true, installDependencies, projectRoot: updated.projectRoot }
+}
+
+async function dependencyFilesChanged(state: RepositoryState, commit: string) {
+  const files = ['package.json', 'package-lock.json'].map((file) => `${state.projectRelativePath}/${file}`)
+  return Boolean((await runFile('git', ['diff', '--name-only', state.localHead, commit, '--', ...files], { cwd: state.repositoryRoot })).stdout.trim())
 }
 
 function sendJson(response: ServerResponse, status: number, value: unknown) {
@@ -317,6 +328,7 @@ async function readRequest(request: IncomingMessage) {
 }
 
 export function localCodeDeployPlugin(): Plugin {
+  const serverInstanceId = randomUUID()
   let operationQueue: Promise<void> = Promise.resolve()
   function enqueue<T>(operation: () => Promise<T>) {
     const result = operationQueue.then(operation, operation)
@@ -327,11 +339,16 @@ export function localCodeDeployPlugin(): Plugin {
     name: 'kline-studio-local-code-deploy',
     apply: 'serve',
     configureServer(server) {
+      const runningCommit = runFile('git', ['rev-parse', 'HEAD'], { cwd: process.cwd() }).then((result) => result.stdout.trim())
       server.middlewares.use(API_PATH, async (request, response) => {
         try {
           verifyLocalRequest(request)
           if (request.method !== 'POST') throw new HttpError(405, '只支持 POST')
           const body = await readRequest(request)
+          if (body.action === 'health') {
+            sendJson(response, 200, { ok: true, action: 'health', localHead: await runningCommit, serverInstanceId })
+            return
+          }
           if (body.action === 'status') {
             const result = await enqueue(async () => {
               const state = await repositoryState(true)
@@ -339,7 +356,7 @@ export function localCodeDeployPlugin(): Plugin {
                 commitTimestamp(state.repositoryRoot, state.localHead),
                 commitTimestamp(state.repositoryRoot, state.remoteHead),
               ])
-              return { ...state, localHeadTimestamp, remoteHeadTimestamp }
+              return { ...state, localHeadTimestamp, remoteHeadTimestamp, serverInstanceId }
             })
             sendJson(response, 200, { ok: true, action: 'status', ...result })
             return
@@ -350,8 +367,11 @@ export function localCodeDeployPlugin(): Plugin {
           }
           if (body.action === 'update-code') {
             const result = await enqueue(updateCode)
-            if (result.restartRequired) scheduleRestart(response, result.projectRoot, server.config.server.port ?? 4173, result.commit)
-            sendJson(response, 200, result)
+            // A previous attempt may have applied Git changes before failing to restart.
+            // Retrying must recover that state even when GitHub has no newer commit.
+            const restartRequired = result.restartRequired || await runningCommit !== result.commit
+            if (restartRequired) scheduleRestart(response, result.projectRoot, server.config.server.port ?? 4173, result.commit, serverInstanceId, result.installDependencies === true)
+            sendJson(response, 200, { ...result, restartRequired, previousServerInstanceId: serverInstanceId })
             return
           }
           throw new HttpError(400, '未知代码部署操作')

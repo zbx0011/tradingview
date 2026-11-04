@@ -69,7 +69,7 @@ import {
   sha256PortableWorkspace, type LocalSyncScope,
 } from './lib/localPrivateSync'
 import {
-  LocalCodeDeployUnavailableError, loadLocalCodeDeployActivity, loadLocalCodeStatus, publishLocalCode,
+  LocalCodeDeployUnavailableError, loadLocalCodeDeployActivity, loadLocalCodeStatus, loadLocalCodeHealth, isUpdatedCodeServerReady, publishLocalCode,
   saveLocalCodeDeployActivity, updateLocalCode, type LocalCodeDeployActivity, type LocalCodeStatus,
 } from './lib/localCodeDeploy'
 import { latestReplayDecisionSignal, replayDecisionCandidates, replayDecisionContextSourceIds, replayTradeDatasetInfos, type ReplayDecisionCandidate } from './lib/replayTradeRegistry'
@@ -2118,12 +2118,17 @@ function App() {
     setCodeDeployError('')
     setCodeDeployPhase('updating')
     void updateLocalCode().then((result) => {
-      const completedAt = new Date().toISOString()
-      setCodeDeployActivity({
-        lastVerifiedAt: completedAt,
-        lastSuccessfulSync: { action: 'update', at: completedAt, commit: result.commit },
-      })
+      const recordSuccess = () => {
+        const completedAt = new Date().toISOString()
+        const activity: LocalCodeDeployActivity = {
+          lastVerifiedAt: completedAt,
+          lastSuccessfulSync: { action: 'update', at: completedAt, commit: result.commit },
+        }
+        saveLocalCodeDeployActivity(activity)
+        setCodeDeployActivity(activity)
+      }
       if (!result.restartRequired) {
+        recordSuccess()
         setCodeDeployStatus((current) => current ? { ...current, localHead: result.commit, updateAvailable: false } : current)
         setCodeDeployPhase('ready')
         notify(`代码已是最新版本 ${result.commit.slice(0, 7)}`)
@@ -2132,23 +2137,24 @@ function App() {
       notify(result.preservedLocalChanges
         ? `GitHub 新版本与本机修改已安全合并为 ${result.commit.slice(0, 7)}，正在重启 4173…`
         : `新版本 ${result.commit.slice(0, 7)} 已验证，正在重启 4173…`)
-      const deadline = Date.now() + 120_000
+      const deadline = Date.now() + 300_000
       const poll = () => {
-        void loadLocalCodeStatus().then((status) => {
-          if (status.localHead === result.commit) {
+        void loadLocalCodeHealth().then((status) => {
+          if (isUpdatedCodeServerReady(status, result)) {
+            recordSuccess()
             window.location.reload()
             return
           }
           if (Date.now() < deadline) window.setTimeout(poll, 1500)
           else {
             setCodeDeployPhase('error')
-            notify('代码已更新，但 4173 服务未在 2 分钟内恢复')
+            notify('代码已更新，但服务尚未恢复，请检查本机重启日志')
           }
         }).catch(() => {
           if (Date.now() < deadline) window.setTimeout(poll, 1500)
           else {
             setCodeDeployPhase('error')
-            notify('代码已更新，但 4173 服务未在 2 分钟内恢复')
+            notify('代码已更新，但服务尚未恢复，请检查本机重启日志')
           }
         })
       }
