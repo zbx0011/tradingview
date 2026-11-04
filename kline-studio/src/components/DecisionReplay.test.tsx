@@ -179,6 +179,12 @@ function annotationData(times: readonly number[], price = 100, high = price + 1,
   return times.map((time) => ({ time, open: price, high, low, close: price, volume: 10 }))
 }
 
+function formatDecisionCandleTimestampForTest(epochSeconds: number) {
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(new Date(epochSeconds * 1000))
+}
+
 describe('decision replay components', () => {
   it('shows the causal entry reason and all four initial choices without revealing the system exit', () => {
     const item = candidate()
@@ -590,6 +596,17 @@ describe('decision replay components', () => {
     expect(markup).toContain('class="user-path historical long"')
     expect(markup).toContain('class="user-path historical short"')
     expect(markup).toContain('class="system-path"')
+    const cropped = renderToStaticMarkup(<DecisionChartAnnotations
+      candidate={item}
+      result={historicalResult}
+      historicalResults={[historicalShortResult]}
+      data={data.slice(-2)}
+      toX={(time) => (time - 3900) / 100}
+      toY={(price) => price}
+      hidden
+    />)
+    expect(cropped).toContain('class="user-path long" x1="-6"')
+    expect(cropped).toContain('class="user-path historical short" x1="-3"')
   })
 
   it('renders three price levels, a draggable setup hint and the one-R default', () => {
@@ -936,6 +953,23 @@ describe('decision replay components', () => {
     expect(markup).not.toContain('未参与</span>')
   })
 
+  it('shows the AI signal, entry, and exit time for each result row', () => {
+    const item = candidate()
+    const filled = {
+      ...createDecisionAttempt(item), stage: 'position-open' as const, entryMode: 'signal-extreme' as const,
+      orderKind: 'stop' as const, pendingEntryPrice: 101, stopLoss: 95, takeProfit: 107, fill: { time: 3300, price: 101 },
+    }
+    const result = buildDecisionResult(item, filled, { time: 3600, price: 103, reason: 'manual-close' }, [])
+    const session = {
+      ...createDecisionSession([item], 1, 1), status: 'completed' as const,
+      attempts: [{ ...filled, stage: 'post-exit' as const, result }], finishedAt: 2,
+    }
+    const markup = renderToStaticMarkup(<DecisionResultsDialog session={session} onClose={noop} onReview={noop} onNew={noop} />)
+    const expected = `信号 ${formatDecisionCandleTimestampForTest(item.trade.entry.signalTime)} · 开 ${formatDecisionCandleTimestampForTest(item.trade.entry.time)} · 平 ${formatDecisionCandleTimestampForTest(item.trade.exit.time)}`
+    expect(markup).toContain(expected)
+    expect(markup).toContain('data-testid="decision-result-trade-time-1"')
+  })
+
   it('uses fixed-notional values throughout results and review when that is the only selected mode', () => {
     const item = candidate()
     const filled = {
@@ -1102,7 +1136,7 @@ describe('decision replay components', () => {
     />)
     const daySessionMarkup = renderToStaticMarkup(<DecisionHistoryDialog
       open currentSymbol="XAUUSD" sessions={[daySession, ordinarySession]} onClose={noop} onOpenSession={noop}
-      defaultStatsMode="day-sequence" defaultHistoryView="sessions"
+      onOpenOverviewSession={noop} defaultStatsMode="day-sequence" defaultHistoryView="sessions"
     />)
     const customModuleStart = customMarkup.indexOf('data-testid="decision-custom-mode-history-summary"')
     const customModuleEnd = customMarkup.indexOf('class="decision-history-body"', customModuleStart)
@@ -1129,6 +1163,7 @@ describe('decision replay components', () => {
     expect(dayMarkup).toContain('日内逐根回放 · 练习')
     expect(daySessionMarkup).toContain('全部标的 · 日内逐根回放 · 按卷子汇总')
     expect(daySessionMarkup).toContain('XAUUSD · 日内逐根回放')
+    expect(daySessionMarkup).toContain('查看全览')
     expect(daySessionMarkup).not.toContain('XAUUSD · 决策练习')
   })
 
@@ -1237,7 +1272,7 @@ describe('decision replay components', () => {
     expect(markup).toContain('XAUUSD · 决策练习')
     expect(markup).toContain('本场进度')
     expect(markup).toContain('你的考分 · 净盈亏')
-    expect(markup).toContain('系统考分 · 净盈亏')
+    expect(markup).toContain('V5系统全卷总净盈亏')
     expect(markup).toContain('相对系统')
     expect(markup).toContain('点击查看本场每笔交易详情、收益对比和独立画图')
     expect(markup).toContain('开始：')

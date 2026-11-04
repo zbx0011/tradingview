@@ -5,6 +5,7 @@ import type { ChartAlert, PaperOrder } from '../lib/chartContext'
 import { formatPrice, INTERVALS, type Candle, type SymbolId } from '../lib/market'
 import type { ReplayTradeLayer } from '../lib/replayTradeLayers'
 import type { ReplayRangeLayer } from '../lib/replayRangeLayers'
+import type { ResearchSignalDataset } from '../lib/researchSignalRegistry'
 import { shouldRenderReplayRangeSpec, toReplayRangeSpecs } from '../lib/replayRangeRegistry'
 import { toReplayTradeConnectionSpecs } from '../lib/replayTradeRegistry'
 
@@ -107,12 +108,16 @@ function replayTradeLayerTitle(layer: ReplayTradeLayer) {
   return `${baseName} · ${replayLayerDateTime(displayTime)}`
 }
 
-export function ObjectTreeDialog({ drawings, alerts, orders, replayTradeLayers, replayRangeLayers, selectedReplayRangeId, collapsedReplayRangeLayerIds, onSelectDrawing, onDeleteDrawing, onDeleteAlert, onDeleteOrder, onToggleReplayTradeLayer, onRenameReplayTradeLayer, onDeleteReplayTradeLayer, onToggleReplayRangeLayer, onSetReplayRangeLayerCollapsed, onDeleteReplayRangeLayer, onSelectReplayRange, onToggleReplayRangeObject, onDeleteReplayRangeObject, onClose }: {
+export function ObjectTreeDialog({ drawings, alerts, orders, replayTradeLayers, replayRangeLayers, researchSignalLayers, visibleResearchSignalSourceId, showAllResearchReviews = true, onShowAllResearchReviewsChange, selectedReplayRangeId, collapsedReplayRangeLayerIds, onSelectDrawing, onDeleteDrawing, onDeleteAlert, onDeleteOrder, onToggleReplayTradeLayer, onRenameReplayTradeLayer, onDeleteReplayTradeLayer, onToggleReplayRangeLayer, onSetReplayRangeLayerCollapsed, onDeleteReplayRangeLayer, onSelectReplayRange, onToggleReplayRangeObject, onDeleteReplayRangeObject, onToggleResearchSignalLayer, onSelectResearchSignal, onClose }: {
   drawings: Drawing[]
   alerts: ChartAlert[]
   orders: PaperOrder[]
   replayTradeLayers: ReplayTradeLayer[]
   replayRangeLayers: ReplayRangeLayer[]
+  researchSignalLayers: ResearchSignalDataset[]
+  visibleResearchSignalSourceId: string | null
+  showAllResearchReviews?: boolean
+  onShowAllResearchReviewsChange?: (value: boolean) => void
   selectedReplayRangeId: string | null
   collapsedReplayRangeLayerIds: string[]
   onSelectDrawing: (id: string) => void
@@ -128,9 +133,11 @@ export function ObjectTreeDialog({ drawings, alerts, orders, replayTradeLayers, 
   onSelectReplayRange: (id: string, startTime: number, endTime: number) => void
   onToggleReplayRangeObject: (layerId: string, objectId: string) => void
   onDeleteReplayRangeObject: (objectId: string) => void
+  onToggleResearchSignalLayer: (sourceId: string) => void
+  onSelectResearchSignal: (sourceId: string, signalId: string, time: number) => void
   onClose: () => void
 }) {
-  const simulatedOrderItems = orders.length + replayTradeLayers.length
+  const simulatedOrderItems = orders.length + replayTradeLayers.length + researchSignalLayers.length
   const replayRangeObjects = useMemo(() => new Map(replayRangeLayers.map((layer) => [
     layer.id,
     toReplayRangeSpecs(layer.symbol, layer.interval, [layer.sourceId])
@@ -147,6 +154,7 @@ export function ObjectTreeDialog({ drawings, alerts, orders, replayTradeLayers, 
   })), [replayTradeLayers])
   const [renamingLayerId, setRenamingLayerId] = useState<string | null>(null)
   const [layerNameDraft, setLayerNameDraft] = useState('')
+  const [researchSignalIndexes, setResearchSignalIndexes] = useState<Record<string, number>>({})
   const beginRenameLayer = (layer: ReplayTradeLayer) => {
     setRenamingLayerId(layer.id)
     setLayerNameDraft(layer.name)
@@ -161,6 +169,14 @@ export function ObjectTreeDialog({ drawings, alerts, orders, replayTradeLayers, 
     onRenameReplayTradeLayer(id, name)
     cancelRenameLayer()
   }
+  const selectResearchSignalAt = (layer: ResearchSignalDataset, index: number) => {
+    if (layer.signals.length === 0) return
+    const nextIndex = Math.max(0, Math.min(layer.signals.length - 1, index))
+    const signal = layer.signals[nextIndex]
+    setResearchSignalIndexes((current) => ({ ...current, [layer.sourceId]: nextIndex }))
+    onSelectResearchSignal(layer.sourceId, signal.id, signal.time)
+  }
+  const researchSignalIndex = (layer: ResearchSignalDataset) => Math.max(0, Math.min(layer.signals.length - 1, researchSignalIndexes[layer.sourceId] ?? 0))
   const subtitle = `${drawings.length} 个绘图 · ${replayRangeObjectCount} 个回放区间 · ${alerts.length} 个警报 · ${simulatedOrderItems} 个模拟订单项`
   return <aside className="object-tree-panel" role="complementary" aria-label="对象树">
     <header><span><Layers3 size={21} /></span><div><h2>对象树</h2><small>{subtitle}</small></div><button type="button" aria-label="关闭对象树" onClick={onClose}><X size={20} /></button></header>
@@ -204,6 +220,27 @@ export function ObjectTreeDialog({ drawings, alerts, orders, replayTradeLayers, 
     })}</div>
     <div className="object-tree-section"><h3>价格警报</h3>{alerts.length === 0 ? <p>当前商品没有价格警报</p> : alerts.map((alert) => <div className="object-tree-row" key={alert.id}><button type="button"><span>{alert.name}</span><small>{formatPrice(alert.price, alert.symbol)}</small></button><button type="button" aria-label={`删除警报 ${alert.name}`} onClick={() => onDeleteAlert(alert.id)}><Trash2 size={16} /></button></div>)}</div>
     <div className="object-tree-section"><h3>模拟订单</h3>{simulatedOrderItems === 0 ? <p>当前商品没有模拟订单</p> : <>
+      {researchSignalLayers.map((layer) => {
+        const active = visibleResearchSignalSourceId === layer.sourceId
+        const index = researchSignalIndex(layer)
+        const signal = layer.signals[index]
+        return <div className={`object-tree-research-signal-group${active ? ' is-active' : ' is-hidden'}`} data-testid={`research-signal-layer-${layer.sourceId}`} key={layer.sourceId}>
+          <div className="object-tree-row object-tree-replay-layer">
+            <div className="object-tree-layer-main">
+              <button type="button" className="object-tree-layer-visibility" aria-label={`${active ? '隐藏' : '显示'} ${layer.name}`} aria-pressed={active} title={active ? '隐藏此研究信号版本' : '显示此研究信号版本（自动切换版本）'} onClick={() => onToggleResearchSignalLayer(layer.sourceId)}>{active ? <Eye size={17} /> : <EyeOff size={17} />}</button>
+              <button type="button" className="object-tree-layer-switch" onClick={() => onToggleResearchSignalLayer(layer.sourceId)}><span className="object-tree-layer-copy"><strong>{layer.name}</strong><small>{layer.symbol} · {INTERVALS[layer.interval].label} · {layer.signalCount} 个原始信号 · {layer.longCount} 多 / {layer.shortCount} 空</small><small>{active ? '当前显示 · 只读研究证据' : '点击切换到此版本 · 不进入练习交易'}</small>{layer.signals.some((item) => item.reviewVerdict) && <small>绿色保留 · 灰色已过滤 · 黄色证据不足</small>}</span></button>
+            </div>
+          </div>
+          {layer.signals.some((item) => item.reviewVerdict) && <label style={{ display: 'block', padding: '8px 12px' }}><input type="checkbox" checked={showAllResearchReviews} onChange={(event) => onShowAllResearchReviewsChange?.(event.target.checked)} /> 显示已过滤和证据不足（默认只看55个保留）</label>}
+          <div className="object-tree-research-signal-controls">
+            <button type="button" disabled={!signal} onClick={() => selectResearchSignalAt(layer, 0)}>首条</button>
+            <button type="button" disabled={!signal || index <= 0} onClick={() => selectResearchSignalAt(layer, index - 1)}>上条</button>
+            <button type="button" disabled={!signal || index >= layer.signals.length - 1} onClick={() => selectResearchSignalAt(layer, index + 1)}>下条</button>
+            <small>{signal ? `${index + 1} / ${layer.signals.length}` : '无信号'}</small>
+          </div>
+          {signal && <button type="button" className="object-tree-research-signal-item" aria-label={`定位${layer.name}第${index + 1}条信号`} onClick={() => selectResearchSignalAt(layer, index)}><strong><span className={signal.side === 'long' ? 'trade-marker-green' : 'trade-marker-red'}>{signal.side === 'long' ? '多' : '空'}</span> · K{signal.idx} · {signal.beijingTime ?? new Date(signal.time * 1000).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })}</strong><small>{signal.reason}</small></button>}
+        </div>
+      })}
       {replayTradeLayers.map((layer) => {
         const stats = replayTradeStats.get(layer.id)
         const title = replayTradeLayerTitle(layer)

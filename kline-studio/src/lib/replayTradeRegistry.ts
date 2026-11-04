@@ -56,6 +56,9 @@ export interface ReplayTradeDatasetInfo {
 }
 
 export interface ReplayDecisionCandidate {
+  /** A frozen chart exercise, with no corresponding AI execution/benchmark. */
+  shapePracticeId?: string
+  shapePatternId?: string
   key: string
   sourceId: string
   sourceName: string

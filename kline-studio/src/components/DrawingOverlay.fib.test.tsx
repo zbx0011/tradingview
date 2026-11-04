@@ -46,8 +46,10 @@ const renderFib = (reverse = false) => {
 describe('Fibonacci retracement rendering', () => {
   it('renders TradingView-style levels, price labels, background bands and editable anchors', () => {
     const markup = renderFib()
-    expect((markup.match(/data-fib-level=/g) ?? [])).toHaveLength(7)
-    expect((markup.match(/data-fib-band=/g) ?? [])).toHaveLength(6)
+    expect((markup.match(/data-fib-level=/g) ?? [])).toHaveLength(3)
+    expect((markup.match(/data-fib-band=/g) ?? [])).toHaveLength(2)
+    expect(markup).toContain('data-fib-level="05"')
+    expect(markup).not.toContain('data-fib-level="0236"')
     expect(markup).toContain('data-fib-label="0"')
     expect(markup).toContain('data-fib-label-y="100"')
     expect(markup).toContain('0 (500.000)')

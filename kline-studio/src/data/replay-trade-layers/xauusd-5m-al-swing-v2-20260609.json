@@ -1,0 +1,338 @@
+{
+  "schemaVersion": 4,
+  "symbol": "XAUUSD",
+  "interval": "5m",
+  "timeframeSeconds": 300,
+  "layer": {
+    "sourceId": "xauusd-5m-al-swing-v2-20260609",
+    "name": "6月9日 V7 · Al波段模拟（7笔已平仓，1笔未平仓）"
+  },
+  "provenance": {
+    "backtestFile": "D:\\CodexData\\al-swing-apprentice-v2-ordinary-window9-xauusd-20260609\\events.jsonl",
+    "backtestSha256": "fb8727f4ca3f9da6b7ad348a41384745c06c7717ee7279ef36896ab167d7e696",
+    "enrichedSignalsFile": "D:\\CodexData\\al-swing-apprentice-v2-ordinary-window9-xauusd-20260609\\decisions.jsonl",
+    "enrichedSignalsSha256": "c01cabd82b09810a8762f7fdbc38c5b19fcce0e996dc9ac56e224186f4933c4b",
+    "scenario": "al_swing_policy_v2_simulated_ledger",
+    "generatedBy": "build_june9_kline_layer.py",
+    "sourceDataSha256": "36d9ff90171c8efc5357e7d5ea6a37cdd07b663bdee48edc151fb9d8c1744663",
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "max",
+    "serviceTier": "default",
+    "displayNote": "仅显示冻结账本的行为与R值；V7使用标准化仓位单位，未进行美元金额换算。段尾未平仓不强制平仓。",
+    "openPosition": {
+      "plan": "K484_breakout_followthrough_short",
+      "signalIdx": 484,
+      "entryIdx": 485,
+      "side": "short",
+      "entryPrice": 4225.225,
+      "stopLoss": 4234.765,
+      "status": "open_at_end_of_data"
+    },
+    "cancelledPlans": [
+      {
+        "plan": "K387_deeper_support_break_short",
+        "signalIdx": 387,
+        "cancelIdx": 389,
+        "status": "cancelled_before_fill"
+      },
+      {
+        "plan": "K478_range_floor_break_short",
+        "signalIdx": 478,
+        "cancelIdx": 480,
+        "status": "cancelled_before_fill"
+      }
+    ]
+  },
+  "summary": {
+    "trades": 7,
+    "long": 2,
+    "short": 5,
+    "entryMarkers": 7,
+    "exitMarkers": 7,
+    "uniqueTimes": 13,
+    "sameBarOpenClose": 1,
+    "exitReasonCounts": {
+      "INITIAL_STOP_LOSS": 6,
+      "INITIAL_STOP_LOSS_GAP": 0,
+      "TRAILING_STOP": 0,
+      "TRAILING_STOP_GAP": 0,
+      "OPPOSITE_SIGNAL_CLOSE": 1,
+      "OPPOSITE_SIGNAL_NEXT_BAR_BREAK": 0,
+      "END_OF_DATA_MARK_TO_MARKET": 0,
+      "COURSE_TARGET": 0,
+      "COURSE_TARGET_GAP": 0
+    }
+  },
+  "trades": [
+    {
+      "tradeNumber": 1,
+      "side": "long",
+      "entry": {
+        "signalIdx": 233,
+        "signalTime": 1780968300,
+        "time": 1780968600,
+        "beijingTime": "2026-06-09 09:30",
+        "price": 4338.34,
+        "setup": "K233_breakout_long",
+        "reason": "K233收盘站上4330.4并强势突破；仅在继续上破K233高点时入场，避免在当前收盘处追多。保护止损固定于K233低点，暂不设固定止盈。",
+        "ruleVersion": "al_swing_policy_v2",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4327.49,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "policy_protective_stop",
+        "trailingActivationUsd": null,
+        "trailingDistanceUsd": null
+      },
+      "exit": {
+        "idx": 270,
+        "time": 1780979400,
+        "beijingTime": "2026-06-09 12:30",
+        "price": 4327.49,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": false,
+        "finalActiveStop": 4327.49,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 37,
+        "rMultiple": -1.0,
+        "pnlUsd": 0
+      }
+    },
+    {
+      "tradeNumber": 2,
+      "side": "short",
+      "entry": {
+        "signalIdx": 278,
+        "signalTime": 1780981800,
+        "time": 1780982100,
+        "beijingTime": "2026-06-09 13:15",
+        "price": 4331.075,
+        "setup": "K278_followthrough_short",
+        "reason": "K278收盘跌破K277低点，形成空头跟随；仅在下一根继续跌破K278低点时入场，止损置于信号柱高点。",
+        "ruleVersion": "al_swing_policy_v2",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4334.565,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "policy_protective_stop",
+        "trailingActivationUsd": null,
+        "trailingDistanceUsd": null
+      },
+      "exit": {
+        "idx": 279,
+        "time": 1780982100,
+        "beijingTime": "2026-06-09 13:15",
+        "price": 4334.565,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": true,
+        "finalActiveStop": 4334.565,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 1,
+        "rMultiple": -1.0,
+        "pnlUsd": 0
+      }
+    },
+    {
+      "tradeNumber": 3,
+      "side": "short",
+      "entry": {
+        "signalIdx": 312,
+        "signalTime": 1780992000,
+        "time": 1780992300,
+        "beijingTime": "2026-06-09 16:05",
+        "price": 4322.865,
+        "setup": "K312_support_break_short",
+        "reason": "K312收盘4323.38≤4324且收盘接近最低点；仅在下一根继续跌破K312低点时尝试空头，保护止损置于K312高点上方。",
+        "ruleVersion": "al_swing_policy_v2",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4327.365,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "policy_protective_stop",
+        "trailingActivationUsd": null,
+        "trailingDistanceUsd": null
+      },
+      "exit": {
+        "idx": 314,
+        "time": 1780992600,
+        "beijingTime": "2026-06-09 16:10",
+        "price": 4327.365,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": false,
+        "finalActiveStop": 4327.365,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 2,
+        "rMultiple": -1.0,
+        "pnlUsd": 0
+      }
+    },
+    {
+      "tradeNumber": 4,
+      "side": "long",
+      "entry": {
+        "signalIdx": 388,
+        "signalTime": 1781014800,
+        "time": 1781015100,
+        "beijingTime": "2026-06-09 22:25",
+        "price": 4320.515,
+        "setup": "K388_bull_reversal_long",
+        "reason": "K388在支撑区反弹并收于高位；仅以次柱上破本柱高点确认逆势多头，保护止损置于支撑下方。",
+        "ruleVersion": "al_swing_policy_v2",
+        "triggerReference": "signal_bar_high",
+        "triggerCondition": "next_bar_high > signal_bar_high",
+        "stopLoss": 4305.8,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "policy_protective_stop",
+        "trailingActivationUsd": null,
+        "trailingDistanceUsd": null
+      },
+      "exit": {
+        "idx": 391,
+        "time": 1781015700,
+        "beijingTime": "2026-06-09 22:35",
+        "price": 4305.8,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": false,
+        "finalActiveStop": 4305.8,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 3,
+        "rMultiple": -1.0,
+        "pnlUsd": 0
+      }
+    },
+    {
+      "tradeNumber": 5,
+      "side": "short",
+      "entry": {
+        "signalIdx": 391,
+        "signalTime": 1781015700,
+        "time": 1781016000,
+        "beijingTime": "2026-06-09 22:40",
+        "price": 4302.91,
+        "setup": "K391_support_break_short",
+        "reason": "账本已因4305.8保护止损清仓；K391强势收于支撑下方，仅以跌破本柱低点确认延续，不在当前收盘处追空。",
+        "ruleVersion": "al_swing_policy_v2",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4315.085,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "policy_protective_stop",
+        "trailingActivationUsd": null,
+        "trailingDistanceUsd": null
+      },
+      "exit": {
+        "idx": 438,
+        "time": 1781029800,
+        "beijingTime": "2026-06-10 02:30",
+        "price": 4270.81,
+        "reasonCode": "OPPOSITE_SIGNAL_CLOSE",
+        "ambiguous": false,
+        "finalActiveStop": 4315.085,
+        "trailingActivated": false,
+        "trailingActivationIdx": null,
+        "signalIdx": 437,
+        "signalTime": 1781029500,
+        "setup": "K391_support_break_short",
+        "reason": "K437虽略低于旧阈值4271.01，但最低4267.905、收盘4270.89仍在4267–4268突破区上方；突破状态已转为accepted，继续持有空单的前提减弱，下一根允许时退出lot-5。"
+      },
+      "result": {
+        "barsHeld": 47,
+        "rMultiple": 2.63655031,
+        "pnlUsd": 0
+      }
+    },
+    {
+      "tradeNumber": 6,
+      "side": "short",
+      "entry": {
+        "signalIdx": 440,
+        "signalTime": 1781030400,
+        "time": 1781030700,
+        "beijingTime": "2026-06-10 02:45",
+        "price": 4263.67,
+        "setup": "K440_bear_failure_short",
+        "reason": "K440收盘4264.405，跌破4267且接近低点；下一根仅在跌破K440低点时尝试做空，保护止损设于K440高点。",
+        "ruleVersion": "al_swing_policy_v2",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4270.135,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "policy_protective_stop",
+        "trailingActivationUsd": null,
+        "trailingDistanceUsd": null
+      },
+      "exit": {
+        "idx": 443,
+        "time": 1781031300,
+        "beijingTime": "2026-06-10 02:55",
+        "price": 4270.135,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": false,
+        "finalActiveStop": 4270.135,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 3,
+        "rMultiple": -1.0,
+        "pnlUsd": 0
+      }
+    },
+    {
+      "tradeNumber": 7,
+      "side": "short",
+      "entry": {
+        "signalIdx": 452,
+        "signalTime": 1781034000,
+        "time": 1781034300,
+        "beijingTime": "2026-06-10 03:45",
+        "price": 4250.2,
+        "setup": "K452_continuation_short",
+        "reason": "K452收盘低于K447低点4254.905且收盘接近低点，形成跟随；但下方支撑仍近，因此仅等待下一根继续破低，不在当前收盘市价追空。",
+        "ruleVersion": "al_swing_policy_v2",
+        "triggerReference": "signal_bar_low",
+        "triggerCondition": "next_bar_low < signal_bar_low",
+        "stopLoss": 4255.0,
+        "takeProfit": null,
+        "noFixedTakeProfitAtEntry": true,
+        "stopMethod": "policy_protective_stop",
+        "trailingActivationUsd": null,
+        "trailingDistanceUsd": null
+      },
+      "exit": {
+        "idx": 454,
+        "time": 1781034600,
+        "beijingTime": "2026-06-10 03:50",
+        "price": 4255.0,
+        "reasonCode": "INITIAL_STOP_LOSS",
+        "ambiguous": false,
+        "finalActiveStop": 4255.0,
+        "trailingActivated": false,
+        "trailingActivationIdx": null
+      },
+      "result": {
+        "barsHeld": 2,
+        "rMultiple": -1.0,
+        "pnlUsd": 0
+      }
+    }
+  ]
+}

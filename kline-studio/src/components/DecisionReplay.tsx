@@ -1,3 +1,10 @@
+import { activeShapeCount, shapeAiReview } from '../lib/shapeDecisionPractice'
+import type { ShapePatternOption } from '../lib/shapeDecisionPractice'
+import { shapeDecisionHistory } from '../lib/shapeDecisionPractice'
+import {
+  buildShapePhaseSegments, missingShapePhaseKinds, shapePhaseAnnotationFor, shapePhaseStatusLabel,
+  isShapePhaseAnnotationVisible, SHAPE_PHASE_KINDS, SHAPE_PHASE_LABELS,
+} from '../lib/shapePhaseAnnotations'
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import {
@@ -254,7 +261,7 @@ export interface DecisionSymbolStats {
   }>
 }
 
-export function DecisionReplayCenter({ open, availableCount, totalCount, symbolStats, aiDaySummariesByMode = { 'fixed-risk': [], 'fixed-notional': [] }, availableCandidateKeys = [], seenTradeKeys = [], sessions, activeSessionId, favoriteKeys = [], onToggleFavorite = () => undefined, onClose, onStart, onContinue, onResults, anomalyCount = 0, anomalyUnavailableCount = 0, anomalyLoading = false, onRedoAnomalies }: {
+export function DecisionReplayCenter({ open, availableCount, totalCount, symbolStats: regularSymbolStats, aiDaySummariesByMode = { 'fixed-risk': [], 'fixed-notional': [] }, availableCandidateKeys = [], seenTradeKeys = [], sessions, activeSessionId, favoriteKeys = [], onToggleFavorite = () => undefined, onClose, onStart, onContinue, onResults, anomalyCount = 0, anomalyUnavailableCount = 0, anomalyLoading = false, onRedoAnomalies, onShapePractice, shapePatterns = [] }: {
   open: boolean
   availableCount: number
   totalCount: number
@@ -274,7 +281,17 @@ export function DecisionReplayCenter({ open, availableCount, totalCount, symbolS
   anomalyUnavailableCount?: number
   anomalyLoading?: boolean
   onRedoAnomalies?: (positionSizingModes: DecisionPositionSizingMode[]) => void
+  onShapePractice?: (count: number, modes: DecisionPositionSizingMode[], patternIds: string[]) => void
+  shapePatterns?: readonly ShapePatternOption[]
 }) {
+  const [shapeMode, setShapeMode] = useState(false)
+  const [selectedPatternIds, setSelectedPatternIds] = useState<string[]>(() => shapePatterns.map(p => p.id))
+  const selectedPatterns = shapePatterns.filter(p => selectedPatternIds.includes(p.id))
+  const shapeAvailableCount = selectedPatterns.reduce((sum, p) => sum + p.remaining, 0)
+  const shapeTotalCount = selectedPatterns.reduce((sum, p) => sum + p.total, 0)
+  const symbolStats: DecisionSymbolStats[] = shapeMode
+    ? [{ symbol: 'XAUUSD', total: shapeTotalCount, remaining: shapeAvailableCount, intervals: [{ interval: '5m', total: shapeTotalCount, remaining: shapeAvailableCount }] }]
+    : regularSymbolStats
   const [newSessionPreferences, setNewSessionPreferences] = useState(() => loadDecisionReplayCenterPreferences() ?? ({
     count: 30,
     selectedSymbols: symbolStats.filter((item) => item.intervals.some((stat) => stat.interval === '5m' && stat.remaining > 0)).map((item) => item.symbol),
@@ -344,7 +361,7 @@ export function DecisionReplayCenter({ open, availableCount, totalCount, symbolS
         </button>}
         <section className="decision-new-session">
           <div className="decision-new-session-head">
-            <div><h3>开始新的决策练习</h3><p>{resumableDaySession ? '检测到符合当前筛选的未完成逐K练习，开始后会自动接上原交易日和原进度。' : lossDayMode ? '从当前标的、周期的AI净亏损交易日中随机抽取一天，按信号顺序逐根练习。' : practiceMode === 'day-sequence' ? '随机选择一个交易日，按当天信号时间顺序逐笔练习；图表保持整日时间轴，不跳到开仓点。' : '从所有可用模拟订单中打乱抽取，已经出现过的交易不会再次抽到。'}</p></div>
+            <div><h3>开始新的决策练习</h3><p>{shapeMode ? '只从勾选的形态中抽题，使用与自定义题目数量相同的图表、下单和复盘操作。' : resumableDaySession ? '检测到符合当前筛选的未完成逐K练习，开始后会自动接上原交易日和原进度。' : lossDayMode ? '从当前标的、周期的AI净亏损交易日中随机抽取一天，按信号顺序逐根练习。' : practiceMode === 'day-sequence' ? '随机选择一个交易日，按当天信号时间顺序逐笔练习；图表保持整日时间轴，不跳到开仓点。' : '从所有可用模拟订单中打乱抽取，已经出现过的交易不会再次抽到。'}</p></div>
             <div className="decision-anomaly-entry">
               <button className="decision-anomaly-redo" data-testid="decision-anomaly-redo" disabled={anomalyLoading || anomalyCount === 0 || selectedModes.length === 0 || !onRedoAnomalies} onClick={() => onRedoAnomalies?.(selectedModes)} title="按本机 XAUUSD 5分钟历史识别异常题目，创建独立重做卷；原记录和收藏保留，同一道题不重复抽取。">
                 <RotateCcw size={17} />{anomalyLoading ? '正在核对异常订单…' : `重做异常订单（${anomalyCount}题）`}
@@ -355,26 +372,29 @@ export function DecisionReplayCenter({ open, availableCount, totalCount, symbolS
           <div className="decision-practice-mode" role="group" aria-label="选择决策回放模式">
             <button
               type="button"
-              className={practiceMode === 'random-count' ? 'active' : ''}
-              aria-pressed={practiceMode === 'random-count'}
-              onClick={() => setNewSessionPreferences((current) => ({ ...current, practiceMode: 'random-count', daySequenceScope: 'all-days' }))}
+              className={!shapeMode && practiceMode === 'random-count' ? 'active' : ''}
+              aria-pressed={!shapeMode && practiceMode === 'random-count'}
+              onClick={() => { setShapeMode(false); setNewSessionPreferences((current) => ({ ...current, practiceMode: 'random-count', daySequenceScope: 'all-days' })) }}
             ><ListOrdered size={18} /><span><b>自定义题目数量</b><small>跨日期随机抽题，题量由你设置</small></span></button>
             <button
               type="button"
               className={practiceMode === 'day-sequence' && daySequenceScope === 'all-days' ? 'active' : ''}
               aria-pressed={practiceMode === 'day-sequence' && daySequenceScope === 'all-days'}
-              onClick={() => setNewSessionPreferences((current) => ({ ...current, practiceMode: 'day-sequence', daySequenceScope: 'all-days' }))}
+              onClick={() => { setShapeMode(false); setNewSessionPreferences((current) => ({ ...current, practiceMode: 'day-sequence', daySequenceScope: 'all-days' })) }}
             ><CalendarDays size={18} /><span><b>随机交易日顺序回放</b><small>随机一天，按信号时间从早到晚逐笔练习</small></span></button>
             <button
               type="button"
               className={lossDayMode ? 'active' : ''}
               aria-pressed={lossDayMode}
-              onClick={() => setNewSessionPreferences((current) => ({
+              onClick={() => { setShapeMode(false); setNewSessionPreferences((current) => ({
                 ...current,
                 practiceMode: 'day-sequence',
                 daySequenceScope: 'loss-day',
-              }))}
+              })) }}
             ><BarChart3 size={18} /><span><b>只做AI亏损日</b><small>从符合条件的AI亏损交易日中随机抽取一天</small></span></button>
+            {onShapePractice && <button type="button" className={shapeMode ? 'active' : ''} aria-pressed={shapeMode}
+              onClick={() => { setShapeMode(true); setNewSessionPreferences(current => ({ ...current, practiceMode: 'random-count', daySequenceScope: 'all-days', count: 22, selectedSymbols: ['XAUUSD'], selectedIntervals: ['5m'] })) }}
+            ><BarChart3 size={18} /><span><b>按K线形态</b><small>{activeShapeCount}个形态案例，按自定义题量练习</small></span></button>}
           </div>
           {lossDayMode && <div className="decision-loss-day-filter" aria-label="AI亏损日随机池">
             <div className="decision-symbol-filter-head"><b>AI亏损日随机池</b><span>{decisionPositionSizingLabel(lossDaySizingMode)} · 商品交易日06:00至次日05:00</span></div>
@@ -384,6 +404,18 @@ export function DecisionReplayCenter({ open, availableCount, totalCount, symbolS
             {lossDayOptions.length === 0
               ? <div className="decision-loss-day-empty">当前标的和周期没有AI净亏损交易日</div>
               : <div className="decision-loss-day-summary"><BarChart3 size={18} /><span><b>当前筛选共有 {lossDayOptions.length} 个AI亏损交易日</b><small>{resumableDaySession ? `将自动接上 ${formatDecisionDay(resumableDaySession.daySequence!.startTime)} 的未完成进度` : availableLossDayCount > 0 ? `其中 ${availableLossDayCount} 个交易日尚未全部练习；开始时随机抽取一天` : '这些交易日均已练习完成'}</small></span></div>}
+          </div>}
+          {shapeMode && <div className="decision-symbol-filter" role="group" aria-label="选择形态">
+            <div className="decision-symbol-filter-head"><b>选择形态</b><span>可多选，只抽取已勾选形态的题目</span><a href="/shape-all-audit.html" target="_blank" rel="noreferrer">查看全部形态核对</a></div>
+            <div className="decision-symbol-options">
+              {shapePatterns.map(pattern => <label key={pattern.id} className="decision-symbol-option">
+                <input type="checkbox" aria-label={pattern.name} checked={selectedPatternIds.includes(pattern.id)}
+                  onChange={() => setSelectedPatternIds(ids => ids.includes(pattern.id) ? ids.filter(id => id !== pattern.id) : [...ids, pattern.id])} />
+                <span className="decision-symbol-option-copy"><b>{pattern.name}</b><small>{pattern.description}</small></span>
+                <span className="decision-symbol-option-count">共 {pattern.total} 题 · 剩余 {pattern.remaining} 题</span>
+              </label>)}
+            </div>
+            {selectedPatternIds.length === 0 && <p role="status">请至少勾选一种形态</p>}
           </div>}
           <div className="decision-symbol-filter" aria-label="选择练习标的">
             <div className="decision-symbol-filter-head"><b>选择标的</b><span>可多选，随机抽取只使用已勾选的标的</span></div>
@@ -462,7 +494,7 @@ export function DecisionReplayCenter({ open, availableCount, totalCount, symbolS
           <div className="decision-availability">{lossDayMode
             ? <><b>{displayedAvailableCount.toLocaleString('zh-CN')}</b> 笔亏损日交易尚未练习</>
             : <><b>{displayedAvailableCount.toLocaleString('zh-CN')}</b> 笔未练习 / 共 {effectiveTotalCount.toLocaleString('zh-CN')} 笔</>}</div>
-          <button className="decision-primary" disabled={!resumableDaySession && (displayedAvailableCount === 0 || selectedSymbols.length === 0 || selectedIntervals.length === 0 || selectedModes.length === 0 || (lossDayMode && availableLossDayCount === 0))} onClick={() => onStart(boundedCount, selectedSymbols, selectedIntervals, selectedModes, practiceMode, lossDayMode, lossDaySizingMode)}>{resumableDaySession ? '自动接上未完成的逐K练习' : lossDayMode ? '随机抽取一个亏损日并开始' : practiceMode === 'day-sequence' ? '随机选一天并按顺序开始' : '随机抽取并开始'}</button>
+          <button className="decision-primary" disabled={!resumableDaySession && (displayedAvailableCount === 0 || selectedSymbols.length === 0 || selectedIntervals.length === 0 || selectedModes.length === 0 || (lossDayMode && availableLossDayCount === 0))} onClick={() => shapeMode ? onShapePractice?.(boundedCount, selectedModes, selectedPatternIds) : onStart(boundedCount, selectedSymbols, selectedIntervals, selectedModes, practiceMode, lossDayMode, lossDaySizingMode)}>{resumableDaySession ? '自动接上未完成的逐K练习' : lossDayMode ? '随机抽取一个亏损日并开始' : practiceMode === 'day-sequence' ? '随机选一天并按顺序开始' : '随机抽取并开始'}</button>
         </section>
         <section className="decision-archives">
           <div className="decision-section-heading"><Archive size={18} /><h3>永久练习存档</h3><span>{sessions.length} 场</span></div>
@@ -485,7 +517,7 @@ export function DecisionReplayCenter({ open, availableCount, totalCount, symbolS
                 }}
               >
                 <span className={`decision-session-status ${session.status}`}>{statusLabel(session.status)}</span>
-                <span><b>{session.reviewKind === 'stop-anomalies' ? '异常订单重做 · ' : session.practiceMode === 'day-sequence' ? '按日顺序 · ' : ''}{results.length} / {session.candidates.length} 笔</b>{session.daySequence && <small>{decisionSessionCandleProgressLabel(session)}</small>}<small>{decisionSessionTimeLabel(session)}</small></span>
+                <span><b>{session.candidates[0]?.shapePracticeId ? '按K线形态 · ' : session.reviewKind === 'stop-anomalies' ? '异常订单重做 · ' : session.practiceMode === 'day-sequence' ? '按日顺序 · ' : ''}{results.length} / {session.candidates.length} 笔</b>{session.daySequence && <small>{decisionSessionCandleProgressLabel(session)}</small>}<small>{decisionSessionTimeLabel(session)}</small></span>
                 <DecisionModeMoneyStack modes={modes} valueFor={(mode) => aggregateDecisionResults(results, mode).userPnlUsd} />
                 <span className="decision-list-actions"><DecisionFavoriteButton favorite={favoriteKeys.includes(favoriteKey)} onToggle={() => onToggleFavorite(favoriteKey)} label={favoriteKeys.includes(favoriteKey) ? '取消收藏本场练习' : '收藏本场练习'} /><ChevronRight size={18} /></span>
               </div>
@@ -526,6 +558,7 @@ interface DecisionHistoryDialogProps {
   sessions: DecisionReplaySession[]
   onClose: () => void
   onOpenSession: (sessionId: string) => void
+  onOpenOverviewSession?: (sessionId: string) => void
   onOpenFavoriteTrade?: (sessionId: string, candidateKey: string) => void
   favoriteKeys?: readonly string[]
   onToggleFavorite?: (key: string) => void
@@ -538,13 +571,14 @@ function sameDecisionHistoryDialogProps(left: DecisionHistoryDialogProps, right:
   return left.open === right.open
     && left.currentSymbol === right.currentSymbol
     && left.sessions === right.sessions
+    && left.onOpenOverviewSession === right.onOpenOverviewSession
     && left.favoriteKeys === right.favoriteKeys
     && left.defaultView === right.defaultView
     && left.defaultHistoryView === right.defaultHistoryView
     && left.defaultStatsMode === right.defaultStatsMode
 }
 
-export const DecisionHistoryDialog = memo(function DecisionHistoryDialog({ open, sessions, onClose, onOpenSession, onOpenFavoriteTrade, favoriteKeys = [], onToggleFavorite = () => undefined, defaultView = 'history', defaultHistoryView = 'trades', defaultStatsMode = 'custom' }: DecisionHistoryDialogProps) {
+export const DecisionHistoryDialog = memo(function DecisionHistoryDialog({ open, sessions, onClose, onOpenSession, onOpenOverviewSession, onOpenFavoriteTrade, favoriteKeys = [], onToggleFavorite = () => undefined, defaultView = 'history', defaultHistoryView = 'trades', defaultStatsMode = 'custom' }: DecisionHistoryDialogProps) {
   const [selectedHistorySymbols, setSelectedHistorySymbols] = useState<SymbolId[]>([])
   const [selectedHistoryIntervals, setSelectedHistoryIntervals] = useState<DecisionReplayInterval[]>([])
   const [favoritesOnly, setFavoritesOnly] = useState(defaultView === 'favorites')
@@ -809,7 +843,11 @@ export const DecisionHistoryDialog = memo(function DecisionHistoryDialog({ open,
           {renderedHistorySessionGroups.map(({ session, candidates, entries, results, symbols, favoriteCount }) => {
             const participated = results.filter((result) => result.choice === 'traded')
             const userStats = decisionWinStats(participated, historyPositionMode, 'user')
-            const systemStats = decisionWinStats(results, historyPositionMode, 'system')
+            // The session card must use the complete AI ledger, not only the
+            // trades the user has already answered. This is the same total
+            // shown as “V5 系统全卷总净盈亏” in the scorecard dialog.
+            const systemStats = decisionSessionSystemBenchmarkStats(session, historyPositionMode)
+            const systemWinRate = systemStats.total > 0 ? `${(systemStats.wins / systemStats.total * 100).toFixed(1)}%` : '—'
             const completedCount = results.length
             const totalCount = favoritesOnly ? entries.length : candidates.length
             const progressCount = entries.length
@@ -844,10 +882,21 @@ export const DecisionHistoryDialog = memo(function DecisionHistoryDialog({ open,
               </div>
               <div className="decision-history-card-stats decision-history-session-stats">
                 <span><small>你的考分 · 净盈亏</small><DecisionModeMoneyStack modes={historyModes} valueFor={(mode) => aggregateDecisionResults(results, mode).userPnlUsd} /><small>参与胜率 <strong>{decisionWinRateText(userStats)}</strong> · 盈利 {userStats.wins} / {userStats.total} 笔</small></span>
-                <span><small>系统考分 · 净盈亏</small><DecisionModeMoneyStack modes={historyModes} valueFor={(mode) => aggregateDecisionResults(results, mode).systemPnlUsd} /><small>总胜率 <strong>{decisionWinRateText(systemStats)}</strong> · 盈利 {systemStats.wins} / {systemStats.total} 笔</small></span>
+                <span><small>V5系统全卷总净盈亏</small><DecisionModeMoneyStack modes={historyModes} valueFor={(mode) => decisionSessionSystemBenchmarkStats(session, mode).pnlUsd} /><small>总胜率 <strong>{systemWinRate}</strong> · 盈利 {systemStats.wins} / {systemStats.total} 笔</small></span>
                 <span><small>相对系统</small><DecisionModeMoneyStack modes={historyModes} valueFor={(mode) => aggregateDecisionResults(results, mode).differenceUsd} /><small>{decisionPositionSizingLabel(historyPositionMode)} · 当前筛选 {completedCount} 笔</small></span>
               </div>
-            <small className="decision-history-card-hint">点击查看本场每笔交易详情、收益对比和独立画图；重新回看不会覆盖原结果</small>
+            <div className="decision-history-session-card-actions">
+              <small className="decision-history-card-hint">点击查看本场每笔交易详情、收益对比和独立画图；重新回看不会覆盖原结果</small>
+              {historyViewMode === 'sessions' && historyStatsMode === 'day-sequence' && session.daySequence && onOpenOverviewSession && <button
+                type="button"
+                className="decision-history-overview-action"
+                onKeyDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onOpenOverviewSession(session.id)
+                }}
+              >查看全览</button>}
+            </div>
             </div>
           })}
         </div>) : (modeTradeEntries.length === 0 ? <div className="decision-empty">{favoritesOnly ? '当前模式在所选标的中还没有收藏记录。' : historyStatsMode === 'day-sequence' ? '当前筛选还没有日内逐根回放交易。' : '当前筛选还没有自定义模式交易。'}</div> : <div className="decision-history-list">
@@ -954,7 +1003,7 @@ export function DecisionChartPnlBreakdown({ session, results, focusActor, system
         return <article key={`${result.candidateKey}:${index}`} className={result.candidate.manualContinuation ? 'manual-continuation' : undefined}>
           <div className="decision-chart-pnl-trade">
             <b>第 {ordinal} 笔 · {userSide}</b>
-            <small>{choice}{result.candidate.manualContinuation ? ' · 手动续单' : ''}</small>
+            <small>{choice}{result.candidate.shapePracticeId ? ` · 形态 ${result.candidate.shapePracticeId}` : result.candidate.manualContinuation ? ' · 手动续单' : ''}</small>
           </div>
           <div className="decision-chart-pnl-execution"><small>你的开仓</small>{result.choice === 'traded' && result.userEntry
             ? <><b>{formatPrice(result.userEntry.price, result.candidate.symbol)}</b><small>{formatDecisionDate(result.userEntry.time)}</small></>
@@ -1156,11 +1205,11 @@ export function DecisionChartStatus({ session, attempt, currentPnlByMode = null,
         <DecisionModeMoneyStack modes={positionSizingModes} valueFor={totalValueFor} compact />
         <ChevronRight className="decision-chart-status-expand-icon" size={14} aria-hidden="true" />
       </button>
-      <button type="button" className={`ai-total has-value${expandedSummary === 'system' ? ' is-expanded' : ''}`} data-testid="decision-chart-ai-total" aria-expanded={expandedSummary === 'system'} aria-controls="decision-chart-pnl-breakdown" onClick={() => setExpandedSummaryState((current) => current?.sessionId === session.id && current.actor === 'system' ? null : { sessionId: session.id, actor: 'system' })}>
+      {!session.candidates[0]?.shapePracticeId && <button type="button" className={`ai-total has-value${expandedSummary === 'system' ? ' is-expanded' : ''}`} data-testid="decision-chart-ai-total" aria-expanded={expandedSummary === 'system'} aria-controls="decision-chart-pnl-breakdown" onClick={() => setExpandedSummaryState((current) => current?.sessionId === session.id && current.actor === 'system' ? null : { sessionId: session.id, actor: 'system' })}>
         <div><span>本场 AI 已揭示交易累计</span><small>{aiHasCurrentFloat ? `已平仓 ${aiClosedCount} 笔 + 当前持仓浮动盈亏` : `截至当前 K 线已统计 ${aiTradeCount} 笔`}</small></div>
         <DecisionModeMoneyStack modes={positionSizingModes} valueFor={aiTotalValueFor} compact />
         <ChevronRight className="decision-chart-status-expand-icon" size={14} aria-hidden="true" />
-      </button>
+      </button>}
     </div>
   </aside>
 }
@@ -1293,7 +1342,7 @@ function decisionReasonConnectorEndpoint(x: number, y: number, placement: Decisi
   }
 }
 
-export function DecisionReplayPanel({ candidate, latestSignal = null, attempt, ordinal, total, currentClose = null, currentPnlUsd = null, currentPnlByMode = null, positionSizingModes = ['fixed-risk'], favorite = false, independentReview = false, preSignal = false, daySequenceMode = false, canAdvanceTrade = true, onToggleFavorite = () => undefined, onAdvance, onSignalExtreme, onFreePrice, onOpenLong = () => undefined, onOpenShort = () => undefined, onSkip, onManualClose, onCancelPending, onNextTrade, onRestartTrade = () => undefined, onStop }: {
+export function DecisionReplayPanel({ candidate, latestSignal = null, attempt, ordinal, total, currentClose = null, currentPnlUsd = null, currentPnlByMode = null, positionSizingModes = ['fixed-risk'], favorite = false, independentReview = false, preSignal = false, daySequenceMode = false, canAdvanceTrade = true, onToggleFavorite = () => undefined, onAdvance, onSignalExtreme, onFreePrice, onOpenLong = () => undefined, onOpenShort = () => undefined, onSkip, onDeleteShape, onManualClose, onCancelPending, onNextTrade, onRestartTrade = () => undefined, onStop }: {
   candidate: ReplayDecisionCandidate
   latestSignal?: ReplayDecisionSignalMarkerSelection | null
   attempt: DecisionAttempt
@@ -1314,6 +1363,7 @@ export function DecisionReplayPanel({ candidate, latestSignal = null, attempt, o
   onFreePrice: () => void
   onOpenLong?: () => void
   onOpenShort?: () => void
+  onDeleteShape?: () => void
   onSkip: () => void
   onManualClose: () => void
   onCancelPending: () => void
@@ -1322,6 +1372,10 @@ export function DecisionReplayPanel({ candidate, latestSignal = null, attempt, o
   onStop: () => void
 }) {
   const systemLong = candidate.trade.side === 'long'
+  const shapeReview = shapeAiReview(candidate)
+  const shapePhaseAnnotation = shapePhaseAnnotationFor(candidate)
+  const shapePhaseAnnotationVisible = isShapePhaseAnnotationVisible(shapePhaseAnnotation)
+  const missingShapePhases = shapePhaseAnnotationVisible ? missingShapePhaseKinds(shapePhaseAnnotation) : []
   const visibleSignal = latestSignal
     ? {
         key: latestSignal.id,
@@ -1336,7 +1390,7 @@ export function DecisionReplayPanel({ candidate, latestSignal = null, attempt, o
         side: candidate.trade.side,
         time: candidate.trade.entry.signalTime,
         setup: candidate.trade.entry.setup,
-        reason: candidate.trade.entry.reason,
+        reason: shapeReview ? `Luna Max 形态识别：${shapeReview.shape_note}` : candidate.trade.entry.reason,
         signalIdx: candidate.trade.entry.signalIdx,
       }
   const visibleSignalLong = visibleSignal?.side === 'long'
@@ -1638,7 +1692,7 @@ export function DecisionReplayPanel({ candidate, latestSignal = null, attempt, o
         <span className="decision-grip" role="button" aria-label="拖动移动决策详情框" data-testid="decision-detail-drag-handle">⠿</span>
         <div><h2>{preSignal ? `${candidate.symbol} · ${INTERVALS[candidate.interval].label} · 日内逐根回放` : `第 ${ordinal} / ${total} 笔 · ${candidate.symbol} · ${INTERVALS[candidate.interval].label}`}</h2><small>{preSignal
           ? `当前 K：${formatDecisionDate(attempt.cursorTime)} · 信号尚未出现，未来信息保持隐藏`
-          : <>{independentReview ? '独立复盘 · 原记录不会被覆盖 · ' : ''}{daySequenceMode ? '最新信号 K' : '信号 K'}：{formatDecisionDate(visibleSignal!.time)}{daySequenceMode ? ` · 当前 K：${formatDecisionDate(attempt.cursorTime)}` : ''} · {attempt.result ? '本笔盈亏已锁定，可继续观看后续 K 线' : '系统原结果将在本笔结束后揭晓'}</>}</small></div>
+          : <>{independentReview ? '独立复盘 · 原记录不会被覆盖 · ' : ''}{candidate.shapePracticeId ? shapeReview?.causal.status === 'signal' ? '首次震荡 K' : '候选定位 K' : daySequenceMode ? '最新信号 K' : '信号 K'}：{formatDecisionDate(candidate.shapePracticeId ? candidate.trade.entry.signalTime : visibleSignal!.time)}{daySequenceMode ? ` · 当前 K：${formatDecisionDate(attempt.cursorTime)}` : ''} · {attempt.result ? '本笔盈亏已锁定，可继续观看后续 K 线' : candidate.shapePracticeId ? latestSignal ? '形态练习 · 工坊历史AI信号' : 'AI形态识别 · 当前时段暂无交易回放信号' : '系统原结果将在本笔结束后揭晓'}</>}</small></div>
         {!preSignal && <DecisionFavoriteButton
           favorite={favorite}
           onToggle={onToggleFavorite}
@@ -1648,16 +1702,40 @@ export function DecisionReplayPanel({ candidate, latestSignal = null, attempt, o
         <button title="提前退出并结算" onClick={onStop}><LogOut size={19} /></button>
       </header>
       <div ref={detailScrollRef} className="decision-detail-scroll">
+        {candidate.shapePracticeId && shapeReview && !preSignal && <section className="decision-reason" data-testid="shape-ai-analysis">
+          <h3>{shapeReview.verdict === 'reviewed' ? '形态视觉复核 · 三阶段区间' : shapeReview.verdict === 'visual-review' ? '未通过形态复核 · 原始事件保留' : shapeReview.causal.status === 'signal' ? 'AI形态识别 · 首次确认震荡' : '历史形态候选 · 因果未验证'}</h3>
+          <small>{shapeReview.causal.status === 'signal' ? `K${candidate.trade.tradeNumber - 1}` : candidate.shapePracticeId} · {formatDecisionDate(candidate.trade.entry.signalTime)} · {shapeReview.sourceLabel}</small>
+          {['visual-review', 'reviewed'].includes(shapeReview.verdict) ? <><p data-testid="shape-causal-status">{shapeReview.shape_note}</p><p>区间箭头解释原记录K之前的可见结构；首次可识别震荡的时点尚未验证，原记录时间保持不变。</p><a href="/shape-all-audit.html" target="_blank" rel="noreferrer">查看逐题图表、高低点和复核原因</a></> : shapeReview.causal.status === 'signal' ? <>
+            <p data-testid="shape-causal-status">当前K是逐根PNG首次确认震荡的时点，不等EMA20穿越。此前{candidate.trade.side === 'long' ? '下跌' : '上涨'}通道逐渐减弱；这是一条形态观察记录，不代表反转一定成功。</p>
+            <p>{shapeReview.shape_note}</p>
+          </> : <><p data-testid="shape-causal-status">尚无逐根确认记录：震荡首次确认时间未知，当前定位K不是已验证的首次穿越信号。旧评语与阶段划分仅供复核。</p><details><summary>查看历史形态评语（未经因果验证）</summary><p>{shapeReview.shape_note}</p></details></>}
+          {shapePhaseAnnotation && shapePhaseAnnotationVisible && <div className="shape-phase-explanation" data-testid="shape-phase-explanation">
+            <div className="shape-phase-legend" aria-label="形态阶段图例">
+              {SHAPE_PHASE_KINDS.map((kind) => <span className={`shape-phase-legend-item ${kind}`} key={kind}><i aria-hidden="true" />{SHAPE_PHASE_LABELS[kind]}</span>)}
+            </div>
+            <p className="shape-phase-manual-note"><strong>区间标注 · {shapePhaseStatusLabel(shapePhaseAnnotation.status)}</strong>{missingShapePhases.length > 0 && ` · 缺少：${missingShapePhases.map((kind) => SHAPE_PHASE_LABELS[kind]).join('、')}`}</p>
+            <p className="shape-phase-review-note">箭头覆盖完整区间，共享端点为阶段交接处。只用于形态观察，不改交易规则。</p>
+          </div>}
+        </section>}
+        {candidate.shapePracticeId && !preSignal ? <section className="decision-reason" data-testid="replay-ai-analysis">
+          <h3>回放系统AI信号</h3>
+          {latestSignal ? <>
+            <div className={visibleSignalLong ? 'long' : 'short'}>{visibleSignalLong ? '开多信号' : '开空信号'} · {formatDecisionDate(visibleSignal!.time)}</div>
+            <h3>{visibleSignal!.setup}</h3>
+            <p>{highlightDecisionReason(visibleSignal!.reason, entryReferenceIndexes)}</p>
+          </> : <p>本题已显示的K线范围内暂无已导入的回放系统信号。形态识别不替代交易信号。</p>}
+        </section> : <>
         {preSignal ? <section className="decision-reason decision-pre-signal">
           <h3>从当天第一根 K 线开始</h3>
           <p>按 1 逐根播放行情；按 2 在当前 K 线最高价设置做多追单，按 3 在最低价设置做空追单。系统方向和理由只会在对应信号 K 到达后显示。</p>
         </section> : <><section className="decision-signal-summary">
-          <div className={visibleSignalLong ? 'long' : 'short'}>{visibleSignalLong ? '开多信号' : '开空信号'}</div>
+          <div className={visibleSignalLong ? 'long' : 'short'}>{candidate.shapePracticeId && !latestSignal ? (visibleSignalLong ? 'AI形态：看多反转' : 'AI形态：看空反转') : visibleSignalLong ? '开多信号' : '开空信号'}</div>
         </section>
         <section className="decision-reason">
           <h3 className={visibleSignalLong ? 'long' : 'short'}>{visibleSignal!.setup}</h3>
           <p>{highlightDecisionReason(visibleSignal!.reason, entryReferenceIndexes)}</p>
         </section></>}
+        </>}
         {attempt.pendingEntryPrice !== null && <section className="decision-order-state">
           <h3><Target size={17} />你的订单</h3>
           <dl><dt>方向</dt><dd>{userLong ? '做多' : '做空'}</dd><dt>类型</dt><dd>{attempt.entryMode === 'market-close' ? '当前 K 收盘开仓' : orderKindLabel(attempt.orderKind)}</dd><dt>仓位</dt><dd>{normalizeDecisionPositionMultiplier(attempt.positionMultiplier)}×</dd><dt>{attempt.fill ? '开仓价' : '挂单价'}</dt><dd>{formatPrice(attempt.pendingEntryPrice, candidate.symbol)}</dd>{attempt.fill && <><dt>成交时间</dt><dd>{formatDecisionDate(attempt.fill.time)}</dd></>}</dl>
@@ -1667,11 +1745,11 @@ export function DecisionReplayPanel({ candidate, latestSignal = null, attempt, o
           <h3><Flag size={17} />本笔已经平仓</h3>
           <p>你的盈亏 <DecisionModeMoneyStack modes={positionSizingModes} compact={false} valueFor={(mode) => decisionResultPnl(attempt.result!, mode, 'user')} />{decisionResultHasSystemBenchmark(attempt.result)
             ? <>，V5 系统盈亏 <DecisionModeMoneyStack modes={positionSizingModes} compact={false} valueFor={(mode) => decisionResultPnl(attempt.result!, mode, 'system')} />。</>
-            : '；本笔为日内手动续单，没有对应的新增 V5 系统交易。'}</p>
+            : candidate.shapePracticeId ? '；本题为形态练习，没有系统参考交易。' : '；本笔为日内手动续单，没有对应的新增 V5 系统交易。'}</p>
           <p>{exitReasonLabel(attempt.result.userExit.reason, attempt.result.stopLossMode)}</p>
           <small>{daySequenceMode
             ? '按 1 继续逐根观看；按 2 开多；按 3 开空。新开仓会保存为下一笔，不覆盖本笔结果。'
-            : '按 1 继续逐根观看后续行情；按 4 进入下一笔；按 5 从信号 K 重新开始本笔。'}</small>
+            : candidate.shapePracticeId ? '按 1 继续逐根观看；按 4 进入下一笔；按 5 删除该回放，不再抽取。' : '按 1 继续逐根观看后续行情；按 4 进入下一笔；按 5 从信号 K 重新开始本笔。'}</small>
         </section>}
       </div>
       <div className="decision-resize-handle" data-testid="decision-detail-resize-handle" aria-label="调整决策详情框大小" title="拖动调整详情框大小" onPointerDown={handleResizeStart} />
@@ -1686,11 +1764,12 @@ export function DecisionReplayPanel({ candidate, latestSignal = null, attempt, o
         <button onClick={onOpenLong}><kbd>2</kbd><span><b>开多</b><small>默认本 K 最高价追单</small></span></button>
         <button onClick={onOpenShort}><kbd>3</kbd><span><b>开空</b><small>默认本 K 最低价追单</small></span></button>
       </div>}
-      {!daySequenceMode && !preSignal && attempt.stage === 'entry-decision' && <div className="decision-choice-grid">
+      {!daySequenceMode && !preSignal && attempt.stage === 'entry-decision' && <div className={`decision-choice-grid${candidate.shapePracticeId ? ' decision-shape-choice-grid' : ''}`}>
         <button onClick={onAdvance}><kbd>1</kbd><span><b>先观察</b><small>进入下一根 K 线</small></span></button>
         <button onClick={onSignalExtreme}><kbd>2</kbd><span><b>本 K 突破价挂单</b><small>{systemLong ? '最高价做多' : '最低价做空'}</small></span></button>
         <button onClick={onFreePrice}><kbd>3</kbd><span><b>自由选择挂单价</b><small>在图上点击价格</small></span></button>
         <button className="skip" onClick={onSkip}><kbd>4</kbd><span><b>不参与</b><small>直接进入下一笔</small></span></button>
+        {candidate.shapePracticeId && onDeleteShape && <button className="skip" onClick={onDeleteShape}><kbd>5</kbd><span><b>删除该回放</b><small>不属于该形态，不再抽取</small></span></button>}
       </div>}
       {attempt.stage === 'order-pending' && <div className="decision-active-actions"><button onClick={onAdvance}><kbd>1</kbd>进入下一根 K 线</button><button className="danger" onClick={onCancelPending}><kbd>2</kbd>撤单并进入下一根 K 线</button></div>}
       {attempt.stage === 'position-open' && <>
@@ -1705,7 +1784,7 @@ export function DecisionReplayPanel({ candidate, latestSignal = null, attempt, o
         <button onClick={onOpenLong}><kbd>2</kbd><span><b>开多</b><small>保存本笔并在本 K 最高价追单</small></span></button>
         <button onClick={onOpenShort}><kbd>3</kbd><span><b>开空</b><small>保存本笔并在本 K 最低价追单</small></span></button>
       </div>}
-      {attempt.stage === 'post-exit' && !daySequenceMode && <div className={`decision-active-actions post-exit-actions${canAdvanceTrade ? '' : ' no-next'}`}><button onClick={onAdvance}><kbd>1</kbd>继续观看下一根 K 线</button>{canAdvanceTrade && <button className="close-position" onClick={onNextTrade}><kbd>4</kbd>进入下一笔交易</button>}<button className="restart-trade" onClick={onRestartTrade}><kbd>5</kbd>重新开始这笔交易</button></div>}
+      {attempt.stage === 'post-exit' && !daySequenceMode && <div className={`decision-active-actions post-exit-actions${canAdvanceTrade ? '' : ' no-next'}`}><button onClick={onAdvance}><kbd>1</kbd>继续观看下一根 K 线</button>{canAdvanceTrade && <button className="close-position" onClick={onNextTrade}><kbd>4</kbd>进入下一笔交易</button>}<button className="restart-trade" onClick={candidate.shapePracticeId ? onDeleteShape : onRestartTrade}><kbd>5</kbd>{candidate.shapePracticeId ? '删除该回放' : '重新开始这笔交易'}</button></div>}
       {attempt.stage === 'entry-price' && <div className="decision-action-hint"><MousePointer2 size={18} />请在图表上完成挂单价设置，单击确认，Esc 可取消</div>}
       {attempt.stage === 'risk-setup' && <div className="decision-action-hint"><MousePointer2 size={18} />拖动白色虚线设置挂单价或追单价；调整止盈止损后，按 <kbd>1</kbd> 确认，按 <kbd>2</kbd> 取消</div>}
     </nav>
@@ -1993,7 +2072,7 @@ export function DecisionRiskOverlay({ candidate, side, entryPrice, entryLabel = 
   </div>
 }
 
-export function DecisionChartAnnotations({ candidate, latestSignal = null, attempt, result, historicalResults = [], data, toX, toY, hidden = false }: {
+export function DecisionChartAnnotations({ candidate, latestSignal = null, attempt, result, historicalResults = [], data, toX, toY, hidden = false, overview = false }: {
   candidate: ReplayDecisionCandidate
   latestSignal?: ReplayDecisionSignalMarkerSelection | null
   attempt?: DecisionAttempt | null
@@ -2004,10 +2083,13 @@ export function DecisionChartAnnotations({ candidate, latestSignal = null, attem
   toX: (time: number) => number | null
   toY: (price: number) => number | null
   hidden?: boolean
+  /** Read-only whole-day view: retain user paths but omit the single-trade causal labels. */
+  overview?: boolean
 }) {
   const reasonTrade = latestSignal?.trade ?? candidate.trade
   const reasonSection = latestSignal?.kind ?? 'entry'
   const reasonReferences = useMemo(() => {
+    if (overview) return []
     const references = resolveTradeCandleReferences(reasonTrade, data)
     // Day-sequence playback can reveal several later entry/opposite signals
     // while the exercise still belongs to its original candidate. Keep the
@@ -2015,7 +2097,7 @@ export function DecisionChartAnnotations({ candidate, latestSignal = null, attem
     // panel. Its causal AI fill/exit points follow that same revealed trade;
     // the exercise totals remain tied to the question candidates below.
     return references.filter((reference) => reference.sections.includes(reasonSection))
-  }, [data, reasonSection, reasonTrade])
+  }, [data, overview, reasonSection, reasonTrade])
   // A decision chart is a causal tape. The system's fill and exit may be
   // known from the replay data before the user has made the corresponding
   // decision, but they must not appear until their own candles arrive.
@@ -2040,20 +2122,51 @@ export function DecisionChartAnnotations({ candidate, latestSignal = null, attem
     const projected = projectTime(time)
     return projected === null ? null : toX(projected)
   }
+  // User executions remain valid when the visible candle buffer has moved
+  // past their entry. Let the chart project the real timestamp off-screen;
+  // the overlay clips the line instead of dropping the whole trade.
+  const projectUserX = (time: number) => time <= revealedThrough ? toX(time) ?? projectX(time) : null
+  const shapePhaseBars = !overview && candidate.shapePracticeId ? shapeDecisionHistory(candidate) ?? [] : []
+  const shapePhaseRevealThrough = Math.min(
+    revealedThrough,
+    typeof attempt?.cursorTime === 'number'
+      ? attempt.cursorTime + INTERVALS[candidate.interval].seconds - 1
+      : revealedThrough,
+  )
+  let shapePhaseVisibleIndex = -1
+  for (let index = 0; index < shapePhaseBars.length; index += 1) {
+    if (shapePhaseBars[index].time <= shapePhaseRevealThrough) shapePhaseVisibleIndex = index
+  }
+  const shapeSignalRevealed = !candidate.shapePracticeId || candidate.trade.entry.signalTime <= shapePhaseRevealThrough
+  const shapePhaseSegments = shapeSignalRevealed
+    ? buildShapePhaseSegments(candidate, shapePhaseBars, shapePhaseVisibleIndex)
+    : []
+  const shapePhaseGeometry = shapePhaseSegments.flatMap((segment) => {
+    const startX = toX(segment.startTime)
+    const endX = toX(segment.endTime)
+    const startY = toY(segment.startPrice)
+    const endY = toY(segment.endPrice)
+    if (startX === null || endX === null || startY === null || endY === null) return []
+    // A confirmation is a point in time: draw a screen-space pointer to that candle.
+    // Never extend the data interval to manufacture a channel or a range.
+    return [{ segment, startX: segment.startIndex === segment.endIndex ? endX - 34 : startX, endX,
+      startY: segment.startIndex === segment.endIndex ? endY - (segment.kind === 'wide' ? 105 : 65) : startY, endY }]
+  })
+  const shapePhaseMarkerId = `shape-phase-arrowhead-${String(candidate.shapePracticeId ?? candidate.key).replace(/[^a-zA-Z0-9_-]/g, '-')}`
   const systemTrade = latestSignal?.trade ?? candidate.trade
-  const systemEntryVisible = systemTrade.entry.time <= revealedThrough
-  const systemExitVisible = systemTrade.exit.time <= revealedThrough
-  const signalTime = latestSignal?.signalTime ?? candidate.trade.entry.signalTime
-  const signalX = projectX(signalTime)
+  const systemEntryVisible = !overview && (!candidate.shapePracticeId || Boolean(latestSignal)) && systemTrade.entry.time <= revealedThrough
+  const systemExitVisible = !overview && (!candidate.shapePracticeId || Boolean(latestSignal)) && systemTrade.exit.time <= revealedThrough
+  const signalTime = candidate.shapePracticeId ? candidate.trade.entry.signalTime : latestSignal?.signalTime ?? candidate.trade.entry.signalTime
+  const signalX = overview ? null : projectX(signalTime)
   const systemEntryX = systemEntryVisible ? projectX(systemTrade.entry.time) : null
   const systemEntryY = systemEntryVisible ? toY(systemTrade.entry.price) : null
   const systemExitX = systemExitVisible ? projectX(systemTrade.exit.time) : null
   const systemExitY = systemExitVisible ? toY(systemTrade.exit.price) : null
-  const userEntry = result?.userEntry ?? attempt?.fill ?? null
-  const userExit = result?.userExit ?? null
-  const userEntryX = userEntry && userEntry.time <= revealedThrough ? projectX(userEntry.time) : null
+  const userEntry = overview ? null : result?.userEntry ?? attempt?.fill ?? null
+  const userExit = overview ? null : result?.userExit ?? null
+  const userEntryX = userEntry ? projectUserX(userEntry.time) : null
   const userEntryY = userEntry === null || userEntryX === null ? null : toY(userEntry.price)
-  const userExitX = userExit && userExit.time <= revealedThrough ? projectX(userExit.time) : null
+  const userExitX = userExit ? projectUserX(userExit.time) : null
   const userExitY = userExit === null || userExitX === null ? null : toY(userExit.price)
   const userTradeSide = result
     ? decisionResultSide(result)
@@ -2062,8 +2175,8 @@ export function DecisionChartAnnotations({ candidate, latestSignal = null, attem
       : candidate.trade.side
   const historicalUserTrades = historicalResults.flatMap((historicalResult, index) => {
     if (historicalResult.choice !== 'traded' || !historicalResult.userEntry) return []
-    const entryX = historicalResult.userEntry.time <= revealedThrough ? projectX(historicalResult.userEntry.time) : null
-    const exitX = historicalResult.userExit.time <= revealedThrough ? projectX(historicalResult.userExit.time) : null
+    const entryX = projectUserX(historicalResult.userEntry.time)
+    const exitX = projectUserX(historicalResult.userExit.time)
     if (entryX === null || exitX === null) return []
     const entryY = toY(historicalResult.userEntry.price)
     const exitY = toY(historicalResult.userExit.price)
@@ -2085,7 +2198,7 @@ export function DecisionChartAnnotations({ candidate, latestSignal = null, attem
     systemExitX !== null && systemExitY !== null ? { id: 'system-exit', x: systemExitX, y: systemExitY, time: systemTrade.exit.time, kind: 'point' as const, preference: 'placement-above-right' as const, className: 'system exit', label: `AI平 ${formatPrice(systemTrade.exit.price, candidate.symbol)}` } : null,
     userEntryX !== null && userEntryY !== null ? { id: 'user-entry', x: userEntryX, y: userEntryY, time: userEntry!.time, kind: 'point' as const, preference: 'placement-below-right' as const, className: 'user entry', label: `你的开仓 ${formatPrice(userEntry!.price, candidate.symbol)}` } : null,
     userExitX !== null && userExitY !== null ? { id: 'user-exit', x: userExitX, y: userExitY, time: userExit!.time, kind: 'point' as const, preference: 'placement-below-right' as const, className: 'user exit', label: `你的平仓 ${formatPrice(userExit!.price, candidate.symbol)}` } : null,
-  ].filter((spec): spec is NonNullable<typeof spec> => spec !== null).map((spec) => {
+  ].filter((spec): spec is NonNullable<typeof spec> => spec !== null && projectTime(spec.time) !== null).map((spec) => {
     const candleTime = projectTime(spec.time)!
     const index = data.findIndex((candle) => candle.time === candleTime)
     const candle = data[index]
@@ -2143,7 +2256,20 @@ export function DecisionChartAnnotations({ candidate, latestSignal = null, attem
     className={`decision-chart-annotations${hidden ? ' is-hidden' : ''}`}
     aria-hidden="true"
   >
-    {signalX !== null && signalTime <= revealedThrough && <div className="decision-signal-cursor" style={{ left: signalX }}><span>信号 K</span></div>}
+    {shapePhaseGeometry.length > 0 && <svg className="shape-phase-annotations" data-testid="shape-phase-annotations" width="100%" height="100%" preserveAspectRatio="none">
+      <defs>
+        {SHAPE_PHASE_KINDS.map((kind) => <marker id={`${shapePhaseMarkerId}-${kind}`} key={kind} viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse">
+          <path className={`shape-phase-arrowhead ${kind}`} d="M 0 0 L 10 5 L 0 10 z" />
+        </marker>)}
+      </defs>
+      {shapePhaseGeometry.map(({ segment, startX, endX, startY, endY }) => {
+        return <g className={`shape-phase-segment ${segment.kind}`} key={segment.id} data-testid={`shape-phase-segment-${segment.kind}`} data-start-index={segment.startIndex} data-end-index={segment.endIndex}>
+          <line className="shape-phase-arrow-outline" x1={startX} y1={startY} x2={endX} y2={endY} />
+          <line className={`shape-phase-arrow ${segment.kind}`} x1={startX} y1={startY} x2={endX} y2={endY} markerEnd={`url(#${shapePhaseMarkerId}-${segment.kind})`} />
+        </g>
+      })}
+    </svg>}
+    {signalX !== null && signalTime <= revealedThrough && <div className={`decision-signal-cursor${candidate.shapePracticeId ? ' shape-persistent-cursor' : ''}`} style={{ left: signalX }}><span>{candidate.shapePracticeId ? shapeAiReview(candidate)?.causal.status === 'signal' ? '首次震荡 K' : '候选 K · 未验证' : '信号 K'}</span></div>}
     {reasonReferences.length > 0 && <svg className="decision-reason-connectors" width="100%" height="100%" preserveAspectRatio="none">
       {reasonReferences.map((reference) => {
         const exitOnly = reference.sections.length === 1 && reference.sections[0] === 'exit'
@@ -2241,7 +2367,7 @@ export function DecisionResultsDialog({ session, systemCandidates = null, onClos
       <header><BarChart3 size={25} /><div><h2>本场决策对比</h2><small>{statusLabel(session.status)} · 完成 {results.length} / {session.candidates.length} 笔</small></div><button aria-label="关闭结果" onClick={onClose}><X size={21} /></button></header>
       <div className="decision-result-summary">
         <article><span>你的净盈亏</span><DecisionModeMoneyStack modes={modes} compact={false} valueFor={(mode) => aggregateDecisionResults(results, mode).userPnlUsd} /><small>参与胜率 {userWinRateText} · 参与 {userTrades.length} 笔 · 未参与 {skippedTradeCount} 笔交易</small></article>
-        <article className="decision-system-summary"><span>V5 系统参与部分净盈亏</span><DecisionModeMoneyStack modes={modes} compact={false} valueFor={(mode) => aggregateDecisionResults(userTrades, mode).systemPnlUsd} /><small>参与部分胜率 {systemParticipatedWinRateText} · 对应 {systemParticipatedTradeCount} 笔</small><span className="decision-system-total-label">V5 系统全卷总净盈亏</span><DecisionModeMoneyStack modes={modes} compact={false} valueFor={(mode) => wholePaperSystemStats(mode).pnlUsd} /><small>全卷胜率 {systemOverallWinRateText} · 全部 {systemOverallTradeCount} 笔</small></article>
+        {!session.candidates[0]?.shapePracticeId && <article className="decision-system-summary"><span>V5 系统参与部分净盈亏</span><DecisionModeMoneyStack modes={modes} compact={false} valueFor={(mode) => aggregateDecisionResults(userTrades, mode).systemPnlUsd} /><small>参与部分胜率 {systemParticipatedWinRateText} · 对应 {systemParticipatedTradeCount} 笔</small><span className="decision-system-total-label">V5 系统全卷总净盈亏</span><DecisionModeMoneyStack modes={modes} compact={false} valueFor={(mode) => wholePaperSystemStats(mode).pnlUsd} /><small>全卷胜率 {systemOverallWinRateText} · 全部 {systemOverallTradeCount} 笔</small></article>}
         <article><span>{daySequenceMode ? '相对V5系统本交易日' : '相对系统全卷'}</span><DecisionModeMoneyStack modes={modes} compact={false} valueFor={(mode) => aggregateDecisionResults(results, mode).userPnlUsd - wholePaperSystemStats(mode).pnlUsd} /><small>你的已结算 {results.length} 笔与系统{daySequenceMode ? '实际' : '全卷'} {systemOverallTradeCount} 笔相比</small></article>
         <div className="decision-result-r-summary" data-testid="decision-result-r-summary">
           <article>
@@ -2273,7 +2399,17 @@ export function DecisionResultsDialog({ session, systemCandidates = null, onClos
               }
             }}
           >
-          <span><b>{index + 1}. {result.candidate.symbol}</b><small>{INTERVALS[result.candidate.interval].label} · {decisionResultSide(result) === 'long' ? '多' : '空'}</small></span>
+          <span>
+            <b>{index + 1}. {result.candidate.symbol}</b>
+            <small>{INTERVALS[result.candidate.interval].label} · {decisionResultSide(result) === 'long' ? '多' : '空'}</small>
+            <small
+              className="decision-result-trade-time"
+              data-testid={`decision-result-trade-time-${index + 1}`}
+              title={`AI信号 ${formatDecisionCandleTimestamp(result.candidate.trade.entry.signalTime)} · 开仓 ${formatDecisionCandleTimestamp(result.candidate.trade.entry.time)} · 平仓 ${formatDecisionCandleTimestamp(result.candidate.trade.exit.time)}`}
+            >
+              信号 {formatDecisionCandleTimestamp(result.candidate.trade.entry.signalTime)} · 开 {formatDecisionCandleTimestamp(result.candidate.trade.entry.time)} · 平 {formatDecisionCandleTimestamp(result.candidate.trade.exit.time)}
+            </small>
+          </span>
           <span>{choiceLabel(result)}</span>
           <DecisionModeMoneyStack modes={modes} valueFor={(mode) => decisionResultPnl(result, mode, 'user')} />
           {decisionResultHasSystemBenchmark(result)

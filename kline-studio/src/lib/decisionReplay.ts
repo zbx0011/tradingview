@@ -623,7 +623,7 @@ function deduplicatePracticeDecisionTrades(store: DecisionReplayStore): Decision
   const winnersByModeAndKey = new Map<string, DecisionTradeOccurrence>()
 
   store.sessions.forEach((session) => {
-    if (!shouldCommitPracticeSessionCandidates(session)) return
+    if (!shouldCommitPracticeSessionCandidates(session) || session.candidates.some(candidate => candidate.shapePracticeId)) return
     const occurrences = session.candidates.map((candidate, candidateIndex) => {
       const occurrence: DecisionTradeOccurrence = {
         id: `${session.id}\u0000${candidate.key}\u0000${candidateIndex}`,
@@ -641,7 +641,7 @@ function deduplicatePracticeDecisionTrades(store: DecisionReplayStore): Decision
   })
 
   const sessions = store.sessions.flatMap((session) => {
-    if (!shouldCommitPracticeSessionCandidates(session)) return [session]
+    if (!shouldCommitPracticeSessionCandidates(session) || session.candidates.some(candidate => candidate.shapePracticeId)) return [session]
     // Preserve legacy/imported records whose result attempts are present but
     // whose candidate array was never serialized. There is no safe identity
     // to deduplicate until the candidate data is available.
@@ -718,7 +718,16 @@ function deduplicatePracticeDecisionTrades(store: DecisionReplayStore): Decision
   const committedSessionKeys = new Set(store.sessions
     .filter(shouldCommitPracticeSessionCandidates)
     .flatMap((session) => session.candidates.map((candidate) => candidate.key)))
+  // Shape questions count only after explicit confirmation, never reservation
+  // or a settled trade still waiting in post-exit. Repair legacy batch keys too.
+  const shapeKeys = new Set(store.sessions.flatMap(session => session.candidates
+    .filter(candidate => candidate.shapePracticeId).map(candidate => candidate.key)))
+  const confirmedShapeKeys = new Set(store.sessions.flatMap(session => session.candidates
+    .filter(candidate => candidate.shapePracticeId && session.attempts.some(attempt =>
+      attempt.candidateKey === candidate.key && isCompletedDecisionAttempt(attempt)))
+    .map(candidate => candidate.key)))
   const addSeen = (key: string) => {
+    if (shapeKeys.has(key) && !confirmedShapeKeys.has(key)) return
     if (seen.has(key)) return
     seen.add(key)
     seenTradeKeys.push(key)
@@ -1943,7 +1952,7 @@ export function advanceDecisionAttempt(candidate: ReplayDecisionCandidate, attem
     // Only a newly reached system-exit bar may close a position. In particular,
     // a late user entry must never be closed retroactively at a past system exit.
     // With OHLC-only data, same-bar system exits take precedence over close confirmation.
-    if (nextAttempt.userSide === undefined && mode === 'close' && nextAttempt.fill && systemExit.time === nextCandle.time && systemExit.time >= nextAttempt.fill.time) {
+    if (!candidate.shapePracticeId && nextAttempt.userSide === undefined && mode === 'close' && nextAttempt.fill && systemExit.time === nextCandle.time && systemExit.time >= nextAttempt.fill.time) {
       return { attempt: nextAttempt, exit: { time: systemExit.time, price: systemExit.price, reason: 'system-exit' } }
     }
     return { attempt: nextAttempt, exit: evaluatePositionBar(side, nextAttempt.stopLoss, nextAttempt.takeProfit, nextCandle, mode) }

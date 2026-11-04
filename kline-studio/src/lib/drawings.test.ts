@@ -86,7 +86,7 @@ describe('drawing history and persistence', () => {
 
   it('adds and restores complete Fibonacci settings', () => {
     const fib = makeDrawing('fib', { x: .2, y: .3 })
-    expect(fib.fib?.levels.filter((level) => level.visible).map((level) => level.value)).toEqual([0, .236, .382, .5, .618, .786, 1])
+    expect(fib.fib?.levels.filter((level) => level.visible).map((level) => level.value)).toEqual([0, .5, 1])
     expect(fib.fib).toMatchObject({
       backgroundVisible: true,
       backgroundOpacity: .08,

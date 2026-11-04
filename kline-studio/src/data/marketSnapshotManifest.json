@@ -1,5 +1,5 @@
 {
-  "fetchedAt": "2026-08-30T03:45:04.747Z",
+  "fetchedAt": "2026-09-08T01:29:32.537Z",
   "timezone": "UTC",
   "series": {
     "XAUUSD": {
@@ -7,45 +7,45 @@
       "vendor": "OANDA",
       "resolution": "5",
       "file": "data/market-snapshots/xauusd-1m.json",
-      "count": 18144,
+      "count": 19811,
       "firstTime": 1779994800,
-      "lastTime": 1787950500
+      "lastTime": 1788830400
     },
     "XAGUSD": {
       "symbol": "OANDA:XAGUSD",
       "vendor": "OANDA",
       "resolution": "5",
       "file": "data/market-snapshots/xagusd-1m.json",
-      "count": 19722,
+      "count": 21389,
       "firstTime": 1779321600,
-      "lastTime": 1787950500
+      "lastTime": 1788830400
     },
     "US500": {
       "symbol": "OANDA:SPX500USD",
       "vendor": "OANDA",
       "resolution": "5",
       "file": "data/market-snapshots/us500-1m.json",
-      "count": 19152,
+      "count": 20801,
       "firstTime": 1779667200,
-      "lastTime": 1787950500
+      "lastTime": 1788830400
     },
     "BTCUSDT.P": {
       "symbol": "BYBIT:BTCUSDT.P",
       "vendor": "BYBIT",
       "resolution": "5",
       "file": "data/market-snapshots/btcusdt-p-1m.json",
-      "count": 16280,
+      "count": 18845,
       "firstTime": 1783177200,
-      "lastTime": 1788060900
+      "lastTime": 1788830400
     },
     "ETHUSD": {
       "symbol": "BYBIT:ETHUSDT.P",
       "vendor": "BYBIT",
       "resolution": "5",
       "file": "data/market-snapshots/ethusd-1m.json",
-      "count": 16280,
+      "count": 18845,
       "firstTime": 1783177200,
-      "lastTime": 1788060900
+      "lastTime": 1788830400
     }
   }
 }

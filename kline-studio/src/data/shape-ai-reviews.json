@@ -1,0 +1,227 @@
+{
+  "model": "gpt-5.6-luna",
+  "reasoning_effort": "max",
+  "service_tier": "default",
+  "reviews": [
+    {
+      "id": "M01",
+      "direction": "down",
+      "candidate_time_utc": "2026-06-01T22:00:00+00:00",
+      "similarity_rank": 1,
+      "verdict": "strong",
+      "confidence": 0.9,
+      "shape_note": "反向前窄通道可见，随后推进明显减弱；平台/震荡清楚；黄色标记附近第一次反向 EMA20 收盘穿越可见。",
+      "first_opposite_ema20_close_visual": true
+    },
+    {
+      "id": "M02",
+      "direction": "down",
+      "candidate_time_utc": "2026-06-02T10:00:00+00:00",
+      "similarity_rank": 2,
+      "verdict": "strong",
+      "confidence": 0.93,
+      "shape_note": "反向前窄通道可见，随后推进明显减弱；顶部平台/震荡清楚；黄色标记附近第一次反向 EMA20 收盘穿越可见。",
+      "first_opposite_ema20_close_visual": true
+    },
+    {
+      "id": "M05",
+      "direction": "up",
+      "candidate_time_utc": "2026-06-05T05:45:00+00:00",
+      "similarity_rank": 5,
+      "verdict": "strong",
+      "confidence": 0.97,
+      "shape_note": "反向前窄通道清楚，随后通道扩宽/推进减弱清楚；底部圆弧/平台/震荡清楚，标记附近第一次反向 EMA20 收盘穿越可见。",
+      "first_opposite_ema20_close_visual": true
+    },
+    {
+      "id": "M06",
+      "direction": "up",
+      "candidate_time_utc": "2026-06-07T22:50:00+00:00",
+      "similarity_rank": 6,
+      "verdict": "strong",
+      "confidence": 0.95,
+      "shape_note": "反向前窄通道清楚，随后推进明显减弱；底部平台/圆弧/震荡清楚，标记附近第一次反向 EMA20 收盘穿越可见。",
+      "first_opposite_ema20_close_visual": true
+    },
+    {
+      "id": "M11",
+      "direction": "up",
+      "candidate_time_utc": "2026-06-30T05:20:00+00:00",
+      "similarity_rank": 11,
+      "verdict": "strong",
+      "confidence": 0.98,
+      "shape_note": "反向前下行窄通道可见，随后通道扩宽/推进减弱清楚；底部圆弧/平台/震荡清楚，标记附近向上第一次 EMA20 收盘穿越可见。",
+      "first_opposite_ema20_close_visual": true
+    },
+    {
+      "id": "M14",
+      "direction": "up",
+      "candidate_time_utc": "2026-07-07T07:35:00+00:00",
+      "similarity_rank": 14,
+      "verdict": "strong",
+      "confidence": 0.95,
+      "shape_note": "反向前下行窄通道清楚，随后推进明显减弱；底部平台/圆弧/震荡清楚，标记附近第一次反向 EMA20 收盘穿越可见。",
+      "first_opposite_ema20_close_visual": true
+    },
+    {
+      "id": "M15",
+      "direction": "down",
+      "candidate_time_utc": "2026-07-08T07:35:00+00:00",
+      "similarity_rank": 15,
+      "verdict": "strong",
+      "confidence": 0.99,
+      "shape_note": "反向前上行窄通道清楚，随后通道扩宽/推进减弱清楚；顶部平台/震荡清楚，标记附近第一次反向 EMA20 收盘穿越可见。",
+      "first_opposite_ema20_close_visual": true
+    },
+    {
+      "id": "M17",
+      "direction": "down",
+      "candidate_time_utc": "2026-07-08T23:15:00+00:00",
+      "similarity_rank": 17,
+      "verdict": "strong",
+      "confidence": 0.9,
+      "shape_note": "反向前上行窄通道可见，随后推进明显减弱；顶部平台/震荡清楚，标记附近向下第一次 EMA20 收盘穿越可见。",
+      "first_opposite_ema20_close_visual": true
+    },
+    {
+      "id": "M18",
+      "direction": "down",
+      "candidate_time_utc": "2026-07-09T11:20:00+00:00",
+      "similarity_rank": 18,
+      "verdict": "strong",
+      "confidence": 0.88,
+      "shape_note": "反向前上行窄通道可见，随后推进减弱并转为顶部震荡；平台清楚，标记附近向下第一次 EMA20 收盘穿越可见。",
+      "first_opposite_ema20_close_visual": true
+    },
+    {
+      "id": "M20",
+      "direction": "up",
+      "candidate_time_utc": "2026-07-13T19:40:00+00:00",
+      "similarity_rank": 20,
+      "verdict": "strong",
+      "confidence": 0.97,
+      "shape_note": "反向前下行窄通道清楚，随后通道扩宽/推进减弱清楚；底部平台/圆弧/震荡清楚，标记附近第一次反向 EMA20 收盘穿越可见。",
+      "first_opposite_ema20_close_visual": true
+    },
+    {
+      "id": "M24",
+      "direction": "down",
+      "candidate_time_utc": "2026-07-21T09:25:00+00:00",
+      "similarity_rank": 24,
+      "verdict": "strong",
+      "confidence": 0.96,
+      "shape_note": "反向前上行窄通道清楚，随后推进减弱并形成顶部平台；震荡清楚，标记附近第一次反向 EMA20 收盘穿越可见。",
+      "first_opposite_ema20_close_visual": true
+    },
+    {
+      "id": "M25",
+      "direction": "down",
+      "candidate_time_utc": "2026-07-22T05:05:00+00:00",
+      "similarity_rank": 25,
+      "verdict": "strong",
+      "confidence": 0.98,
+      "shape_note": "反向前上行窄通道清楚，随后通道扩宽/推进减弱清楚；顶部平台/震荡清楚，标记附近第一次反向 EMA20 收盘穿越可见。",
+      "first_opposite_ema20_close_visual": true
+    },
+    {
+      "id": "M27",
+      "direction": "up",
+      "candidate_time_utc": "2026-07-23T19:45:00+00:00",
+      "similarity_rank": 27,
+      "verdict": "strong",
+      "confidence": 0.96,
+      "shape_note": "反向前下行窄通道清楚，随后推进明显减弱；底部平台/圆弧/震荡清楚，标记附近第一次反向 EMA20 收盘穿越可见。",
+      "first_opposite_ema20_close_visual": true
+    },
+    {
+      "id": "M28",
+      "direction": "down",
+      "candidate_time_utc": "2026-07-24T12:30:00+00:00",
+      "similarity_rank": 28,
+      "verdict": "strong",
+      "confidence": 0.93,
+      "shape_note": "反向前上行窄通道清楚，随后推进减弱并形成顶部平台；震荡清楚，标记附近第一次反向 EMA20 收盘穿越可见。",
+      "first_opposite_ema20_close_visual": true
+    },
+    {
+      "id": "M29",
+      "direction": "up",
+      "candidate_time_utc": "2026-07-29T00:50:00+00:00",
+      "similarity_rank": 29,
+      "verdict": "strong",
+      "confidence": 0.9,
+      "shape_note": "反向前下行窄通道清楚，随后推进减弱并形成底部圆弧；平台/震荡清楚，标记附近第一次反向 EMA20 收盘穿越可见。",
+      "first_opposite_ema20_close_visual": true
+    },
+    {
+      "id": "M30",
+      "direction": "up",
+      "candidate_time_utc": "2026-07-29T16:15:00+00:00",
+      "similarity_rank": 30,
+      "verdict": "strong",
+      "confidence": 0.99,
+      "shape_note": "反向前下行窄通道清楚，随后通道扩宽/推进减弱清楚；底部平台/圆弧/震荡清楚，标记附近第一次反向 EMA20 收盘穿越可见。",
+      "first_opposite_ema20_close_visual": true
+    },
+    {
+      "id": "M31",
+      "direction": "down",
+      "candidate_time_utc": "2026-07-30T01:10:00+00:00",
+      "similarity_rank": 31,
+      "verdict": "strong",
+      "confidence": 0.97,
+      "shape_note": "反向前上行窄通道清楚，随后推进减弱并形成顶部平台；震荡清楚，标记附近第一次反向 EMA20 收盘穿越可见。",
+      "first_opposite_ema20_close_visual": true
+    },
+    {
+      "id": "M36",
+      "direction": "down",
+      "candidate_time_utc": "2026-08-11T03:40:00+00:00",
+      "similarity_rank": 36,
+      "verdict": "strong",
+      "confidence": 0.99,
+      "shape_note": "反向前上行窄通道清楚，随后通道扩宽/推进减弱清楚；顶部平台/震荡清楚，标记附近第一次反向 EMA20 收盘穿越可见。",
+      "first_opposite_ema20_close_visual": true
+    },
+    {
+      "id": "M37",
+      "direction": "up",
+      "candidate_time_utc": "2026-08-11T09:45:00+00:00",
+      "similarity_rank": 37,
+      "verdict": "strong",
+      "confidence": 0.98,
+      "shape_note": "反向前下行窄通道清楚，随后推进明显减弱；底部平台/圆弧/震荡清楚，标记附近第一次反向 EMA20 收盘穿越可见。",
+      "first_opposite_ema20_close_visual": true
+    },
+    {
+      "id": "M38",
+      "direction": "down",
+      "candidate_time_utc": "2026-08-11T16:30:00+00:00",
+      "similarity_rank": 38,
+      "verdict": "strong",
+      "confidence": 0.91,
+      "shape_note": "反向前上行窄通道清楚，随后通道扩宽/推进减弱清楚；顶部平台/震荡清楚，标记附近第一次反向 EMA20 收盘穿越可见。",
+      "first_opposite_ema20_close_visual": true
+    },
+    {
+      "id": "M48",
+      "direction": "down",
+      "candidate_time_utc": "2026-09-02T16:55:00+00:00",
+      "similarity_rank": 48,
+      "verdict": "strong",
+      "confidence": 0.95,
+      "shape_note": "反向前上行窄通道清楚，随后推进明显减弱；顶部平台/圆弧/震荡清楚，标记附近第一次反向 EMA20 收盘穿越可见。",
+      "first_opposite_ema20_close_visual": true
+    },
+    {
+      "id": "M49",
+      "direction": "down",
+      "candidate_time_utc": "2026-09-03T07:05:00+00:00",
+      "similarity_rank": 49,
+      "verdict": "strong",
+      "confidence": 0.91,
+      "shape_note": "反向前上行窄通道清楚，随后推进减弱并形成顶部平台；震荡清楚，标记附近第一次反向 EMA20 收盘穿越可见。",
+      "first_opposite_ema20_close_visual": true
+    }
+  ]
+}

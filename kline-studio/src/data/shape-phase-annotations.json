@@ -1,0 +1,636 @@
+{
+  "version": 1,
+  "method": "逐题查看仅截至信号K的冻结OHLC图后划定的视觉候选阶段；供用户复核，不是交易规则或自动确认。",
+  "annotations": [
+    {
+      "id": "M01",
+      "status": "excluded",
+      "note": "中段回撤后在212附近再次加速，不能确认为持续衰减；橙色段仅标宽幅推进候选。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 180,
+          "endIndex": 186
+        },
+        {
+          "kind": "wide",
+          "startIndex": 186,
+          "endIndex": 213
+        },
+        {
+          "kind": "range",
+          "startIndex": 213,
+          "endIndex": 252
+        }
+      ]
+    },
+    {
+      "id": "M02",
+      "status": "review",
+      "note": "上涨前段回撤浅，中段回撤和交错增加，后段转为平台；边界待你复核。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 214,
+          "endIndex": 239
+        },
+        {
+          "kind": "wide",
+          "startIndex": 239,
+          "endIndex": 267
+        },
+        {
+          "kind": "range",
+          "startIndex": 267,
+          "endIndex": 300
+        }
+      ]
+    },
+    {
+      "id": "M05",
+      "status": "review",
+      "note": "下跌中段出现较大反弹及多次低点推进，随后低位交错；宽通道与平台边界待复核。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 214,
+          "endIndex": 234
+        },
+        {
+          "kind": "wide",
+          "startIndex": 234,
+          "endIndex": 272
+        },
+        {
+          "kind": "range",
+          "startIndex": 272,
+          "endIndex": 300
+        }
+      ]
+    },
+    {
+      "id": "M06",
+      "status": "review",
+      "note": "急跌后推进斜率趋缓并出现更明显回抽，末段低位横盘。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 186,
+          "endIndex": 212
+        },
+        {
+          "kind": "wide",
+          "startIndex": 212,
+          "endIndex": 265
+        },
+        {
+          "kind": "range",
+          "startIndex": 265,
+          "endIndex": 300
+        }
+      ]
+    },
+    {
+      "id": "M11",
+      "status": "excluded",
+      "note": "本次信号前是反弹加速后直接小平台，缺少独立宽通道衰减阶段；更早下跌不能跨过整段反弹拼接。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 282,
+          "endIndex": 290
+        },
+        {
+          "kind": "range",
+          "startIndex": 290,
+          "endIndex": 300
+        }
+      ]
+    },
+    {
+      "id": "M14",
+      "status": "review",
+      "note": "先快速下行，中段反弹幅度增加且低点推进减弱，随后低位横盘。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 215,
+          "endIndex": 226
+        },
+        {
+          "kind": "wide",
+          "startIndex": 226,
+          "endIndex": 277
+        },
+        {
+          "kind": "range",
+          "startIndex": 277,
+          "endIndex": 300
+        }
+      ]
+    },
+    {
+      "id": "M15",
+      "status": "excluded",
+      "note": "中段仍有再次上冲，宽通道减弱不够明确；保留候选段给你复核。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 230,
+          "endIndex": 237
+        },
+        {
+          "kind": "wide",
+          "startIndex": 237,
+          "endIndex": 250
+        },
+        {
+          "kind": "range",
+          "startIndex": 250,
+          "endIndex": 300
+        }
+      ]
+    },
+    {
+      "id": "M17",
+      "status": "excluded",
+      "note": "242后有回撤但258附近重新强拉，中段不是持续减弱；请重点复核。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 220,
+          "endIndex": 242
+        },
+        {
+          "kind": "wide",
+          "startIndex": 242,
+          "endIndex": 267
+        },
+        {
+          "kind": "range",
+          "startIndex": 267,
+          "endIndex": 300
+        }
+      ]
+    },
+    {
+      "id": "M18",
+      "status": "review",
+      "note": "快速上行后实体交错增多、净推进趋缓，随后转为高位平台。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 230,
+          "endIndex": 245
+        },
+        {
+          "kind": "wide",
+          "startIndex": 245,
+          "endIndex": 267
+        },
+        {
+          "kind": "range",
+          "startIndex": 267,
+          "endIndex": 300
+        }
+      ]
+    },
+    {
+      "id": "M20",
+      "status": "review",
+      "note": "初段急跌，中段深回抽后低点继续推进，后段低位平台；中段边界待复核。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 226,
+          "endIndex": 241
+        },
+        {
+          "kind": "wide",
+          "startIndex": 241,
+          "endIndex": 266
+        },
+        {
+          "kind": "range",
+          "startIndex": 266,
+          "endIndex": 300
+        }
+      ]
+    },
+    {
+      "id": "M24",
+      "status": "excluded",
+      "note": "临近信号的一段仍在加速，随后直接平台；缺少独立宽通道逐渐减弱阶段。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 251,
+          "endIndex": 268
+        },
+        {
+          "kind": "range",
+          "startIndex": 268,
+          "endIndex": 300
+        }
+      ]
+    },
+    {
+      "id": "M25",
+      "status": "excluded",
+      "note": "中段有交错但277附近再度加速，不能直接等同于连续衰减。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 239,
+          "endIndex": 254
+        },
+        {
+          "kind": "wide",
+          "startIndex": 254,
+          "endIndex": 279
+        },
+        {
+          "kind": "range",
+          "startIndex": 279,
+          "endIndex": 300
+        }
+      ]
+    },
+    {
+      "id": "M27",
+      "status": "review",
+      "note": "急跌后大回抽及再次回落，随后低位净推进很小。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 210,
+          "endIndex": 221
+        },
+        {
+          "kind": "wide",
+          "startIndex": 221,
+          "endIndex": 250
+        },
+        {
+          "kind": "range",
+          "startIndex": 250,
+          "endIndex": 300
+        }
+      ]
+    },
+    {
+      "id": "M28",
+      "status": "review",
+      "note": "初段快速上行，中段回撤和重叠增加，后段高位交错。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 223,
+          "endIndex": 240
+        },
+        {
+          "kind": "wide",
+          "startIndex": 240,
+          "endIndex": 277
+        },
+        {
+          "kind": "range",
+          "startIndex": 277,
+          "endIndex": 300
+        }
+      ]
+    },
+    {
+      "id": "M29",
+      "status": "excluded",
+      "note": "中段包含较长反弹以及再次急跌，连续衰减的解释较弱，需你复核。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 210,
+          "endIndex": 237
+        },
+        {
+          "kind": "wide",
+          "startIndex": 237,
+          "endIndex": 273
+        },
+        {
+          "kind": "range",
+          "startIndex": 273,
+          "endIndex": 300
+        }
+      ]
+    },
+    {
+      "id": "M30",
+      "status": "review",
+      "note": "修正阶段范围：窄通道覆盖196—238的完整浅回抽下行；238后反弹和双向摆动扩大，282后低位交错。中段仍出现再次加速下跌，不能仅凭三段标线认定持续衰减，需重点复核。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 196,
+          "endIndex": 238
+        },
+        {
+          "kind": "wide",
+          "startIndex": 238,
+          "endIndex": 282
+        },
+        {
+          "kind": "range",
+          "startIndex": 282,
+          "endIndex": 300
+        }
+      ]
+    },
+    {
+      "id": "M31",
+      "status": "excluded",
+      "note": "中段为大幅双向摆动，信号前没有清晰独立横盘阶段；不画不存在的震荡末段。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 237,
+          "endIndex": 251
+        },
+        {
+          "kind": "wide",
+          "startIndex": 251,
+          "endIndex": 295
+        }
+      ]
+    },
+    {
+      "id": "M36",
+      "status": "excluded",
+      "note": "中段整体仍有重新加速，宽幅走势存在但持续减弱不明确，需复核。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 201,
+          "endIndex": 218
+        },
+        {
+          "kind": "wide",
+          "startIndex": 218,
+          "endIndex": 283
+        },
+        {
+          "kind": "range",
+          "startIndex": 283,
+          "endIndex": 300
+        }
+      ]
+    },
+    {
+      "id": "M37",
+      "status": "review",
+      "note": "快速下行后反弹、重叠增加且新低推进变小，后段转为低位交错。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 241,
+          "endIndex": 254
+        },
+        {
+          "kind": "wide",
+          "startIndex": 254,
+          "endIndex": 278
+        },
+        {
+          "kind": "range",
+          "startIndex": 278,
+          "endIndex": 300
+        }
+      ]
+    },
+    {
+      "id": "M38",
+      "status": "excluded",
+      "note": "信号前短促下跌后直接平台，缺少独立宽通道；更早下跌与此处之间有完整上涨，不能拼接。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 283,
+          "endIndex": 290
+        },
+        {
+          "kind": "range",
+          "startIndex": 290,
+          "endIndex": 300
+        }
+      ]
+    },
+    {
+      "id": "M48",
+      "status": "excluded",
+      "note": "初段上行仍在加速，随后直接回落并平台，未辨认出独立宽通道衰减阶段。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 255,
+          "endIndex": 267
+        },
+        {
+          "kind": "range",
+          "startIndex": 267,
+          "endIndex": 300
+        }
+      ]
+    },
+    {
+      "id": "M49",
+      "status": "excluded",
+      "note": "你指出的反例：强势上行后直接震荡横盘，缺少逐渐减弱过程；已删除的题不会重新加入。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 225,
+          "endIndex": 270
+        },
+        {
+          "kind": "range",
+          "startIndex": 270,
+          "endIndex": 300
+        }
+      ]
+    },
+    {
+      "id": "M03",
+      "status": "review",
+      "note": "先持续下跌，中段回抽明显并且低点净推进变小，最后低位窄幅交错。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 190,
+          "endIndex": 212
+        },
+        {
+          "kind": "wide",
+          "startIndex": 212,
+          "endIndex": 252
+        },
+        {
+          "kind": "range",
+          "startIndex": 252,
+          "endIndex": 300
+        }
+      ]
+    },
+    {
+      "id": "M22",
+      "status": "review",
+      "note": "快速下跌后出现宽幅反弹与再下探，后续下行推进明显减弱并进入低位平台。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 163,
+          "endIndex": 172
+        },
+        {
+          "kind": "wide",
+          "startIndex": 172,
+          "endIndex": 253
+        },
+        {
+          "kind": "range",
+          "startIndex": 253,
+          "endIndex": 300
+        }
+      ]
+    },
+    {
+      "id": "M33",
+      "status": "review",
+      "note": "初段下行效率较高，中段回抽和交错增加，末段低点不再有效推进。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 231,
+          "endIndex": 241
+        },
+        {
+          "kind": "wide",
+          "startIndex": 241,
+          "endIndex": 273
+        },
+        {
+          "kind": "range",
+          "startIndex": 273,
+          "endIndex": 300
+        }
+      ]
+    },
+    {
+      "id": "M39",
+      "status": "review",
+      "note": "初段快速下行，中段宽幅回抽但净下行变慢，后段低位横向交错。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 195,
+          "endIndex": 205
+        },
+        {
+          "kind": "wide",
+          "startIndex": 205,
+          "endIndex": 267
+        },
+        {
+          "kind": "range",
+          "startIndex": 267,
+          "endIndex": 300
+        }
+      ]
+    },
+    {
+      "id": "M40",
+      "status": "review",
+      "note": "初段急跌，中段反弹和再下探越来越小，随后低位平台。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 223,
+          "endIndex": 234
+        },
+        {
+          "kind": "wide",
+          "startIndex": 234,
+          "endIndex": 259
+        },
+        {
+          "kind": "range",
+          "startIndex": 259,
+          "endIndex": 300
+        }
+      ]
+    },
+    {
+      "id": "M41",
+      "status": "review",
+      "note": "快速下行后宽幅回抽，后续下行斜率降低，末段低位震荡。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 185,
+          "endIndex": 195
+        },
+        {
+          "kind": "wide",
+          "startIndex": 195,
+          "endIndex": 261
+        },
+        {
+          "kind": "range",
+          "startIndex": 261,
+          "endIndex": 300
+        }
+      ]
+    },
+    {
+      "id": "M43",
+      "status": "review",
+      "note": "短段快速下跌后双向回抽明显，随后低位横盘；初段偏短，保留给你复核。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 252,
+          "endIndex": 258
+        },
+        {
+          "kind": "wide",
+          "startIndex": 258,
+          "endIndex": 280
+        },
+        {
+          "kind": "range",
+          "startIndex": 280,
+          "endIndex": 300
+        }
+      ]
+    },
+    {
+      "id": "M45",
+      "status": "review",
+      "note": "急跌后转为小斜率宽幅下行，后段长时间低位平台。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 194,
+          "endIndex": 209
+        },
+        {
+          "kind": "wide",
+          "startIndex": 209,
+          "endIndex": 234
+        },
+        {
+          "kind": "range",
+          "startIndex": 234,
+          "endIndex": 300
+        }
+      ]
+    }
+  ]
+}
