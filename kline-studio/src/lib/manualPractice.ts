@@ -37,6 +37,8 @@ export interface ManualTrade {
   background: string
   /** 做单理由 — mandatory, at least one. */
   reasons: string[]
+  /** 不支持理由 — optional multiline counter-evidence recorded at entry. */
+  unsupportedReasons?: string
   /** 平仓理由 — optional. */
   exitReasons: string[]
   /** 手数 (contracts); trades saved before this existed are 1 lot. */
@@ -70,6 +72,7 @@ export interface ManualPendingOrder {
   quantity: number
   background: string
   reasons: string[]
+  unsupportedReasons?: string
   /** Minute the order was placed. */
   createdTime: number
 }
@@ -133,6 +136,7 @@ function parseTrade(value: unknown): ManualTrade | null {
     exitKind: ['manual', 'stop', 'target', 'session-end'].includes(trade.exitKind as string) ? trade.exitKind as ManualExitKind : null,
     background: typeof trade.background === 'string' ? trade.background : '',
     reasons: stringList(trade.reasons),
+    unsupportedReasons: typeof trade.unsupportedReasons === 'string' ? trade.unsupportedReasons.trim() : '',
     exitReasons: stringList(trade.exitReasons),
     quantity: isFiniteNumber(trade.quantity) && trade.quantity >= 1 ? Math.floor(trade.quantity) : undefined,
   }
@@ -153,6 +157,7 @@ function parsePendingOrder(value: unknown): ManualPendingOrder | null {
     quantity: isFiniteNumber(order.quantity) && order.quantity >= 1 ? Math.floor(order.quantity) : 1,
     background: typeof order.background === 'string' ? order.background : '',
     reasons: stringList(order.reasons),
+    unsupportedReasons: typeof order.unsupportedReasons === 'string' ? order.unsupportedReasons.trim() : '',
     createdTime: order.createdTime,
   }
 }
@@ -434,6 +439,7 @@ export function advanceManualSession(session: ManualPracticeSession, minutes: re
           stopLoss: pending.stopLoss, takeProfit: pending.takeProfit, quantity: pending.quantity,
           exitTime: null, exitPrice: null, exitKind: null,
           background: pending.background, reasons: pending.reasons, exitReasons: [],
+          unsupportedReasons: pending.unsupportedReasons?.trim() ?? '',
         }
         trades = [...trades, filledTrade]
         position = filledTrade
@@ -543,6 +549,8 @@ export interface ManualTimelineItem {
   /** 背景 (entries and no-trade notes only). */
   background: string | null
   reasons: string[]
+  /** Entry counter-evidence; not used for exits or no-trade notes. */
+  unsupportedReasons?: string
   trade?: ManualTrade
   note?: ManualBarNote
   /** A stop / target / end-of-day exit is triggered by the market, not decided by the user, so it has no 平仓理由. */
@@ -558,7 +566,7 @@ export function manualTimeline(session: ManualPracticeSession): ManualTimelineIt
       : { time: note.barTime, kind: 'no-trade', title: `不做单（${INTERVALS[note.interval].label} K线）`, background: note.background, reasons: note.reasons, note })
   }
   for (const trade of session.trades) {
-    items.push({ time: trade.entryTime, kind: 'entry', title: `${trade.side === 'long' ? '开多' : '开空'} @ ${trade.entryPrice.toFixed(2)}`, background: trade.background, reasons: trade.reasons, trade })
+    items.push({ time: trade.entryTime, kind: 'entry', title: `${trade.side === 'long' ? '开多' : '开空'} @ ${trade.entryPrice.toFixed(2)}`, background: trade.background, reasons: trade.reasons, unsupportedReasons: trade.unsupportedReasons ?? '', trade })
     if (trade.exitTime !== null) {
       const label = trade.exitKind === 'stop' ? '止损' : trade.exitKind === 'target' ? '止盈' : trade.exitKind === 'session-end' ? '收盘平仓' : '手动平仓'
       items.push({ time: trade.exitTime, kind: 'exit', title: `${label} @ ${trade.exitPrice?.toFixed(2)}`, background: null, reasons: trade.exitReasons, trade, passive: trade.exitKind !== 'manual' })

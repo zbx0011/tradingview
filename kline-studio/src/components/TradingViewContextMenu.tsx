@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import {
   AlarmClockPlus, ChevronRight, ClipboardPaste, Copy, Layers3, ListPlus, LockKeyhole,
-  RotateCcw, Settings2, Table2, Trash2, TrendingDown, TrendingUp,
+  RotateCcw, Settings2, Table2, Trash2, TrendingDown, TrendingUp, NotebookPen,
 } from 'lucide-react'
 
 export interface ChartContextData {
@@ -10,6 +10,8 @@ export interface ChartContextData {
   xFraction: number
   yFraction: number
   time: number
+  /** Exact candle selected by the pointer; null for empty chart space. */
+  candleTime?: number | null
   price: number
 }
 
@@ -38,6 +40,7 @@ interface Props {
   onRemoveDrawings: () => void
   onRemoveIndicators: () => void
   onSettings: () => void
+  manualNotes?: { timeLabel: string; disabled: boolean; onEntryReason: () => void; onNoTradeReason: () => void }
 }
 
 function Item({ icon, label, shortcut, disabled, danger, submenu, onClick }: {
@@ -61,7 +64,7 @@ export function ChartContextMenu({
   value, symbol, priceLabel, drawingsCount, indicatorsCount, clipboardAvailable, cursorLocked,
   onClose, onReset, onCopyPrice, onPaste, onAlert, onBuy, onSell, onOrder, onToggleCursorLock,
   onTable, onObjectTree, onSaveTemplate, onApplyTemplate, onResetTemplate,
-  onRemoveDrawings, onRemoveIndicators, onSettings,
+  onRemoveDrawings, onRemoveIndicators, onSettings, manualNotes,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null)
   const [templateOpen, setTemplateOpen] = useState(false)
@@ -113,6 +116,12 @@ export function ChartContextMenu({
     onContextMenu={(event) => event.preventDefault()}
     onKeyDown={handleKeyDown}
   >
+    {manualNotes && <>
+      <div className="chart-context-candle-time">{manualNotes.timeLabel}</div>
+      <Item icon={<NotebookPen size={23} />} label="添加开单理由" disabled={manualNotes.disabled} onClick={() => execute(manualNotes.onEntryReason)} />
+      <Item icon={<NotebookPen size={23} />} label="添加不开单理由" disabled={manualNotes.disabled} onClick={() => execute(manualNotes.onNoTradeReason)} />
+      <div className="chart-context-separator" />
+    </>}
     <Item icon={<RotateCcw size={27} />} label="重置图表视图" shortcut="Alt + R" onClick={() => execute(onReset)} />
     <div className="chart-context-separator" />
     <Item icon={<Copy size={21} />} label={`复制价格 ${priceLabel}`} onClick={() => execute(onCopyPrice)} />

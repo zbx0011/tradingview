@@ -14,6 +14,7 @@ import { ManualBarPicker, ManualPracticeAnnotations, ManualPracticeCenter, Manua
 import { useManualPracticeKeys } from './components/useManualPracticeKeys'
 import {
   advanceManualSession, aggregateMinutes, barTimeFor, cleanReasons, contextStartTime, createManualSession, findManualTradingDays, finishManualSession,
+  manualTimeline,
   lastRevealedMinute, loadManualPracticeStore, lowerBound, mergeManualPracticeStores, MANUAL_PRACTICE_SYMBOL, openTrade as manualOpenTrade, pickRandomTradingDay, saveManualPracticeStore,
   latestBackground, upsertBarNote, MANUAL_MAX_QUANTITY, NQ_POINT_VALUE_USD, tradeQuantity, type ManualPendingOrder, type ManualPracticeSession, type ManualPracticeStore, type ManualSide, type ManualTimelineItem,
 } from './lib/manualPractice'
@@ -2250,11 +2251,14 @@ function App() {
     const localX = Math.max(0, Math.min(bounds.width, event.clientX - bounds.left))
     const localY = Math.max(0, Math.min(bounds.height, event.clientY - bounds.top))
     const position = clampContextMenuPosition(event.clientX, event.clientY, window.innerWidth, window.innerHeight)
+    const pointedTime = chartRef.current?.coordinateToTime(localX) ?? null
+    const candleTime = pointedTime !== null && data.some((bar) => bar.time === pointedTime) ? pointedTime : null
     setChartContext({
       ...position,
       xFraction: bounds.width ? localX / bounds.width : .5,
       yFraction: bounds.height ? localY / bounds.height : .5,
-      time: chartRef.current?.coordinateToTime(localX) ?? candle.time,
+      time: pointedTime ?? candle.time,
+      candleTime,
       price: chartRef.current?.coordinateToPrice(localY) ?? candle.close,
     })
   }
@@ -2861,10 +2865,10 @@ function App() {
     if (!manualActiveSession || !manualPosition) return
     setManualDialog({ type: 'close' })
   }
-  const requestManualNote = (barTime: number | null = manualCurrentBarTime) => {
-    if (!manualActiveSession || !manualStarted || barTime === null) return
-    const existing = manualActiveSession.notes.find((note) => note.barTime === barTime && note.interval === interval && note.kind === 'no-trade')
-      ?? manualActiveSession.notes.find((note) => note.barTime === barTime && note.interval === interval)
+  const requestManualNote = (barTime: number | null = manualCurrentBarTime, requestedKind?: 'no-trade' | 'should-trade') => {
+    if (!manualSession || (manualActiveSession && !manualStarted) || barTime === null) return
+    const existing = manualSession.notes.find((note) => note.barTime === barTime && note.interval === interval && note.kind === (requestedKind ?? 'no-trade'))
+      ?? (requestedKind ? undefined : manualSession.notes.find((note) => note.barTime === barTime && note.interval === interval))
     setManualPicking(false)
     setManualDialog({
       type: 'note',
@@ -2872,11 +2876,22 @@ function App() {
       interval,
       initial: existing?.reasons ?? [],
       // Background rarely changes candle to candle: start from the last one written.
-      background: existing?.background || latestBackground(manualActiveSession),
+      background: existing?.background || latestBackground(manualSession),
       existing: Boolean(existing),
-      kind: existing?.kind ?? 'no-trade',
+      kind: requestedKind ?? existing?.kind ?? 'no-trade',
       side: existing?.side ?? 'long',
     })
+  }
+  const requestManualContextNote = (kind: 'no-trade' | 'should-trade') => {
+    const time = chartContext?.candleTime
+    if (!manualSession || time == null) return
+    setManualHighlightTime(time)
+    setManualHighlightPrice(null)
+    if (kind === 'should-trade') {
+      const entry = manualTimeline(manualSession).find((item) => item.kind === 'entry' && barTimeFor(item.time, interval) === time)
+      if (entry) { setManualDialog({ type: 'edit', item: entry }); return }
+    }
+    requestManualNote(time, kind)
   }
   const toggleManualPicking = () => {
     if (!manualActiveSession || !manualStarted || manualDialog) return
@@ -2915,7 +2930,7 @@ function App() {
     key3: () => { if (!manualPosition && !manualActiveSession?.pendingOrder) requestManualOpen('short') },
     note: () => requestManualNote(),
   })
-  const saveManualEdit = (item: ManualTimelineItem, reasons: string[], background: string) => {
+  const saveManualEdit = (item: ManualTimelineItem, reasons: string[], background: string, unsupportedReasons: string) => {
     if (!manualSession) return
     const cleaned = cleanReasons(reasons)
     updateManualSession(manualSession.id, (session) => {
@@ -2924,7 +2939,7 @@ function App() {
       return {
         ...session,
         updatedAt: Date.now(),
-        trades: session.trades.map((trade) => trade.id !== item.trade!.id ? trade : item.kind === 'entry' ? { ...trade, reasons: cleaned, background: background.trim() } : { ...trade, exitReasons: cleaned }),
+        trades: session.trades.map((trade) => trade.id !== item.trade!.id ? trade : item.kind === 'entry' ? { ...trade, reasons: cleaned, background: background.trim(), unsupportedReasons: unsupportedReasons.trim() } : { ...trade, exitReasons: cleaned }),
       }
     })
   }
@@ -3523,6 +3538,12 @@ function App() {
         value={chartContext}
         symbol={symbol}
         priceLabel={formatPrice(chartContext.price, symbol)}
+        manualNotes={manualSession ? {
+          timeLabel: chartContext.candleTime == null ? '请在有 K 线的位置右键' : `选中 K 线：${new Date(chartContext.candleTime * 1000).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}`,
+          disabled: chartContext.candleTime == null || Boolean(manualActiveSession && !manualStarted),
+          onEntryReason: () => requestManualContextNote('should-trade'),
+          onNoTradeReason: () => requestManualContextNote('no-trade'),
+        } : undefined}
         drawingsCount={uiDrawings.present.length}
         indicatorsCount={activeIndicatorCount}
         clipboardAvailable={drawingClipboardAvailable}
@@ -3700,7 +3721,7 @@ function App() {
         onTakeProfit={(value) => setManualRiskLevel('takeProfit', value)}
         initialBackground={manualActiveSession ? latestBackground(manualActiveSession) : ''}
         onCancel={() => { setManualDialog(null); setManualRisk(null) }}
-        onConfirm={(reasons, background) => {
+        onConfirm={(reasons, background, unsupportedReasons) => {
           const dialog = manualDialog
           const risk = manualRisk
           const kind = manualOpenOrderKind
@@ -3715,7 +3736,7 @@ function App() {
               pendingOrder: {
                 id: tradeId, side: dialog.side, orderKind: kind, entryPrice: risk.entryPrice,
                 stopLoss: risk.stopLoss, takeProfit: risk.takeProfit, quantity: risk.quantity,
-                background, reasons, createdTime: manualLastMinute.time,
+                background, reasons, unsupportedReasons, createdTime: manualLastMinute.time,
               },
             }))
             notify(`已挂${dialog.side === 'long' ? '多' : '空'}单${kind === 'stop' ? '（追单）' : '（挂单）'} @ ${risk.entryPrice.toFixed(2)}，价格触到后成交`)
@@ -3727,7 +3748,7 @@ function App() {
             trades: [...session.trades, {
               id: tradeId, side: dialog.side, entryTime: manualLastMinute.time, entryPrice: dialog.price,
               stopLoss: risk.stopLoss, takeProfit: risk.takeProfit, quantity: risk.quantity,
-              exitTime: null, exitPrice: null, exitKind: null, background, reasons, exitReasons: [],
+              exitTime: null, exitPrice: null, exitKind: null, background, reasons, unsupportedReasons, exitReasons: [],
             }],
           }))
         }}
@@ -3754,14 +3775,17 @@ function App() {
         tone={manualDialog.kind === 'should-trade' ? manualDialog.side : 'neutral'}
         title={manualDialog.kind === 'should-trade' ? `应该开${manualDialog.side === 'long' ? '多' : '空'}的理由` : manualPosition && manualDialog.barTime === manualCurrentBarTime ? '本根K线理由（持仓中）' : '未开单理由'}
         subtitle={`${new Date(manualDialog.barTime * 1000).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })} · ${INTERVALS[manualDialog.interval].label} K线`}
-        initial={manualActiveSession?.notes.find((note) => note.barTime === manualDialog.barTime && note.interval === manualDialog.interval && note.kind === manualDialog.kind)?.reasons ?? (manualDialog.kind === 'no-trade' ? manualDialog.initial : [])}
-        background={{ initial: manualActiveSession?.notes.find((note) => note.barTime === manualDialog.barTime && note.interval === manualDialog.interval && note.kind === manualDialog.kind)?.background ?? manualDialog.background }}
-        allowClear={Boolean(manualActiveSession?.notes.some((note) => note.barTime === manualDialog.barTime && note.interval === manualDialog.interval && note.kind === manualDialog.kind))}
+        initial={manualSession?.notes.find((note) => note.barTime === manualDialog.barTime && note.interval === manualDialog.interval && note.kind === manualDialog.kind)?.reasons ?? (manualDialog.kind === 'no-trade' ? manualDialog.initial : [])}
+        background={{ initial: manualSession?.notes.find((note) => note.barTime === manualDialog.barTime && note.interval === manualDialog.interval && note.kind === manualDialog.kind)?.background ?? manualDialog.background }}
+        allowClear={Boolean(manualSession?.notes.some((note) => note.barTime === manualDialog.barTime && note.interval === manualDialog.interval && note.kind === manualDialog.kind))}
         onCancel={() => setManualDialog(null)}
         onSave={(reasons, background) => {
           const dialog = manualDialog
           setManualDialog(null)
-          if (manualActiveSession) updateManualSession(manualActiveSession.id, (session) => upsertBarNote(session, dialog.barTime, dialog.interval, reasons, background, dialog.kind, dialog.side))
+          if (manualSession) {
+            updateManualSession(manualSession.id, (session) => upsertBarNote(session, dialog.barTime, dialog.interval, reasons, background, dialog.kind, dialog.side))
+            if (manualReviewSession) setManualTimelineOpen(true)
+          }
         }}
       >
         <NoteKindSwitch kind={manualDialog.kind} side={manualDialog.side} onChange={(kind, side) => setManualDialog((current) => current?.type === 'note' ? { ...current, kind, side } : current)} />
@@ -3771,10 +3795,11 @@ function App() {
         subtitle={manualDialog.item.title}
         initial={manualDialog.item.reasons}
         required={manualDialog.item.kind === 'entry'}
+        unsupportedReasons={manualDialog.item.kind === 'entry' ? { initial: manualDialog.item.unsupportedReasons ?? '' } : null}
         background={manualDialog.item.background !== null ? { initial: manualDialog.item.background } : null}
         allowClear={manualDialog.item.kind === 'no-trade' || manualDialog.item.kind === 'should-trade'}
         onCancel={() => setManualDialog(null)}
-        onSave={(reasons, background) => { const item = manualDialog.item; setManualDialog(null); saveManualEdit(item, reasons, background) }}
+        onSave={(reasons, background, unsupportedReasons) => { const item = manualDialog.item; setManualDialog(null); saveManualEdit(item, reasons, background, unsupportedReasons) }}
       />}
       <DecisionHistoryDialog
         key={`${symbol}-${decisionHistoryOpen ? 'open' : 'closed'}`}

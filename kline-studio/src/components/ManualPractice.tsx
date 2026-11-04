@@ -210,7 +210,7 @@ export function FloatingCard({ id, title, icon, meta, tone = 'neutral', classNam
 /* Reason editor: one reason per row, Tab / Enter moves to the next row */
 /* ------------------------------------------------------------------ */
 
-export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initial = [], required = false, background = null, allowClear = false, confirmLabel = '保存', tone = 'neutral', children, onSave, onCancel }: {
+export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initial = [], required = false, background = null, unsupportedReasons = null, allowClear = false, confirmLabel = '保存', tone = 'neutral', children, onSave, onCancel }: {
   cardId?: string
   title: string
   subtitle?: ReactNode
@@ -219,12 +219,14 @@ export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initia
   required?: boolean
   /** Adds a mandatory 背景 row above the numbered reasons. */
   background?: { initial: string } | null
+  /** Optional factors against taking this trade. */
+  unsupportedReasons?: { initial: string } | null
   /** Saving with every field empty removes the record instead of complaining. */
   allowClear?: boolean
   confirmLabel?: string
   tone?: 'neutral' | 'long' | 'short'
   children?: ReactNode
-  onSave: (reasons: string[], background: string) => void
+  onSave: (reasons: string[], background: string, unsupportedReasons: string) => void
   onCancel: () => void
 }) {
   // With a background, row 0 is 背景 and rows 1.. are the numbered reasons.
@@ -234,6 +236,7 @@ export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initia
     ...(initial.length > 0 ? initial : ['']),
   ])
   const [error, setError] = useState('')
+  const [unsupportedDraft, setUnsupportedDraft] = useState(unsupportedReasons?.initial ?? '')
   const inputRefs = useRef<Array<HTMLInputElement | null>>([])
   // Start in 背景 when it is empty, otherwise on the last reason.
   const pendingFocusRef = useRef<number | null>(background && !background.initial.trim() ? 0 : offset + Math.max(0, initial.length - 1))
@@ -257,7 +260,7 @@ export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initia
   const save = () => {
     const context = background ? rows[0].trim() : ''
     const reasons = rows.slice(offset).map((row) => row.trim()).filter(Boolean)
-    if (allowClear && !context && reasons.length === 0) { onSave([], ''); return }
+    if (allowClear && !context && reasons.length === 0) { onSave([], '', ''); return }
     if (background && !context) {
       setError('背景是必填项，请先写下当前的背景')
       focusRow(0)
@@ -268,7 +271,7 @@ export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initia
       focusRow(offset)
       return
     }
-    onSave(reasons, context)
+    onSave(reasons, context, unsupportedReasons ? unsupportedDraft.trim() : '')
   }
 
   const goNext = (index: number) => {
@@ -338,6 +341,20 @@ export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initia
         })}
       </ol>
       <button type="button" className="mp-add-row" tabIndex={-1} onClick={() => { setRows((current) => [...current, '']); pendingFocusRef.current = rows.length }}><Plus size={14} />添加一条</button>
+      {unsupportedReasons && <label className="mp-unsupported-reasons">
+        <span>不支持理由<small>（可选）</small></span>
+        <textarea
+          aria-label="不支持理由"
+          value={unsupportedDraft}
+          rows={3}
+          placeholder="记录不支持本次做单的因素，可分行填写"
+          onChange={(event) => setUnsupportedDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing || event.keyCode === 229) return
+            if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); save() }
+          }}
+        />
+      </label>}
       {error && <p className="mp-editor-error" role="alert">{error}</p>}
       <footer>
         <span className="mp-editor-hint"><kbd>Tab</kbd>/<kbd>Enter</kbd> 下一条 · <kbd>Shift+Tab</kbd> 上一条 · <kbd>Ctrl+Enter</kbd> 保存 · <kbd>Esc</kbd> 取消</span>
@@ -558,7 +575,7 @@ export function OpenTradeDialog({ side, price, orderKind = null, quantity, stopL
   takeProfit: number
   onStopLoss: (price: number) => void
   onTakeProfit: (price: number) => void
-  onConfirm: (reasons: string[], background: string) => void
+  onConfirm: (reasons: string[], background: string, unsupportedReasons: string) => void
   onCancel: () => void
 }) {
   const [riskError, setRiskError] = useState('')
@@ -574,10 +591,11 @@ export function OpenTradeDialog({ side, price, orderKind = null, quantity, stopL
     confirmLabel={orderKind ? (long ? '确认多单挂单' : '确认空单挂单') : (long ? '确认做多' : '确认做空')}
     onCancel={onCancel}
     background={{ initial: initialBackground }}
-    onSave={(reasons, background) => {
+    unsupportedReasons={{ initial: '' }}
+    onSave={(reasons, background, unsupportedReasons) => {
       if (long ? stopLoss >= price : stopLoss <= price) { setRiskError(`止损必须${long ? '低于' : '高于'}开仓价`); return }
       if (long ? takeProfit <= price : takeProfit >= price) { setRiskError(`止盈必须${long ? '高于' : '低于'}开仓价`); return }
-      onConfirm(reasons, background)
+      onConfirm(reasons, background, unsupportedReasons)
     }}
   >
     <div className="mp-open-risk">
@@ -745,6 +763,7 @@ export function ManualTimelineDialog({ session, onClose, onJump, onEditItem }: {
                   {item.reasons.length > 0
                     ? <ol className="mp-reason-list">{item.reasons.map((reason, reasonIndex) => <li key={reasonIndex}>{reason}</li>)}</ol>
                     : <p className="mp-muted">{item.kind === 'no-trade' || item.kind === 'should-trade' ? '只写了背景，没有分条理由' : '未填写理由'}</p>}
+                  {item.kind === 'entry' && item.unsupportedReasons && <p className="mp-timeline-unsupported"><span>不支持理由</span>{item.unsupportedReasons}</p>}
                   {exit && exitKey && <div className={`mp-timeline-exit${selectedKey === exitKey ? ' selected' : ''}`} onClick={(event) => { event.stopPropagation(); select(exit, exitKey) }} title="点击在图上定位到平仓这根K线并标注">
                     <div className="mp-timeline-title"><b>{exit.title}</b>{points !== null && <span className={points >= 0 ? 'positive' : 'negative'}>{formatPoints(points)} · {formatUsd((exit.trade ? tradeUsd(exit.trade) : null) ?? points * NQ_POINT_VALUE_USD)}</span>}
                       {!exit.passive && <button type="button" className="mp-icon" aria-label="编辑平仓理由" title="编辑平仓理由" onClick={(event) => { event.stopPropagation(); onEditItem(exit) }}><Pencil size={13} /></button>}

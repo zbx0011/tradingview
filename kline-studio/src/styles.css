@@ -1099,6 +1099,7 @@ button:disabled { opacity: .32; cursor: not-allowed; }
 .chart-context-item kbd { padding-left: 18px; color: #777; font: inherit; font-size: 14px; letter-spacing: .1px; }
 .chart-context-chevron { justify-self: end; color: #b8b8b8; }
 .chart-context-separator { height: 1px; margin: 8px 0; background: #4b4b4b; }
+.chart-context-candle-time { padding: 6px 18px 8px; color: #aab4c6; font-size: 13px; }
 .chart-context-template-wrap { position: relative; }
 .chart-context-submenu { position: fixed; left: calc(var(--context-menu-left, 0px) + 410px); width: 268px; padding: 7px 0; color: #d1d4dc; background: #1f1f1f; border: 1px solid #3a3a3a; border-radius: 8px; box-shadow: 0 14px 38px rgba(0,0,0,.5); }
 .chart-context-template-wrap .chart-context-submenu { position: absolute; left: calc(100% - 5px); top: -8px; }
@@ -1909,6 +1910,13 @@ button:disabled { opacity: .32; cursor: not-allowed; }
 .mp-timeline-background { margin: 6px 0 0; color: #e7d6a8; font-size: 13px; line-height: 1.5; }
 .mp-timeline-background > span { display: inline-block; margin-right: 6px; padding: 0 6px; color: #1b1f27; font-size: 11px; font-weight: 700; border-radius: 9px; background: #f0b429; }
 .mp-timeline-background.missing { color: #8f98aa; }
+.mp-unsupported-reasons { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; color: #e7b7b4; font-size: 13px; }
+.mp-unsupported-reasons > span { font-weight: 600; }
+.mp-unsupported-reasons small { color: #929bac; font-weight: 400; }
+.mp-unsupported-reasons textarea { box-sizing: border-box; width: 100%; min-height: 76px; padding: 9px 10px; color: #eef1f6; font: inherit; line-height: 1.5; background: #151a23; border: 1px solid #584046; border-radius: 6px; resize: vertical; outline: none; }
+.mp-unsupported-reasons textarea:focus { border-color: #f0b429; box-shadow: 0 0 0 2px rgba(240,180,41,.2); }
+.mp-timeline-unsupported { margin: 9px 0 0; color: #e7b7b4; font-size: 13px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.mp-timeline-unsupported > span { display: inline-block; margin-right: 6px; padding: 0 6px; color: #f0ced0; font-size: 11px; border-radius: 9px; background: rgba(242,54,69,.15); }
 .mp-card-body::-webkit-scrollbar { width: 8px; }
 .mp-card-body::-webkit-scrollbar-thumb { background: #4a5568; border-radius: 4px; }
 .mp-card-body::-webkit-scrollbar-track { background: transparent; }

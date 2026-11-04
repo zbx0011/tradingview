@@ -217,13 +217,16 @@ describe('workspace progress sync', () => {
     })
     // The other computer got further on the shared paper and still has it open.
     const latest = snapshot(store(session('remote', 2000)), [])
-    latest.entries[MANUAL_PRACTICE_STORAGE_KEY] = JSON.stringify(manual('shared', [paper('shared', 4200, 300)]))
+    const remotePaper = paper('shared', 4200, 300)
+    remotePaper.trades.push({ id: 'remote-trade', side: 'short', entryTime: 4000, entryPrice: 100, stopLoss: 105, takeProfit: 90, exitTime: null, exitPrice: null, exitKind: null, background: '区间', reasons: ['失败突破'], unsupportedReasons: '  下方支撑较近\n空头力度不足  ', exitReasons: [] })
+    latest.entries[MANUAL_PRACTICE_STORAGE_KEY] = JSON.stringify(manual('shared', [remotePaper]))
     latest.entries['kline-studio-workspace-v1'] = 'remote-settings'
 
     receivePortableWorkspaceSnapshotsSafely([latest], storage, { persistRecovery: false })
     const received = parseManualPracticeStore(storage.getItem(MANUAL_PRACTICE_STORAGE_KEY))
     expect(received.activeSessionId).toBe('shared')
     expect(received.sessions.find((item) => item.id === 'shared')?.cursorTime).toBe(4200)
+    expect(received.sessions.find((item) => item.id === 'shared')?.trades[0].unsupportedReasons).toBe('下方支撑较近\n空头力度不足')
     expect(received.sessions.map((item) => item.id).sort()).toEqual(['local-only', 'shared'])
 
     // Publishing back merges the remote papers into this browser instead of dropping them.
@@ -234,5 +237,6 @@ describe('workspace progress sync', () => {
     // History-only snapshots carry the papers too, in a fixed key order.
     const compacted = mergePortableWorkspaceProgressSnapshots([latest])
     expect(Object.keys(compacted.entries)).toEqual([DECISION_REPLAY_STORAGE_KEY, DECISION_REPLAY_FAVORITES_STORAGE_KEY, MANUAL_PRACTICE_STORAGE_KEY])
+    expect(parseManualPracticeStore(compacted.entries[MANUAL_PRACTICE_STORAGE_KEY]).sessions[0].trades[0].unsupportedReasons).toBe('下方支撑较近\n空头力度不足')
   })
 })
