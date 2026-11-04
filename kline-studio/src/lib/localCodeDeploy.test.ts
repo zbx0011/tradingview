@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   LocalCodeDeployUnavailableError, loadLocalCodeDeployActivity, loadLocalCodeHealth, loadLocalCodeStatus,
   isUpdatedCodeServerReady, publishLocalCode, saveLocalCodeDeployActivity, updateLocalCode,
+  loadPendingLocalCodeUpdate, savePendingLocalCodeUpdate, clearPendingLocalCodeUpdate,
   type LocalCodeStatus, type LocalCodeUpdateResult,
 } from './localCodeDeploy'
 
@@ -150,5 +151,37 @@ describe('local code deployment client', () => {
     }
     saveLocalCodeDeployActivity(activity, storage)
     expect(loadLocalCodeDeployActivity(storage)).toEqual(activity)
+  })
+
+  it('keeps a pending restart ticket across a page reload until the new service is confirmed', () => {
+    const persisted = new Map<string, string>()
+    const pageStorage = () => ({
+      getItem: (key: string) => persisted.get(key) ?? null,
+      setItem: (key: string, value: string) => { persisted.set(key, value) },
+      removeItem: (key: string) => { persisted.delete(key) },
+    })
+    const ticket: LocalCodeUpdateResult = {
+      ok: true, action: 'update-code', commit: 'updated-sha', updated: true, restartRequired: true,
+      previousServerInstanceId: 'old-service', preservedLocalChanges: true,
+      backupBranch: 'kline-studio-backup/update-1', backupStash: 'stash@{0}',
+    }
+    savePendingLocalCodeUpdate(ticket, pageStorage())
+
+    // Simulate a fresh page: no in-memory ticket survives, only browser storage.
+    const reloadedTicket = loadPendingLocalCodeUpdate(pageStorage())
+    expect(reloadedTicket).toEqual(ticket)
+    expect(isUpdatedCodeServerReady({ localHead: ticket.commit, serverInstanceId: 'old-service' }, reloadedTicket!)).toBe(false)
+    expect(isUpdatedCodeServerReady({ localHead: ticket.commit, serverInstanceId: 'new-service' }, reloadedTicket!)).toBe(true)
+    clearPendingLocalCodeUpdate(pageStorage())
+    expect(loadPendingLocalCodeUpdate(pageStorage())).toBeNull()
+    expect(persisted.size).toBe(0)
+  })
+
+  it('rejects stored pending restart tickets without an old-service identity', () => {
+    const result = {
+      ok: true, action: 'update-code', commit: 'updated-sha', updated: true, restartRequired: true,
+    }
+    expect(loadPendingLocalCodeUpdate({ getItem: () => JSON.stringify(result) })).toBeNull()
+    expect(loadPendingLocalCodeUpdate({ getItem: () => '{broken-json' })).toBeNull()
   })
 })

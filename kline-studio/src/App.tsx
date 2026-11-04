@@ -71,6 +71,7 @@ import {
 import {
   LocalCodeDeployUnavailableError, loadLocalCodeDeployActivity, loadLocalCodeStatus, loadLocalCodeHealth, isUpdatedCodeServerReady, publishLocalCode,
   saveLocalCodeDeployActivity, updateLocalCode, type LocalCodeDeployActivity, type LocalCodeStatus,
+  savePendingLocalCodeUpdate, loadPendingLocalCodeUpdate, clearPendingLocalCodeUpdate,
 } from './lib/localCodeDeploy'
 import { latestReplayDecisionSignal, replayDecisionCandidates, replayDecisionContextSourceIds, replayTradeDatasetInfos, type ReplayDecisionCandidate } from './lib/replayTradeRegistry'
 import { createDecisionAnomalyReviewSession, findDecisionReplayAnomalies } from './lib/decisionReplayAnomalies'
@@ -2051,7 +2052,13 @@ function App() {
     void loadLocalCodeStatus().then((status) => {
       const verifiedAt = new Date().toISOString()
       setCodeDeployStatus(status)
-      setCodeDeployActivity((current) => ({ ...current, lastVerifiedAt: verifiedAt }))
+      const pendingUpdate = loadPendingLocalCodeUpdate()
+      if (pendingUpdate && isUpdatedCodeServerReady({ ...status, localHead: status.runningCommit ?? status.localHead }, pendingUpdate)) {
+        const activity: LocalCodeDeployActivity = { lastVerifiedAt: verifiedAt, lastSuccessfulSync: { action: 'update', at: verifiedAt, commit: pendingUpdate.commit } }
+        saveLocalCodeDeployActivity(activity)
+        clearPendingLocalCodeUpdate()
+        setCodeDeployActivity(activity)
+      } else setCodeDeployActivity((current) => ({ ...current, lastVerifiedAt: verifiedAt }))
       setCodeDeployError('')
       setCodeDeployPhase('ready')
       if (announce) notify(status.updateAvailable
@@ -2125,6 +2132,7 @@ function App() {
           lastSuccessfulSync: { action: 'update', at: completedAt, commit: result.commit },
         }
         saveLocalCodeDeployActivity(activity)
+        clearPendingLocalCodeUpdate()
         setCodeDeployActivity(activity)
       }
       if (!result.restartRequired) {
@@ -2134,6 +2142,7 @@ function App() {
         notify(`代码已是最新版本 ${result.commit.slice(0, 7)}`)
         return
       }
+      savePendingLocalCodeUpdate(result)
       notify(result.preservedLocalChanges
         ? `GitHub 新版本与本机修改已安全合并为 ${result.commit.slice(0, 7)}，正在重启 4173…`
         : `新版本 ${result.commit.slice(0, 7)} 已验证，正在重启 4173…`)

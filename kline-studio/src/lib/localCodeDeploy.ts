@@ -1,5 +1,6 @@
 const LOCAL_CODE_DEPLOY_ENDPOINT = '/__kline_studio_code_deploy'
 const LOCAL_CODE_DEPLOY_ACTIVITY_KEY = 'kline-local-code-deploy-activity-v1'
+const LOCAL_CODE_PENDING_UPDATE_KEY = 'kline-local-code-pending-update-v1'
 
 export class LocalCodeDeployUnavailableError extends Error {
   override name = 'LocalCodeDeployUnavailableError'
@@ -151,4 +152,20 @@ export function isUpdatedCodeServerReady(status: Pick<LocalCodeStatus, 'localHea
 
 export async function loadLocalCodeHealth() {
   return request<LocalCodeHealth>('health')
+}
+
+export function savePendingLocalCodeUpdate(result: LocalCodeUpdateResult, storage: Pick<Storage, 'setItem'> | undefined = typeof localStorage === 'undefined' ? undefined : localStorage) {
+  if (!result.restartRequired || !result.previousServerInstanceId) return
+  storage?.setItem(LOCAL_CODE_PENDING_UPDATE_KEY, JSON.stringify(result))
+}
+
+export function loadPendingLocalCodeUpdate(storage: Pick<Storage, 'getItem'> | undefined = typeof localStorage === 'undefined' ? undefined : localStorage): LocalCodeUpdateResult | null {
+  try {
+    const value = JSON.parse(storage?.getItem(LOCAL_CODE_PENDING_UPDATE_KEY) ?? 'null') as LocalCodeUpdateResult | null
+    return value?.restartRequired === true && typeof value.commit === 'string' && typeof value.previousServerInstanceId === 'string' && value.previousServerInstanceId.length > 0 ? value : null
+  } catch { return null }
+}
+
+export function clearPendingLocalCodeUpdate(storage: Pick<Storage, 'removeItem'> | undefined = typeof localStorage === 'undefined' ? undefined : localStorage) {
+  storage?.removeItem(LOCAL_CODE_PENDING_UPDATE_KEY)
 }
