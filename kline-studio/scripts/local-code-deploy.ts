@@ -331,7 +331,16 @@ async function readRequest(request: IncomingMessage) {
 }
 
 export function localCodeDeployPlugin(): Plugin {
-  const serverInstanceId = randomUUID()
+  // Vite can rebuild its config inside the same Node process. A new plugin
+  // object is not a completed process restart.
+  const processGlobal = globalThis as typeof globalThis & {
+    __klineCodeDeployServer?: { instanceId: string; runningCommit: Promise<string> }
+  }
+  const boot = processGlobal.__klineCodeDeployServer ??= {
+    instanceId: randomUUID(),
+    runningCommit: runFile('git', ['rev-parse', 'HEAD'], { cwd: process.cwd() }).then((result) => result.stdout.trim()),
+  }
+  const serverInstanceId = boot.instanceId
   let operationQueue: Promise<void> = Promise.resolve()
   function enqueue<T>(operation: () => Promise<T>) {
     const result = operationQueue.then(operation, operation)
@@ -342,7 +351,7 @@ export function localCodeDeployPlugin(): Plugin {
     name: 'kline-studio-local-code-deploy',
     apply: 'serve',
     configureServer(server) {
-      const runningCommit = runFile('git', ['rev-parse', 'HEAD'], { cwd: process.cwd() }).then((result) => result.stdout.trim())
+      const runningCommit = boot.runningCommit
       server.middlewares.use(API_PATH, async (request, response) => {
         try {
           verifyLocalRequest(request)
@@ -359,7 +368,8 @@ export function localCodeDeployPlugin(): Plugin {
                 commitTimestamp(state.repositoryRoot, state.localHead),
                 commitTimestamp(state.repositoryRoot, state.remoteHead),
               ])
-              return { ...state, localHeadTimestamp, remoteHeadTimestamp, serverInstanceId }
+              const bootCommit = await runningCommit
+              return { ...state, localHeadTimestamp, remoteHeadTimestamp, serverInstanceId, runningCommit: bootCommit, restartRequired: bootCommit !== state.localHead }
             })
             sendJson(response, 200, { ok: true, action: 'status', ...result })
             return

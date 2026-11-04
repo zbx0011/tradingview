@@ -3887,14 +3887,16 @@ function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProg
   const importInputRef = useRef<HTMLInputElement>(null)
   const codeDeployStatusPending = codeDeployPhase === 'checking' || codeDeployPhase === 'unavailable' || codeDeployPhase === 'status-error'
   const codePublishBlocked = Boolean(codeDeployStatus && (codeDeployStatus.diverged || codeDeployStatus.updateAvailable))
-  const codeUpdateBlocked = Boolean(codeDeployStatus && !codeDeployStatus.updateAvailable)
+  const codeUpdateBlocked = Boolean(codeDeployStatus && !codeDeployStatus.updateAvailable && !codeDeployStatus.restartRequired)
   const codeUpdateWillPreserveLocalChanges = Boolean(codeDeployStatus?.updateAvailable && (!codeDeployStatus.clean || codeDeployStatus.diverged))
   const codeUpdateButtonLabel = codeDeployPhase === 'updating' ? '正在更新…'
+    : codeDeployStatus?.restartRequired ? '完成更新并重启'
     : codeUpdateWillPreserveLocalChanges ? '安全合并更新并重启'
       : codeDeployStatus?.aheadOfRemote ? '本机版本待发布'
         : codeDeployStatus && !codeDeployStatus.updateAvailable ? '已是 GitHub 最新'
           : '从 GitHub 更新并重启'
   const codeDeploySyncState = !codeDeployStatus ? null
+    : codeDeployStatus.restartRequired ? { tone: 'warning', label: '等待重启', detail: '代码已更新，点击“完成更新并重启”恢复服务' }
     : codeDeployStatus.diverged ? { tone: 'warning', label: '可安全更新', detail: '本机和 GitHub 都有新提交，更新时会先备份并在临时目录合并验证' }
       : codeDeployStatus.dirtyFiles.length > 0 && codeDeployStatus.updateAvailable ? { tone: 'warning', label: '可安全更新', detail: `${codeDeployStatus.dirtyFiles.length} 项本机修改会先备份，再与 GitHub 新版本合并` }
         : codeDeployStatus.dirtyFiles.length > 0 ? { tone: 'warning', label: '尚未同步', detail: `${codeDeployStatus.dirtyFiles.length} 项本机修改尚未发布` }

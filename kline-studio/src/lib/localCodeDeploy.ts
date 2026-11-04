@@ -22,6 +22,8 @@ export interface LocalCodeStatus {
   aheadOfRemote: boolean
   diverged: boolean
   serverInstanceId?: string
+  runningCommit?: string
+  restartRequired?: boolean
 }
 
 export interface LocalCodeDeployActivity {
