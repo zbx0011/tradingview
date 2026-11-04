@@ -1,9 +1,25 @@
 import { expect, it } from 'vitest'
 import data from '../../public/data/shape-practice/causal-range-confirmations.json'
 import audit from '../data/shape-annotation-reviews.json'
+import curation from '../data/shape-curation.json'
 import { filterShapeCandidates, shapeAiReview, shapeDecisionCandidates, shapeDecisionHistory, shapePatternOptions, confirmedShapeQuestionKeys } from './shapeDecisionPractice'
 import { createDecisionSession, createDecisionAttempt } from './decisionReplay'
 import { buildShapePhaseSegments } from './shapePhaseAnnotations'
+
+// Legacy events are retained in the source data, but only audited matches
+// with three valid phases enter the practice pool.
+const eligibleEventIds = data.questions.filter(q => {
+  if (curation.excluded_ids.includes(q.id)) return false
+  if (q.detectionReview.status !== 'legacy_not_reviewed_at_detection') {
+    return q.detectionReview.status === 'pass' && q.detectionReview.phases.length === 3
+  }
+  const review = audit.reviews.find(r => r.id === q.id)
+  return review?.verdict === 'match' && review.endIndex === q.startIndex && review.phases.length === 3
+    && review.phases.every((p, i) => p.kind === ['narrow', 'wide', 'range'][i]
+      && Number.isInteger(p.startIndex) && Number.isInteger(p.endIndex)
+      && p.startIndex >= 0 && p.startIndex < p.endIndex && p.endIndex <= review.endIndex
+      && (i === 0 || p.startIndex >= review.phases[i - 1].endIndex))
+}).map(q => q.id)
 
 it('renders full reviewed intervals, never confirmation points, and is invariant to future candles', () => {
   for (const candidate of shapeDecisionCandidates) {
@@ -34,13 +50,13 @@ it('preserves all original events and times even when the visual interpretation 
     expect(createDecisionAttempt(candidate).cursorTime).toBe(q.signalTime)
   }
   const active=filterShapeCandidates(['channel-decay-range-confirmed'])
-  expect(active.map(c=>c.shapePracticeId)).toEqual(data.questions.map(q=>q.id))
+  expect(active.map(c=>c.shapePracticeId)).toEqual(eligibleEventIds)
 })
 
 it('counts only eligible questions while retaining unfinished and historical answers', () => {
   const fresh = filterShapeCandidates(['channel-decay-range-confirmed'])
   const session = createDecisionSession(fresh, 1)
-  expect(shapePatternOptions(confirmedShapeQuestionKeys([session])).find(p => p.id === 'channel-decay-range-confirmed')).toMatchObject({total: 9, remaining: 9})
+  expect(shapePatternOptions(confirmedShapeQuestionKeys([session])).find(p => p.id === 'channel-decay-range-confirmed')).toMatchObject({total: eligibleEventIds.length, remaining: eligibleEventIds.length})
 })
 
 it('does not assert a first causal recognition time from visual interval boundaries', () => {

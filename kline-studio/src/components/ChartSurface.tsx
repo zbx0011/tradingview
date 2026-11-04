@@ -856,6 +856,8 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     const selection = resolveResearchSignalMarker(symbol, interval, visibleResearchSignalSourceIds, selectedResearchSignalMarkerId)
     if (selection) return
     selectedResearchSignalMarkerIdRef.current = null
+    // Clear a selection that is no longer valid for the current chart.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelectedResearchSignalMarkerId(null)
   }, [interval, selectedResearchSignalMarkerId, symbol, visibleResearchSignalSourceIds])
 

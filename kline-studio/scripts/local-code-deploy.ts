@@ -107,7 +107,7 @@ async function repositoryState(fetchLatest = false): Promise<RepositoryState> {
     remoteHead,
     dirtyFiles,
     clean: dirtyFiles.length === 0,
-    updateAvailable: behindCount > 0 && aheadCount === 0,
+    updateAvailable: behindCount > 0,
     aheadOfRemote: aheadCount > 0 && behindCount === 0,
     diverged: aheadCount > 0 && behindCount > 0,
   }
@@ -153,20 +153,20 @@ async function validateCommitInTemporaryWorktree(state: RepositoryState, commit:
   }
 }
 
-async function mergeDirtyProjectChangesInTemporaryWorktree(state: RepositoryState, candidateCommit: string) {
+export async function mergeCandidateWithRemote(state: Pick<RepositoryState, 'repositoryRoot' | 'projectRelativePath' | 'remoteHead'>, candidateCommit: string, validate = validateProject) {
   const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'kline-studio-code-merge-'))
   const worktree = path.join(temporaryRoot, 'checkout')
   let added = false
   try {
-    await runFile('git', ['worktree', 'add', '--detach', worktree, state.remoteHead], { cwd: state.repositoryRoot })
+    await runFile('git', ['worktree', 'add', '--detach', worktree, candidateCommit], { cwd: state.repositoryRoot })
     added = true
     try {
-      await runFile('git', ['cherry-pick', candidateCommit], { cwd: worktree })
+      await runFile('git', ['-c', 'user.name=Kline Studio Update', '-c', 'user.email=kline-update@localhost', 'merge', '--no-ff', '--no-edit', state.remoteHead], { cwd: worktree })
     } catch (error) {
       const message = error instanceof Error ? error.message : '未知冲突'
       throw new HttpError(409, `GitHub 新版本与本机修改存在冲突，未改动当前工作区：${message}`)
     }
-    await validateProject(path.join(worktree, state.projectRelativePath))
+    await validate(path.join(worktree, state.projectRelativePath))
     return (await runFile('git', ['rev-parse', 'HEAD'], { cwd: worktree })).stdout.trim()
   } finally {
     if (added) await runFile('git', ['worktree', 'remove', '--force', worktree], { cwd: state.repositoryRoot }).catch(() => undefined)
@@ -241,20 +241,30 @@ function scheduleRestart(response: ServerResponse, projectRoot: string, port: nu
 
 async function updateCode() {
   const state = await repositoryState(true)
-  if (state.diverged || state.aheadOfRemote) throw new HttpError(409, '当前代码不能快进到远程 master，已停止更新')
-  if (state.localHead === state.remoteHead) {
+  if (!state.updateAvailable) {
     return { ok: true, action: 'update-code', commit: state.localHead, updated: false, restartRequired: false, projectRoot: state.projectRoot }
   }
-  if (!state.clean) {
+  if (!state.clean || state.diverged) {
     assertOnlyProjectChanges(state)
     await runFile('git', ['diff', '--check'], { cwd: state.repositoryRoot })
     const stamp = new Date().toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, ' UTC')
-    const candidateCommit = await createCandidateCommit(state, `update: preserve local Kline Studio changes ${stamp}`)
-    const mergedCommit = await mergeDirtyProjectChangesInTemporaryWorktree(state, candidateCommit)
+    const candidateCommit = state.clean ? state.localHead : await createCandidateCommit(state, `update: preserve local Kline Studio changes ${stamp}`)
+    const mergedCommit = await mergeCandidateWithRemote(state, candidateCommit)
+    const current = await repositoryState(true)
+    if (current.localHead !== state.localHead || current.remoteHead !== state.remoteHead || current.clean !== state.clean) throw new HttpError(409, '合并期间代码状态已变化，已停止更新；请重新尝试')
+    if (!state.clean) {
+      const latestCandidate = await createCandidateCommit(current, `update: verify local Kline Studio changes ${stamp}`)
+      const originalTree = (await runFile('git', ['rev-parse', `${candidateCommit}^{tree}`], { cwd: state.repositoryRoot })).stdout.trim()
+      const latestTree = (await runFile('git', ['rev-parse', `${latestCandidate}^{tree}`], { cwd: state.repositoryRoot })).stdout.trim()
+      if (originalTree !== latestTree) throw new HttpError(409, '验证期间本机文件发生变化，已停止更新；请重新尝试')
+    }
     const backupBranch = `kline-studio-backup/update-${Date.now()}`
     await runFile('git', ['branch', backupBranch, candidateCommit], { cwd: state.repositoryRoot })
-    await runFile('git', ['stash', 'push', '--include-untracked', '-m', `Kline Studio update backup ${stamp}`, '--', state.projectRelativePath], { cwd: state.repositoryRoot })
-    const backupStash = (await runFile('git', ['stash', 'list', '-1', '--format=%gd'], { cwd: state.repositoryRoot })).stdout.trim()
+    let backupStash = ''
+    if (!state.clean) {
+      await runFile('git', ['stash', 'push', '--include-untracked', '-m', `Kline Studio update backup ${stamp}`, '--', state.projectRelativePath], { cwd: state.repositoryRoot })
+      backupStash = (await runFile('git', ['stash', 'list', '-1', '--format=%gd'], { cwd: state.repositoryRoot })).stdout.trim()
+    }
     await runFile('git', ['merge', '--ff-only', mergedCommit], { cwd: state.repositoryRoot })
     await runNpm(['ci'], state.projectRoot)
     const updated = await repositoryState(false)

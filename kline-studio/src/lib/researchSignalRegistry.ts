@@ -6,7 +6,7 @@ import type { Candle, IntervalId, SymbolId } from './market'
  * implement the replay-trade contract and never create an order, entry, stop,
  * exit, or PnL record.
  */
-export interface ResearchSignalBar extends Candle {}
+export type ResearchSignalBar = Candle
 
 export interface ResearchSignalWindow {
   id: string
@@ -254,7 +254,7 @@ function buildRegistry() {
 const registry = buildRegistry()
 
 export function researchSignalDatasetInfos(): ResearchSignalDatasetInfo[] {
-  return [...registry.values()].map(({ provenance: _provenance, auditPoints: _auditPoints, signals: _signals, windows: _windows, ...info }) => ({ ...info }))
+  return [...registry.values()].map(({ sourceId, name, symbol, interval, reviewNote, signalCount, longCount, shortCount, windowCount, auditedPointCount }) => ({ sourceId, name, symbol, interval, reviewNote, signalCount, longCount, shortCount, windowCount, auditedPointCount }))
 }
 
 export function researchSignalDatasets(): ResearchSignalDataset[] {

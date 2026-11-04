@@ -37,7 +37,7 @@ import {
   clampContextMenuPosition, countActiveIndicators, loadChartAlerts, loadPaperOrders, saveChartAlerts, savePaperOrders,
   type ChartAlert, type PaperOrder,
 } from './lib/chartContext'
-import { ALL_DRAWING_TOOLS, getTool, shouldExitDrawingMode, supportsDrawingProperties } from './lib/toolCatalog'
+import { ALL_DRAWING_TOOLS, getTool, shouldExitDrawingMode } from './lib/toolCatalog'
 import { clearWorkspace, loadWorkspace, saveWorkspace } from './lib/persistence'
 import { decisionExerciseNavigationDirection, isChartAnnotationVisibilityShortcut, isEditableShortcutTarget, parseIntervalShortcut, resolveHistoryShortcut, TRADINGVIEW_SHORTCUTS } from './lib/shortcuts'
 import { aggregateCandles, formatPrice, generateCandles, INTERVALS, SYMBOLS, type Candle, type IntervalId, type SymbolId } from './lib/market'
@@ -456,6 +456,8 @@ function App() {
     [interval, symbol],
   )
   useEffect(() => {
+    // Keep the selected research layer valid after a symbol or interval change.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setVisibleResearchSignalSourceId((current) => {
       if (current && researchSignalLayers.some((layer) => layer.sourceId === current)) return current
       return researchSignalLayers.find((layer) => layer.sourceId === 'al-swing-apprentice-v2-fast')?.sourceId
@@ -2104,7 +2106,7 @@ function App() {
         lastSuccessfulSync: { action: 'update', at: completedAt, commit: result.commit },
       })
       if (!result.restartRequired) {
-        setCodeDeployStatus((current) => current ? { ...current, localHead: result.commit, remoteHead: result.commit, localHeadTimestamp: completedAt, remoteHeadTimestamp: completedAt, updateAvailable: false } : current)
+        setCodeDeployStatus((current) => current ? { ...current, localHead: result.commit, updateAvailable: false } : current)
         setCodeDeployPhase('ready')
         notify(`代码已是最新版本 ${result.commit.slice(0, 7)}`)
         return
@@ -3856,15 +3858,15 @@ function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProg
   const importInputRef = useRef<HTMLInputElement>(null)
   const codeDeployStatusPending = codeDeployPhase === 'checking' || codeDeployPhase === 'unavailable' || codeDeployPhase === 'status-error'
   const codePublishBlocked = Boolean(codeDeployStatus && (codeDeployStatus.diverged || codeDeployStatus.updateAvailable))
-  const codeUpdateBlocked = Boolean(codeDeployStatus && (!codeDeployStatus.updateAvailable || codeDeployStatus.diverged || codeDeployStatus.aheadOfRemote))
-  const codeUpdateWillPreserveLocalChanges = Boolean(codeDeployStatus?.updateAvailable && !codeDeployStatus.clean)
+  const codeUpdateBlocked = Boolean(codeDeployStatus && !codeDeployStatus.updateAvailable)
+  const codeUpdateWillPreserveLocalChanges = Boolean(codeDeployStatus?.updateAvailable && (!codeDeployStatus.clean || codeDeployStatus.diverged))
   const codeUpdateButtonLabel = codeDeployPhase === 'updating' ? '正在更新…'
     : codeUpdateWillPreserveLocalChanges ? '安全合并更新并重启'
       : codeDeployStatus?.aheadOfRemote ? '本机版本待发布'
         : codeDeployStatus && !codeDeployStatus.updateAvailable ? '已是 GitHub 最新'
           : '从 GitHub 更新并重启'
   const codeDeploySyncState = !codeDeployStatus ? null
-    : codeDeployStatus.diverged ? { tone: 'danger', label: '同步异常', detail: '本机与 GitHub 已分叉，必须停止' }
+    : codeDeployStatus.diverged ? { tone: 'warning', label: '可安全更新', detail: '本机和 GitHub 都有新提交，更新时会先备份并在临时目录合并验证' }
       : codeDeployStatus.dirtyFiles.length > 0 && codeDeployStatus.updateAvailable ? { tone: 'warning', label: '可安全更新', detail: `${codeDeployStatus.dirtyFiles.length} 项本机修改会先备份，再与 GitHub 新版本合并` }
         : codeDeployStatus.dirtyFiles.length > 0 ? { tone: 'warning', label: '尚未同步', detail: `${codeDeployStatus.dirtyFiles.length} 项本机修改尚未发布` }
         : codeDeployStatus.updateAvailable ? { tone: 'warning', label: '尚未同步', detail: 'GitHub 有新版本等待更新' }
