@@ -44,10 +44,15 @@ import {
   replaySignalCandleBeijingTime,
   type ReplaySignalMarkerSelection,
 } from '../lib/replaySignalRegistry'
+import {
+  resolveResearchSignalMarker, toResearchSignalSeriesMarkers,
+  type ResearchSignalMarkerSelection,
+} from '../lib/researchSignalRegistry'
 import { hasReplayRangeDataset, shouldRenderReplayRangeSpec, toReplayRangeSpecs, type ReplayRangeSpec } from '../lib/replayRangeRegistry'
 import { extractReasonCandleIndexes, resolveTradeCandleReferences } from '../lib/tradeCandleReferences'
 import { labelLayoutObstacle, tradeEndpointLabelLayout, type TradeLabelObstacle } from '../lib/tradeEndpointLabelLayout'
 import { chartMarkersForVisibility } from '../lib/chartMarkerVisibility'
+import type { ApprenticeActionMarker } from './AlSwingApprenticePanel'
 
 export interface IndicatorSettings {
   ma: boolean
@@ -66,6 +71,7 @@ export interface ChartSurfaceHandle {
   fitContent: () => void
   plotSize: () => { width: number; height: number } | null
   showDuration: (seconds: number | null) => void
+  showTimeRange: (from: number, to: number) => void
   zoomToFraction: (from: number, to: number) => void
   coordinateToTime: (x: number) => number | null
   coordinateToPrice: (y: number) => number | null
@@ -77,6 +83,7 @@ export interface ChartSurfaceHandle {
   moveVisibleRange: (bars: number) => void
   zoomVisibleRange: (factor: number) => void
   goToTime: (time: number) => void
+  selectResearchSignal: (markerId: string) => void
   downloadScreenshot: () => void
 }
 
@@ -94,6 +101,12 @@ interface Props {
   priceScalePercent: boolean
   priceScaleInverted: boolean
   visibleTradeLayerSourceIds?: string[]
+  visibleResearchSignalSourceIds?: string[]
+  showAllResearchReviews?: boolean
+  exerciseSignalMarkers?: SeriesMarker<UTCTimestamp>[]
+  apprenticeActionMarkers?: readonly ApprenticeActionMarker[]
+  apprenticeOnly?: boolean
+  apprenticeFocusRange?: { startTime: number; endTime: number } | null
   decisionSignalSourceIds?: string[]
   decisionSignalAfterTime?: number | null
   visibleRangeLayerSourceIds?: string[]
@@ -102,6 +115,7 @@ interface Props {
   onSelectRangeObject?: (id: string | null) => void
   followLatest?: boolean
   focusLatestKey?: number
+  focusHistoryBars?: number
   /** Keep the current viewport while a historical review is opened. */
   suppressAutoFocus?: boolean
   centerLatestByDefault?: boolean
@@ -409,6 +423,10 @@ function visibleTradeMarkers(
   decisionSignalSourceIds: readonly string[] = [],
   decisionSignalAfterTime: number | null = null,
   markersHidden = false,
+  researchSignalSourceIds: readonly string[] = [],
+  showAllResearchReviews = true,
+  apprenticeActionMarkers: readonly ApprenticeActionMarker[] = [],
+  apprenticeOnly = false,
 ) {
   const revealedThrough = data.at(-1)?.time
   if (revealedThrough === undefined) return []
@@ -420,9 +438,11 @@ function visibleTradeMarkers(
   // vertical column of labels at the right edge of the chart.  Keep replay
   // annotations causal, but never move them to another candle as a fallback.
   const markers = [
-    ...toReplayTradeSeriesMarkers(symbol, interval, sourceIds, revealedThrough, active),
-    ...toReplaySignalSeriesMarkers(symbol, interval, revealedThrough),
-    ...toReplayDecisionSignalSeriesMarkers(symbol, interval, decisionSignalSourceIds, revealedThrough, decisionSignalAfterTime),
+    ...(apprenticeOnly ? [] : toReplayTradeSeriesMarkers(symbol, interval, sourceIds, revealedThrough, active)),
+    ...(apprenticeOnly ? [] : toReplaySignalSeriesMarkers(symbol, interval, revealedThrough)),
+    ...(apprenticeOnly ? [] : toResearchSignalSeriesMarkers(symbol, interval, researchSignalSourceIds, revealedThrough, showAllResearchReviews)),
+    ...(apprenticeOnly ? [] : toReplayDecisionSignalSeriesMarkers(symbol, interval, decisionSignalSourceIds, revealedThrough, decisionSignalAfterTime)),
+    ...apprenticeActionSeriesMarkers(apprenticeActionMarkers, data),
     ...referenceMarkers,
   ].filter((marker) => candleTimeExists(data, Number(marker.time)))
     .sort((left, right) => Number(left.time) - Number(right.time) || String(left.id).localeCompare(String(right.id)))
@@ -439,12 +459,37 @@ function paintBlackBars(series: SeriesState | null, data: readonly Candle[], tim
     : { time: candle.time as UTCTimestamp, open: candle.open, high: candle.high, low: candle.low, close: candle.close }) as never)
 }
 
+function apprenticeActionSeriesMarkers(markers: readonly ApprenticeActionMarker[], data: readonly Candle[]): SeriesMarker<UTCTimestamp>[] {
+  const revealedThrough = data.at(-1)?.time
+  if (revealedThrough === undefined) return []
+  return markers
+    .filter((marker) => marker.time <= revealedThrough && candleTimeExists(data, marker.time))
+    .map((marker) => {
+      const long = marker.side === 'long'
+      const color = marker.kind === 'plan'
+        ? '#a78bfa'
+        : marker.kind === 'filled'
+          ? (long ? '#22c55e' : '#ef4444')
+          : marker.kind === 'cancel' ? '#f59e0b' : '#38bdf8'
+      const shape = marker.kind === 'plan' ? 'square' : marker.kind === 'filled' ? (long ? 'arrowUp' : 'arrowDown') : 'circle'
+      return {
+        time: marker.time as UTCTimestamp,
+        position: long ? 'belowBar' : 'aboveBar',
+        shape,
+        color,
+        text: marker.label,
+        size: marker.kind === 'filled' ? 2 : 1.5,
+        id: marker.id,
+      }
+    })
+}
+
 export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function ChartSurface(
   {
     data, symbol, interval, chartType, theme, blackBarTimes, indicators, priceScaleAuto, priceScaleLog, priceScalePercent, priceScaleInverted,
-    visibleTradeLayerSourceIds = [], decisionSignalSourceIds = [], decisionSignalAfterTime = null,
+    visibleTradeLayerSourceIds = [], visibleResearchSignalSourceIds = [], showAllResearchReviews = true, exerciseSignalMarkers = [], apprenticeActionMarkers = [], apprenticeOnly = false, apprenticeFocusRange = null, decisionSignalSourceIds = [], decisionSignalAfterTime = null,
     visibleRangeLayerSourceIds = [], suppressedRangeObjectIds = [], selectedRangeObjectId = null, onSelectRangeObject,
-    followLatest = false, focusLatestKey = 0, suppressAutoFocus = false, centerLatestByDefault = false, markersHidden = false, onHover, onPriceScaleStateChange, onViewportChange,
+    followLatest = false, focusLatestKey = 0, focusHistoryBars = 110, suppressAutoFocus = false, centerLatestByDefault = false, markersHidden = false, onHover, onPriceScaleStateChange, onViewportChange,
   },
   forwardedRef,
 ) {
@@ -477,8 +522,11 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
   const priceScaleAutoRef = useRef(priceScaleAuto)
   const priceScaleLogRef = useRef(priceScaleLog)
   const priceScalePercentRef = useRef(priceScalePercent)
-  const priceScaleInvertedRef = useRef(priceScaleInverted)
-  const visibleTradeLayerSourceIdsRef = useRef<readonly string[]>(visibleTradeLayerSourceIds)
+    const priceScaleInvertedRef = useRef(priceScaleInverted)
+    const visibleTradeLayerSourceIdsRef = useRef<readonly string[]>(visibleTradeLayerSourceIds)
+  const visibleResearchSignalSourceIdsRef = useRef<readonly string[]>(visibleResearchSignalSourceIds)
+  const apprenticeActionMarkersRef = useRef<readonly ApprenticeActionMarker[]>(apprenticeActionMarkers)
+  const apprenticePriceLinesRef = useRef<any[]>([])
   const decisionSignalSourceIdsRef = useRef<readonly string[]>(decisionSignalSourceIds)
   const decisionSignalAfterTimeRef = useRef<number | null>(decisionSignalAfterTime)
   const markersHiddenRef = useRef(markersHidden)
@@ -486,8 +534,10 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
   const suppressedRangeObjectIdsRef = useRef<ReadonlySet<string>>(new Set(suppressedRangeObjectIds))
   const [selectedTradeMarkerId, setSelectedTradeMarkerId] = useState<string | null>(null)
   const selectedTradeMarkerIdRef = useRef<string | null>(null)
-  const [selectedSignalMarkerId, setSelectedSignalMarkerId] = useState<string | null>(null)
-  const selectedSignalMarkerIdRef = useRef<string | null>(null)
+    const [selectedSignalMarkerId, setSelectedSignalMarkerId] = useState<string | null>(null)
+    const selectedSignalMarkerIdRef = useRef<string | null>(null)
+    const [selectedResearchSignalMarkerId, setSelectedResearchSignalMarkerId] = useState<string | null>(null)
+    const selectedResearchSignalMarkerIdRef = useRef<string | null>(null)
   const [selectedDecisionSignalMarkerId, setSelectedDecisionSignalMarkerId] = useState<string | null>(null)
   const selectedDecisionSignalMarkerIdRef = useRef<string | null>(null)
   const [hoveredTradeNumber, setHoveredTradeNumber] = useState<number | null>(null)
@@ -509,15 +559,18 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
   const signalRangeSegmentsRef = useRef<SignalRangeSegment[]>([])
   const signalRangeSyncFrameRef = useRef<number | null>(null)
   const selectedTradeMarker = selectedTradeMarkerId ? resolveReplayTradeMarker(symbol, interval, visibleTradeLayerSourceIds, selectedTradeMarkerId) : null
-  const selectedSignalMarker = selectedSignalMarkerId ? resolveReplaySignalMarker(symbol, interval, selectedSignalMarkerId) : null
+    const selectedSignalMarker = selectedSignalMarkerId ? resolveReplaySignalMarker(symbol, interval, selectedSignalMarkerId) : null
+    const selectedResearchSignalMarker = selectedResearchSignalMarkerId
+      ? resolveResearchSignalMarker(symbol, interval, visibleResearchSignalSourceIds, selectedResearchSignalMarkerId)
+      : null
   const selectedDecisionSignalMarker = selectedDecisionSignalMarkerId
     ? resolveReplayDecisionSignalMarker(symbol, interval, decisionSignalSourceIds, selectedDecisionSignalMarkerId)
     : null
   const selectedTradeDetails: ReplayTradeMarkerSelection | ReplayDecisionSignalMarkerSelection | null = selectedTradeMarker ?? selectedDecisionSignalMarker
   const tradeReferenceMarkers = useMemo(() => {
     const selection = selectedTradeDetails
-    return selection ? tradeReferenceSeriesMarkers(selection, data) : []
-  }, [data, selectedTradeDetails])
+    return [...(selection ? tradeReferenceSeriesMarkers(selection, data) : []), ...exerciseSignalMarkers]
+  }, [data, selectedTradeDetails, exerciseSignalMarkers])
   const tradeReferenceMarkersRef = useRef<readonly SeriesMarker<UTCTimestamp>[]>(tradeReferenceMarkers)
   const activeTradeNumber = hoveredTradeNumber ?? selectedTradeDetails?.trade.tradeNumber ?? null
   const activeTradeSourceId = hoveredTradeSourceId ?? selectedTradeDetails?.sourceId ?? null
@@ -755,12 +808,14 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     priceScalePercentRef.current = priceScalePercent
     priceScaleInvertedRef.current = priceScaleInverted
     visibleTradeLayerSourceIdsRef.current = visibleTradeLayerSourceIds
-    decisionSignalSourceIdsRef.current = decisionSignalSourceIds
-    decisionSignalAfterTimeRef.current = decisionSignalAfterTime
+      decisionSignalSourceIdsRef.current = decisionSignalSourceIds
+      decisionSignalAfterTimeRef.current = decisionSignalAfterTime
+    visibleResearchSignalSourceIdsRef.current = visibleResearchSignalSourceIds
+    apprenticeActionMarkersRef.current = apprenticeActionMarkers
     markersHiddenRef.current = markersHidden
     visibleRangeLayerSourceIdsRef.current = visibleRangeLayerSourceIds
     suppressedRangeObjectIdsRef.current = new Set(suppressedRangeObjectIds)
-  }, [data, decisionSignalAfterTime, decisionSignalSourceIds, followLatest, interval, markersHidden, onHover, onPriceScaleStateChange, onSelectRangeObject, onViewportChange, priceScaleAuto, priceScaleInverted, priceScaleLog, priceScalePercent, suppressedRangeObjectIds, symbol, visibleRangeLayerSourceIds, visibleTradeLayerSourceIds])
+  }, [apprenticeActionMarkers, data, decisionSignalAfterTime, decisionSignalSourceIds, followLatest, interval, markersHidden, onHover, onPriceScaleStateChange, onSelectRangeObject, onViewportChange, priceScaleAuto, priceScaleInverted, priceScaleLog, priceScalePercent, suppressedRangeObjectIds, symbol, visibleRangeLayerSourceIds, visibleResearchSignalSourceIds, visibleTradeLayerSourceIds, showAllResearchReviews])
 
   useEffect(() => {
     selectedTradeMarkerIdRef.current = selectedTradeMarkerId
@@ -769,6 +824,10 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
   useEffect(() => {
     selectedSignalMarkerIdRef.current = selectedSignalMarkerId
   }, [selectedSignalMarkerId])
+
+  useEffect(() => {
+    selectedResearchSignalMarkerIdRef.current = selectedResearchSignalMarkerId
+  }, [selectedResearchSignalMarkerId])
 
   useEffect(() => {
     selectedDecisionSignalMarkerIdRef.current = selectedDecisionSignalMarkerId
@@ -793,9 +852,17 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
   }, [decisionSignalSourceIds])
 
   useEffect(() => {
+    if (selectedResearchSignalMarkerId === null) return
+    const selection = resolveResearchSignalMarker(symbol, interval, visibleResearchSignalSourceIds, selectedResearchSignalMarkerId)
+    if (selection) return
+    selectedResearchSignalMarkerIdRef.current = null
+    setSelectedResearchSignalMarkerId(null)
+  }, [interval, selectedResearchSignalMarkerId, symbol, visibleResearchSignalSourceIds])
+
+  useEffect(() => {
     const markerApi = seriesRef.current?.markers
     if (!markerApi) return
-    const markers = visibleTradeMarkers(symbol, interval, dataRef.current, visibleTradeLayerSourceIds, activeTrade, tradeReferenceMarkers, decisionSignalSourceIds, decisionSignalAfterTime, markersHidden)
+    const markers = visibleTradeMarkers(symbol, interval, dataRef.current, visibleTradeLayerSourceIds, activeTrade, tradeReferenceMarkers, decisionSignalSourceIds, decisionSignalAfterTime, markersHidden, visibleResearchSignalSourceIds, showAllResearchReviews, apprenticeActionMarkersRef.current, apprenticeOnly)
     markerApi.setMarkers(markers)
     let clearSelectionTimer: number | undefined
     if (visibleTradeLayerSourceIds.length === 0) {
@@ -817,7 +884,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     return () => {
       if (clearSelectionTimer !== undefined) window.clearTimeout(clearSelectionTimer)
     }
-  }, [activeTrade, decisionSignalAfterTime, decisionSignalSourceIds, interval, markersHidden, requestTradeConnectionSync, symbol, tradeReferenceMarkers, visibleTradeLayerSourceIds])
+  }, [activeTrade, apprenticeActionMarkers, apprenticeOnly, decisionSignalAfterTime, decisionSignalSourceIds, interval, markersHidden, requestTradeConnectionSync, symbol, tradeReferenceMarkers, visibleResearchSignalSourceIds, visibleTradeLayerSourceIds, showAllResearchReviews])
 
   useImperativeHandle(forwardedRef, () => ({
     plotSize: () => {
@@ -836,6 +903,10 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       }
       const to = currentData.at(-1)!.time as UTCTimestamp
       chartRef.current.timeScale().setVisibleRange({ from: (Number(to) - seconds) as UTCTimestamp, to })
+    },
+    showTimeRange: (from, to) => {
+      if (!chartRef.current || !Number.isFinite(from) || !Number.isFinite(to) || from >= to) return
+      chartRef.current.timeScale().setVisibleRange({ from: from as UTCTimestamp, to: to as UTCTimestamp })
     },
     zoomToFraction: (from, to) => {
       const scale = chartRef.current?.timeScale()
@@ -917,7 +988,9 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     focusLatest: () => {
       const length = dataRef.current.length
       if (!chartRef.current || length === 0) return
-      chartRef.current.timeScale().setVisibleLogicalRange(centeredLatestLogicalRange(length))
+      const range = centeredLatestLogicalRange(length)
+      const extra = Math.max(0, focusHistoryBars - 110)
+      chartRef.current.timeScale().setVisibleLogicalRange({ from: range.from - extra, to: range.to + extra })
     },
     scrollToRealtime: () => chartRef.current?.timeScale().scrollToRealTime(),
     moveVisibleRange: (bars) => {
@@ -944,6 +1017,10 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       const span = range.to - range.from
       scale.setVisibleLogicalRange({ from: index - span / 2, to: index + span / 2 })
     },
+    selectResearchSignal: (markerId) => {
+      selectedResearchSignalMarkerIdRef.current = markerId
+      setSelectedResearchSignalMarkerId(markerId)
+    },
     downloadScreenshot: () => {
       if (!chartRef.current) return
       const canvas = chartRef.current.takeScreenshot()
@@ -959,7 +1036,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
         window.setTimeout(() => URL.revokeObjectURL(url), 1000)
       }, 'image/png')
     },
-  }), [symbol])
+  }), [symbol, focusHistoryBars])
 
   useEffect(() => {
     const container = containerRef.current
@@ -1091,6 +1168,10 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       decisionSignalSourceIdsRef.current,
       decisionSignalAfterTimeRef.current,
       markersHiddenRef.current,
+      visibleResearchSignalSourceIdsRef.current,
+      true,
+      apprenticeActionMarkersRef.current,
+      apprenticeOnly,
     ))
     const timeScale = chart.timeScale()
     const wheelZoomBurstActive = false
@@ -1155,6 +1236,8 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
         setSelectedTradeMarkerId(null)
         selectedSignalMarkerIdRef.current = null
         setSelectedSignalMarkerId(null)
+        selectedResearchSignalMarkerIdRef.current = null
+        setSelectedResearchSignalMarkerId(null)
         selectedDecisionSignalMarkerIdRef.current = null
         setSelectedDecisionSignalMarkerId(null)
         hoveredMarkerIdRef.current = null
@@ -1171,6 +1254,8 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
           onSelectRangeObjectRef.current?.(null)
           selectedSignalMarkerIdRef.current = null
           setSelectedSignalMarkerId(null)
+          selectedResearchSignalMarkerIdRef.current = null
+          setSelectedResearchSignalMarkerId(null)
           selectedDecisionSignalMarkerIdRef.current = null
           setSelectedDecisionSignalMarkerId(null)
           const nextId = toggleXauTradeMarkerSelection(selectedTradeMarkerIdRef.current, tradeSelection.id)
@@ -1183,11 +1268,32 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
           onSelectRangeObjectRef.current?.(null)
           selectedTradeMarkerIdRef.current = null
           setSelectedTradeMarkerId(null)
+          selectedResearchSignalMarkerIdRef.current = null
+          setSelectedResearchSignalMarkerId(null)
           selectedDecisionSignalMarkerIdRef.current = null
           setSelectedDecisionSignalMarkerId(null)
           const nextId = toggleReplaySignalMarkerSelection(selectedSignalMarkerIdRef.current, signalSelection.id)
           selectedSignalMarkerIdRef.current = nextId
           setSelectedSignalMarkerId(nextId)
+          return
+        }
+        const researchSignalSelection = resolveResearchSignalMarker(
+          symbolRef.current,
+          intervalRef.current,
+          visibleResearchSignalSourceIdsRef.current,
+          objectId,
+        )
+        if (researchSignalSelection) {
+          onSelectRangeObjectRef.current?.(null)
+          selectedTradeMarkerIdRef.current = null
+          setSelectedTradeMarkerId(null)
+          selectedSignalMarkerIdRef.current = null
+          setSelectedSignalMarkerId(null)
+          selectedDecisionSignalMarkerIdRef.current = null
+          setSelectedDecisionSignalMarkerId(null)
+          const nextId = selectedResearchSignalMarkerIdRef.current === researchSignalSelection.id ? null : researchSignalSelection.id
+          selectedResearchSignalMarkerIdRef.current = nextId
+          setSelectedResearchSignalMarkerId(nextId)
           return
         }
         const decisionSignalSelection = resolveReplayDecisionSignalMarker(
@@ -1202,6 +1308,8 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
           setSelectedTradeMarkerId(null)
           selectedSignalMarkerIdRef.current = null
           setSelectedSignalMarkerId(null)
+          selectedResearchSignalMarkerIdRef.current = null
+          setSelectedResearchSignalMarkerId(null)
           const nextId = selectedDecisionSignalMarkerIdRef.current === decisionSignalSelection.id ? null : decisionSignalSelection.id
           selectedDecisionSignalMarkerIdRef.current = nextId
           setSelectedDecisionSignalMarkerId(nextId)
@@ -1502,6 +1610,8 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       setSelectedTradeMarkerId(null)
       selectedSignalMarkerIdRef.current = null
       setSelectedSignalMarkerId(null)
+      selectedResearchSignalMarkerIdRef.current = null
+      setSelectedResearchSignalMarkerId(null)
       selectedDecisionSignalMarkerIdRef.current = null
       setSelectedDecisionSignalMarkerId(null)
       hoveredMarkerIdRef.current = null
@@ -1515,11 +1625,13 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       signalRangeSegmentsRef.current = []
       setSignalRangeSegments([])
       series.smc?.destroy()
+      apprenticePriceLinesRef.current.forEach((line) => seriesRef.current?.main.removePriceLine(line))
+      apprenticePriceLinesRef.current = []
       chart.remove()
       chartRef.current = null
       seriesRef.current = null
     }
-  }, [cacheVisibleViewport, centerLatestByDefault, chartType, indicators, interval, requestSignalRangeSync, requestTradeConnectionSync, requestViewportProjectionSync, symbol, syncSignalRanges, syncTradeConnections, theme])
+  }, [apprenticeOnly, cacheVisibleViewport, centerLatestByDefault, chartType, indicators, interval, requestSignalRangeSync, requestTradeConnectionSync, requestViewportProjectionSync, symbol, syncSignalRanges, syncTradeConnections, theme])
 
   useEffect(() => {
     chartRef.current?.priceScale('right').applyOptions({
@@ -1562,7 +1674,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       updateSeries(series, data, chartType, indicators, { times: new Set(blackBarTimesRef.current), border: blackBorderRef.current })
       series.smc?.setData(data)
     }
-    const revealedMarkers = visibleTradeMarkers(symbol, interval, data, visibleTradeLayerSourceIds, activeTradeRef.current, tradeReferenceMarkers, decisionSignalSourceIds, decisionSignalAfterTime, markersHidden)
+    const revealedMarkers = visibleTradeMarkers(symbol, interval, data, visibleTradeLayerSourceIds, activeTradeRef.current, tradeReferenceMarkers, decisionSignalSourceIds, decisionSignalAfterTime, markersHidden, visibleResearchSignalSourceIds, showAllResearchReviews, apprenticeActionMarkers, apprenticeOnly)
     series.markers?.setMarkers(revealedMarkers)
     if (!markersHidden && selectedTradeMarkerIdRef.current && !revealedMarkers.some((marker) => marker.id === selectedTradeMarkerIdRef.current)) {
       selectedTradeMarkerIdRef.current = null
@@ -1589,18 +1701,76 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       nextLength: data.length,
     })
     if (viewportAction === 'center') {
-      timeScale.setVisibleLogicalRange(centeredLatestLogicalRange(data.length))
+      const range = centeredLatestLogicalRange(data.length)
+      const extra = Math.max(0, focusHistoryBars - 110)
+      timeScale.setVisibleLogicalRange({ from: range.from - extra, to: range.to + extra })
     } else if (viewportAction === 'realtime') {
       timeScale.scrollToRealTime()
     } else if (viewportAction === 'preserve' && visibleRange) {
       timeScale.setVisibleLogicalRange(visibleRange)
+    }
+    // The apprentice report supplies a fixed historical review window.  A
+    // normal workspace viewport may have a cached range from a different
+    // session, which compresses the hydrated candles against the left edge.
+    // Apply the report's actual timestamps after the new series is committed,
+    // then let lightweight-charts auto-scale to those candles.
+    if (apprenticeOnly && dataChanged && apprenticeFocusRange) {
+      const startIndex = data.findIndex((candle) => candle.time >= apprenticeFocusRange.startTime)
+      let endIndex = -1
+      for (let index = data.length - 1; index >= 0; index -= 1) {
+        if (data[index].time <= apprenticeFocusRange.endTime) {
+          endIndex = index
+          break
+        }
+      }
+      if (startIndex >= 0 && endIndex >= startIndex) {
+        timeScale.setVisibleLogicalRange({
+          from: Math.max(0, startIndex - 4),
+          to: Math.min(data.length - 1, endIndex + 4),
+        })
+        chart.priceScale('right').applyOptions({ autoScale: true })
+      }
     }
     // Keep a focus request pending while the causal data set is empty.  The
     // next data commit can then apply it once the signal window is available.
     if (!shouldFocusLatest || focusReady) focusLatestKeyRef.current = focusLatestKey
     requestTradeConnectionSync()
     requestSignalRangeSync()
-  }, [chartType, data, decisionSignalAfterTime, decisionSignalSourceIds, focusLatestKey, indicators, interval, markersHidden, requestSignalRangeSync, requestTradeConnectionSync, suppressAutoFocus, suppressedRangeObjectIds, symbol, tradeReferenceMarkers, visibleRangeLayerSourceIds, visibleTradeLayerSourceIds])
+    // Sibling SVG annotations rendered before setData may have null/stale
+    // coordinates. An unchanged visible range does not fire a scale event,
+    // so explicitly reproject once the new chart data has been painted.
+    if (dataChanged) requestViewportProjectionSync()
+  }, [apprenticeActionMarkers, apprenticeFocusRange, apprenticeOnly, chartType, data, decisionSignalAfterTime, decisionSignalSourceIds, focusLatestKey, focusHistoryBars, indicators, interval, markersHidden, requestSignalRangeSync, requestTradeConnectionSync, requestViewportProjectionSync, suppressAutoFocus, suppressedRangeObjectIds, symbol, tradeReferenceMarkers, visibleRangeLayerSourceIds, visibleResearchSignalSourceIds, visibleTradeLayerSourceIds, showAllResearchReviews])
+
+  useEffect(() => {
+    const series = seriesRef.current?.main
+    if (!series) return
+    apprenticePriceLinesRef.current.forEach((line) => series.removePriceLine(line))
+    apprenticePriceLinesRef.current = []
+    if (!apprenticeOnly) return
+    const levels = new Map<number, ApprenticeActionMarker>()
+    apprenticeActionMarkers.forEach((marker) => {
+      if (marker.price !== undefined && Number.isFinite(marker.price) && marker.price > 0) levels.set(marker.price, marker)
+    })
+    apprenticePriceLinesRef.current = [...levels.values()].map((marker) => {
+      const color = marker.kind === 'plan' ? '#a78bfa' : marker.kind === 'filled' ? '#22c55e' : marker.kind === 'cancel' ? '#f59e0b' : '#38bdf8'
+      const title = marker.kind === 'plan' ? '计划价' : marker.kind === 'filled' ? '成交价' : marker.kind === 'cancel' ? '撤单价' : '保护/退出价'
+      return series.createPriceLine({
+        price: marker.price!,
+        color,
+        lineWidth: 1,
+        lineStyle: 3,
+        axisLabelVisible: true,
+        lineVisible: true,
+        title,
+      })
+    })
+    return () => {
+      const activeSeries = seriesRef.current?.main
+      apprenticePriceLinesRef.current.forEach((line) => activeSeries?.removePriceLine(line))
+      apprenticePriceLinesRef.current = []
+    }
+  }, [apprenticeActionMarkers, apprenticeOnly, data])
 
   useEffect(() => {
     saveTradeMarkerPanelPreferences({
@@ -1623,7 +1793,8 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
   }
 
   const cycleTradeMarkerFontSize = () => setTradeMarkerFontSize((size) => nextTradeMarkerFontSize(size))
-  const replaySignalMarkerCount = data.length === 0 ? 0 : toReplaySignalSeriesMarkers(symbol, interval, data.at(-1)?.time).length
+  const replaySignalMarkerCount = apprenticeOnly || data.length === 0 ? 0 : toReplaySignalSeriesMarkers(symbol, interval, data.at(-1)?.time).length
+  const researchSignalMarkerCount = apprenticeOnly || data.length === 0 ? 0 : toResearchSignalSeriesMarkers(symbol, interval, visibleResearchSignalSourceIds, data.at(-1)?.time, showAllResearchReviews).length
   const tradeDetailsPanelObstacles = selectedTradeDetails
     ? [tradeDetailsPanelObstacle(selectedTradeMarkerPanelPosition, selectedTradeMarkerPanelSize, chartViewportSize.width, chartViewportSize.height)]
     : []
@@ -1638,6 +1809,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     data-marker-hover-active={hoveredMarkerId !== null ? 'true' : undefined}
     data-markers-hidden={markersHidden ? 'true' : undefined}
     data-replay-signal-marker-count={replaySignalMarkerCount}
+    data-research-signal-marker-count={researchSignalMarkerCount}
     data-replay-signal-range-count={signalRangeSegments.length}
     data-trade-reference-count={tradeReferenceMarkers.length}
   >
@@ -1786,6 +1958,17 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       fontSize={tradeMarkerFontSize}
       onCycleFontSize={cycleTradeMarkerFontSize}
       onClose={closeSignalMarkerDetails}
+    />}
+    {selectedResearchSignalMarker && <ResearchSignalMarkerDetails
+      selection={selectedResearchSignalMarker}
+      panelPosition={selectedTradeMarkerPanelPosition}
+      panelSize={selectedTradeMarkerPanelSize}
+      fontSize={tradeMarkerFontSize}
+      onCycleFontSize={cycleTradeMarkerFontSize}
+      onClose={() => {
+        selectedResearchSignalMarkerIdRef.current = null
+        setSelectedResearchSignalMarkerId(null)
+      }}
     />}
   </div>
 })
@@ -1999,6 +2182,91 @@ function SignalMarkerDetails({
       title="拖动调整详情框大小"
       onPointerDown={handleResizeStart}
     />
+  </aside>
+}
+
+function ResearchSignalMarkerDetails({
+  selection, panelPosition, panelSize, fontSize, onCycleFontSize, onClose,
+}: {
+  selection: ResearchSignalMarkerSelection
+  panelPosition: TradeMarkerPanelPosition | null
+  panelSize: TradeMarkerPanelSize | null
+  fontSize: TradeMarkerFontSize
+  onCycleFontSize: () => void
+  onClose: () => void
+}) {
+  const { signal, window } = selection
+  const bar = window.bars?.[signal.idx]
+  const review = signal.filterReview
+  const verdictLabel = signal.reviewVerdict === 'keep' ? '保留' : signal.reviewVerdict === 'filter' ? '已过滤' : '证据不足'
+  const eventLabel = signal.markerLabel ?? (signal.side === 'long' ? '多头信号' : '空头信号')
+  const context = signal.context && typeof signal.context === 'object' ? signal.context as Record<string, unknown> : null
+  const orderDetails = [
+    ['计划编号', context?.plan_id],
+    ['委托价', context?.order_price],
+    ['成交价', context?.fill_price],
+    ['保护止损', context?.stop_price],
+  ].filter((item): item is [string, string | number] => typeof item[1] === 'string' && item[1].length > 0 || typeof item[1] === 'number' && Number.isFinite(item[1]))
+  const extraEvidenceIndices = signal.evidenceIndices.filter((idx) => idx !== signal.idx)
+  const fontSizeLabels: Record<TradeMarkerFontSize, string> = { small: '小', medium: '中', large: '大' }
+  const nextFontSize = nextTradeMarkerFontSize(fontSize)
+  return <aside
+    style={tradeMarkerPanelStyle(panelPosition, panelSize)}
+    className="trade-marker-details signal-marker-details is-right research-signal-marker-details"
+    data-panel-side="right"
+    data-font-size={fontSize}
+    data-marker-id={selection.id}
+    data-testid="research-signal-marker-details"
+    aria-label="研究信号详情"
+  >
+    <header className="trade-marker-details-header">
+      <div className="trade-marker-drag-handle"><span className="trade-marker-drag-grip" aria-hidden="true">⋮⋮</span><span><strong>{review ? `案例复核 · ${verdictLabel}` : selection.name} · {eventLabel}</strong><small>{review ? '只读研究证据，不是成交或练习订单' : '计划与模拟账本事件分开记录'}</small></span></div>
+      <div className="trade-marker-details-actions">
+        <button type="button" data-testid="research-signal-marker-font-size" className="trade-marker-font-size" aria-label={`当前字号${fontSizeLabels[fontSize]}，点击切换为${fontSizeLabels[nextFontSize]}字号`} onClick={onCycleFontSize}>{fontSize === 'large' ? 'A+' : fontSize === 'small' ? 'A−' : 'Aa'}</button>
+        <button type="button" className="trade-marker-details-close" aria-label="关闭研究信号详情" onClick={onClose}>×</button>
+      </div>
+    </header>
+    <div className="trade-marker-details-scroll">
+      <section className="trade-marker-detail-section signal-marker-core-section">
+        <h4><span className={signal.side === 'long' ? 'trade-marker-green' : 'trade-marker-red'}>{eventLabel}</span>{review ? ` · ${verdictLabel}` : ''}</h4>
+        <dl>
+          <div><dt>北京时间</dt><dd>{signal.beijingTime ?? formatBeijingChartTime(signal.time as UTCTimestamp)}</dd></div>
+          <div><dt>K线位置</dt><dd>K{signal.idx}</dd></div>
+          <div><dt>当根收盘价</dt><dd>{bar?.close ?? signal.price ?? '—'}</dd></div>
+          {extraEvidenceIndices.length > 0 && <div><dt>其他证据K</dt><dd>{extraEvidenceIndices.map((idx) => `K${idx}`).join('、')}</dd></div>}
+        </dl>
+      </section>
+      <section className="trade-marker-detail-section signal-marker-reason-section">
+        <h4>{review ? '复核理由' : '事件说明'}</h4>
+        <p className="signal-marker-full-reason">{signal.reason}</p>
+        <h4>{review ? '复核说明' : '图层说明'}</h4>
+        <p className="signal-marker-full-reason">{signal.reviewNote}</p>
+      </section>
+      {!review && orderDetails.length > 0 && <section className="trade-marker-detail-section signal-marker-core-section">
+        <h4>订单信息</h4>
+        <dl>{orderDetails.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{String(value)}</dd></div>)}</dl>
+      </section>}
+      {review && <section className="trade-marker-detail-section signal-marker-evidence-section" data-testid="case-filter-evidence">
+        {review.revisionNote && <p>{review.revisionNote}</p>}
+        {review.disputes.map((note, index) => <p key={index} style={{ color: '#f4cf58' }}>案例使用争议：{note}</p>)}
+        <h4>支持复核结论的证据</h4>
+        {review.supportingEvidence.map((text, index) => <p key={index}>{text}</p>)}
+        <h4>相反证据</h4>
+        {review.counterEvidence.map((text, index) => <p key={index}>{text}</p>)}
+        <h4>决定性差别</h4><p>{review.decisiveDifference}</p>
+        <h4>等待与失效条件</h4><p>{review.waitConditions}</p>
+        <h4>当时结构标注图</h4>
+        <a href={review.annotatedImage} target="_blank" rel="noreferrer"><img src={review.annotatedImage} alt="截至信号当时的结构标注" loading="lazy" style={{ width: '100%', height: 'auto' }} /></a>
+        <h4>引用案例</h4>
+        {review.cases.length === 0 && <p>没有检索到足够相关的案例，没有强行配对；本条理由仅依据当时可见行情。</p>}
+        {review.cases.map((item) => <details key={item.caseId}>
+          <summary>{item.caseId} · {({ supports_keep: '支持保留', supports_filter: '支持过滤', not_applicable: '不适用', uncertain: '有疑问' } as Record<string, string>)[item.effect] ?? '未采用'}</summary>
+          <p>相同：{item.similarities}</p><p>不同：{item.differences}</p><p>{item.basis}</p>
+          {item.images.map((src) => <a key={src} href={src} target="_blank" rel="noreferrer"><img src={src} alt="案例结构图" loading="lazy" style={{ width: '100%', height: 'auto' }} /></a>)}
+          <details><summary>原视频帧</summary>{item.originalImages.map((src) => <a key={src} href={src} target="_blank" rel="noreferrer"><img src={src} alt="案例原视频帧" loading="lazy" style={{ width: '100%', height: 'auto' }} /></a>)}</details>
+        </details>)}
+      </section>}
+    </div>
   </aside>
 }
 

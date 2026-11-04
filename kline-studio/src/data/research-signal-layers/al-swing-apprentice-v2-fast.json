@@ -1,0 +1,5705 @@
+{
+  "schemaVersion": 1,
+  "sourceId": "al-swing-apprentice-v2-fast",
+  "name": "Al波段研究版 · 计划/成交/撤单/退出",
+  "symbol": "XAUUSD",
+  "interval": "5m",
+  "reviewNote": "独立Al波段研究版，仅用于K线工坊查看。范围为北京时间2026-09-03 17:00至2026-09-04 22:25，使用冻结XAUUSD 5分钟数据和截至当前K线的因果决策。绿色为计划/成交，橙色为退出，灰色为撤单，红色为止损；计划与实际账本事件分开显示。本层只读，不修改生产V6，也不自动生成模拟订单。",
+  "provenance": {
+    "run_id": "aa78b3c4e9bb371143c13f8e",
+    "run_root": "D:\\CodexData\\al-swing-apprentice-v2-fast",
+    "model": "gpt-5.6-luna",
+    "reasoning_effort": "max",
+    "service_tier": "priority",
+    "architecture": "parallel_causal_perception_then_sequential_event_policy",
+    "range_beijing": "2026-09-03 17:00—2026-09-04 22:25",
+    "marker_count": 23
+  },
+  "auditPoints": {
+    "bars": 558,
+    "evaluation_start_idx": 216,
+    "evaluation_end_idx": 557,
+    "actions": 11,
+    "outcome_markers": 12,
+    "future_data_used": false
+  },
+  "signals": [
+    {
+      "id": "al-v2-action-a001",
+      "windowId": "AL-V2-XAUUSD-20260903-04",
+      "idx": 222,
+      "time": 1788427800,
+      "beijingTime": "2026-09-03 17:30",
+      "side": "long",
+      "price": 4437.015,
+      "reason": "K222形成回收后的延续计划，下一根才允许触发。",
+      "context": {
+        "event_type": "decision_action",
+        "action": "place",
+        "plan_id": "k222_reclaim_followthrough",
+        "order_price": 4438.0,
+        "fill_price": null,
+        "stop_price": null,
+        "source_event": "decisions.jsonl",
+        "source_run": "aa78b3c4e9bb371143c13f8e",
+        "causal_boundary": "只使用该K线收盘及之前信息；成交/撤单为同一冻结账本的结果"
+      },
+      "evidenceIndices": [
+        222
+      ],
+      "reviewNote": "Al波段研究版的可视化事件。计划、成交、撤单和退出来自冻结账本；标记只用于检查，不进入生产V6规则。",
+      "reviewVerdict": "keep",
+      "markerLabel": "计划多",
+      "markerColor": "#22c55e"
+    },
+    {
+      "id": "al-v2-outcome-o001",
+      "windowId": "AL-V2-XAUUSD-20260903-04",
+      "idx": 223,
+      "time": 1788428100,
+      "beijingTime": "2026-09-03 17:35",
+      "side": "long",
+      "price": 4432.87,
+      "reason": "K223触发K222的多头止损单，成交价4438。",
+      "context": {
+        "event_type": "entry_fill",
+        "action": null,
+        "plan_id": "k222_reclaim_followthrough",
+        "order_price": 4438.0,
+        "fill_price": 4438.0,
+        "stop_price": null,
+        "source_event": "events.jsonl",
+        "source_run": "aa78b3c4e9bb371143c13f8e",
+        "causal_boundary": "只使用该K线收盘及之前信息；成交/撤单为同一冻结账本的结果"
+      },
+      "evidenceIndices": [
+        223
+      ],
+      "reviewNote": "Al波段研究版的可视化事件。计划、成交、撤单和退出来自冻结账本；标记只用于检查，不进入生产V6规则。",
+      "reviewVerdict": "keep",
+      "markerLabel": "成交多",
+      "markerColor": "#16a34a"
+    },
+    {
+      "id": "al-v2-outcome-o002",
+      "windowId": "AL-V2-XAUUSD-20260903-04",
+      "idx": 223,
+      "time": 1788428100,
+      "beijingTime": "2026-09-03 17:35",
+      "side": "long",
+      "price": 4432.87,
+      "reason": "K223同根触发保护止损，按不利顺序记为4432.1退出。",
+      "context": {
+        "event_type": "protective_stop_fill",
+        "action": null,
+        "plan_id": "k222_reclaim_followthrough",
+        "order_price": null,
+        "fill_price": 4432.1,
+        "stop_price": 4432.1,
+        "source_event": "events.jsonl",
+        "source_run": "aa78b3c4e9bb371143c13f8e",
+        "causal_boundary": "只使用该K线收盘及之前信息；成交/撤单为同一冻结账本的结果"
+      },
+      "evidenceIndices": [
+        223
+      ],
+      "reviewNote": "Al波段研究版的可视化事件。计划、成交、撤单和退出来自冻结账本；标记只用于检查，不进入生产V6规则。",
+      "reviewVerdict": "keep",
+      "markerLabel": "止损多",
+      "markerColor": "#dc2626"
+    },
+    {
+      "id": "al-v2-action-a002",
+      "windowId": "AL-V2-XAUUSD-20260903-04",
+      "idx": 251,
+      "time": 1788436500,
+      "beijingTime": "2026-09-03 19:55",
+      "side": "long",
+      "price": 4444.28,
+      "reason": "K251出现突破延续条件，挂单价为4445.75。",
+      "context": {
+        "event_type": "decision_action",
+        "action": "place",
+        "plan_id": "k251_breakout_followthrough",
+        "order_price": 4445.75,
+        "fill_price": null,
+        "stop_price": null,
+        "source_event": "decisions.jsonl",
+        "source_run": "aa78b3c4e9bb371143c13f8e",
+        "causal_boundary": "只使用该K线收盘及之前信息；成交/撤单为同一冻结账本的结果"
+      },
+      "evidenceIndices": [
+        251
+      ],
+      "reviewNote": "Al波段研究版的可视化事件。计划、成交、撤单和退出来自冻结账本；标记只用于检查，不进入生产V6规则。",
+      "reviewVerdict": "keep",
+      "markerLabel": "计划多",
+      "markerColor": "#22c55e"
+    },
+    {
+      "id": "al-v2-outcome-o003",
+      "windowId": "AL-V2-XAUUSD-20260903-04",
+      "idx": 252,
+      "time": 1788436800,
+      "beijingTime": "2026-09-03 20:00",
+      "side": "long",
+      "price": 4448.31,
+      "reason": "K252触发K251的多头止损单，成交价4445.75。",
+      "context": {
+        "event_type": "entry_fill",
+        "action": null,
+        "plan_id": "k251_breakout_followthrough",
+        "order_price": 4445.75,
+        "fill_price": 4445.75,
+        "stop_price": null,
+        "source_event": "events.jsonl",
+        "source_run": "aa78b3c4e9bb371143c13f8e",
+        "causal_boundary": "只使用该K线收盘及之前信息；成交/撤单为同一冻结账本的结果"
+      },
+      "evidenceIndices": [
+        252
+      ],
+      "reviewNote": "Al波段研究版的可视化事件。计划、成交、撤单和退出来自冻结账本；标记只用于检查，不进入生产V6规则。",
+      "reviewVerdict": "keep",
+      "markerLabel": "成交多",
+      "markerColor": "#16a34a"
+    },
+    {
+      "id": "al-v2-outcome-o004",
+      "windowId": "AL-V2-XAUUSD-20260903-04",
+      "idx": 256,
+      "time": 1788438000,
+      "beijingTime": "2026-09-03 20:20",
+      "side": "long",
+      "price": 4446.745,
+      "reason": "K256触发该多头的保护止损，成交价4439.8。",
+      "context": {
+        "event_type": "protective_stop_fill",
+        "action": null,
+        "plan_id": "k251_breakout_followthrough",
+        "order_price": null,
+        "fill_price": 4439.8,
+        "stop_price": 4439.8,
+        "source_event": "events.jsonl",
+        "source_run": "aa78b3c4e9bb371143c13f8e",
+        "causal_boundary": "只使用该K线收盘及之前信息；成交/撤单为同一冻结账本的结果"
+      },
+      "evidenceIndices": [
+        256
+      ],
+      "reviewNote": "Al波段研究版的可视化事件。计划、成交、撤单和退出来自冻结账本；标记只用于检查，不进入生产V6规则。",
+      "reviewVerdict": "keep",
+      "markerLabel": "止损多",
+      "markerColor": "#dc2626"
+    },
+    {
+      "id": "al-v2-action-a003",
+      "windowId": "AL-V2-XAUUSD-20260903-04",
+      "idx": 258,
+      "time": 1788438600,
+      "beijingTime": "2026-09-03 20:30",
+      "side": "long",
+      "price": 4466.855,
+      "reason": "K258再次给出突破跟随计划，挂单价为4470.2。",
+      "context": {
+        "event_type": "decision_action",
+        "action": "place",
+        "plan_id": "k258_breakout_followthrough",
+        "order_price": 4470.2,
+        "fill_price": null,
+        "stop_price": null,
+        "source_event": "decisions.jsonl",
+        "source_run": "aa78b3c4e9bb371143c13f8e",
+        "causal_boundary": "只使用该K线收盘及之前信息；成交/撤单为同一冻结账本的结果"
+      },
+      "evidenceIndices": [
+        258
+      ],
+      "reviewNote": "Al波段研究版的可视化事件。计划、成交、撤单和退出来自冻结账本；标记只用于检查，不进入生产V6规则。",
+      "reviewVerdict": "keep",
+      "markerLabel": "计划多",
+      "markerColor": "#22c55e"
+    },
+    {
+      "id": "al-v2-outcome-o005",
+      "windowId": "AL-V2-XAUUSD-20260903-04",
+      "idx": 259,
+      "time": 1788438900,
+      "beijingTime": "2026-09-03 20:35",
+      "side": "long",
+      "price": 4475.65,
+      "reason": "K259触发K258的多头止损单，成交价4470.2。",
+      "context": {
+        "event_type": "entry_fill",
+        "action": null,
+        "plan_id": "k258_breakout_followthrough",
+        "order_price": 4470.2,
+        "fill_price": 4470.2,
+        "stop_price": null,
+        "source_event": "events.jsonl",
+        "source_run": "aa78b3c4e9bb371143c13f8e",
+        "causal_boundary": "只使用该K线收盘及之前信息；成交/撤单为同一冻结账本的结果"
+      },
+      "evidenceIndices": [
+        259
+      ],
+      "reviewNote": "Al波段研究版的可视化事件。计划、成交、撤单和退出来自冻结账本；标记只用于检查，不进入生产V6规则。",
+      "reviewVerdict": "keep",
+      "markerLabel": "成交多",
+      "markerColor": "#16a34a"
+    },
+    {
+      "id": "al-v2-action-a004",
+      "windowId": "AL-V2-XAUUSD-20260903-04",
+      "idx": 297,
+      "time": 1788450300,
+      "beijingTime": "2026-09-03 23:45",
+      "side": "long",
+      "price": 4488.445,
+      "reason": "K297决定下一根以市价退出已有多头。",
+      "context": {
+        "event_type": "decision_action",
+        "action": "exit",
+        "plan_id": "k258_breakout_followthrough",
+        "order_price": null,
+        "fill_price": null,
+        "stop_price": null,
+        "source_event": "decisions.jsonl",
+        "source_run": "aa78b3c4e9bb371143c13f8e",
+        "causal_boundary": "只使用该K线收盘及之前信息；成交/撤单为同一冻结账本的结果"
+      },
+      "evidenceIndices": [
+        297
+      ],
+      "reviewNote": "Al波段研究版的可视化事件。计划、成交、撤单和退出来自冻结账本；标记只用于检查，不进入生产V6规则。",
+      "reviewVerdict": "keep",
+      "markerLabel": "计划退出",
+      "markerColor": "#f59e0b"
+    },
+    {
+      "id": "al-v2-outcome-o006",
+      "windowId": "AL-V2-XAUUSD-20260903-04",
+      "idx": 298,
+      "time": 1788450600,
+      "beijingTime": "2026-09-03 23:50",
+      "side": "long",
+      "price": 4490.575,
+      "reason": "K298按K297的退出计划用下一根开盘市价退出，成交价4488.435。",
+      "context": {
+        "event_type": "exit_fill",
+        "action": null,
+        "plan_id": "k258_breakout_followthrough",
+        "order_price": null,
+        "fill_price": 4488.435,
+        "stop_price": null,
+        "source_event": "events.jsonl",
+        "source_run": "aa78b3c4e9bb371143c13f8e",
+        "causal_boundary": "只使用该K线收盘及之前信息；成交/撤单为同一冻结账本的结果"
+      },
+      "evidenceIndices": [
+        298
+      ],
+      "reviewNote": "Al波段研究版的可视化事件。计划、成交、撤单和退出来自冻结账本；标记只用于检查，不进入生产V6规则。",
+      "reviewVerdict": "keep",
+      "markerLabel": "退出多",
+      "markerColor": "#f59e0b"
+    },
+    {
+      "id": "al-v2-action-a005",
+      "windowId": "AL-V2-XAUUSD-20260903-04",
+      "idx": 395,
+      "time": 1788483300,
+      "beijingTime": "2026-09-04 08:55",
+      "side": "long",
+      "price": 4486.4,
+      "reason": "K395提出新的多头突破跟随计划，尚未成交。",
+      "context": {
+        "event_type": "decision_action",
+        "action": "place",
+        "plan_id": "k395_breakout_followthrough",
+        "order_price": 4487.6,
+        "fill_price": null,
+        "stop_price": null,
+        "source_event": "decisions.jsonl",
+        "source_run": "aa78b3c4e9bb371143c13f8e",
+        "causal_boundary": "只使用该K线收盘及之前信息；成交/撤单为同一冻结账本的结果"
+      },
+      "evidenceIndices": [
+        395
+      ],
+      "reviewNote": "Al波段研究版的可视化事件。计划、成交、撤单和退出来自冻结账本；标记只用于检查，不进入生产V6规则。",
+      "reviewVerdict": "keep",
+      "markerLabel": "计划多",
+      "markerColor": "#22c55e"
+    },
+    {
+      "id": "al-v2-action-a006",
+      "windowId": "AL-V2-XAUUSD-20260903-04",
+      "idx": 396,
+      "time": 1788483600,
+      "beijingTime": "2026-09-04 09:00",
+      "side": "long",
+      "price": 4478.165,
+      "reason": "K396取消上一根尚未成交的多头计划。",
+      "context": {
+        "event_type": "decision_action",
+        "action": "cancel",
+        "plan_id": "k395_breakout_followthrough",
+        "order_price": null,
+        "fill_price": null,
+        "stop_price": null,
+        "source_event": "decisions.jsonl",
+        "source_run": "aa78b3c4e9bb371143c13f8e",
+        "causal_boundary": "只使用该K线收盘及之前信息；成交/撤单为同一冻结账本的结果"
+      },
+      "evidenceIndices": [
+        396
+      ],
+      "reviewNote": "Al波段研究版的可视化事件。计划、成交、撤单和退出来自冻结账本；标记只用于检查，不进入生产V6规则。",
+      "reviewVerdict": "keep",
+      "markerLabel": "撤多计划",
+      "markerColor": "#94a3b8"
+    },
+    {
+      "id": "al-v2-outcome-o007",
+      "windowId": "AL-V2-XAUUSD-20260903-04",
+      "idx": 397,
+      "time": 1788483900,
+      "beijingTime": "2026-09-04 09:05",
+      "side": "long",
+      "price": 4478.065,
+      "reason": "K397确认K395多头挂单已取消，未成交。",
+      "context": {
+        "event_type": "cancelled",
+        "action": null,
+        "plan_id": "k395_breakout_followthrough",
+        "order_price": 4487.6,
+        "fill_price": null,
+        "stop_price": null,
+        "source_event": "events.jsonl",
+        "source_run": "aa78b3c4e9bb371143c13f8e",
+        "causal_boundary": "只使用该K线收盘及之前信息；成交/撤单为同一冻结账本的结果"
+      },
+      "evidenceIndices": [
+        397
+      ],
+      "reviewNote": "Al波段研究版的可视化事件。计划、成交、撤单和退出来自冻结账本；标记只用于检查，不进入生产V6规则。",
+      "reviewVerdict": "keep",
+      "markerLabel": "撤单多",
+      "markerColor": "#94a3b8"
+    },
+    {
+      "id": "al-v2-action-a007",
+      "windowId": "AL-V2-XAUUSD-20260903-04",
+      "idx": 547,
+      "time": 1788528900,
+      "beijingTime": "2026-09-04 21:35",
+      "side": "short",
+      "price": 4407.445,
+      "reason": "K547提出反转向下的条件计划，尚未成交。",
+      "context": {
+        "event_type": "decision_action",
+        "action": "place",
+        "plan_id": "k547_bear_reversal_followthrough",
+        "order_price": 4405.265,
+        "fill_price": null,
+        "stop_price": null,
+        "source_event": "decisions.jsonl",
+        "source_run": "aa78b3c4e9bb371143c13f8e",
+        "causal_boundary": "只使用该K线收盘及之前信息；成交/撤单为同一冻结账本的结果"
+      },
+      "evidenceIndices": [
+        547
+      ],
+      "reviewNote": "Al波段研究版的可视化事件。计划、成交、撤单和退出来自冻结账本；标记只用于检查，不进入生产V6规则。",
+      "reviewVerdict": "keep",
+      "markerLabel": "计划空",
+      "markerColor": "#ef4444"
+    },
+    {
+      "id": "al-v2-action-a008",
+      "windowId": "AL-V2-XAUUSD-20260903-04",
+      "idx": 548,
+      "time": 1788529200,
+      "beijingTime": "2026-09-04 21:40",
+      "side": "short",
+      "price": 4423.875,
+      "reason": "K548取消尚未触发的空头计划。",
+      "context": {
+        "event_type": "decision_action",
+        "action": "cancel",
+        "plan_id": "k547_bear_reversal_followthrough",
+        "order_price": null,
+        "fill_price": null,
+        "stop_price": null,
+        "source_event": "decisions.jsonl",
+        "source_run": "aa78b3c4e9bb371143c13f8e",
+        "causal_boundary": "只使用该K线收盘及之前信息；成交/撤单为同一冻结账本的结果"
+      },
+      "evidenceIndices": [
+        548
+      ],
+      "reviewNote": "Al波段研究版的可视化事件。计划、成交、撤单和退出来自冻结账本；标记只用于检查，不进入生产V6规则。",
+      "reviewVerdict": "keep",
+      "markerLabel": "撤空计划",
+      "markerColor": "#94a3b8"
+    },
+    {
+      "id": "al-v2-action-a009",
+      "windowId": "AL-V2-XAUUSD-20260903-04",
+      "idx": 548,
+      "time": 1788529200,
+      "beijingTime": "2026-09-04 21:40",
+      "side": "long",
+      "price": 4423.875,
+      "reason": "K548在撤空后提出多头反转跟随计划。",
+      "context": {
+        "event_type": "decision_action",
+        "action": "place",
+        "plan_id": "k548_bull_reversal_followthrough",
+        "order_price": 4424.135,
+        "fill_price": null,
+        "stop_price": null,
+        "source_event": "decisions.jsonl",
+        "source_run": "aa78b3c4e9bb371143c13f8e",
+        "causal_boundary": "只使用该K线收盘及之前信息；成交/撤单为同一冻结账本的结果"
+      },
+      "evidenceIndices": [
+        548
+      ],
+      "reviewNote": "Al波段研究版的可视化事件。计划、成交、撤单和退出来自冻结账本；标记只用于检查，不进入生产V6规则。",
+      "reviewVerdict": "keep",
+      "markerLabel": "计划多",
+      "markerColor": "#22c55e"
+    },
+    {
+      "id": "al-v2-outcome-o008",
+      "windowId": "AL-V2-XAUUSD-20260903-04",
+      "idx": 549,
+      "time": 1788529500,
+      "beijingTime": "2026-09-04 21:45",
+      "side": "short",
+      "price": 4429.755,
+      "reason": "K549确认K547空头挂单已取消，未成交。",
+      "context": {
+        "event_type": "cancelled",
+        "action": null,
+        "plan_id": "k547_bear_reversal_followthrough",
+        "order_price": 4405.265,
+        "fill_price": null,
+        "stop_price": null,
+        "source_event": "events.jsonl",
+        "source_run": "aa78b3c4e9bb371143c13f8e",
+        "causal_boundary": "只使用该K线收盘及之前信息；成交/撤单为同一冻结账本的结果"
+      },
+      "evidenceIndices": [
+        549
+      ],
+      "reviewNote": "Al波段研究版的可视化事件。计划、成交、撤单和退出来自冻结账本；标记只用于检查，不进入生产V6规则。",
+      "reviewVerdict": "keep",
+      "markerLabel": "撤单空",
+      "markerColor": "#94a3b8"
+    },
+    {
+      "id": "al-v2-outcome-o009",
+      "windowId": "AL-V2-XAUUSD-20260903-04",
+      "idx": 549,
+      "time": 1788529500,
+      "beijingTime": "2026-09-04 21:45",
+      "side": "long",
+      "price": 4429.755,
+      "reason": "K549触发K548的多头止损单，成交价4424.135。",
+      "context": {
+        "event_type": "entry_fill",
+        "action": null,
+        "plan_id": "k548_bull_reversal_followthrough",
+        "order_price": 4424.135,
+        "fill_price": 4424.135,
+        "stop_price": null,
+        "source_event": "events.jsonl",
+        "source_run": "aa78b3c4e9bb371143c13f8e",
+        "causal_boundary": "只使用该K线收盘及之前信息；成交/撤单为同一冻结账本的结果"
+      },
+      "evidenceIndices": [
+        549
+      ],
+      "reviewNote": "Al波段研究版的可视化事件。计划、成交、撤单和退出来自冻结账本；标记只用于检查，不进入生产V6规则。",
+      "reviewVerdict": "keep",
+      "markerLabel": "成交多",
+      "markerColor": "#16a34a"
+    },
+    {
+      "id": "al-v2-action-a010",
+      "windowId": "AL-V2-XAUUSD-20260903-04",
+      "idx": 550,
+      "time": 1788529800,
+      "beijingTime": "2026-09-04 21:50",
+      "side": "long",
+      "price": 4422.57,
+      "reason": "K550决定下一根退出已有多头。",
+      "context": {
+        "event_type": "decision_action",
+        "action": "exit",
+        "plan_id": "k548_bull_reversal_followthrough",
+        "order_price": null,
+        "fill_price": null,
+        "stop_price": null,
+        "source_event": "decisions.jsonl",
+        "source_run": "aa78b3c4e9bb371143c13f8e",
+        "causal_boundary": "只使用该K线收盘及之前信息；成交/撤单为同一冻结账本的结果"
+      },
+      "evidenceIndices": [
+        550
+      ],
+      "reviewNote": "Al波段研究版的可视化事件。计划、成交、撤单和退出来自冻结账本；标记只用于检查，不进入生产V6规则。",
+      "reviewVerdict": "keep",
+      "markerLabel": "计划退出",
+      "markerColor": "#f59e0b"
+    },
+    {
+      "id": "al-v2-outcome-o010",
+      "windowId": "AL-V2-XAUUSD-20260903-04",
+      "idx": 551,
+      "time": 1788530100,
+      "beijingTime": "2026-09-04 21:55",
+      "side": "long",
+      "price": 4413.285,
+      "reason": "K551按K550的退出计划用下一根开盘市价退出，成交价4422.62。",
+      "context": {
+        "event_type": "exit_fill",
+        "action": null,
+        "plan_id": "k548_bull_reversal_followthrough",
+        "order_price": null,
+        "fill_price": 4422.62,
+        "stop_price": null,
+        "source_event": "events.jsonl",
+        "source_run": "aa78b3c4e9bb371143c13f8e",
+        "causal_boundary": "只使用该K线收盘及之前信息；成交/撤单为同一冻结账本的结果"
+      },
+      "evidenceIndices": [
+        551
+      ],
+      "reviewNote": "Al波段研究版的可视化事件。计划、成交、撤单和退出来自冻结账本；标记只用于检查，不进入生产V6规则。",
+      "reviewVerdict": "keep",
+      "markerLabel": "退出多",
+      "markerColor": "#f59e0b"
+    },
+    {
+      "id": "al-v2-action-a011",
+      "windowId": "AL-V2-XAUUSD-20260903-04",
+      "idx": 552,
+      "time": 1788530400,
+      "beijingTime": "2026-09-04 22:00",
+      "side": "long",
+      "price": 4420.705,
+      "reason": "K552提出新的多头跟随计划，下一根执行。",
+      "context": {
+        "event_type": "decision_action",
+        "action": "place",
+        "plan_id": "k552_bullbar_followthrough",
+        "order_price": 4420.72,
+        "fill_price": null,
+        "stop_price": null,
+        "source_event": "decisions.jsonl",
+        "source_run": "aa78b3c4e9bb371143c13f8e",
+        "causal_boundary": "只使用该K线收盘及之前信息；成交/撤单为同一冻结账本的结果"
+      },
+      "evidenceIndices": [
+        552
+      ],
+      "reviewNote": "Al波段研究版的可视化事件。计划、成交、撤单和退出来自冻结账本；标记只用于检查，不进入生产V6规则。",
+      "reviewVerdict": "keep",
+      "markerLabel": "计划多",
+      "markerColor": "#22c55e"
+    },
+    {
+      "id": "al-v2-outcome-o011",
+      "windowId": "AL-V2-XAUUSD-20260903-04",
+      "idx": 553,
+      "time": 1788530700,
+      "beijingTime": "2026-09-04 22:05",
+      "side": "long",
+      "price": 4424.015,
+      "reason": "K553触发K552的多头止损单，成交价4420.72。",
+      "context": {
+        "event_type": "entry_fill",
+        "action": null,
+        "plan_id": "k552_bullbar_followthrough",
+        "order_price": 4420.72,
+        "fill_price": 4420.72,
+        "stop_price": null,
+        "source_event": "events.jsonl",
+        "source_run": "aa78b3c4e9bb371143c13f8e",
+        "causal_boundary": "只使用该K线收盘及之前信息；成交/撤单为同一冻结账本的结果"
+      },
+      "evidenceIndices": [
+        553
+      ],
+      "reviewNote": "Al波段研究版的可视化事件。计划、成交、撤单和退出来自冻结账本；标记只用于检查，不进入生产V6规则。",
+      "reviewVerdict": "keep",
+      "markerLabel": "成交多",
+      "markerColor": "#16a34a"
+    },
+    {
+      "id": "al-v2-outcome-o012",
+      "windowId": "AL-V2-XAUUSD-20260903-04",
+      "idx": 553,
+      "time": 1788530700,
+      "beijingTime": "2026-09-04 22:05",
+      "side": "long",
+      "price": 4424.015,
+      "reason": "K553为仍在场的多头建立保护止损4412.06；截至段尾未触发。",
+      "context": {
+        "event_type": "protective_stop_active",
+        "action": null,
+        "plan_id": "k552_bullbar_followthrough",
+        "order_price": null,
+        "fill_price": null,
+        "stop_price": 4412.06,
+        "source_event": "events.jsonl",
+        "source_run": "aa78b3c4e9bb371143c13f8e",
+        "causal_boundary": "只使用该K线收盘及之前信息；成交/撤单为同一冻结账本的结果"
+      },
+      "evidenceIndices": [
+        553
+      ],
+      "reviewNote": "Al波段研究版的可视化事件。计划、成交、撤单和退出来自冻结账本；标记只用于检查，不进入生产V6规则。",
+      "reviewVerdict": "keep",
+      "markerLabel": "保护止损",
+      "markerColor": "#eab308"
+    }
+  ],
+  "windows": [
+    {
+      "id": "AL-V2-XAUUSD-20260903-04",
+      "startTime": 1788357600,
+      "endTime": 1788531900,
+      "startIdx": 216,
+      "endIdxExclusive": 558,
+      "bars": [
+        {
+          "time": 1788357600,
+          "open": 4385.105,
+          "high": 4385.815,
+          "low": 4378.92,
+          "close": 4384.525,
+          "volume": 9865,
+          "beijing_open_time": "2026-09-02 22:00"
+        },
+        {
+          "time": 1788357900,
+          "open": 4384.56,
+          "high": 4396.89,
+          "low": 4384.025,
+          "close": 4391.305,
+          "volume": 9314,
+          "beijing_open_time": "2026-09-02 22:05"
+        },
+        {
+          "time": 1788358200,
+          "open": 4391.315,
+          "high": 4397.75,
+          "low": 4387.09,
+          "close": 4387.87,
+          "volume": 9699,
+          "beijing_open_time": "2026-09-02 22:10"
+        },
+        {
+          "time": 1788358500,
+          "open": 4387.86,
+          "high": 4392.77,
+          "low": 4384.92,
+          "close": 4392.305,
+          "volume": 8573,
+          "beijing_open_time": "2026-09-02 22:15"
+        },
+        {
+          "time": 1788358800,
+          "open": 4392.315,
+          "high": 4397.31,
+          "low": 4386.77,
+          "close": 4387.27,
+          "volume": 8082,
+          "beijing_open_time": "2026-09-02 22:20"
+        },
+        {
+          "time": 1788359100,
+          "open": 4387.3,
+          "high": 4390.54,
+          "low": 4385.39,
+          "close": 4387.67,
+          "volume": 6657,
+          "beijing_open_time": "2026-09-02 22:25"
+        },
+        {
+          "time": 1788359400,
+          "open": 4387.7,
+          "high": 4388.255,
+          "low": 4382.84,
+          "close": 4386.515,
+          "volume": 7330,
+          "beijing_open_time": "2026-09-02 22:30"
+        },
+        {
+          "time": 1788359700,
+          "open": 4386.545,
+          "high": 4387.79,
+          "low": 4382.18,
+          "close": 4382.7,
+          "volume": 6035,
+          "beijing_open_time": "2026-09-02 22:35"
+        },
+        {
+          "time": 1788360000,
+          "open": 4382.745,
+          "high": 4386.105,
+          "low": 4381.325,
+          "close": 4385.545,
+          "volume": 5068,
+          "beijing_open_time": "2026-09-02 22:40"
+        },
+        {
+          "time": 1788360300,
+          "open": 4385.525,
+          "high": 4386.85,
+          "low": 4378.83,
+          "close": 4381.025,
+          "volume": 4930,
+          "beijing_open_time": "2026-09-02 22:45"
+        },
+        {
+          "time": 1788360600,
+          "open": 4381.03,
+          "high": 4382.475,
+          "low": 4375.925,
+          "close": 4376.9,
+          "volume": 5640,
+          "beijing_open_time": "2026-09-02 22:50"
+        },
+        {
+          "time": 1788360900,
+          "open": 4376.815,
+          "high": 4378.55,
+          "low": 4374.41,
+          "close": 4377.04,
+          "volume": 5223,
+          "beijing_open_time": "2026-09-02 22:55"
+        },
+        {
+          "time": 1788361200,
+          "open": 4377.065,
+          "high": 4381.045,
+          "low": 4374.25,
+          "close": 4377.89,
+          "volume": 7558,
+          "beijing_open_time": "2026-09-02 23:00"
+        },
+        {
+          "time": 1788361500,
+          "open": 4377.9,
+          "high": 4380.74,
+          "low": 4373.89,
+          "close": 4376.62,
+          "volume": 7538,
+          "beijing_open_time": "2026-09-02 23:05"
+        },
+        {
+          "time": 1788361800,
+          "open": 4376.585,
+          "high": 4378.295,
+          "low": 4372.65,
+          "close": 4372.815,
+          "volume": 7254,
+          "beijing_open_time": "2026-09-02 23:10"
+        },
+        {
+          "time": 1788362100,
+          "open": 4372.76,
+          "high": 4372.875,
+          "low": 4368.885,
+          "close": 4369.97,
+          "volume": 5059,
+          "beijing_open_time": "2026-09-02 23:15"
+        },
+        {
+          "time": 1788362400,
+          "open": 4370.035,
+          "high": 4371.69,
+          "low": 4365.64,
+          "close": 4370.25,
+          "volume": 4974,
+          "beijing_open_time": "2026-09-02 23:20"
+        },
+        {
+          "time": 1788362700,
+          "open": 4370.29,
+          "high": 4373.02,
+          "low": 4367.39,
+          "close": 4372.67,
+          "volume": 4776,
+          "beijing_open_time": "2026-09-02 23:25"
+        },
+        {
+          "time": 1788363000,
+          "open": 4372.68,
+          "high": 4375.3,
+          "low": 4371.06,
+          "close": 4371.39,
+          "volume": 5747,
+          "beijing_open_time": "2026-09-02 23:30"
+        },
+        {
+          "time": 1788363300,
+          "open": 4371.4,
+          "high": 4372.665,
+          "low": 4367.57,
+          "close": 4370.5,
+          "volume": 4765,
+          "beijing_open_time": "2026-09-02 23:35"
+        },
+        {
+          "time": 1788363600,
+          "open": 4370.495,
+          "high": 4372.28,
+          "low": 4366.09,
+          "close": 4366.35,
+          "volume": 3681,
+          "beijing_open_time": "2026-09-02 23:40"
+        },
+        {
+          "time": 1788363900,
+          "open": 4366.28,
+          "high": 4369.74,
+          "low": 4364.64,
+          "close": 4367.96,
+          "volume": 3340,
+          "beijing_open_time": "2026-09-02 23:45"
+        },
+        {
+          "time": 1788364200,
+          "open": 4367.94,
+          "high": 4369.85,
+          "low": 4367.335,
+          "close": 4368.72,
+          "volume": 3304,
+          "beijing_open_time": "2026-09-02 23:50"
+        },
+        {
+          "time": 1788364500,
+          "open": 4368.74,
+          "high": 4373.99,
+          "low": 4368.045,
+          "close": 4373.195,
+          "volume": 3283,
+          "beijing_open_time": "2026-09-02 23:55"
+        },
+        {
+          "time": 1788364800,
+          "open": 4373.18,
+          "high": 4374.91,
+          "low": 4371.465,
+          "close": 4373.145,
+          "volume": 3518,
+          "beijing_open_time": "2026-09-03 00:00"
+        },
+        {
+          "time": 1788365100,
+          "open": 4373.12,
+          "high": 4373.4,
+          "low": 4368.92,
+          "close": 4370.595,
+          "volume": 3159,
+          "beijing_open_time": "2026-09-03 00:05"
+        },
+        {
+          "time": 1788365400,
+          "open": 4370.58,
+          "high": 4373.35,
+          "low": 4370.445,
+          "close": 4372.455,
+          "volume": 3009,
+          "beijing_open_time": "2026-09-03 00:10"
+        },
+        {
+          "time": 1788365700,
+          "open": 4372.445,
+          "high": 4372.53,
+          "low": 4367.975,
+          "close": 4370.075,
+          "volume": 3423,
+          "beijing_open_time": "2026-09-03 00:15"
+        },
+        {
+          "time": 1788366000,
+          "open": 4370.06,
+          "high": 4371.08,
+          "low": 4368.755,
+          "close": 4369.605,
+          "volume": 3115,
+          "beijing_open_time": "2026-09-03 00:20"
+        },
+        {
+          "time": 1788366300,
+          "open": 4369.58,
+          "high": 4370.325,
+          "low": 4367.7,
+          "close": 4368.665,
+          "volume": 2420,
+          "beijing_open_time": "2026-09-03 00:25"
+        },
+        {
+          "time": 1788366600,
+          "open": 4368.62,
+          "high": 4370.58,
+          "low": 4367.33,
+          "close": 4367.37,
+          "volume": 2864,
+          "beijing_open_time": "2026-09-03 00:30"
+        },
+        {
+          "time": 1788366900,
+          "open": 4367.455,
+          "high": 4369.07,
+          "low": 4366.255,
+          "close": 4368.705,
+          "volume": 2847,
+          "beijing_open_time": "2026-09-03 00:35"
+        },
+        {
+          "time": 1788367200,
+          "open": 4368.695,
+          "high": 4368.735,
+          "low": 4364.52,
+          "close": 4365.02,
+          "volume": 2474,
+          "beijing_open_time": "2026-09-03 00:40"
+        },
+        {
+          "time": 1788367500,
+          "open": 4365.01,
+          "high": 4366.8,
+          "low": 4364.645,
+          "close": 4366.06,
+          "volume": 2526,
+          "beijing_open_time": "2026-09-03 00:45"
+        },
+        {
+          "time": 1788367800,
+          "open": 4366.09,
+          "high": 4370.745,
+          "low": 4364.84,
+          "close": 4370.075,
+          "volume": 3247,
+          "beijing_open_time": "2026-09-03 00:50"
+        },
+        {
+          "time": 1788368100,
+          "open": 4370.035,
+          "high": 4370.45,
+          "low": 4367.975,
+          "close": 4368.4,
+          "volume": 2175,
+          "beijing_open_time": "2026-09-03 00:55"
+        },
+        {
+          "time": 1788368400,
+          "open": 4368.405,
+          "high": 4370.895,
+          "low": 4367.96,
+          "close": 4370.895,
+          "volume": 2319,
+          "beijing_open_time": "2026-09-03 01:00"
+        },
+        {
+          "time": 1788368700,
+          "open": 4370.835,
+          "high": 4371.245,
+          "low": 4369,
+          "close": 4370.15,
+          "volume": 2373,
+          "beijing_open_time": "2026-09-03 01:05"
+        },
+        {
+          "time": 1788369000,
+          "open": 4370.025,
+          "high": 4370.555,
+          "low": 4367.625,
+          "close": 4368.995,
+          "volume": 1971,
+          "beijing_open_time": "2026-09-03 01:10"
+        },
+        {
+          "time": 1788369300,
+          "open": 4368.95,
+          "high": 4369.15,
+          "low": 4364.735,
+          "close": 4365.435,
+          "volume": 2093,
+          "beijing_open_time": "2026-09-03 01:15"
+        },
+        {
+          "time": 1788369600,
+          "open": 4365.425,
+          "high": 4367.525,
+          "low": 4364.78,
+          "close": 4367.165,
+          "volume": 2298,
+          "beijing_open_time": "2026-09-03 01:20"
+        },
+        {
+          "time": 1788369900,
+          "open": 4367.15,
+          "high": 4370.01,
+          "low": 4367.005,
+          "close": 4369.95,
+          "volume": 2601,
+          "beijing_open_time": "2026-09-03 01:25"
+        },
+        {
+          "time": 1788370200,
+          "open": 4369.955,
+          "high": 4371.71,
+          "low": 4368.14,
+          "close": 4368.16,
+          "volume": 2085,
+          "beijing_open_time": "2026-09-03 01:30"
+        },
+        {
+          "time": 1788370500,
+          "open": 4368.125,
+          "high": 4369.63,
+          "low": 4366.635,
+          "close": 4366.71,
+          "volume": 1636,
+          "beijing_open_time": "2026-09-03 01:35"
+        },
+        {
+          "time": 1788370800,
+          "open": 4366.67,
+          "high": 4377.745,
+          "low": 4366.66,
+          "close": 4376.605,
+          "volume": 4535,
+          "beijing_open_time": "2026-09-03 01:40"
+        },
+        {
+          "time": 1788371100,
+          "open": 4376.595,
+          "high": 4380.855,
+          "low": 4375.545,
+          "close": 4376.105,
+          "volume": 5269,
+          "beijing_open_time": "2026-09-03 01:45"
+        },
+        {
+          "time": 1788371400,
+          "open": 4376.155,
+          "high": 4377.64,
+          "low": 4375.465,
+          "close": 4376.355,
+          "volume": 2242,
+          "beijing_open_time": "2026-09-03 01:50"
+        },
+        {
+          "time": 1788371700,
+          "open": 4376.27,
+          "high": 4378.635,
+          "low": 4375.855,
+          "close": 4377.08,
+          "volume": 1858,
+          "beijing_open_time": "2026-09-03 01:55"
+        },
+        {
+          "time": 1788372000,
+          "open": 4377.075,
+          "high": 4377.68,
+          "low": 4372.245,
+          "close": 4375.125,
+          "volume": 2945,
+          "beijing_open_time": "2026-09-03 02:00"
+        },
+        {
+          "time": 1788372300,
+          "open": 4375.135,
+          "high": 4375.825,
+          "low": 4373.4,
+          "close": 4373.725,
+          "volume": 2621,
+          "beijing_open_time": "2026-09-03 02:05"
+        },
+        {
+          "time": 1788372600,
+          "open": 4373.715,
+          "high": 4374.15,
+          "low": 4370.265,
+          "close": 4370.35,
+          "volume": 2603,
+          "beijing_open_time": "2026-09-03 02:10"
+        },
+        {
+          "time": 1788372900,
+          "open": 4370.365,
+          "high": 4379.765,
+          "low": 4369.32,
+          "close": 4377.685,
+          "volume": 3875,
+          "beijing_open_time": "2026-09-03 02:15"
+        },
+        {
+          "time": 1788373200,
+          "open": 4377.555,
+          "high": 4379.85,
+          "low": 4372.355,
+          "close": 4373.345,
+          "volume": 4068,
+          "beijing_open_time": "2026-09-03 02:20"
+        },
+        {
+          "time": 1788373500,
+          "open": 4373.265,
+          "high": 4373.92,
+          "low": 4371.96,
+          "close": 4373.24,
+          "volume": 2487,
+          "beijing_open_time": "2026-09-03 02:25"
+        },
+        {
+          "time": 1788373800,
+          "open": 4373.23,
+          "high": 4378.25,
+          "low": 4372.895,
+          "close": 4376.695,
+          "volume": 2511,
+          "beijing_open_time": "2026-09-03 02:30"
+        },
+        {
+          "time": 1788374100,
+          "open": 4376.73,
+          "high": 4378.13,
+          "low": 4375.395,
+          "close": 4376.375,
+          "volume": 2152,
+          "beijing_open_time": "2026-09-03 02:35"
+        },
+        {
+          "time": 1788374400,
+          "open": 4376.37,
+          "high": 4376.7,
+          "low": 4372.645,
+          "close": 4373.165,
+          "volume": 2023,
+          "beijing_open_time": "2026-09-03 02:40"
+        },
+        {
+          "time": 1788374700,
+          "open": 4373.085,
+          "high": 4374.72,
+          "low": 4372.72,
+          "close": 4374.05,
+          "volume": 2221,
+          "beijing_open_time": "2026-09-03 02:45"
+        },
+        {
+          "time": 1788375000,
+          "open": 4374.065,
+          "high": 4375.93,
+          "low": 4373.78,
+          "close": 4374.805,
+          "volume": 2046,
+          "beijing_open_time": "2026-09-03 02:50"
+        },
+        {
+          "time": 1788375300,
+          "open": 4374.8,
+          "high": 4375.495,
+          "low": 4372.71,
+          "close": 4374.265,
+          "volume": 1897,
+          "beijing_open_time": "2026-09-03 02:55"
+        },
+        {
+          "time": 1788375600,
+          "open": 4374.24,
+          "high": 4375.265,
+          "low": 4371.83,
+          "close": 4375.1,
+          "volume": 2774,
+          "beijing_open_time": "2026-09-03 03:00"
+        },
+        {
+          "time": 1788375900,
+          "open": 4375.115,
+          "high": 4377.505,
+          "low": 4374.845,
+          "close": 4377.215,
+          "volume": 2258,
+          "beijing_open_time": "2026-09-03 03:05"
+        },
+        {
+          "time": 1788376200,
+          "open": 4377.205,
+          "high": 4380.475,
+          "low": 4376.565,
+          "close": 4379.28,
+          "volume": 2005,
+          "beijing_open_time": "2026-09-03 03:10"
+        },
+        {
+          "time": 1788376500,
+          "open": 4379.25,
+          "high": 4380.36,
+          "low": 4378.34,
+          "close": 4379.67,
+          "volume": 2201,
+          "beijing_open_time": "2026-09-03 03:15"
+        },
+        {
+          "time": 1788376800,
+          "open": 4379.7,
+          "high": 4381.015,
+          "low": 4378.45,
+          "close": 4380.065,
+          "volume": 2274,
+          "beijing_open_time": "2026-09-03 03:20"
+        },
+        {
+          "time": 1788377100,
+          "open": 4380.045,
+          "high": 4383.18,
+          "low": 4379.945,
+          "close": 4381.25,
+          "volume": 2451,
+          "beijing_open_time": "2026-09-03 03:25"
+        },
+        {
+          "time": 1788377400,
+          "open": 4381.365,
+          "high": 4384.13,
+          "low": 4381.25,
+          "close": 4383.93,
+          "volume": 2736,
+          "beijing_open_time": "2026-09-03 03:30"
+        },
+        {
+          "time": 1788377700,
+          "open": 4383.94,
+          "high": 4384.245,
+          "low": 4381.385,
+          "close": 4384.165,
+          "volume": 2759,
+          "beijing_open_time": "2026-09-03 03:35"
+        },
+        {
+          "time": 1788378000,
+          "open": 4384.155,
+          "high": 4388.785,
+          "low": 4383.665,
+          "close": 4388.17,
+          "volume": 2662,
+          "beijing_open_time": "2026-09-03 03:40"
+        },
+        {
+          "time": 1788378300,
+          "open": 4388.13,
+          "high": 4389.02,
+          "low": 4384.985,
+          "close": 4386.635,
+          "volume": 3001,
+          "beijing_open_time": "2026-09-03 03:45"
+        },
+        {
+          "time": 1788378600,
+          "open": 4386.66,
+          "high": 4389.84,
+          "low": 4385.88,
+          "close": 4387.445,
+          "volume": 3495,
+          "beijing_open_time": "2026-09-03 03:50"
+        },
+        {
+          "time": 1788378900,
+          "open": 4387.355,
+          "high": 4391.365,
+          "low": 4386.1,
+          "close": 4391.205,
+          "volume": 4074,
+          "beijing_open_time": "2026-09-03 03:55"
+        },
+        {
+          "time": 1788379200,
+          "open": 4391.23,
+          "high": 4391.67,
+          "low": 4388.78,
+          "close": 4390.525,
+          "volume": 1901,
+          "beijing_open_time": "2026-09-03 04:00"
+        },
+        {
+          "time": 1788379500,
+          "open": 4390.465,
+          "high": 4391.1,
+          "low": 4387.59,
+          "close": 4387.955,
+          "volume": 1022,
+          "beijing_open_time": "2026-09-03 04:05"
+        },
+        {
+          "time": 1788379800,
+          "open": 4387.97,
+          "high": 4388.74,
+          "low": 4385.965,
+          "close": 4386.11,
+          "volume": 1467,
+          "beijing_open_time": "2026-09-03 04:10"
+        },
+        {
+          "time": 1788380100,
+          "open": 4386.19,
+          "high": 4386.405,
+          "low": 4384.055,
+          "close": 4385.045,
+          "volume": 2630,
+          "beijing_open_time": "2026-09-03 04:15"
+        },
+        {
+          "time": 1788380400,
+          "open": 4385.06,
+          "high": 4385.855,
+          "low": 4384.56,
+          "close": 4385.495,
+          "volume": 1130,
+          "beijing_open_time": "2026-09-03 04:20"
+        },
+        {
+          "time": 1788380700,
+          "open": 4385.49,
+          "high": 4387.775,
+          "low": 4385.22,
+          "close": 4386.295,
+          "volume": 1135,
+          "beijing_open_time": "2026-09-03 04:25"
+        },
+        {
+          "time": 1788381000,
+          "open": 4386.29,
+          "high": 4387.885,
+          "low": 4385.74,
+          "close": 4387.47,
+          "volume": 938,
+          "beijing_open_time": "2026-09-03 04:30"
+        },
+        {
+          "time": 1788381300,
+          "open": 4387.455,
+          "high": 4387.845,
+          "low": 4386.93,
+          "close": 4387.595,
+          "volume": 849,
+          "beijing_open_time": "2026-09-03 04:35"
+        },
+        {
+          "time": 1788381600,
+          "open": 4387.575,
+          "high": 4389.86,
+          "low": 4387.44,
+          "close": 4387.83,
+          "volume": 1161,
+          "beijing_open_time": "2026-09-03 04:40"
+        },
+        {
+          "time": 1788381900,
+          "open": 4387.88,
+          "high": 4389.68,
+          "low": 4387.285,
+          "close": 4389.09,
+          "volume": 780,
+          "beijing_open_time": "2026-09-03 04:45"
+        },
+        {
+          "time": 1788382200,
+          "open": 4389.075,
+          "high": 4390.665,
+          "low": 4389.02,
+          "close": 4389.23,
+          "volume": 840,
+          "beijing_open_time": "2026-09-03 04:50"
+        },
+        {
+          "time": 1788382500,
+          "open": 4389.14,
+          "high": 4389.295,
+          "low": 4387.445,
+          "close": 4388.22,
+          "volume": 673,
+          "beijing_open_time": "2026-09-03 04:55"
+        },
+        {
+          "time": 1788386400,
+          "open": 4391.29,
+          "high": 4391.29,
+          "low": 4391.29,
+          "close": 4391.29,
+          "volume": 1,
+          "beijing_open_time": "2026-09-03 06:00"
+        },
+        {
+          "time": 1788386700,
+          "open": 4391.155,
+          "high": 4391.835,
+          "low": 4390.14,
+          "close": 4390.66,
+          "volume": 372,
+          "beijing_open_time": "2026-09-03 06:05"
+        },
+        {
+          "time": 1788387000,
+          "open": 4390.655,
+          "high": 4391.49,
+          "low": 4389.985,
+          "close": 4390.035,
+          "volume": 605,
+          "beijing_open_time": "2026-09-03 06:10"
+        },
+        {
+          "time": 1788387300,
+          "open": 4390.04,
+          "high": 4390.175,
+          "low": 4387.95,
+          "close": 4388.37,
+          "volume": 676,
+          "beijing_open_time": "2026-09-03 06:15"
+        },
+        {
+          "time": 1788387600,
+          "open": 4388.485,
+          "high": 4389.63,
+          "low": 4388.175,
+          "close": 4389.63,
+          "volume": 1166,
+          "beijing_open_time": "2026-09-03 06:20"
+        },
+        {
+          "time": 1788387900,
+          "open": 4389.635,
+          "high": 4390.94,
+          "low": 4389.08,
+          "close": 4389.945,
+          "volume": 1165,
+          "beijing_open_time": "2026-09-03 06:25"
+        },
+        {
+          "time": 1788388200,
+          "open": 4389.95,
+          "high": 4390.005,
+          "low": 4387.675,
+          "close": 4388.195,
+          "volume": 866,
+          "beijing_open_time": "2026-09-03 06:30"
+        },
+        {
+          "time": 1788388500,
+          "open": 4388.21,
+          "high": 4388.53,
+          "low": 4387.275,
+          "close": 4387.495,
+          "volume": 571,
+          "beijing_open_time": "2026-09-03 06:35"
+        },
+        {
+          "time": 1788388800,
+          "open": 4387.51,
+          "high": 4387.94,
+          "low": 4384.975,
+          "close": 4385.315,
+          "volume": 779,
+          "beijing_open_time": "2026-09-03 06:40"
+        },
+        {
+          "time": 1788389100,
+          "open": 4385.32,
+          "high": 4385.46,
+          "low": 4383.535,
+          "close": 4384.235,
+          "volume": 881,
+          "beijing_open_time": "2026-09-03 06:45"
+        },
+        {
+          "time": 1788389400,
+          "open": 4384.245,
+          "high": 4385.315,
+          "low": 4383.845,
+          "close": 4384.71,
+          "volume": 472,
+          "beijing_open_time": "2026-09-03 06:50"
+        },
+        {
+          "time": 1788389700,
+          "open": 4384.67,
+          "high": 4385.09,
+          "low": 4384.535,
+          "close": 4384.75,
+          "volume": 582,
+          "beijing_open_time": "2026-09-03 06:55"
+        },
+        {
+          "time": 1788390000,
+          "open": 4384.755,
+          "high": 4386.65,
+          "low": 4384.295,
+          "close": 4386.62,
+          "volume": 1132,
+          "beijing_open_time": "2026-09-03 07:00"
+        },
+        {
+          "time": 1788390300,
+          "open": 4386.61,
+          "high": 4386.845,
+          "low": 4385.145,
+          "close": 4386.81,
+          "volume": 842,
+          "beijing_open_time": "2026-09-03 07:05"
+        },
+        {
+          "time": 1788390600,
+          "open": 4386.785,
+          "high": 4386.835,
+          "low": 4383.965,
+          "close": 4384.11,
+          "volume": 682,
+          "beijing_open_time": "2026-09-03 07:10"
+        },
+        {
+          "time": 1788390900,
+          "open": 4384.14,
+          "high": 4384.3,
+          "low": 4382.4,
+          "close": 4382.51,
+          "volume": 866,
+          "beijing_open_time": "2026-09-03 07:15"
+        },
+        {
+          "time": 1788391200,
+          "open": 4382.515,
+          "high": 4383.16,
+          "low": 4382.345,
+          "close": 4383.06,
+          "volume": 562,
+          "beijing_open_time": "2026-09-03 07:20"
+        },
+        {
+          "time": 1788391500,
+          "open": 4383.05,
+          "high": 4383.135,
+          "low": 4382.015,
+          "close": 4382.35,
+          "volume": 518,
+          "beijing_open_time": "2026-09-03 07:25"
+        },
+        {
+          "time": 1788391800,
+          "open": 4382.275,
+          "high": 4383.78,
+          "low": 4381.7,
+          "close": 4383.035,
+          "volume": 1104,
+          "beijing_open_time": "2026-09-03 07:30"
+        },
+        {
+          "time": 1788392100,
+          "open": 4383.015,
+          "high": 4383.63,
+          "low": 4381.25,
+          "close": 4383.48,
+          "volume": 830,
+          "beijing_open_time": "2026-09-03 07:35"
+        },
+        {
+          "time": 1788392400,
+          "open": 4383.485,
+          "high": 4385.58,
+          "low": 4383.23,
+          "close": 4385.45,
+          "volume": 807,
+          "beijing_open_time": "2026-09-03 07:40"
+        },
+        {
+          "time": 1788392700,
+          "open": 4385.435,
+          "high": 4388.94,
+          "low": 4384.795,
+          "close": 4386.76,
+          "volume": 1701,
+          "beijing_open_time": "2026-09-03 07:45"
+        },
+        {
+          "time": 1788393000,
+          "open": 4386.92,
+          "high": 4387.555,
+          "low": 4384.65,
+          "close": 4384.795,
+          "volume": 1221,
+          "beijing_open_time": "2026-09-03 07:50"
+        },
+        {
+          "time": 1788393300,
+          "open": 4384.8,
+          "high": 4386.98,
+          "low": 4384.6,
+          "close": 4385.73,
+          "volume": 1342,
+          "beijing_open_time": "2026-09-03 07:55"
+        },
+        {
+          "time": 1788393600,
+          "open": 4385.735,
+          "high": 4389.815,
+          "low": 4384.61,
+          "close": 4389.28,
+          "volume": 3199,
+          "beijing_open_time": "2026-09-03 08:00"
+        },
+        {
+          "time": 1788393900,
+          "open": 4389.27,
+          "high": 4390.945,
+          "low": 4385.015,
+          "close": 4387.225,
+          "volume": 2006,
+          "beijing_open_time": "2026-09-03 08:05"
+        },
+        {
+          "time": 1788394200,
+          "open": 4387.165,
+          "high": 4392.785,
+          "low": 4387.16,
+          "close": 4390.33,
+          "volume": 2002,
+          "beijing_open_time": "2026-09-03 08:10"
+        },
+        {
+          "time": 1788394500,
+          "open": 4390.27,
+          "high": 4390.405,
+          "low": 4385.315,
+          "close": 4387.055,
+          "volume": 1991,
+          "beijing_open_time": "2026-09-03 08:15"
+        },
+        {
+          "time": 1788394800,
+          "open": 4387.195,
+          "high": 4388.02,
+          "low": 4385.28,
+          "close": 4387.855,
+          "volume": 1764,
+          "beijing_open_time": "2026-09-03 08:20"
+        },
+        {
+          "time": 1788395100,
+          "open": 4387.835,
+          "high": 4390.23,
+          "low": 4387.03,
+          "close": 4387.245,
+          "volume": 1771,
+          "beijing_open_time": "2026-09-03 08:25"
+        },
+        {
+          "time": 1788395400,
+          "open": 4387.225,
+          "high": 4387.3,
+          "low": 4382.61,
+          "close": 4382.835,
+          "volume": 1250,
+          "beijing_open_time": "2026-09-03 08:30"
+        },
+        {
+          "time": 1788395700,
+          "open": 4382.87,
+          "high": 4389.765,
+          "low": 4382.505,
+          "close": 4389.09,
+          "volume": 1787,
+          "beijing_open_time": "2026-09-03 08:35"
+        },
+        {
+          "time": 1788396000,
+          "open": 4389.175,
+          "high": 4389.96,
+          "low": 4387.08,
+          "close": 4387.785,
+          "volume": 1666,
+          "beijing_open_time": "2026-09-03 08:40"
+        },
+        {
+          "time": 1788396300,
+          "open": 4387.905,
+          "high": 4389.98,
+          "low": 4385.835,
+          "close": 4389.98,
+          "volume": 2225,
+          "beijing_open_time": "2026-09-03 08:45"
+        },
+        {
+          "time": 1788396600,
+          "open": 4390.075,
+          "high": 4393.995,
+          "low": 4389.27,
+          "close": 4391.7,
+          "volume": 2441,
+          "beijing_open_time": "2026-09-03 08:50"
+        },
+        {
+          "time": 1788396900,
+          "open": 4391.715,
+          "high": 4397.985,
+          "low": 4390.685,
+          "close": 4395.585,
+          "volume": 2639,
+          "beijing_open_time": "2026-09-03 08:55"
+        },
+        {
+          "time": 1788397200,
+          "open": 4395.645,
+          "high": 4397.16,
+          "low": 4387.365,
+          "close": 4395.665,
+          "volume": 7506,
+          "beijing_open_time": "2026-09-03 09:00"
+        },
+        {
+          "time": 1788397500,
+          "open": 4395.685,
+          "high": 4403.14,
+          "low": 4392.665,
+          "close": 4402.63,
+          "volume": 4758,
+          "beijing_open_time": "2026-09-03 09:05"
+        },
+        {
+          "time": 1788397800,
+          "open": 4402.605,
+          "high": 4409.475,
+          "low": 4401.075,
+          "close": 4401.49,
+          "volume": 4438,
+          "beijing_open_time": "2026-09-03 09:10"
+        },
+        {
+          "time": 1788398100,
+          "open": 4401.4,
+          "high": 4403.815,
+          "low": 4396.835,
+          "close": 4398.52,
+          "volume": 2923,
+          "beijing_open_time": "2026-09-03 09:15"
+        },
+        {
+          "time": 1788398400,
+          "open": 4398.51,
+          "high": 4403.08,
+          "low": 4395.33,
+          "close": 4396.105,
+          "volume": 3431,
+          "beijing_open_time": "2026-09-03 09:20"
+        },
+        {
+          "time": 1788398700,
+          "open": 4395.99,
+          "high": 4402.215,
+          "low": 4394.08,
+          "close": 4401.765,
+          "volume": 3490,
+          "beijing_open_time": "2026-09-03 09:25"
+        },
+        {
+          "time": 1788399000,
+          "open": 4401.705,
+          "high": 4409.445,
+          "low": 4401.51,
+          "close": 4409.235,
+          "volume": 4822,
+          "beijing_open_time": "2026-09-03 09:30"
+        },
+        {
+          "time": 1788399300,
+          "open": 4409.325,
+          "high": 4409.54,
+          "low": 4404.97,
+          "close": 4408.14,
+          "volume": 3614,
+          "beijing_open_time": "2026-09-03 09:35"
+        },
+        {
+          "time": 1788399600,
+          "open": 4408.13,
+          "high": 4408.23,
+          "low": 4400.495,
+          "close": 4401.075,
+          "volume": 2959,
+          "beijing_open_time": "2026-09-03 09:40"
+        },
+        {
+          "time": 1788399900,
+          "open": 4401.02,
+          "high": 4408.585,
+          "low": 4400.47,
+          "close": 4407.755,
+          "volume": 2949,
+          "beijing_open_time": "2026-09-03 09:45"
+        },
+        {
+          "time": 1788400200,
+          "open": 4407.765,
+          "high": 4408.055,
+          "low": 4404.635,
+          "close": 4407.605,
+          "volume": 3081,
+          "beijing_open_time": "2026-09-03 09:50"
+        },
+        {
+          "time": 1788400500,
+          "open": 4407.635,
+          "high": 4412.625,
+          "low": 4407.345,
+          "close": 4410.565,
+          "volume": 3287,
+          "beijing_open_time": "2026-09-03 09:55"
+        },
+        {
+          "time": 1788400800,
+          "open": 4410.53,
+          "high": 4415.59,
+          "low": 4409.705,
+          "close": 4410.925,
+          "volume": 3797,
+          "beijing_open_time": "2026-09-03 10:00"
+        },
+        {
+          "time": 1788401100,
+          "open": 4410.95,
+          "high": 4413.125,
+          "low": 4409.22,
+          "close": 4410.195,
+          "volume": 3067,
+          "beijing_open_time": "2026-09-03 10:05"
+        },
+        {
+          "time": 1788401400,
+          "open": 4410.2,
+          "high": 4413.555,
+          "low": 4409.68,
+          "close": 4411.235,
+          "volume": 3715,
+          "beijing_open_time": "2026-09-03 10:10"
+        },
+        {
+          "time": 1788401700,
+          "open": 4411.24,
+          "high": 4413.455,
+          "low": 4409.395,
+          "close": 4410.34,
+          "volume": 2203,
+          "beijing_open_time": "2026-09-03 10:15"
+        },
+        {
+          "time": 1788402000,
+          "open": 4410.315,
+          "high": 4412.66,
+          "low": 4406.795,
+          "close": 4409.7,
+          "volume": 2599,
+          "beijing_open_time": "2026-09-03 10:20"
+        },
+        {
+          "time": 1788402300,
+          "open": 4409.77,
+          "high": 4411.795,
+          "low": 4407.815,
+          "close": 4411.65,
+          "volume": 2179,
+          "beijing_open_time": "2026-09-03 10:25"
+        },
+        {
+          "time": 1788402600,
+          "open": 4411.655,
+          "high": 4417.51,
+          "low": 4409.6,
+          "close": 4415.62,
+          "volume": 3817,
+          "beijing_open_time": "2026-09-03 10:30"
+        },
+        {
+          "time": 1788402900,
+          "open": 4415.595,
+          "high": 4418.105,
+          "low": 4414.12,
+          "close": 4416.305,
+          "volume": 2904,
+          "beijing_open_time": "2026-09-03 10:35"
+        },
+        {
+          "time": 1788403200,
+          "open": 4416.245,
+          "high": 4417.015,
+          "low": 4412.75,
+          "close": 4413.755,
+          "volume": 2116,
+          "beijing_open_time": "2026-09-03 10:40"
+        },
+        {
+          "time": 1788403500,
+          "open": 4413.725,
+          "high": 4417.585,
+          "low": 4411.655,
+          "close": 4417.36,
+          "volume": 2488,
+          "beijing_open_time": "2026-09-03 10:45"
+        },
+        {
+          "time": 1788403800,
+          "open": 4417.34,
+          "high": 4420.21,
+          "low": 4416,
+          "close": 4419.785,
+          "volume": 2951,
+          "beijing_open_time": "2026-09-03 10:50"
+        },
+        {
+          "time": 1788404100,
+          "open": 4419.79,
+          "high": 4420.565,
+          "low": 4419.035,
+          "close": 4420.425,
+          "volume": 2090,
+          "beijing_open_time": "2026-09-03 10:55"
+        },
+        {
+          "time": 1788404400,
+          "open": 4420.415,
+          "high": 4425.305,
+          "low": 4419.4,
+          "close": 4424.44,
+          "volume": 2520,
+          "beijing_open_time": "2026-09-03 11:00"
+        },
+        {
+          "time": 1788404700,
+          "open": 4424.415,
+          "high": 4426.25,
+          "low": 4424.045,
+          "close": 4425.18,
+          "volume": 1940,
+          "beijing_open_time": "2026-09-03 11:05"
+        },
+        {
+          "time": 1788405000,
+          "open": 4425.155,
+          "high": 4430.21,
+          "low": 4424.04,
+          "close": 4428.88,
+          "volume": 2134,
+          "beijing_open_time": "2026-09-03 11:10"
+        },
+        {
+          "time": 1788405300,
+          "open": 4428.92,
+          "high": 4430.54,
+          "low": 4425.57,
+          "close": 4426.375,
+          "volume": 2623,
+          "beijing_open_time": "2026-09-03 11:15"
+        },
+        {
+          "time": 1788405600,
+          "open": 4426.315,
+          "high": 4427.07,
+          "low": 4424.695,
+          "close": 4426.64,
+          "volume": 1887,
+          "beijing_open_time": "2026-09-03 11:20"
+        },
+        {
+          "time": 1788405900,
+          "open": 4426.635,
+          "high": 4431.375,
+          "low": 4425.405,
+          "close": 4429.54,
+          "volume": 2745,
+          "beijing_open_time": "2026-09-03 11:25"
+        },
+        {
+          "time": 1788406200,
+          "open": 4429.52,
+          "high": 4432.245,
+          "low": 4429.475,
+          "close": 4431.76,
+          "volume": 1340,
+          "beijing_open_time": "2026-09-03 11:30"
+        },
+        {
+          "time": 1788406500,
+          "open": 4431.775,
+          "high": 4431.93,
+          "low": 4429.25,
+          "close": 4430.585,
+          "volume": 1292,
+          "beijing_open_time": "2026-09-03 11:35"
+        },
+        {
+          "time": 1788406800,
+          "open": 4430.59,
+          "high": 4430.76,
+          "low": 4426.61,
+          "close": 4426.61,
+          "volume": 1413,
+          "beijing_open_time": "2026-09-03 11:40"
+        },
+        {
+          "time": 1788407100,
+          "open": 4426.655,
+          "high": 4428.62,
+          "low": 4425.39,
+          "close": 4427.235,
+          "volume": 1425,
+          "beijing_open_time": "2026-09-03 11:45"
+        },
+        {
+          "time": 1788407400,
+          "open": 4427.24,
+          "high": 4430.78,
+          "low": 4426.315,
+          "close": 4430.51,
+          "volume": 1421,
+          "beijing_open_time": "2026-09-03 11:50"
+        },
+        {
+          "time": 1788407700,
+          "open": 4430.52,
+          "high": 4432.685,
+          "low": 4429.755,
+          "close": 4431.485,
+          "volume": 1116,
+          "beijing_open_time": "2026-09-03 11:55"
+        },
+        {
+          "time": 1788408000,
+          "open": 4431.455,
+          "high": 4431.91,
+          "low": 4427.04,
+          "close": 4427.285,
+          "volume": 1506,
+          "beijing_open_time": "2026-09-03 12:00"
+        },
+        {
+          "time": 1788408300,
+          "open": 4427.335,
+          "high": 4433.95,
+          "low": 4425.665,
+          "close": 4433.62,
+          "volume": 2188,
+          "beijing_open_time": "2026-09-03 12:05"
+        },
+        {
+          "time": 1788408600,
+          "open": 4433.54,
+          "high": 4435.905,
+          "low": 4430.705,
+          "close": 4431.315,
+          "volume": 1678,
+          "beijing_open_time": "2026-09-03 12:10"
+        },
+        {
+          "time": 1788408900,
+          "open": 4431.275,
+          "high": 4431.555,
+          "low": 4430.07,
+          "close": 4430.955,
+          "volume": 999,
+          "beijing_open_time": "2026-09-03 12:15"
+        },
+        {
+          "time": 1788409200,
+          "open": 4430.9,
+          "high": 4434.225,
+          "low": 4430.84,
+          "close": 4433.74,
+          "volume": 972,
+          "beijing_open_time": "2026-09-03 12:20"
+        },
+        {
+          "time": 1788409500,
+          "open": 4433.895,
+          "high": 4436.96,
+          "low": 4433.895,
+          "close": 4436.595,
+          "volume": 1010,
+          "beijing_open_time": "2026-09-03 12:25"
+        },
+        {
+          "time": 1788409800,
+          "open": 4436.625,
+          "high": 4437.335,
+          "low": 4435.595,
+          "close": 4437.185,
+          "volume": 1279,
+          "beijing_open_time": "2026-09-03 12:30"
+        },
+        {
+          "time": 1788410100,
+          "open": 4437.05,
+          "high": 4438.665,
+          "low": 4436.195,
+          "close": 4438.395,
+          "volume": 884,
+          "beijing_open_time": "2026-09-03 12:35"
+        },
+        {
+          "time": 1788410400,
+          "open": 4438.23,
+          "high": 4438.625,
+          "low": 4436.72,
+          "close": 4438.14,
+          "volume": 744,
+          "beijing_open_time": "2026-09-03 12:40"
+        },
+        {
+          "time": 1788410700,
+          "open": 4438.145,
+          "high": 4438.725,
+          "low": 4436.235,
+          "close": 4436.365,
+          "volume": 662,
+          "beijing_open_time": "2026-09-03 12:45"
+        },
+        {
+          "time": 1788411000,
+          "open": 4436.335,
+          "high": 4436.62,
+          "low": 4435.115,
+          "close": 4435.665,
+          "volume": 631,
+          "beijing_open_time": "2026-09-03 12:50"
+        },
+        {
+          "time": 1788411300,
+          "open": 4435.645,
+          "high": 4437.73,
+          "low": 4434.03,
+          "close": 4437.405,
+          "volume": 1320,
+          "beijing_open_time": "2026-09-03 12:55"
+        },
+        {
+          "time": 1788411600,
+          "open": 4437.4,
+          "high": 4440.355,
+          "low": 4435.985,
+          "close": 4436.405,
+          "volume": 1263,
+          "beijing_open_time": "2026-09-03 13:00"
+        },
+        {
+          "time": 1788411900,
+          "open": 4436.425,
+          "high": 4436.58,
+          "low": 4430.575,
+          "close": 4430.795,
+          "volume": 1675,
+          "beijing_open_time": "2026-09-03 13:05"
+        },
+        {
+          "time": 1788412200,
+          "open": 4430.795,
+          "high": 4432.735,
+          "low": 4428.91,
+          "close": 4429.725,
+          "volume": 1610,
+          "beijing_open_time": "2026-09-03 13:10"
+        },
+        {
+          "time": 1788412500,
+          "open": 4429.69,
+          "high": 4430.92,
+          "low": 4427.085,
+          "close": 4428.67,
+          "volume": 2052,
+          "beijing_open_time": "2026-09-03 13:15"
+        },
+        {
+          "time": 1788412800,
+          "open": 4428.68,
+          "high": 4428.765,
+          "low": 4422.76,
+          "close": 4425.86,
+          "volume": 3102,
+          "beijing_open_time": "2026-09-03 13:20"
+        },
+        {
+          "time": 1788413100,
+          "open": 4425.92,
+          "high": 4427.515,
+          "low": 4423.05,
+          "close": 4425.18,
+          "volume": 2667,
+          "beijing_open_time": "2026-09-03 13:25"
+        },
+        {
+          "time": 1788413400,
+          "open": 4425.2,
+          "high": 4432.76,
+          "low": 4422.585,
+          "close": 4430.905,
+          "volume": 4685,
+          "beijing_open_time": "2026-09-03 13:30"
+        },
+        {
+          "time": 1788413700,
+          "open": 4430.875,
+          "high": 4432.49,
+          "low": 4425.505,
+          "close": 4428.445,
+          "volume": 3951,
+          "beijing_open_time": "2026-09-03 13:35"
+        },
+        {
+          "time": 1788414000,
+          "open": 4428.33,
+          "high": 4432.595,
+          "low": 4425.73,
+          "close": 4432.295,
+          "volume": 3958,
+          "beijing_open_time": "2026-09-03 13:40"
+        },
+        {
+          "time": 1788414300,
+          "open": 4432.315,
+          "high": 4436.485,
+          "low": 4428.53,
+          "close": 4435.47,
+          "volume": 2916,
+          "beijing_open_time": "2026-09-03 13:45"
+        },
+        {
+          "time": 1788414600,
+          "open": 4435.52,
+          "high": 4439.4,
+          "low": 4432.795,
+          "close": 4433.445,
+          "volume": 3009,
+          "beijing_open_time": "2026-09-03 13:50"
+        },
+        {
+          "time": 1788414900,
+          "open": 4433.46,
+          "high": 4436.525,
+          "low": 4430.46,
+          "close": 4431.155,
+          "volume": 2549,
+          "beijing_open_time": "2026-09-03 13:55"
+        },
+        {
+          "time": 1788415200,
+          "open": 4431.185,
+          "high": 4433.925,
+          "low": 4428.71,
+          "close": 4430.555,
+          "volume": 3567,
+          "beijing_open_time": "2026-09-03 14:00"
+        },
+        {
+          "time": 1788415500,
+          "open": 4430.55,
+          "high": 4436.38,
+          "low": 4429.7,
+          "close": 4431.33,
+          "volume": 4434,
+          "beijing_open_time": "2026-09-03 14:05"
+        },
+        {
+          "time": 1788415800,
+          "open": 4431.305,
+          "high": 4431.55,
+          "low": 4425.745,
+          "close": 4427.065,
+          "volume": 3519,
+          "beijing_open_time": "2026-09-03 14:10"
+        },
+        {
+          "time": 1788416100,
+          "open": 4427.095,
+          "high": 4430.855,
+          "low": 4425.14,
+          "close": 4425.98,
+          "volume": 3622,
+          "beijing_open_time": "2026-09-03 14:15"
+        },
+        {
+          "time": 1788416400,
+          "open": 4425.95,
+          "high": 4427.085,
+          "low": 4417.575,
+          "close": 4419.235,
+          "volume": 2960,
+          "beijing_open_time": "2026-09-03 14:20"
+        },
+        {
+          "time": 1788416700,
+          "open": 4419.185,
+          "high": 4424.01,
+          "low": 4418.84,
+          "close": 4421.615,
+          "volume": 2857,
+          "beijing_open_time": "2026-09-03 14:25"
+        },
+        {
+          "time": 1788417000,
+          "open": 4421.565,
+          "high": 4423.44,
+          "low": 4420.435,
+          "close": 4423.245,
+          "volume": 3050,
+          "beijing_open_time": "2026-09-03 14:30"
+        },
+        {
+          "time": 1788417300,
+          "open": 4423.255,
+          "high": 4425.975,
+          "low": 4422.6,
+          "close": 4422.84,
+          "volume": 3462,
+          "beijing_open_time": "2026-09-03 14:35"
+        },
+        {
+          "time": 1788417600,
+          "open": 4422.83,
+          "high": 4426.22,
+          "low": 4422.64,
+          "close": 4425.65,
+          "volume": 2607,
+          "beijing_open_time": "2026-09-03 14:40"
+        },
+        {
+          "time": 1788417900,
+          "open": 4425.6,
+          "high": 4428.98,
+          "low": 4425.215,
+          "close": 4426.355,
+          "volume": 2544,
+          "beijing_open_time": "2026-09-03 14:45"
+        },
+        {
+          "time": 1788418200,
+          "open": 4426.365,
+          "high": 4426.365,
+          "low": 4422.87,
+          "close": 4423.04,
+          "volume": 2082,
+          "beijing_open_time": "2026-09-03 14:50"
+        },
+        {
+          "time": 1788418500,
+          "open": 4422.945,
+          "high": 4424.135,
+          "low": 4420.59,
+          "close": 4420.59,
+          "volume": 2708,
+          "beijing_open_time": "2026-09-03 14:55"
+        },
+        {
+          "time": 1788418800,
+          "open": 4420.61,
+          "high": 4431.385,
+          "low": 4419.165,
+          "close": 4431.34,
+          "volume": 5176,
+          "beijing_open_time": "2026-09-03 15:00"
+        },
+        {
+          "time": 1788419100,
+          "open": 4431.35,
+          "high": 4431.635,
+          "low": 4423.885,
+          "close": 4425.265,
+          "volume": 5074,
+          "beijing_open_time": "2026-09-03 15:05"
+        },
+        {
+          "time": 1788419400,
+          "open": 4425.26,
+          "high": 4425.5,
+          "low": 4421.785,
+          "close": 4422.175,
+          "volume": 3206,
+          "beijing_open_time": "2026-09-03 15:10"
+        },
+        {
+          "time": 1788419700,
+          "open": 4422.22,
+          "high": 4427.135,
+          "low": 4421.8,
+          "close": 4425.39,
+          "volume": 2107,
+          "beijing_open_time": "2026-09-03 15:15"
+        },
+        {
+          "time": 1788420000,
+          "open": 4425.395,
+          "high": 4430.315,
+          "low": 4424.6,
+          "close": 4429.595,
+          "volume": 2509,
+          "beijing_open_time": "2026-09-03 15:20"
+        },
+        {
+          "time": 1788420300,
+          "open": 4429.6,
+          "high": 4430.365,
+          "low": 4425.505,
+          "close": 4426.59,
+          "volume": 3258,
+          "beijing_open_time": "2026-09-03 15:25"
+        },
+        {
+          "time": 1788420600,
+          "open": 4426.515,
+          "high": 4428.72,
+          "low": 4426.35,
+          "close": 4427.935,
+          "volume": 3042,
+          "beijing_open_time": "2026-09-03 15:30"
+        },
+        {
+          "time": 1788420900,
+          "open": 4427.955,
+          "high": 4430.75,
+          "low": 4423.72,
+          "close": 4427.625,
+          "volume": 3201,
+          "beijing_open_time": "2026-09-03 15:35"
+        },
+        {
+          "time": 1788421200,
+          "open": 4427.675,
+          "high": 4430.86,
+          "low": 4426.63,
+          "close": 4426.825,
+          "volume": 2441,
+          "beijing_open_time": "2026-09-03 15:40"
+        },
+        {
+          "time": 1788421500,
+          "open": 4426.755,
+          "high": 4428.9,
+          "low": 4424.44,
+          "close": 4426.53,
+          "volume": 3361,
+          "beijing_open_time": "2026-09-03 15:45"
+        },
+        {
+          "time": 1788421800,
+          "open": 4426.505,
+          "high": 4431.085,
+          "low": 4424.94,
+          "close": 4430.65,
+          "volume": 3294,
+          "beijing_open_time": "2026-09-03 15:50"
+        },
+        {
+          "time": 1788422100,
+          "open": 4430.515,
+          "high": 4430.515,
+          "low": 4428.115,
+          "close": 4428.91,
+          "volume": 1286,
+          "beijing_open_time": "2026-09-03 15:55"
+        },
+        {
+          "time": 1788422400,
+          "open": 4428.86,
+          "high": 4441.185,
+          "low": 4428.135,
+          "close": 4436.91,
+          "volume": 6278,
+          "beijing_open_time": "2026-09-03 16:00"
+        },
+        {
+          "time": 1788422700,
+          "open": 4436.95,
+          "high": 4443.715,
+          "low": 4435.125,
+          "close": 4435.295,
+          "volume": 9173,
+          "beijing_open_time": "2026-09-03 16:05"
+        },
+        {
+          "time": 1788423000,
+          "open": 4435.29,
+          "high": 4435.71,
+          "low": 4430.83,
+          "close": 4431.405,
+          "volume": 4911,
+          "beijing_open_time": "2026-09-03 16:10"
+        },
+        {
+          "time": 1788423300,
+          "open": 4431.41,
+          "high": 4438.795,
+          "low": 4430.735,
+          "close": 4437.915,
+          "volume": 4145,
+          "beijing_open_time": "2026-09-03 16:15"
+        },
+        {
+          "time": 1788423600,
+          "open": 4437.92,
+          "high": 4439.585,
+          "low": 4435.115,
+          "close": 4437.495,
+          "volume": 4323,
+          "beijing_open_time": "2026-09-03 16:20"
+        },
+        {
+          "time": 1788423900,
+          "open": 4437.35,
+          "high": 4438.85,
+          "low": 4435.07,
+          "close": 4438.32,
+          "volume": 3880,
+          "beijing_open_time": "2026-09-03 16:25"
+        },
+        {
+          "time": 1788424200,
+          "open": 4438.33,
+          "high": 4439.525,
+          "low": 4435.89,
+          "close": 4439.025,
+          "volume": 3244,
+          "beijing_open_time": "2026-09-03 16:30"
+        },
+        {
+          "time": 1788424500,
+          "open": 4439.04,
+          "high": 4439.715,
+          "low": 4434.185,
+          "close": 4434.185,
+          "volume": 2341,
+          "beijing_open_time": "2026-09-03 16:35"
+        },
+        {
+          "time": 1788424800,
+          "open": 4434.165,
+          "high": 4435.29,
+          "low": 4431.5,
+          "close": 4434.46,
+          "volume": 2549,
+          "beijing_open_time": "2026-09-03 16:40"
+        },
+        {
+          "time": 1788425100,
+          "open": 4434.475,
+          "high": 4440.14,
+          "low": 4434.475,
+          "close": 4438.305,
+          "volume": 2624,
+          "beijing_open_time": "2026-09-03 16:45"
+        },
+        {
+          "time": 1788425400,
+          "open": 4438.34,
+          "high": 4438.355,
+          "low": 4434.375,
+          "close": 4435.475,
+          "volume": 2631,
+          "beijing_open_time": "2026-09-03 16:50"
+        },
+        {
+          "time": 1788425700,
+          "open": 4435.535,
+          "high": 4437.58,
+          "low": 4434.055,
+          "close": 4434.97,
+          "volume": 2347,
+          "beijing_open_time": "2026-09-03 16:55"
+        },
+        {
+          "time": 1788426000,
+          "open": 4435.025,
+          "high": 4437.935,
+          "low": 4434.245,
+          "close": 4437.345,
+          "volume": 3343,
+          "beijing_open_time": "2026-09-03 17:00"
+        },
+        {
+          "time": 1788426300,
+          "open": 4437.39,
+          "high": 4442.04,
+          "low": 4435.08,
+          "close": 4439.76,
+          "volume": 2543,
+          "beijing_open_time": "2026-09-03 17:05"
+        },
+        {
+          "time": 1788426600,
+          "open": 4439.755,
+          "high": 4440.08,
+          "low": 4437.805,
+          "close": 4438.07,
+          "volume": 2412,
+          "beijing_open_time": "2026-09-03 17:10"
+        },
+        {
+          "time": 1788426900,
+          "open": 4438.025,
+          "high": 4438.39,
+          "low": 4434.54,
+          "close": 4434.715,
+          "volume": 3436,
+          "beijing_open_time": "2026-09-03 17:15"
+        },
+        {
+          "time": 1788427200,
+          "open": 4434.705,
+          "high": 4435.365,
+          "low": 4432.17,
+          "close": 4432.61,
+          "volume": 3012,
+          "beijing_open_time": "2026-09-03 17:20"
+        },
+        {
+          "time": 1788427500,
+          "open": 4432.595,
+          "high": 4435.915,
+          "low": 4432.245,
+          "close": 4435.265,
+          "volume": 2284,
+          "beijing_open_time": "2026-09-03 17:25"
+        },
+        {
+          "time": 1788427800,
+          "open": 4435.225,
+          "high": 4437.9,
+          "low": 4433.605,
+          "close": 4437.015,
+          "volume": 3299,
+          "beijing_open_time": "2026-09-03 17:30"
+        },
+        {
+          "time": 1788428100,
+          "open": 4436.995,
+          "high": 4438.04,
+          "low": 4430.73,
+          "close": 4432.87,
+          "volume": 2529,
+          "beijing_open_time": "2026-09-03 17:35"
+        },
+        {
+          "time": 1788428400,
+          "open": 4432.9,
+          "high": 4434.325,
+          "low": 4429.645,
+          "close": 4430.115,
+          "volume": 2000,
+          "beijing_open_time": "2026-09-03 17:40"
+        },
+        {
+          "time": 1788428700,
+          "open": 4430.045,
+          "high": 4430.085,
+          "low": 4426.855,
+          "close": 4428.965,
+          "volume": 2807,
+          "beijing_open_time": "2026-09-03 17:45"
+        },
+        {
+          "time": 1788429000,
+          "open": 4428.985,
+          "high": 4430.575,
+          "low": 4426.565,
+          "close": 4427.11,
+          "volume": 2475,
+          "beijing_open_time": "2026-09-03 17:50"
+        },
+        {
+          "time": 1788429300,
+          "open": 4427.135,
+          "high": 4429.28,
+          "low": 4425.595,
+          "close": 4427.62,
+          "volume": 2566,
+          "beijing_open_time": "2026-09-03 17:55"
+        },
+        {
+          "time": 1788429600,
+          "open": 4427.66,
+          "high": 4428.525,
+          "low": 4425.36,
+          "close": 4427.44,
+          "volume": 2664,
+          "beijing_open_time": "2026-09-03 18:00"
+        },
+        {
+          "time": 1788429900,
+          "open": 4427.385,
+          "high": 4429.965,
+          "low": 4425.195,
+          "close": 4425.235,
+          "volume": 2165,
+          "beijing_open_time": "2026-09-03 18:05"
+        },
+        {
+          "time": 1788430200,
+          "open": 4425.335,
+          "high": 4425.73,
+          "low": 4423.105,
+          "close": 4424.535,
+          "volume": 2032,
+          "beijing_open_time": "2026-09-03 18:10"
+        },
+        {
+          "time": 1788430500,
+          "open": 4424.56,
+          "high": 4425.71,
+          "low": 4421.85,
+          "close": 4422.05,
+          "volume": 2911,
+          "beijing_open_time": "2026-09-03 18:15"
+        },
+        {
+          "time": 1788430800,
+          "open": 4422.08,
+          "high": 4423,
+          "low": 4419.09,
+          "close": 4419.91,
+          "volume": 2489,
+          "beijing_open_time": "2026-09-03 18:20"
+        },
+        {
+          "time": 1788431100,
+          "open": 4420,
+          "high": 4424.155,
+          "low": 4420,
+          "close": 4422.66,
+          "volume": 2764,
+          "beijing_open_time": "2026-09-03 18:25"
+        },
+        {
+          "time": 1788431400,
+          "open": 4422.665,
+          "high": 4424.395,
+          "low": 4420.235,
+          "close": 4422.755,
+          "volume": 3201,
+          "beijing_open_time": "2026-09-03 18:30"
+        },
+        {
+          "time": 1788431700,
+          "open": 4422.745,
+          "high": 4425.02,
+          "low": 4422.195,
+          "close": 4424.395,
+          "volume": 3028,
+          "beijing_open_time": "2026-09-03 18:35"
+        },
+        {
+          "time": 1788432000,
+          "open": 4424.39,
+          "high": 4426.4,
+          "low": 4424.085,
+          "close": 4425.785,
+          "volume": 1575,
+          "beijing_open_time": "2026-09-03 18:40"
+        },
+        {
+          "time": 1788432300,
+          "open": 4425.69,
+          "high": 4426.675,
+          "low": 4424.125,
+          "close": 4424.67,
+          "volume": 1552,
+          "beijing_open_time": "2026-09-03 18:45"
+        },
+        {
+          "time": 1788432600,
+          "open": 4424.64,
+          "high": 4428.12,
+          "low": 4424.115,
+          "close": 4428.045,
+          "volume": 1508,
+          "beijing_open_time": "2026-09-03 18:50"
+        },
+        {
+          "time": 1788432900,
+          "open": 4428.01,
+          "high": 4428.64,
+          "low": 4427.02,
+          "close": 4427.345,
+          "volume": 1684,
+          "beijing_open_time": "2026-09-03 18:55"
+        },
+        {
+          "time": 1788433200,
+          "open": 4427.38,
+          "high": 4429.225,
+          "low": 4425.12,
+          "close": 4426.39,
+          "volume": 2849,
+          "beijing_open_time": "2026-09-03 19:00"
+        },
+        {
+          "time": 1788433500,
+          "open": 4426.38,
+          "high": 4431.265,
+          "low": 4425.925,
+          "close": 4430.97,
+          "volume": 2491,
+          "beijing_open_time": "2026-09-03 19:05"
+        },
+        {
+          "time": 1788433800,
+          "open": 4430.955,
+          "high": 4432.83,
+          "low": 4430.17,
+          "close": 4432.715,
+          "volume": 2292,
+          "beijing_open_time": "2026-09-03 19:10"
+        },
+        {
+          "time": 1788434100,
+          "open": 4432.67,
+          "high": 4438.135,
+          "low": 4432.445,
+          "close": 4434.395,
+          "volume": 4011,
+          "beijing_open_time": "2026-09-03 19:15"
+        },
+        {
+          "time": 1788434400,
+          "open": 4434.41,
+          "high": 4434.705,
+          "low": 4430.77,
+          "close": 4431.33,
+          "volume": 1848,
+          "beijing_open_time": "2026-09-03 19:20"
+        },
+        {
+          "time": 1788434700,
+          "open": 4431.435,
+          "high": 4435.235,
+          "low": 4430.36,
+          "close": 4434.465,
+          "volume": 2410,
+          "beijing_open_time": "2026-09-03 19:25"
+        },
+        {
+          "time": 1788435000,
+          "open": 4434.495,
+          "high": 4435.55,
+          "low": 4426.615,
+          "close": 4434.47,
+          "volume": 3096,
+          "beijing_open_time": "2026-09-03 19:30"
+        },
+        {
+          "time": 1788435300,
+          "open": 4434.525,
+          "high": 4436.94,
+          "low": 4434.375,
+          "close": 4435.825,
+          "volume": 1497,
+          "beijing_open_time": "2026-09-03 19:35"
+        },
+        {
+          "time": 1788435600,
+          "open": 4435.82,
+          "high": 4439.32,
+          "low": 4435.64,
+          "close": 4438.73,
+          "volume": 1907,
+          "beijing_open_time": "2026-09-03 19:40"
+        },
+        {
+          "time": 1788435900,
+          "open": 4438.74,
+          "high": 4440.73,
+          "low": 4436.67,
+          "close": 4439.195,
+          "volume": 3007,
+          "beijing_open_time": "2026-09-03 19:45"
+        },
+        {
+          "time": 1788436200,
+          "open": 4439.2,
+          "high": 4441.97,
+          "low": 4438.03,
+          "close": 4440.165,
+          "volume": 2542,
+          "beijing_open_time": "2026-09-03 19:50"
+        },
+        {
+          "time": 1788436500,
+          "open": 4440.18,
+          "high": 4445.745,
+          "low": 4439.815,
+          "close": 4444.28,
+          "volume": 2213,
+          "beijing_open_time": "2026-09-03 19:55"
+        },
+        {
+          "time": 1788436800,
+          "open": 4444.25,
+          "high": 4448.675,
+          "low": 4441.155,
+          "close": 4448.31,
+          "volume": 3451,
+          "beijing_open_time": "2026-09-03 20:00"
+        },
+        {
+          "time": 1788437100,
+          "open": 4448.2,
+          "high": 4449.17,
+          "low": 4445.03,
+          "close": 4448.775,
+          "volume": 2569,
+          "beijing_open_time": "2026-09-03 20:05"
+        },
+        {
+          "time": 1788437400,
+          "open": 4448.755,
+          "high": 4450.26,
+          "low": 4443.255,
+          "close": 4443.895,
+          "volume": 3196,
+          "beijing_open_time": "2026-09-03 20:10"
+        },
+        {
+          "time": 1788437700,
+          "open": 4443.865,
+          "high": 4444.55,
+          "low": 4440.805,
+          "close": 4441.43,
+          "volume": 2693,
+          "beijing_open_time": "2026-09-03 20:15"
+        },
+        {
+          "time": 1788438000,
+          "open": 4441.47,
+          "high": 4449.355,
+          "low": 4437.855,
+          "close": 4446.745,
+          "volume": 4056,
+          "beijing_open_time": "2026-09-03 20:20"
+        },
+        {
+          "time": 1788438300,
+          "open": 4446.72,
+          "high": 4449.215,
+          "low": 4446.215,
+          "close": 4446.75,
+          "volume": 2635,
+          "beijing_open_time": "2026-09-03 20:25"
+        },
+        {
+          "time": 1788438600,
+          "open": 4446.735,
+          "high": 4470.135,
+          "low": 4446.735,
+          "close": 4466.855,
+          "volume": 10766,
+          "beijing_open_time": "2026-09-03 20:30"
+        },
+        {
+          "time": 1788438900,
+          "open": 4466.85,
+          "high": 4478.825,
+          "low": 4459.705,
+          "close": 4475.65,
+          "volume": 9567,
+          "beijing_open_time": "2026-09-03 20:35"
+        },
+        {
+          "time": 1788439200,
+          "open": 4475.66,
+          "high": 4477.35,
+          "low": 4464.84,
+          "close": 4468.17,
+          "volume": 7320,
+          "beijing_open_time": "2026-09-03 20:40"
+        },
+        {
+          "time": 1788439500,
+          "open": 4468.075,
+          "high": 4480.34,
+          "low": 4465.54,
+          "close": 4480.125,
+          "volume": 6757,
+          "beijing_open_time": "2026-09-03 20:45"
+        },
+        {
+          "time": 1788439800,
+          "open": 4480.155,
+          "high": 4492.27,
+          "low": 4479.495,
+          "close": 4491.195,
+          "volume": 6155,
+          "beijing_open_time": "2026-09-03 20:50"
+        },
+        {
+          "time": 1788440100,
+          "open": 4491.205,
+          "high": 4495.23,
+          "low": 4490,
+          "close": 4493.535,
+          "volume": 6765,
+          "beijing_open_time": "2026-09-03 20:55"
+        },
+        {
+          "time": 1788440400,
+          "open": 4493.585,
+          "high": 4496.01,
+          "low": 4488.245,
+          "close": 4490.135,
+          "volume": 10497,
+          "beijing_open_time": "2026-09-03 21:00"
+        },
+        {
+          "time": 1788440700,
+          "open": 4490.165,
+          "high": 4493.96,
+          "low": 4485.885,
+          "close": 4488.11,
+          "volume": 8057,
+          "beijing_open_time": "2026-09-03 21:05"
+        },
+        {
+          "time": 1788441000,
+          "open": 4488.115,
+          "high": 4490.28,
+          "low": 4484.795,
+          "close": 4485.77,
+          "volume": 6215,
+          "beijing_open_time": "2026-09-03 21:10"
+        },
+        {
+          "time": 1788441300,
+          "open": 4485.785,
+          "high": 4488.045,
+          "low": 4479.23,
+          "close": 4479.805,
+          "volume": 6322,
+          "beijing_open_time": "2026-09-03 21:15"
+        },
+        {
+          "time": 1788441600,
+          "open": 4479.78,
+          "high": 4484.765,
+          "low": 4478.475,
+          "close": 4483.645,
+          "volume": 5149,
+          "beijing_open_time": "2026-09-03 21:20"
+        },
+        {
+          "time": 1788441900,
+          "open": 4483.61,
+          "high": 4484.03,
+          "low": 4476.965,
+          "close": 4480.23,
+          "volume": 5153,
+          "beijing_open_time": "2026-09-03 21:25"
+        },
+        {
+          "time": 1788442200,
+          "open": 4480.27,
+          "high": 4482.445,
+          "low": 4474.345,
+          "close": 4477.57,
+          "volume": 9449,
+          "beijing_open_time": "2026-09-03 21:30"
+        },
+        {
+          "time": 1788442500,
+          "open": 4477.575,
+          "high": 4480.05,
+          "low": 4472.655,
+          "close": 4475.765,
+          "volume": 9927,
+          "beijing_open_time": "2026-09-03 21:35"
+        },
+        {
+          "time": 1788442800,
+          "open": 4475.77,
+          "high": 4476.015,
+          "low": 4468.085,
+          "close": 4470.185,
+          "volume": 7514,
+          "beijing_open_time": "2026-09-03 21:40"
+        },
+        {
+          "time": 1788443100,
+          "open": 4470.07,
+          "high": 4470.305,
+          "low": 4456.925,
+          "close": 4458.33,
+          "volume": 7858,
+          "beijing_open_time": "2026-09-03 21:45"
+        },
+        {
+          "time": 1788443400,
+          "open": 4458.34,
+          "high": 4464.91,
+          "low": 4458.1,
+          "close": 4464.05,
+          "volume": 7224,
+          "beijing_open_time": "2026-09-03 21:50"
+        },
+        {
+          "time": 1788443700,
+          "open": 4464.055,
+          "high": 4471.16,
+          "low": 4462.51,
+          "close": 4470.785,
+          "volume": 6502,
+          "beijing_open_time": "2026-09-03 21:55"
+        },
+        {
+          "time": 1788444000,
+          "open": 4470.78,
+          "high": 4470.82,
+          "low": 4458.385,
+          "close": 4465.4,
+          "volume": 9732,
+          "beijing_open_time": "2026-09-03 22:00"
+        },
+        {
+          "time": 1788444300,
+          "open": 4465.405,
+          "high": 4473.02,
+          "low": 4462.29,
+          "close": 4464.485,
+          "volume": 9001,
+          "beijing_open_time": "2026-09-03 22:05"
+        },
+        {
+          "time": 1788444600,
+          "open": 4464.49,
+          "high": 4469.92,
+          "low": 4461.5,
+          "close": 4469.39,
+          "volume": 8505,
+          "beijing_open_time": "2026-09-03 22:10"
+        },
+        {
+          "time": 1788444900,
+          "open": 4469.385,
+          "high": 4477.51,
+          "low": 4469.32,
+          "close": 4476.575,
+          "volume": 8861,
+          "beijing_open_time": "2026-09-03 22:15"
+        },
+        {
+          "time": 1788445200,
+          "open": 4476.64,
+          "high": 4481.015,
+          "low": 4472.06,
+          "close": 4475.96,
+          "volume": 7614,
+          "beijing_open_time": "2026-09-03 22:20"
+        },
+        {
+          "time": 1788445500,
+          "open": 4475.945,
+          "high": 4478.295,
+          "low": 4470.73,
+          "close": 4477.43,
+          "volume": 6917,
+          "beijing_open_time": "2026-09-03 22:25"
+        },
+        {
+          "time": 1788445800,
+          "open": 4477.435,
+          "high": 4479.81,
+          "low": 4470.61,
+          "close": 4470.85,
+          "volume": 7346,
+          "beijing_open_time": "2026-09-03 22:30"
+        },
+        {
+          "time": 1788446100,
+          "open": 4470.88,
+          "high": 4474.185,
+          "low": 4468.545,
+          "close": 4469.465,
+          "volume": 6574,
+          "beijing_open_time": "2026-09-03 22:35"
+        },
+        {
+          "time": 1788446400,
+          "open": 4469.53,
+          "high": 4475.06,
+          "low": 4466.025,
+          "close": 4473.085,
+          "volume": 4941,
+          "beijing_open_time": "2026-09-03 22:40"
+        },
+        {
+          "time": 1788446700,
+          "open": 4473.07,
+          "high": 4480.23,
+          "low": 4473.065,
+          "close": 4474.26,
+          "volume": 6078,
+          "beijing_open_time": "2026-09-03 22:45"
+        },
+        {
+          "time": 1788447000,
+          "open": 4474.245,
+          "high": 4479.415,
+          "low": 4474.115,
+          "close": 4476.935,
+          "volume": 6197,
+          "beijing_open_time": "2026-09-03 22:50"
+        },
+        {
+          "time": 1788447300,
+          "open": 4476.95,
+          "high": 4485.425,
+          "low": 4470.71,
+          "close": 4485.365,
+          "volume": 7536,
+          "beijing_open_time": "2026-09-03 22:55"
+        },
+        {
+          "time": 1788447600,
+          "open": 4485.37,
+          "high": 4500.23,
+          "low": 4484.28,
+          "close": 4498.035,
+          "volume": 7824,
+          "beijing_open_time": "2026-09-03 23:00"
+        },
+        {
+          "time": 1788447900,
+          "open": 4498.02,
+          "high": 4504.06,
+          "low": 4496.71,
+          "close": 4498.115,
+          "volume": 8027,
+          "beijing_open_time": "2026-09-03 23:05"
+        },
+        {
+          "time": 1788448200,
+          "open": 4498.125,
+          "high": 4504.415,
+          "low": 4495.445,
+          "close": 4503.67,
+          "volume": 6381,
+          "beijing_open_time": "2026-09-03 23:10"
+        },
+        {
+          "time": 1788448500,
+          "open": 4503.675,
+          "high": 4510.895,
+          "low": 4501.685,
+          "close": 4510.31,
+          "volume": 6260,
+          "beijing_open_time": "2026-09-03 23:15"
+        },
+        {
+          "time": 1788448800,
+          "open": 4510.305,
+          "high": 4510.93,
+          "low": 4503.765,
+          "close": 4504.59,
+          "volume": 6772,
+          "beijing_open_time": "2026-09-03 23:20"
+        },
+        {
+          "time": 1788449100,
+          "open": 4504.635,
+          "high": 4508.09,
+          "low": 4504.09,
+          "close": 4506.51,
+          "volume": 5994,
+          "beijing_open_time": "2026-09-03 23:25"
+        },
+        {
+          "time": 1788449400,
+          "open": 4506.51,
+          "high": 4509.75,
+          "low": 4499.93,
+          "close": 4503.375,
+          "volume": 5521,
+          "beijing_open_time": "2026-09-03 23:30"
+        },
+        {
+          "time": 1788449700,
+          "open": 4503.38,
+          "high": 4505.015,
+          "low": 4495.405,
+          "close": 4496.74,
+          "volume": 4801,
+          "beijing_open_time": "2026-09-03 23:35"
+        },
+        {
+          "time": 1788450000,
+          "open": 4496.735,
+          "high": 4498.515,
+          "low": 4494.9,
+          "close": 4494.98,
+          "volume": 3394,
+          "beijing_open_time": "2026-09-03 23:40"
+        },
+        {
+          "time": 1788450300,
+          "open": 4495.05,
+          "high": 4495.635,
+          "low": 4487.59,
+          "close": 4488.445,
+          "volume": 4358,
+          "beijing_open_time": "2026-09-03 23:45"
+        },
+        {
+          "time": 1788450600,
+          "open": 4488.435,
+          "high": 4492.25,
+          "low": 4487.41,
+          "close": 4490.575,
+          "volume": 3650,
+          "beijing_open_time": "2026-09-03 23:50"
+        },
+        {
+          "time": 1788450900,
+          "open": 4490.6,
+          "high": 4493.535,
+          "low": 4486.18,
+          "close": 4493.345,
+          "volume": 3420,
+          "beijing_open_time": "2026-09-03 23:55"
+        },
+        {
+          "time": 1788451200,
+          "open": 4493.335,
+          "high": 4493.745,
+          "low": 4490.445,
+          "close": 4490.785,
+          "volume": 3451,
+          "beijing_open_time": "2026-09-04 00:00"
+        },
+        {
+          "time": 1788451500,
+          "open": 4490.76,
+          "high": 4493.345,
+          "low": 4487.77,
+          "close": 4492.365,
+          "volume": 4280,
+          "beijing_open_time": "2026-09-04 00:05"
+        },
+        {
+          "time": 1788451800,
+          "open": 4492.37,
+          "high": 4495.445,
+          "low": 4492.295,
+          "close": 4494.02,
+          "volume": 3423,
+          "beijing_open_time": "2026-09-04 00:10"
+        },
+        {
+          "time": 1788452100,
+          "open": 4494.015,
+          "high": 4494.885,
+          "low": 4491.425,
+          "close": 4493.925,
+          "volume": 3414,
+          "beijing_open_time": "2026-09-04 00:15"
+        },
+        {
+          "time": 1788452400,
+          "open": 4493.93,
+          "high": 4494.335,
+          "low": 4491.115,
+          "close": 4493.045,
+          "volume": 2079,
+          "beijing_open_time": "2026-09-04 00:20"
+        },
+        {
+          "time": 1788452700,
+          "open": 4493.07,
+          "high": 4494.58,
+          "low": 4490.735,
+          "close": 4493.48,
+          "volume": 3145,
+          "beijing_open_time": "2026-09-04 00:25"
+        },
+        {
+          "time": 1788453000,
+          "open": 4493.56,
+          "high": 4495.57,
+          "low": 4489.515,
+          "close": 4490.92,
+          "volume": 3279,
+          "beijing_open_time": "2026-09-04 00:30"
+        },
+        {
+          "time": 1788453300,
+          "open": 4490.89,
+          "high": 4491.915,
+          "low": 4489.98,
+          "close": 4491.265,
+          "volume": 3460,
+          "beijing_open_time": "2026-09-04 00:35"
+        },
+        {
+          "time": 1788453600,
+          "open": 4491.26,
+          "high": 4491.405,
+          "low": 4486.925,
+          "close": 4487.93,
+          "volume": 2481,
+          "beijing_open_time": "2026-09-04 00:40"
+        },
+        {
+          "time": 1788453900,
+          "open": 4487.815,
+          "high": 4491.135,
+          "low": 4487.23,
+          "close": 4488.845,
+          "volume": 2483,
+          "beijing_open_time": "2026-09-04 00:45"
+        },
+        {
+          "time": 1788454200,
+          "open": 4488.85,
+          "high": 4490.295,
+          "low": 4485.53,
+          "close": 4487.195,
+          "volume": 2411,
+          "beijing_open_time": "2026-09-04 00:50"
+        },
+        {
+          "time": 1788454500,
+          "open": 4487.17,
+          "high": 4488.66,
+          "low": 4485.805,
+          "close": 4486.28,
+          "volume": 1994,
+          "beijing_open_time": "2026-09-04 00:55"
+        },
+        {
+          "time": 1788454800,
+          "open": 4486.36,
+          "high": 4487.79,
+          "low": 4483.355,
+          "close": 4487.245,
+          "volume": 3067,
+          "beijing_open_time": "2026-09-04 01:00"
+        },
+        {
+          "time": 1788455100,
+          "open": 4487.21,
+          "high": 4488.825,
+          "low": 4485.79,
+          "close": 4486.06,
+          "volume": 2582,
+          "beijing_open_time": "2026-09-04 01:05"
+        },
+        {
+          "time": 1788455400,
+          "open": 4486.12,
+          "high": 4488.395,
+          "low": 4485.71,
+          "close": 4487.985,
+          "volume": 2610,
+          "beijing_open_time": "2026-09-04 01:10"
+        },
+        {
+          "time": 1788455700,
+          "open": 4488,
+          "high": 4488.37,
+          "low": 4485.28,
+          "close": 4487.695,
+          "volume": 2454,
+          "beijing_open_time": "2026-09-04 01:15"
+        },
+        {
+          "time": 1788456000,
+          "open": 4487.71,
+          "high": 4491.465,
+          "low": 4487.095,
+          "close": 4490.88,
+          "volume": 2246,
+          "beijing_open_time": "2026-09-04 01:20"
+        },
+        {
+          "time": 1788456300,
+          "open": 4490.85,
+          "high": 4493.8,
+          "low": 4489.76,
+          "close": 4492.955,
+          "volume": 2370,
+          "beijing_open_time": "2026-09-04 01:25"
+        },
+        {
+          "time": 1788456600,
+          "open": 4492.96,
+          "high": 4494.105,
+          "low": 4490.93,
+          "close": 4491.91,
+          "volume": 2296,
+          "beijing_open_time": "2026-09-04 01:30"
+        },
+        {
+          "time": 1788456900,
+          "open": 4491.96,
+          "high": 4494.17,
+          "low": 4491.61,
+          "close": 4493.115,
+          "volume": 1957,
+          "beijing_open_time": "2026-09-04 01:35"
+        },
+        {
+          "time": 1788457200,
+          "open": 4493.145,
+          "high": 4493.635,
+          "low": 4491.945,
+          "close": 4492.03,
+          "volume": 2002,
+          "beijing_open_time": "2026-09-04 01:40"
+        },
+        {
+          "time": 1788457500,
+          "open": 4492.035,
+          "high": 4494.745,
+          "low": 4491.02,
+          "close": 4491.525,
+          "volume": 2347,
+          "beijing_open_time": "2026-09-04 01:45"
+        },
+        {
+          "time": 1788457800,
+          "open": 4491.545,
+          "high": 4491.55,
+          "low": 4488.46,
+          "close": 4490.195,
+          "volume": 2346,
+          "beijing_open_time": "2026-09-04 01:50"
+        },
+        {
+          "time": 1788458100,
+          "open": 4490.19,
+          "high": 4490.65,
+          "low": 4486.56,
+          "close": 4486.695,
+          "volume": 2241,
+          "beijing_open_time": "2026-09-04 01:55"
+        },
+        {
+          "time": 1788458400,
+          "open": 4486.705,
+          "high": 4489.835,
+          "low": 4486.685,
+          "close": 4489.35,
+          "volume": 2889,
+          "beijing_open_time": "2026-09-04 02:00"
+        },
+        {
+          "time": 1788458700,
+          "open": 4489.34,
+          "high": 4489.34,
+          "low": 4484.61,
+          "close": 4488.32,
+          "volume": 2457,
+          "beijing_open_time": "2026-09-04 02:05"
+        },
+        {
+          "time": 1788459000,
+          "open": 4488.56,
+          "high": 4489.295,
+          "low": 4484.005,
+          "close": 4484.015,
+          "volume": 2496,
+          "beijing_open_time": "2026-09-04 02:10"
+        },
+        {
+          "time": 1788459300,
+          "open": 4484.04,
+          "high": 4486.77,
+          "low": 4483.91,
+          "close": 4486.36,
+          "volume": 2488,
+          "beijing_open_time": "2026-09-04 02:15"
+        },
+        {
+          "time": 1788459600,
+          "open": 4486.405,
+          "high": 4488.105,
+          "low": 4482.11,
+          "close": 4483.625,
+          "volume": 2404,
+          "beijing_open_time": "2026-09-04 02:20"
+        },
+        {
+          "time": 1788459900,
+          "open": 4483.635,
+          "high": 4484.685,
+          "low": 4479.91,
+          "close": 4480.005,
+          "volume": 3579,
+          "beijing_open_time": "2026-09-04 02:25"
+        },
+        {
+          "time": 1788460200,
+          "open": 4480.05,
+          "high": 4480.7,
+          "low": 4476.01,
+          "close": 4479.39,
+          "volume": 3474,
+          "beijing_open_time": "2026-09-04 02:30"
+        },
+        {
+          "time": 1788460500,
+          "open": 4479.355,
+          "high": 4482.955,
+          "low": 4478.85,
+          "close": 4482.575,
+          "volume": 2711,
+          "beijing_open_time": "2026-09-04 02:35"
+        },
+        {
+          "time": 1788460800,
+          "open": 4482.625,
+          "high": 4482.88,
+          "low": 4480.81,
+          "close": 4481.575,
+          "volume": 1945,
+          "beijing_open_time": "2026-09-04 02:40"
+        },
+        {
+          "time": 1788461100,
+          "open": 4481.51,
+          "high": 4482.835,
+          "low": 4477.725,
+          "close": 4478.78,
+          "volume": 2641,
+          "beijing_open_time": "2026-09-04 02:45"
+        },
+        {
+          "time": 1788461400,
+          "open": 4478.76,
+          "high": 4479.375,
+          "low": 4475.515,
+          "close": 4475.52,
+          "volume": 3004,
+          "beijing_open_time": "2026-09-04 02:50"
+        },
+        {
+          "time": 1788461700,
+          "open": 4475.545,
+          "high": 4476.385,
+          "low": 4474.02,
+          "close": 4475.19,
+          "volume": 3595,
+          "beijing_open_time": "2026-09-04 02:55"
+        },
+        {
+          "time": 1788462000,
+          "open": 4475.175,
+          "high": 4476.455,
+          "low": 4473.95,
+          "close": 4474.585,
+          "volume": 3833,
+          "beijing_open_time": "2026-09-04 03:00"
+        },
+        {
+          "time": 1788462300,
+          "open": 4474.63,
+          "high": 4476.385,
+          "low": 4474.06,
+          "close": 4476.33,
+          "volume": 2575,
+          "beijing_open_time": "2026-09-04 03:05"
+        },
+        {
+          "time": 1788462600,
+          "open": 4476.335,
+          "high": 4477.08,
+          "low": 4472.93,
+          "close": 4474.385,
+          "volume": 2984,
+          "beijing_open_time": "2026-09-04 03:10"
+        },
+        {
+          "time": 1788462900,
+          "open": 4474.39,
+          "high": 4476.68,
+          "low": 4473.925,
+          "close": 4476.245,
+          "volume": 2445,
+          "beijing_open_time": "2026-09-04 03:15"
+        },
+        {
+          "time": 1788463200,
+          "open": 4476.195,
+          "high": 4476.265,
+          "low": 4474.05,
+          "close": 4474.235,
+          "volume": 3130,
+          "beijing_open_time": "2026-09-04 03:20"
+        },
+        {
+          "time": 1788463500,
+          "open": 4474.225,
+          "high": 4475.835,
+          "low": 4472.65,
+          "close": 4475.835,
+          "volume": 1887,
+          "beijing_open_time": "2026-09-04 03:25"
+        },
+        {
+          "time": 1788463800,
+          "open": 4475.815,
+          "high": 4477.685,
+          "low": 4474.02,
+          "close": 4474.02,
+          "volume": 2422,
+          "beijing_open_time": "2026-09-04 03:30"
+        },
+        {
+          "time": 1788464100,
+          "open": 4474.005,
+          "high": 4476.2,
+          "low": 4474.005,
+          "close": 4475.25,
+          "volume": 1914,
+          "beijing_open_time": "2026-09-04 03:35"
+        },
+        {
+          "time": 1788464400,
+          "open": 4475.255,
+          "high": 4478.895,
+          "low": 4475.245,
+          "close": 4477.57,
+          "volume": 2172,
+          "beijing_open_time": "2026-09-04 03:40"
+        },
+        {
+          "time": 1788464700,
+          "open": 4477.55,
+          "high": 4480.805,
+          "low": 4477.48,
+          "close": 4479.475,
+          "volume": 2139,
+          "beijing_open_time": "2026-09-04 03:45"
+        },
+        {
+          "time": 1788465000,
+          "open": 4479.495,
+          "high": 4479.515,
+          "low": 4476.675,
+          "close": 4477.855,
+          "volume": 3180,
+          "beijing_open_time": "2026-09-04 03:50"
+        },
+        {
+          "time": 1788465300,
+          "open": 4477.82,
+          "high": 4478.73,
+          "low": 4473.235,
+          "close": 4475.29,
+          "volume": 3520,
+          "beijing_open_time": "2026-09-04 03:55"
+        },
+        {
+          "time": 1788465600,
+          "open": 4475.235,
+          "high": 4475.74,
+          "low": 4471.55,
+          "close": 4472.065,
+          "volume": 1732,
+          "beijing_open_time": "2026-09-04 04:00"
+        },
+        {
+          "time": 1788465900,
+          "open": 4472.025,
+          "high": 4473.725,
+          "low": 4471.78,
+          "close": 4473.165,
+          "volume": 908,
+          "beijing_open_time": "2026-09-04 04:05"
+        },
+        {
+          "time": 1788466200,
+          "open": 4473.105,
+          "high": 4473.385,
+          "low": 4471.775,
+          "close": 4471.935,
+          "volume": 766,
+          "beijing_open_time": "2026-09-04 04:10"
+        },
+        {
+          "time": 1788466500,
+          "open": 4471.885,
+          "high": 4472.045,
+          "low": 4470.55,
+          "close": 4471.075,
+          "volume": 965,
+          "beijing_open_time": "2026-09-04 04:15"
+        },
+        {
+          "time": 1788466800,
+          "open": 4471.11,
+          "high": 4471.44,
+          "low": 4470.695,
+          "close": 4470.915,
+          "volume": 771,
+          "beijing_open_time": "2026-09-04 04:20"
+        },
+        {
+          "time": 1788467100,
+          "open": 4470.94,
+          "high": 4472.58,
+          "low": 4470.835,
+          "close": 4471.77,
+          "volume": 775,
+          "beijing_open_time": "2026-09-04 04:25"
+        },
+        {
+          "time": 1788467400,
+          "open": 4471.78,
+          "high": 4472.515,
+          "low": 4471.4,
+          "close": 4472.255,
+          "volume": 704,
+          "beijing_open_time": "2026-09-04 04:30"
+        },
+        {
+          "time": 1788467700,
+          "open": 4472.205,
+          "high": 4472.81,
+          "low": 4471.095,
+          "close": 4471.66,
+          "volume": 842,
+          "beijing_open_time": "2026-09-04 04:35"
+        },
+        {
+          "time": 1788468000,
+          "open": 4471.66,
+          "high": 4472.93,
+          "low": 4471.245,
+          "close": 4472.475,
+          "volume": 541,
+          "beijing_open_time": "2026-09-04 04:40"
+        },
+        {
+          "time": 1788468300,
+          "open": 4472.47,
+          "high": 4473.27,
+          "low": 4471.815,
+          "close": 4472.935,
+          "volume": 796,
+          "beijing_open_time": "2026-09-04 04:45"
+        },
+        {
+          "time": 1788468600,
+          "open": 4472.85,
+          "high": 4474.175,
+          "low": 4472.775,
+          "close": 4473.68,
+          "volume": 678,
+          "beijing_open_time": "2026-09-04 04:50"
+        },
+        {
+          "time": 1788468900,
+          "open": 4473.625,
+          "high": 4473.96,
+          "low": 4472.93,
+          "close": 4472.965,
+          "volume": 433,
+          "beijing_open_time": "2026-09-04 04:55"
+        },
+        {
+          "time": 1788472800,
+          "open": 4476.075,
+          "high": 4476.495,
+          "low": 4476.02,
+          "close": 4476.47,
+          "volume": 12,
+          "beijing_open_time": "2026-09-04 06:00"
+        },
+        {
+          "time": 1788473100,
+          "open": 4476.415,
+          "high": 4477.33,
+          "low": 4475.58,
+          "close": 4475.835,
+          "volume": 464,
+          "beijing_open_time": "2026-09-04 06:05"
+        },
+        {
+          "time": 1788473400,
+          "open": 4475.895,
+          "high": 4478.48,
+          "low": 4474.435,
+          "close": 4478.285,
+          "volume": 1014,
+          "beijing_open_time": "2026-09-04 06:10"
+        },
+        {
+          "time": 1788473700,
+          "open": 4478.26,
+          "high": 4478.99,
+          "low": 4476.605,
+          "close": 4476.84,
+          "volume": 796,
+          "beijing_open_time": "2026-09-04 06:15"
+        },
+        {
+          "time": 1788474000,
+          "open": 4476.79,
+          "high": 4476.97,
+          "low": 4475.01,
+          "close": 4475.125,
+          "volume": 616,
+          "beijing_open_time": "2026-09-04 06:20"
+        },
+        {
+          "time": 1788474300,
+          "open": 4475.175,
+          "high": 4475.88,
+          "low": 4474.275,
+          "close": 4475.135,
+          "volume": 624,
+          "beijing_open_time": "2026-09-04 06:25"
+        },
+        {
+          "time": 1788474600,
+          "open": 4475.125,
+          "high": 4476.59,
+          "low": 4474.17,
+          "close": 4474.995,
+          "volume": 796,
+          "beijing_open_time": "2026-09-04 06:30"
+        },
+        {
+          "time": 1788474900,
+          "open": 4475,
+          "high": 4475.12,
+          "low": 4472.695,
+          "close": 4472.91,
+          "volume": 938,
+          "beijing_open_time": "2026-09-04 06:35"
+        },
+        {
+          "time": 1788475200,
+          "open": 4472.915,
+          "high": 4476.615,
+          "low": 4472.815,
+          "close": 4474.16,
+          "volume": 1082,
+          "beijing_open_time": "2026-09-04 06:40"
+        },
+        {
+          "time": 1788475500,
+          "open": 4474.155,
+          "high": 4475.225,
+          "low": 4471.515,
+          "close": 4474.495,
+          "volume": 1135,
+          "beijing_open_time": "2026-09-04 06:45"
+        },
+        {
+          "time": 1788475800,
+          "open": 4474.51,
+          "high": 4475.98,
+          "low": 4472.055,
+          "close": 4474.88,
+          "volume": 1514,
+          "beijing_open_time": "2026-09-04 06:50"
+        },
+        {
+          "time": 1788476100,
+          "open": 4474.885,
+          "high": 4475.385,
+          "low": 4473.85,
+          "close": 4474.645,
+          "volume": 550,
+          "beijing_open_time": "2026-09-04 06:55"
+        },
+        {
+          "time": 1788476400,
+          "open": 4474.545,
+          "high": 4476.83,
+          "low": 4474.46,
+          "close": 4476.675,
+          "volume": 683,
+          "beijing_open_time": "2026-09-04 07:00"
+        },
+        {
+          "time": 1788476700,
+          "open": 4476.68,
+          "high": 4477.78,
+          "low": 4472.42,
+          "close": 4476.02,
+          "volume": 1254,
+          "beijing_open_time": "2026-09-04 07:05"
+        },
+        {
+          "time": 1788477000,
+          "open": 4476.015,
+          "high": 4476.3,
+          "low": 4474.02,
+          "close": 4474.405,
+          "volume": 512,
+          "beijing_open_time": "2026-09-04 07:10"
+        },
+        {
+          "time": 1788477300,
+          "open": 4474.4,
+          "high": 4475.25,
+          "low": 4471.79,
+          "close": 4473.595,
+          "volume": 715,
+          "beijing_open_time": "2026-09-04 07:15"
+        },
+        {
+          "time": 1788477600,
+          "open": 4473.315,
+          "high": 4473.34,
+          "low": 4472.245,
+          "close": 4472.44,
+          "volume": 548,
+          "beijing_open_time": "2026-09-04 07:20"
+        },
+        {
+          "time": 1788477900,
+          "open": 4472.49,
+          "high": 4474.735,
+          "low": 4472.415,
+          "close": 4473.985,
+          "volume": 442,
+          "beijing_open_time": "2026-09-04 07:25"
+        },
+        {
+          "time": 1788478200,
+          "open": 4474.035,
+          "high": 4476.35,
+          "low": 4473.685,
+          "close": 4475.105,
+          "volume": 1015,
+          "beijing_open_time": "2026-09-04 07:30"
+        },
+        {
+          "time": 1788478500,
+          "open": 4475.1,
+          "high": 4478.455,
+          "low": 4475.02,
+          "close": 4478.065,
+          "volume": 857,
+          "beijing_open_time": "2026-09-04 07:35"
+        },
+        {
+          "time": 1788478800,
+          "open": 4478.07,
+          "high": 4478.445,
+          "low": 4476.685,
+          "close": 4477.41,
+          "volume": 392,
+          "beijing_open_time": "2026-09-04 07:40"
+        },
+        {
+          "time": 1788479100,
+          "open": 4477.345,
+          "high": 4477.475,
+          "low": 4475,
+          "close": 4475.085,
+          "volume": 818,
+          "beijing_open_time": "2026-09-04 07:45"
+        },
+        {
+          "time": 1788479400,
+          "open": 4475.185,
+          "high": 4479.66,
+          "low": 4475.035,
+          "close": 4477.185,
+          "volume": 1199,
+          "beijing_open_time": "2026-09-04 07:50"
+        },
+        {
+          "time": 1788479700,
+          "open": 4477.2,
+          "high": 4480.4,
+          "low": 4477.2,
+          "close": 4480.16,
+          "volume": 876,
+          "beijing_open_time": "2026-09-04 07:55"
+        },
+        {
+          "time": 1788480000,
+          "open": 4480.06,
+          "high": 4481.17,
+          "low": 4478.29,
+          "close": 4481.11,
+          "volume": 2265,
+          "beijing_open_time": "2026-09-04 08:00"
+        },
+        {
+          "time": 1788480300,
+          "open": 4481.15,
+          "high": 4483.34,
+          "low": 4479.79,
+          "close": 4480.14,
+          "volume": 2419,
+          "beijing_open_time": "2026-09-04 08:05"
+        },
+        {
+          "time": 1788480600,
+          "open": 4480.13,
+          "high": 4483.455,
+          "low": 4479.615,
+          "close": 4480.965,
+          "volume": 1986,
+          "beijing_open_time": "2026-09-04 08:10"
+        },
+        {
+          "time": 1788480900,
+          "open": 4480.97,
+          "high": 4481.1,
+          "low": 4476.55,
+          "close": 4477.14,
+          "volume": 1645,
+          "beijing_open_time": "2026-09-04 08:15"
+        },
+        {
+          "time": 1788481200,
+          "open": 4477.15,
+          "high": 4479.925,
+          "low": 4476.51,
+          "close": 4477.895,
+          "volume": 1778,
+          "beijing_open_time": "2026-09-04 08:20"
+        },
+        {
+          "time": 1788481500,
+          "open": 4477.91,
+          "high": 4477.91,
+          "low": 4474.305,
+          "close": 4474.72,
+          "volume": 1674,
+          "beijing_open_time": "2026-09-04 08:25"
+        },
+        {
+          "time": 1788481800,
+          "open": 4474.75,
+          "high": 4479.705,
+          "low": 4472.91,
+          "close": 4479.585,
+          "volume": 1768,
+          "beijing_open_time": "2026-09-04 08:30"
+        },
+        {
+          "time": 1788482100,
+          "open": 4479.58,
+          "high": 4479.72,
+          "low": 4476.335,
+          "close": 4476.45,
+          "volume": 1495,
+          "beijing_open_time": "2026-09-04 08:35"
+        },
+        {
+          "time": 1788482400,
+          "open": 4476.48,
+          "high": 4482.42,
+          "low": 4476.105,
+          "close": 4482.385,
+          "volume": 1671,
+          "beijing_open_time": "2026-09-04 08:40"
+        },
+        {
+          "time": 1788482700,
+          "open": 4482.405,
+          "high": 4485.11,
+          "low": 4481.39,
+          "close": 4481.4,
+          "volume": 1568,
+          "beijing_open_time": "2026-09-04 08:45"
+        },
+        {
+          "time": 1788483000,
+          "open": 4481.205,
+          "high": 4484.32,
+          "low": 4480.74,
+          "close": 4482.075,
+          "volume": 1784,
+          "beijing_open_time": "2026-09-04 08:50"
+        },
+        {
+          "time": 1788483300,
+          "open": 4482.03,
+          "high": 4487.475,
+          "low": 4481.61,
+          "close": 4486.4,
+          "volume": 2331,
+          "beijing_open_time": "2026-09-04 08:55"
+        },
+        {
+          "time": 1788483600,
+          "open": 4486.51,
+          "high": 4487.545,
+          "low": 4477.965,
+          "close": 4478.165,
+          "volume": 6713,
+          "beijing_open_time": "2026-09-04 09:00"
+        },
+        {
+          "time": 1788483900,
+          "open": 4478.065,
+          "high": 4480.2,
+          "low": 4475.16,
+          "close": 4478.065,
+          "volume": 4445,
+          "beijing_open_time": "2026-09-04 09:05"
+        },
+        {
+          "time": 1788484200,
+          "open": 4478.05,
+          "high": 4483.35,
+          "low": 4474.495,
+          "close": 4475.035,
+          "volume": 3534,
+          "beijing_open_time": "2026-09-04 09:10"
+        },
+        {
+          "time": 1788484500,
+          "open": 4475.045,
+          "high": 4479.19,
+          "low": 4474.435,
+          "close": 4476.085,
+          "volume": 3568,
+          "beijing_open_time": "2026-09-04 09:15"
+        },
+        {
+          "time": 1788484800,
+          "open": 4476.105,
+          "high": 4479.145,
+          "low": 4474.705,
+          "close": 4475.005,
+          "volume": 3735,
+          "beijing_open_time": "2026-09-04 09:20"
+        },
+        {
+          "time": 1788485100,
+          "open": 4474.99,
+          "high": 4476.19,
+          "low": 4468.03,
+          "close": 4471.075,
+          "volume": 3898,
+          "beijing_open_time": "2026-09-04 09:25"
+        },
+        {
+          "time": 1788485400,
+          "open": 4471,
+          "high": 4473.075,
+          "low": 4469.205,
+          "close": 4469.91,
+          "volume": 3682,
+          "beijing_open_time": "2026-09-04 09:30"
+        },
+        {
+          "time": 1788485700,
+          "open": 4469.93,
+          "high": 4476.835,
+          "low": 4468.3,
+          "close": 4473.56,
+          "volume": 2135,
+          "beijing_open_time": "2026-09-04 09:35"
+        },
+        {
+          "time": 1788486000,
+          "open": 4473.505,
+          "high": 4477.02,
+          "low": 4471.11,
+          "close": 4474.03,
+          "volume": 2359,
+          "beijing_open_time": "2026-09-04 09:40"
+        },
+        {
+          "time": 1788486300,
+          "open": 4474.085,
+          "high": 4474.085,
+          "low": 4467.125,
+          "close": 4468.9,
+          "volume": 2002,
+          "beijing_open_time": "2026-09-04 09:45"
+        },
+        {
+          "time": 1788486600,
+          "open": 4468.8,
+          "high": 4473.985,
+          "low": 4468.245,
+          "close": 4473.63,
+          "volume": 1746,
+          "beijing_open_time": "2026-09-04 09:50"
+        },
+        {
+          "time": 1788486900,
+          "open": 4473.655,
+          "high": 4480.635,
+          "low": 4473.59,
+          "close": 4478.925,
+          "volume": 1833,
+          "beijing_open_time": "2026-09-04 09:55"
+        },
+        {
+          "time": 1788487200,
+          "open": 4479.075,
+          "high": 4482.605,
+          "low": 4478.43,
+          "close": 4480.75,
+          "volume": 1850,
+          "beijing_open_time": "2026-09-04 10:00"
+        },
+        {
+          "time": 1788487500,
+          "open": 4480.74,
+          "high": 4480.825,
+          "low": 4477.5,
+          "close": 4478.735,
+          "volume": 1222,
+          "beijing_open_time": "2026-09-04 10:05"
+        },
+        {
+          "time": 1788487800,
+          "open": 4478.715,
+          "high": 4480.4,
+          "low": 4477.255,
+          "close": 4479.475,
+          "volume": 1473,
+          "beijing_open_time": "2026-09-04 10:10"
+        },
+        {
+          "time": 1788488100,
+          "open": 4479.425,
+          "high": 4480.515,
+          "low": 4477.15,
+          "close": 4478.53,
+          "volume": 853,
+          "beijing_open_time": "2026-09-04 10:15"
+        },
+        {
+          "time": 1788488400,
+          "open": 4478.52,
+          "high": 4478.59,
+          "low": 4473.98,
+          "close": 4477.225,
+          "volume": 1044,
+          "beijing_open_time": "2026-09-04 10:20"
+        },
+        {
+          "time": 1788488700,
+          "open": 4477.25,
+          "high": 4477.75,
+          "low": 4471.68,
+          "close": 4474.1,
+          "volume": 1739,
+          "beijing_open_time": "2026-09-04 10:25"
+        },
+        {
+          "time": 1788489000,
+          "open": 4474.11,
+          "high": 4476.165,
+          "low": 4471.005,
+          "close": 4471.1,
+          "volume": 3173,
+          "beijing_open_time": "2026-09-04 10:30"
+        },
+        {
+          "time": 1788489300,
+          "open": 4471.055,
+          "high": 4477.415,
+          "low": 4470.46,
+          "close": 4476.575,
+          "volume": 1684,
+          "beijing_open_time": "2026-09-04 10:35"
+        },
+        {
+          "time": 1788489600,
+          "open": 4476.715,
+          "high": 4477.385,
+          "low": 4470.94,
+          "close": 4470.97,
+          "volume": 1900,
+          "beijing_open_time": "2026-09-04 10:40"
+        },
+        {
+          "time": 1788489900,
+          "open": 4470.955,
+          "high": 4476.22,
+          "low": 4470.43,
+          "close": 4476.13,
+          "volume": 1606,
+          "beijing_open_time": "2026-09-04 10:45"
+        },
+        {
+          "time": 1788490200,
+          "open": 4476.07,
+          "high": 4479.66,
+          "low": 4475.425,
+          "close": 4479.59,
+          "volume": 1645,
+          "beijing_open_time": "2026-09-04 10:50"
+        },
+        {
+          "time": 1788490500,
+          "open": 4479.515,
+          "high": 4480.985,
+          "low": 4476.005,
+          "close": 4477.47,
+          "volume": 1249,
+          "beijing_open_time": "2026-09-04 10:55"
+        },
+        {
+          "time": 1788490800,
+          "open": 4477.495,
+          "high": 4478.73,
+          "low": 4475.675,
+          "close": 4476.185,
+          "volume": 1235,
+          "beijing_open_time": "2026-09-04 11:00"
+        },
+        {
+          "time": 1788491100,
+          "open": 4476.195,
+          "high": 4476.26,
+          "low": 4471.735,
+          "close": 4472.1,
+          "volume": 1539,
+          "beijing_open_time": "2026-09-04 11:05"
+        },
+        {
+          "time": 1788491400,
+          "open": 4472.06,
+          "high": 4473.9,
+          "low": 4470.455,
+          "close": 4473.655,
+          "volume": 1179,
+          "beijing_open_time": "2026-09-04 11:10"
+        },
+        {
+          "time": 1788491700,
+          "open": 4473.645,
+          "high": 4474.47,
+          "low": 4471.505,
+          "close": 4473.04,
+          "volume": 1184,
+          "beijing_open_time": "2026-09-04 11:15"
+        },
+        {
+          "time": 1788492000,
+          "open": 4473.035,
+          "high": 4474.82,
+          "low": 4472.195,
+          "close": 4473.91,
+          "volume": 1069,
+          "beijing_open_time": "2026-09-04 11:20"
+        },
+        {
+          "time": 1788492300,
+          "open": 4473.9,
+          "high": 4474.64,
+          "low": 4472,
+          "close": 4472.58,
+          "volume": 993,
+          "beijing_open_time": "2026-09-04 11:25"
+        },
+        {
+          "time": 1788492600,
+          "open": 4472.59,
+          "high": 4475.44,
+          "low": 4472.265,
+          "close": 4474.995,
+          "volume": 842,
+          "beijing_open_time": "2026-09-04 11:30"
+        },
+        {
+          "time": 1788492900,
+          "open": 4474.86,
+          "high": 4475.2,
+          "low": 4472.685,
+          "close": 4473.05,
+          "volume": 716,
+          "beijing_open_time": "2026-09-04 11:35"
+        },
+        {
+          "time": 1788493200,
+          "open": 4473.025,
+          "high": 4473.44,
+          "low": 4469.22,
+          "close": 4469.4,
+          "volume": 966,
+          "beijing_open_time": "2026-09-04 11:40"
+        },
+        {
+          "time": 1788493500,
+          "open": 4469.345,
+          "high": 4470.2,
+          "low": 4469.085,
+          "close": 4469.475,
+          "volume": 782,
+          "beijing_open_time": "2026-09-04 11:45"
+        },
+        {
+          "time": 1788493800,
+          "open": 4469.425,
+          "high": 4470.235,
+          "low": 4467.65,
+          "close": 4469.585,
+          "volume": 962,
+          "beijing_open_time": "2026-09-04 11:50"
+        },
+        {
+          "time": 1788494100,
+          "open": 4469.6,
+          "high": 4470.07,
+          "low": 4467.185,
+          "close": 4467.185,
+          "volume": 756,
+          "beijing_open_time": "2026-09-04 11:55"
+        },
+        {
+          "time": 1788494400,
+          "open": 4467.145,
+          "high": 4469.46,
+          "low": 4465.49,
+          "close": 4468.935,
+          "volume": 1999,
+          "beijing_open_time": "2026-09-04 12:00"
+        },
+        {
+          "time": 1788494700,
+          "open": 4468.93,
+          "high": 4470,
+          "low": 4467.51,
+          "close": 4468.43,
+          "volume": 797,
+          "beijing_open_time": "2026-09-04 12:05"
+        },
+        {
+          "time": 1788495000,
+          "open": 4468.42,
+          "high": 4470.25,
+          "low": 4467.725,
+          "close": 4469.555,
+          "volume": 891,
+          "beijing_open_time": "2026-09-04 12:10"
+        },
+        {
+          "time": 1788495300,
+          "open": 4469.545,
+          "high": 4469.83,
+          "low": 4468.485,
+          "close": 4469.745,
+          "volume": 593,
+          "beijing_open_time": "2026-09-04 12:15"
+        },
+        {
+          "time": 1788495600,
+          "open": 4469.73,
+          "high": 4470.59,
+          "low": 4468.865,
+          "close": 4470.325,
+          "volume": 632,
+          "beijing_open_time": "2026-09-04 12:20"
+        },
+        {
+          "time": 1788495900,
+          "open": 4470.335,
+          "high": 4472.54,
+          "low": 4469.155,
+          "close": 4471.85,
+          "volume": 766,
+          "beijing_open_time": "2026-09-04 12:25"
+        },
+        {
+          "time": 1788496200,
+          "open": 4471.83,
+          "high": 4474.825,
+          "low": 4471.8,
+          "close": 4472.33,
+          "volume": 932,
+          "beijing_open_time": "2026-09-04 12:30"
+        },
+        {
+          "time": 1788496500,
+          "open": 4472.32,
+          "high": 4475.125,
+          "low": 4471.91,
+          "close": 4474.49,
+          "volume": 739,
+          "beijing_open_time": "2026-09-04 12:35"
+        },
+        {
+          "time": 1788496800,
+          "open": 4474.445,
+          "high": 4474.965,
+          "low": 4473.525,
+          "close": 4473.825,
+          "volume": 517,
+          "beijing_open_time": "2026-09-04 12:40"
+        },
+        {
+          "time": 1788497100,
+          "open": 4473.85,
+          "high": 4474.5,
+          "low": 4472.87,
+          "close": 4473.53,
+          "volume": 508,
+          "beijing_open_time": "2026-09-04 12:45"
+        },
+        {
+          "time": 1788497400,
+          "open": 4473.645,
+          "high": 4475.06,
+          "low": 4473.53,
+          "close": 4474.495,
+          "volume": 527,
+          "beijing_open_time": "2026-09-04 12:50"
+        },
+        {
+          "time": 1788497700,
+          "open": 4474.55,
+          "high": 4474.725,
+          "low": 4473.72,
+          "close": 4473.825,
+          "volume": 482,
+          "beijing_open_time": "2026-09-04 12:55"
+        },
+        {
+          "time": 1788498000,
+          "open": 4473.785,
+          "high": 4474.65,
+          "low": 4470.895,
+          "close": 4470.9,
+          "volume": 1236,
+          "beijing_open_time": "2026-09-04 13:00"
+        },
+        {
+          "time": 1788498300,
+          "open": 4470.885,
+          "high": 4472.12,
+          "low": 4468.555,
+          "close": 4469.32,
+          "volume": 976,
+          "beijing_open_time": "2026-09-04 13:05"
+        },
+        {
+          "time": 1788498600,
+          "open": 4469.36,
+          "high": 4469.785,
+          "low": 4467.485,
+          "close": 4469.63,
+          "volume": 953,
+          "beijing_open_time": "2026-09-04 13:10"
+        },
+        {
+          "time": 1788498900,
+          "open": 4469.505,
+          "high": 4475.34,
+          "low": 4468.955,
+          "close": 4473.905,
+          "volume": 1138,
+          "beijing_open_time": "2026-09-04 13:15"
+        },
+        {
+          "time": 1788499200,
+          "open": 4473.895,
+          "high": 4474.315,
+          "low": 4470.315,
+          "close": 4471.09,
+          "volume": 784,
+          "beijing_open_time": "2026-09-04 13:20"
+        },
+        {
+          "time": 1788499500,
+          "open": 4471.135,
+          "high": 4471.365,
+          "low": 4467.625,
+          "close": 4467.765,
+          "volume": 931,
+          "beijing_open_time": "2026-09-04 13:25"
+        },
+        {
+          "time": 1788499800,
+          "open": 4467.77,
+          "high": 4475.245,
+          "low": 4466.91,
+          "close": 4473.26,
+          "volume": 2849,
+          "beijing_open_time": "2026-09-04 13:30"
+        },
+        {
+          "time": 1788500100,
+          "open": 4473.21,
+          "high": 4477.145,
+          "low": 4469.28,
+          "close": 4476.56,
+          "volume": 2241,
+          "beijing_open_time": "2026-09-04 13:35"
+        },
+        {
+          "time": 1788500400,
+          "open": 4476.66,
+          "high": 4477.695,
+          "low": 4470.56,
+          "close": 4471.205,
+          "volume": 1754,
+          "beijing_open_time": "2026-09-04 13:40"
+        },
+        {
+          "time": 1788500700,
+          "open": 4471.115,
+          "high": 4473.03,
+          "low": 4470.7,
+          "close": 4470.965,
+          "volume": 1950,
+          "beijing_open_time": "2026-09-04 13:45"
+        },
+        {
+          "time": 1788501000,
+          "open": 4470.98,
+          "high": 4470.98,
+          "low": 4467.36,
+          "close": 4467.745,
+          "volume": 1667,
+          "beijing_open_time": "2026-09-04 13:50"
+        },
+        {
+          "time": 1788501300,
+          "open": 4467.695,
+          "high": 4472.38,
+          "low": 4467.445,
+          "close": 4472.205,
+          "volume": 1805,
+          "beijing_open_time": "2026-09-04 13:55"
+        },
+        {
+          "time": 1788501600,
+          "open": 4472.21,
+          "high": 4473.5,
+          "low": 4469.15,
+          "close": 4470.96,
+          "volume": 2303,
+          "beijing_open_time": "2026-09-04 14:00"
+        },
+        {
+          "time": 1788501900,
+          "open": 4470.905,
+          "high": 4472.125,
+          "low": 4468.13,
+          "close": 4469.88,
+          "volume": 1665,
+          "beijing_open_time": "2026-09-04 14:05"
+        },
+        {
+          "time": 1788502200,
+          "open": 4469.845,
+          "high": 4471.77,
+          "low": 4466.74,
+          "close": 4469.04,
+          "volume": 1673,
+          "beijing_open_time": "2026-09-04 14:10"
+        },
+        {
+          "time": 1788502500,
+          "open": 4469.065,
+          "high": 4469.42,
+          "low": 4467.405,
+          "close": 4468.95,
+          "volume": 1169,
+          "beijing_open_time": "2026-09-04 14:15"
+        },
+        {
+          "time": 1788502800,
+          "open": 4468.915,
+          "high": 4471.695,
+          "low": 4466.885,
+          "close": 4468.025,
+          "volume": 1623,
+          "beijing_open_time": "2026-09-04 14:20"
+        },
+        {
+          "time": 1788503100,
+          "open": 4468.02,
+          "high": 4471.905,
+          "low": 4467.905,
+          "close": 4468.995,
+          "volume": 1685,
+          "beijing_open_time": "2026-09-04 14:25"
+        },
+        {
+          "time": 1788503400,
+          "open": 4468.945,
+          "high": 4470.02,
+          "low": 4464.635,
+          "close": 4464.995,
+          "volume": 2455,
+          "beijing_open_time": "2026-09-04 14:30"
+        },
+        {
+          "time": 1788503700,
+          "open": 4465.025,
+          "high": 4466.665,
+          "low": 4463.175,
+          "close": 4466.21,
+          "volume": 2845,
+          "beijing_open_time": "2026-09-04 14:35"
+        },
+        {
+          "time": 1788504000,
+          "open": 4466.24,
+          "high": 4468.705,
+          "low": 4463.975,
+          "close": 4464.26,
+          "volume": 2637,
+          "beijing_open_time": "2026-09-04 14:40"
+        },
+        {
+          "time": 1788504300,
+          "open": 4464.205,
+          "high": 4464.275,
+          "low": 4461.415,
+          "close": 4461.745,
+          "volume": 3217,
+          "beijing_open_time": "2026-09-04 14:45"
+        },
+        {
+          "time": 1788504600,
+          "open": 4461.76,
+          "high": 4464.495,
+          "low": 4461.27,
+          "close": 4462.545,
+          "volume": 2585,
+          "beijing_open_time": "2026-09-04 14:50"
+        },
+        {
+          "time": 1788504900,
+          "open": 4462.56,
+          "high": 4463.58,
+          "low": 4460.155,
+          "close": 4462.935,
+          "volume": 2553,
+          "beijing_open_time": "2026-09-04 14:55"
+        },
+        {
+          "time": 1788505200,
+          "open": 4462.915,
+          "high": 4467.715,
+          "low": 4461.51,
+          "close": 4466.395,
+          "volume": 3605,
+          "beijing_open_time": "2026-09-04 15:00"
+        },
+        {
+          "time": 1788505500,
+          "open": 4466.405,
+          "high": 4469.265,
+          "low": 4464.915,
+          "close": 4468.625,
+          "volume": 2368,
+          "beijing_open_time": "2026-09-04 15:05"
+        },
+        {
+          "time": 1788505800,
+          "open": 4468.65,
+          "high": 4471.515,
+          "low": 4467.75,
+          "close": 4467.755,
+          "volume": 2846,
+          "beijing_open_time": "2026-09-04 15:10"
+        },
+        {
+          "time": 1788506100,
+          "open": 4467.745,
+          "high": 4469.015,
+          "low": 4466.605,
+          "close": 4468.84,
+          "volume": 2474,
+          "beijing_open_time": "2026-09-04 15:15"
+        },
+        {
+          "time": 1788506400,
+          "open": 4468.945,
+          "high": 4470.045,
+          "low": 4466.825,
+          "close": 4469.615,
+          "volume": 2213,
+          "beijing_open_time": "2026-09-04 15:20"
+        },
+        {
+          "time": 1788506700,
+          "open": 4469.59,
+          "high": 4472.84,
+          "low": 4468.105,
+          "close": 4472.685,
+          "volume": 2378,
+          "beijing_open_time": "2026-09-04 15:25"
+        },
+        {
+          "time": 1788507000,
+          "open": 4472.71,
+          "high": 4475.485,
+          "low": 4472.71,
+          "close": 4474.835,
+          "volume": 2563,
+          "beijing_open_time": "2026-09-04 15:30"
+        },
+        {
+          "time": 1788507300,
+          "open": 4474.815,
+          "high": 4476.475,
+          "low": 4474.185,
+          "close": 4475.125,
+          "volume": 2488,
+          "beijing_open_time": "2026-09-04 15:35"
+        },
+        {
+          "time": 1788507600,
+          "open": 4475.11,
+          "high": 4486.335,
+          "low": 4474.655,
+          "close": 4485.765,
+          "volume": 2949,
+          "beijing_open_time": "2026-09-04 15:40"
+        },
+        {
+          "time": 1788507900,
+          "open": 4485.755,
+          "high": 4490.895,
+          "low": 4484.685,
+          "close": 4488.01,
+          "volume": 2880,
+          "beijing_open_time": "2026-09-04 15:45"
+        },
+        {
+          "time": 1788508200,
+          "open": 4488.02,
+          "high": 4488.02,
+          "low": 4482.58,
+          "close": 4484.585,
+          "volume": 2421,
+          "beijing_open_time": "2026-09-04 15:50"
+        },
+        {
+          "time": 1788508500,
+          "open": 4484.57,
+          "high": 4486.605,
+          "low": 4481.415,
+          "close": 4483.425,
+          "volume": 3209,
+          "beijing_open_time": "2026-09-04 15:55"
+        },
+        {
+          "time": 1788508800,
+          "open": 4483.43,
+          "high": 4486.54,
+          "low": 4483.185,
+          "close": 4483.68,
+          "volume": 3641,
+          "beijing_open_time": "2026-09-04 16:00"
+        },
+        {
+          "time": 1788509100,
+          "open": 4483.665,
+          "high": 4483.89,
+          "low": 4480.495,
+          "close": 4480.925,
+          "volume": 2277,
+          "beijing_open_time": "2026-09-04 16:05"
+        },
+        {
+          "time": 1788509400,
+          "open": 4480.985,
+          "high": 4483.975,
+          "low": 4479.43,
+          "close": 4482.045,
+          "volume": 2066,
+          "beijing_open_time": "2026-09-04 16:10"
+        },
+        {
+          "time": 1788509700,
+          "open": 4481.995,
+          "high": 4484.13,
+          "low": 4481.275,
+          "close": 4482.615,
+          "volume": 1884,
+          "beijing_open_time": "2026-09-04 16:15"
+        },
+        {
+          "time": 1788510000,
+          "open": 4482.69,
+          "high": 4484.135,
+          "low": 4480.115,
+          "close": 4480.23,
+          "volume": 1378,
+          "beijing_open_time": "2026-09-04 16:20"
+        },
+        {
+          "time": 1788510300,
+          "open": 4480.245,
+          "high": 4482.57,
+          "low": 4479.6,
+          "close": 4481.24,
+          "volume": 1969,
+          "beijing_open_time": "2026-09-04 16:25"
+        },
+        {
+          "time": 1788510600,
+          "open": 4481.255,
+          "high": 4482.64,
+          "low": 4478.11,
+          "close": 4480.81,
+          "volume": 2110,
+          "beijing_open_time": "2026-09-04 16:30"
+        },
+        {
+          "time": 1788510900,
+          "open": 4480.82,
+          "high": 4481.645,
+          "low": 4477.745,
+          "close": 4478.73,
+          "volume": 2168,
+          "beijing_open_time": "2026-09-04 16:35"
+        },
+        {
+          "time": 1788511200,
+          "open": 4478.71,
+          "high": 4479.245,
+          "low": 4477.525,
+          "close": 4477.605,
+          "volume": 2153,
+          "beijing_open_time": "2026-09-04 16:40"
+        },
+        {
+          "time": 1788511500,
+          "open": 4477.54,
+          "high": 4478.685,
+          "low": 4474.865,
+          "close": 4474.955,
+          "volume": 1852,
+          "beijing_open_time": "2026-09-04 16:45"
+        },
+        {
+          "time": 1788511800,
+          "open": 4474.96,
+          "high": 4477.515,
+          "low": 4474.49,
+          "close": 4476.9,
+          "volume": 1605,
+          "beijing_open_time": "2026-09-04 16:50"
+        },
+        {
+          "time": 1788512100,
+          "open": 4476.875,
+          "high": 4479.94,
+          "low": 4476.875,
+          "close": 4477.97,
+          "volume": 1718,
+          "beijing_open_time": "2026-09-04 16:55"
+        },
+        {
+          "time": 1788512400,
+          "open": 4477.95,
+          "high": 4479.315,
+          "low": 4476.66,
+          "close": 4478.425,
+          "volume": 2342,
+          "beijing_open_time": "2026-09-04 17:00"
+        },
+        {
+          "time": 1788512700,
+          "open": 4478.36,
+          "high": 4478.415,
+          "low": 4473.945,
+          "close": 4475.165,
+          "volume": 1679,
+          "beijing_open_time": "2026-09-04 17:05"
+        },
+        {
+          "time": 1788513000,
+          "open": 4475.195,
+          "high": 4475.215,
+          "low": 4469.145,
+          "close": 4470.17,
+          "volume": 2103,
+          "beijing_open_time": "2026-09-04 17:10"
+        },
+        {
+          "time": 1788513300,
+          "open": 4470.155,
+          "high": 4470.78,
+          "low": 4466.985,
+          "close": 4467.1,
+          "volume": 2408,
+          "beijing_open_time": "2026-09-04 17:15"
+        },
+        {
+          "time": 1788513600,
+          "open": 4467.05,
+          "high": 4467.57,
+          "low": 4464.205,
+          "close": 4464.68,
+          "volume": 2901,
+          "beijing_open_time": "2026-09-04 17:20"
+        },
+        {
+          "time": 1788513900,
+          "open": 4464.7,
+          "high": 4466.815,
+          "low": 4464,
+          "close": 4466.77,
+          "volume": 2622,
+          "beijing_open_time": "2026-09-04 17:25"
+        },
+        {
+          "time": 1788514200,
+          "open": 4466.79,
+          "high": 4470.32,
+          "low": 4464.635,
+          "close": 4467.255,
+          "volume": 2796,
+          "beijing_open_time": "2026-09-04 17:30"
+        },
+        {
+          "time": 1788514500,
+          "open": 4467.285,
+          "high": 4469.825,
+          "low": 4466.595,
+          "close": 4468.015,
+          "volume": 1494,
+          "beijing_open_time": "2026-09-04 17:35"
+        },
+        {
+          "time": 1788514800,
+          "open": 4468.025,
+          "high": 4468.61,
+          "low": 4466,
+          "close": 4467.515,
+          "volume": 1680,
+          "beijing_open_time": "2026-09-04 17:40"
+        },
+        {
+          "time": 1788515100,
+          "open": 4467.545,
+          "high": 4469.835,
+          "low": 4467.54,
+          "close": 4469.36,
+          "volume": 2138,
+          "beijing_open_time": "2026-09-04 17:45"
+        },
+        {
+          "time": 1788515400,
+          "open": 4469.365,
+          "high": 4469.75,
+          "low": 4467.345,
+          "close": 4467.35,
+          "volume": 1931,
+          "beijing_open_time": "2026-09-04 17:50"
+        },
+        {
+          "time": 1788515700,
+          "open": 4467.355,
+          "high": 4469.815,
+          "low": 4465.65,
+          "close": 4465.69,
+          "volume": 2127,
+          "beijing_open_time": "2026-09-04 17:55"
+        },
+        {
+          "time": 1788516000,
+          "open": 4465.665,
+          "high": 4470.285,
+          "low": 4465.53,
+          "close": 4469.57,
+          "volume": 1511,
+          "beijing_open_time": "2026-09-04 18:00"
+        },
+        {
+          "time": 1788516300,
+          "open": 4469.52,
+          "high": 4470.975,
+          "low": 4468.79,
+          "close": 4470.7,
+          "volume": 690,
+          "beijing_open_time": "2026-09-04 18:05"
+        },
+        {
+          "time": 1788516600,
+          "open": 4470.655,
+          "high": 4473.28,
+          "low": 4469.12,
+          "close": 4472.885,
+          "volume": 702,
+          "beijing_open_time": "2026-09-04 18:10"
+        },
+        {
+          "time": 1788516900,
+          "open": 4472.65,
+          "high": 4473.465,
+          "low": 4471.165,
+          "close": 4471.94,
+          "volume": 879,
+          "beijing_open_time": "2026-09-04 18:15"
+        },
+        {
+          "time": 1788517200,
+          "open": 4471.95,
+          "high": 4472.09,
+          "low": 4468.2,
+          "close": 4468.485,
+          "volume": 1077,
+          "beijing_open_time": "2026-09-04 18:20"
+        },
+        {
+          "time": 1788517500,
+          "open": 4468.5,
+          "high": 4473.71,
+          "low": 4468.485,
+          "close": 4471.38,
+          "volume": 2842,
+          "beijing_open_time": "2026-09-04 18:25"
+        },
+        {
+          "time": 1788517800,
+          "open": 4471.375,
+          "high": 4475.38,
+          "low": 4471,
+          "close": 4473.395,
+          "volume": 1781,
+          "beijing_open_time": "2026-09-04 18:30"
+        },
+        {
+          "time": 1788518100,
+          "open": 4473.4,
+          "high": 4473.665,
+          "low": 4470.11,
+          "close": 4473.52,
+          "volume": 1746,
+          "beijing_open_time": "2026-09-04 18:35"
+        },
+        {
+          "time": 1788518400,
+          "open": 4473.615,
+          "high": 4474.25,
+          "low": 4472.7,
+          "close": 4473.62,
+          "volume": 1751,
+          "beijing_open_time": "2026-09-04 18:40"
+        },
+        {
+          "time": 1788518700,
+          "open": 4473.67,
+          "high": 4476.45,
+          "low": 4473.615,
+          "close": 4474.895,
+          "volume": 1755,
+          "beijing_open_time": "2026-09-04 18:45"
+        },
+        {
+          "time": 1788519000,
+          "open": 4475.09,
+          "high": 4476.01,
+          "low": 4473.555,
+          "close": 4474.795,
+          "volume": 867,
+          "beijing_open_time": "2026-09-04 18:50"
+        },
+        {
+          "time": 1788519300,
+          "open": 4474.675,
+          "high": 4475.125,
+          "low": 4472.82,
+          "close": 4472.955,
+          "volume": 870,
+          "beijing_open_time": "2026-09-04 18:55"
+        },
+        {
+          "time": 1788519600,
+          "open": 4473.035,
+          "high": 4473.515,
+          "low": 4470.59,
+          "close": 4472.12,
+          "volume": 2692,
+          "beijing_open_time": "2026-09-04 19:00"
+        },
+        {
+          "time": 1788519900,
+          "open": 4472.15,
+          "high": 4472.375,
+          "low": 4469.56,
+          "close": 4470.945,
+          "volume": 1493,
+          "beijing_open_time": "2026-09-04 19:05"
+        },
+        {
+          "time": 1788520200,
+          "open": 4470.965,
+          "high": 4471.45,
+          "low": 4469.675,
+          "close": 4470.38,
+          "volume": 1308,
+          "beijing_open_time": "2026-09-04 19:10"
+        },
+        {
+          "time": 1788520500,
+          "open": 4470.395,
+          "high": 4470.77,
+          "low": 4466.47,
+          "close": 4466.89,
+          "volume": 1536,
+          "beijing_open_time": "2026-09-04 19:15"
+        },
+        {
+          "time": 1788520800,
+          "open": 4466.885,
+          "high": 4470.935,
+          "low": 4466.77,
+          "close": 4469,
+          "volume": 1253,
+          "beijing_open_time": "2026-09-04 19:20"
+        },
+        {
+          "time": 1788521100,
+          "open": 4468.995,
+          "high": 4468.995,
+          "low": 4465.47,
+          "close": 4465.68,
+          "volume": 1388,
+          "beijing_open_time": "2026-09-04 19:25"
+        },
+        {
+          "time": 1788521400,
+          "open": 4465.72,
+          "high": 4468.39,
+          "low": 4465.325,
+          "close": 4466.08,
+          "volume": 1899,
+          "beijing_open_time": "2026-09-04 19:30"
+        },
+        {
+          "time": 1788521700,
+          "open": 4466.12,
+          "high": 4469.62,
+          "low": 4466.12,
+          "close": 4468.4,
+          "volume": 984,
+          "beijing_open_time": "2026-09-04 19:35"
+        },
+        {
+          "time": 1788522000,
+          "open": 4468.415,
+          "high": 4470.445,
+          "low": 4466.07,
+          "close": 4468.265,
+          "volume": 1316,
+          "beijing_open_time": "2026-09-04 19:40"
+        },
+        {
+          "time": 1788522300,
+          "open": 4468.235,
+          "high": 4470.625,
+          "low": 4467.32,
+          "close": 4467.52,
+          "volume": 1122,
+          "beijing_open_time": "2026-09-04 19:45"
+        },
+        {
+          "time": 1788522600,
+          "open": 4467.47,
+          "high": 4470.755,
+          "low": 4467.21,
+          "close": 4469.105,
+          "volume": 1722,
+          "beijing_open_time": "2026-09-04 19:50"
+        },
+        {
+          "time": 1788522900,
+          "open": 4469.115,
+          "high": 4469.975,
+          "low": 4465.145,
+          "close": 4467.145,
+          "volume": 1134,
+          "beijing_open_time": "2026-09-04 19:55"
+        },
+        {
+          "time": 1788523200,
+          "open": 4467.17,
+          "high": 4469.445,
+          "low": 4464.875,
+          "close": 4468.94,
+          "volume": 2933,
+          "beijing_open_time": "2026-09-04 20:00"
+        },
+        {
+          "time": 1788523500,
+          "open": 4468.925,
+          "high": 4470.46,
+          "low": 4467.02,
+          "close": 4467.515,
+          "volume": 3059,
+          "beijing_open_time": "2026-09-04 20:05"
+        },
+        {
+          "time": 1788523800,
+          "open": 4467.545,
+          "high": 4469.205,
+          "low": 4464.655,
+          "close": 4464.855,
+          "volume": 2925,
+          "beijing_open_time": "2026-09-04 20:10"
+        },
+        {
+          "time": 1788524100,
+          "open": 4464.845,
+          "high": 4468.255,
+          "low": 4464.475,
+          "close": 4467.89,
+          "volume": 3173,
+          "beijing_open_time": "2026-09-04 20:15"
+        },
+        {
+          "time": 1788524400,
+          "open": 4467.88,
+          "high": 4470.205,
+          "low": 4464.5,
+          "close": 4468.15,
+          "volume": 4495,
+          "beijing_open_time": "2026-09-04 20:20"
+        },
+        {
+          "time": 1788524700,
+          "open": 4468.125,
+          "high": 4476.665,
+          "low": 4467.47,
+          "close": 4472.23,
+          "volume": 4318,
+          "beijing_open_time": "2026-09-04 20:25"
+        },
+        {
+          "time": 1788525000,
+          "open": 4472.16,
+          "high": 4475.105,
+          "low": 4376.18,
+          "close": 4394.715,
+          "volume": 17607,
+          "beijing_open_time": "2026-09-04 20:30"
+        },
+        {
+          "time": 1788525300,
+          "open": 4394.74,
+          "high": 4398.8,
+          "low": 4382.8,
+          "close": 4391.78,
+          "volume": 15075,
+          "beijing_open_time": "2026-09-04 20:35"
+        },
+        {
+          "time": 1788525600,
+          "open": 4391.75,
+          "high": 4406.525,
+          "low": 4387.14,
+          "close": 4393.91,
+          "volume": 12153,
+          "beijing_open_time": "2026-09-04 20:40"
+        },
+        {
+          "time": 1788525900,
+          "open": 4393.895,
+          "high": 4397.875,
+          "low": 4380.205,
+          "close": 4397.445,
+          "volume": 13216,
+          "beijing_open_time": "2026-09-04 20:45"
+        },
+        {
+          "time": 1788526200,
+          "open": 4397.45,
+          "high": 4410.035,
+          "low": 4395.5,
+          "close": 4405.94,
+          "volume": 10087,
+          "beijing_open_time": "2026-09-04 20:50"
+        },
+        {
+          "time": 1788526500,
+          "open": 4405.89,
+          "high": 4409.12,
+          "low": 4392.615,
+          "close": 4393.77,
+          "volume": 9749,
+          "beijing_open_time": "2026-09-04 20:55"
+        },
+        {
+          "time": 1788526800,
+          "open": 4393.735,
+          "high": 4394.925,
+          "low": 4365.57,
+          "close": 4379.33,
+          "volume": 14142,
+          "beijing_open_time": "2026-09-04 21:00"
+        },
+        {
+          "time": 1788527100,
+          "open": 4379.325,
+          "high": 4390.165,
+          "low": 4376.14,
+          "close": 4388.295,
+          "volume": 9626,
+          "beijing_open_time": "2026-09-04 21:05"
+        },
+        {
+          "time": 1788527400,
+          "open": 4388.31,
+          "high": 4394.43,
+          "low": 4382.245,
+          "close": 4394.365,
+          "volume": 8987,
+          "beijing_open_time": "2026-09-04 21:10"
+        },
+        {
+          "time": 1788527700,
+          "open": 4394.345,
+          "high": 4400.04,
+          "low": 4391.535,
+          "close": 4398.92,
+          "volume": 7347,
+          "beijing_open_time": "2026-09-04 21:15"
+        },
+        {
+          "time": 1788528000,
+          "open": 4398.925,
+          "high": 4407.185,
+          "low": 4397.01,
+          "close": 4405.105,
+          "volume": 6856,
+          "beijing_open_time": "2026-09-04 21:20"
+        },
+        {
+          "time": 1788528300,
+          "open": 4405.14,
+          "high": 4414.765,
+          "low": 4404.32,
+          "close": 4412.71,
+          "volume": 6314,
+          "beijing_open_time": "2026-09-04 21:25"
+        },
+        {
+          "time": 1788528600,
+          "open": 4412.725,
+          "high": 4420.63,
+          "low": 4412.185,
+          "close": 4413.935,
+          "volume": 12065,
+          "beijing_open_time": "2026-09-04 21:30"
+        },
+        {
+          "time": 1788528900,
+          "open": 4413.965,
+          "high": 4417.72,
+          "low": 4405.265,
+          "close": 4407.445,
+          "volume": 12275,
+          "beijing_open_time": "2026-09-04 21:35"
+        },
+        {
+          "time": 1788529200,
+          "open": 4407.415,
+          "high": 4424.135,
+          "low": 4407.2,
+          "close": 4423.875,
+          "volume": 11043,
+          "beijing_open_time": "2026-09-04 21:40"
+        },
+        {
+          "time": 1788529500,
+          "open": 4423.83,
+          "high": 4434.93,
+          "low": 4418.435,
+          "close": 4429.755,
+          "volume": 9533,
+          "beijing_open_time": "2026-09-04 21:45"
+        },
+        {
+          "time": 1788529800,
+          "open": 4429.775,
+          "high": 4431.495,
+          "low": 4421.06,
+          "close": 4422.57,
+          "volume": 10032,
+          "beijing_open_time": "2026-09-04 21:50"
+        },
+        {
+          "time": 1788530100,
+          "open": 4422.62,
+          "high": 4426.85,
+          "low": 4413.285,
+          "close": 4413.285,
+          "volume": 7654,
+          "beijing_open_time": "2026-09-04 21:55"
+        },
+        {
+          "time": 1788530400,
+          "open": 4413.27,
+          "high": 4420.715,
+          "low": 4412.06,
+          "close": 4420.705,
+          "volume": 7909,
+          "beijing_open_time": "2026-09-04 22:00"
+        },
+        {
+          "time": 1788530700,
+          "open": 4420.705,
+          "high": 4427.16,
+          "low": 4415.96,
+          "close": 4424.015,
+          "volume": 9833,
+          "beijing_open_time": "2026-09-04 22:05"
+        },
+        {
+          "time": 1788531000,
+          "open": 4424.02,
+          "high": 4435.11,
+          "low": 4419.22,
+          "close": 4433.965,
+          "volume": 10001,
+          "beijing_open_time": "2026-09-04 22:10"
+        },
+        {
+          "time": 1788531300,
+          "open": 4433.97,
+          "high": 4437.115,
+          "low": 4428.925,
+          "close": 4432.375,
+          "volume": 9360,
+          "beijing_open_time": "2026-09-04 22:15"
+        },
+        {
+          "time": 1788531600,
+          "open": 4432.365,
+          "high": 4435.81,
+          "low": 4426.65,
+          "close": 4430.9,
+          "volume": 8055,
+          "beijing_open_time": "2026-09-04 22:20"
+        },
+        {
+          "time": 1788531900,
+          "open": 4430.91,
+          "high": 4437.445,
+          "low": 4429.085,
+          "close": 4429.23,
+          "volume": 6229,
+          "beijing_open_time": "2026-09-04 22:25"
+        }
+      ]
+    }
+  ]
+}

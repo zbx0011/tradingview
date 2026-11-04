@@ -13,7 +13,7 @@ import {
   resolvePositionGeometry, updatePositionPoints,
   type PositionHandle,
 } from '../lib/positionDrawing'
-import { getTool, type ToolBehavior } from '../lib/toolCatalog'
+import { getTool, supportsDrawingProperties, type ToolBehavior } from '../lib/toolCatalog'
 import { channelLevelsFor, drawingOption, fibLevelsFor, forecastColor, isLineToolBehavior, isVisibleOnInterval, levelColor, levelGroup, positionAmounts, positionSettingsFor } from '../lib/lineToolSettings'
 import type { MagnetMode } from './DrawingToolbar'
 
@@ -33,7 +33,7 @@ interface Props {
   onMeasurePoint: (point: DrawingPoint) => { time: number; price: number } | null
   onProjectPoint: (point: { time: number; price: number }) => { x: number; y: number } | null
   onQuickMeasurementChange: (drawing: Drawing | null) => void
-  onToolComplete: () => void
+  onToolComplete: (drawing?: Drawing) => void
   onZoomSelection: (from: number, to: number) => void
   onOpenProperties: (drawing: Drawing) => void
 }
@@ -62,8 +62,13 @@ interface DrawingDrag {
   cloneId?: string
   positionHandle?: PositionHandle
   pointIndex?: number
-  edgeHandle?: 'top' | 'bottom' | 'left' | 'right'
+  channelWidth?: boolean
+  rectangleCorner?: RectangleCorner
+  rectangleEdge?: RectangleEdge
 }
+
+type RectangleCorner = 'nw' | 'ne' | 'sw' | 'se'
+type RectangleEdge = 'n' | 'e' | 's' | 'w'
 
 export function DrawingOverlay({
   activeTool, history, dispatch, color, magnetMode, drawingsLocked, hidden, candles, symbol, interval, quickMeasurement, onPlotSize, onMeasurePoint, onProjectPoint, onQuickMeasurementChange, onToolComplete, onZoomSelection, onOpenProperties,
@@ -184,7 +189,7 @@ export function DrawingOverlay({
       dispatch({ type: 'add', drawing })
     }
     cancelDraft()
-    onToolComplete()
+    onToolComplete(drawing.behavior !== 'zoom' && drawing.tool !== 'measure' && drawing.points.length > 1 && distance(first, last) > 0.003 ? drawing : undefined)
   }
 
   const handlePointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -227,6 +232,7 @@ export function DrawingOverlay({
   }
 
   const startDrawingPointDrag = (drawing: Drawing, pointIndex: number) => (event: ReactPointerEvent<SVGElement>) => {
+    if (event.button !== 0) return
     if (activeDefinition.behavior !== 'cursor' || drawingsLocked || drawing.locked) return
     event.preventDefault()
     event.stopPropagation()
@@ -244,23 +250,20 @@ export function DrawingOverlay({
     svgRef.current?.setPointerCapture(event.pointerId)
   }
 
-  // Rectangles resize from the midpoint of each edge (one edge per drag).
-  const startEdgeHandleDrag = (drawing: Drawing, edge: 'top' | 'bottom' | 'left' | 'right') => (event: ReactPointerEvent<SVGElement>) => {
-    if (activeDefinition.behavior !== 'cursor' || drawingsLocked || drawing.locked) return
-    event.preventDefault()
-    event.stopPropagation()
-    if (!selectedDrawingIds.includes(drawing.id)) dispatch({ type: 'select', id: drawing.id })
-    dispatch({ type: 'checkpoint' })
-    dragRef.current = {
-      start: normalizedPoint(event),
-      pointerId: event.pointerId,
-      originals: [{ id: drawing.id, points: drawing.points.map(projectNormalizedPoint) }],
-      source: drawing,
-      control: false,
-      moved: false,
-      edgeHandle: edge,
+  const startRectangleCornerDrag = (drawing: Drawing, corner: RectangleCorner) => (event: ReactPointerEvent<SVGElement>) => {
+    startDrawingPointDrag(drawing, 0)(event)
+    if (dragRef.current) {
+      dragRef.current.pointIndex = undefined
+      dragRef.current.rectangleCorner = corner
     }
-    svgRef.current?.setPointerCapture(event.pointerId)
+  }
+
+  const startRectangleEdgeDrag = (drawing: Drawing, edge: RectangleEdge) => (event: ReactPointerEvent<SVGElement>) => {
+    startDrawingPointDrag(drawing, 0)(event)
+    if (dragRef.current) {
+      dragRef.current.pointIndex = undefined
+      dragRef.current.rectangleEdge = edge
+    }
   }
 
   const handlePointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -268,16 +271,54 @@ export function DrawingOverlay({
     const drag = dragRef.current
     if (drag) {
       event.preventDefault()
-      if (drag.edgeHandle) {
+      if (drag.channelWidth) {
+        const base = drag.originals[0].points
+        const center = { x: (base[0].x + base[base.length - 1].x) / 2, y: (base[0].y + base[base.length - 1].y) / 2 }
+        const normalized = Math.max(2 / viewportHeight, Math.abs(point.y - center.y))
+        const centerAnchor = onMeasurePoint(center)
+        const edgeAnchor = onMeasurePoint({ x: center.x, y: center.y + normalized })
+        drag.moved = true
+        dispatch({ type: 'update', id: drag.source.id, patch: { channelWidth: {
+          normalized,
+          price: centerAnchor && edgeAnchor ? Math.abs(edgeAnchor.price - centerAnchor.price) : undefined,
+        } } })
+        return
+      }
+      if (drag.rectangleCorner) {
         const original = drag.originals.find((item) => item.id === drag.source.id)
-        if (!original || original.points.length < 2 || distance(point, drag.start) <= 0.003) return
-        const [a, b] = original.points
-        const horizontal = drag.edgeHandle === 'left' || drag.edgeHandle === 'right'
-        const first = drag.edgeHandle === 'left' || drag.edgeHandle === 'top'
-        const aIsLow = horizontal ? a.x <= b.x : a.y <= b.y
-        const index = aIsLow === first ? 0 : 1
-        const moved = horizontal ? { ...original.points[index], x: point.x } : { ...original.points[index], y: point.y }
-        const points = original.points.map((item, i) => i === index ? anchorPoint(moved) : item)
+        if (!original || distance(point, drag.start) <= 0.003) return
+        const first = original.points[0]
+        const last = original.points.at(-1) ?? first
+        const firstCorner: RectangleCorner = `${first.y <= last.y ? 'n' : 's'}${first.x <= last.x ? 'w' : 'e'}` as RectangleCorner
+        const draggedPoint = anchorPoint(point)
+        const fixedPoint = drag.rectangleCorner === firstCorner ? last : first
+        const points = drag.rectangleCorner === firstCorner
+          ? [draggedPoint, fixedPoint]
+          : [fixedPoint, draggedPoint]
+        drag.moved = true
+        dispatch({ type: 'update', id: original.id, patch: { points } })
+        return
+      }
+      if (drag.rectangleEdge) {
+        const original = drag.originals.find((item) => item.id === drag.source.id)
+        if (!original || distance(point, drag.start) <= 0.003) return
+        const first = original.points[0]
+        const last = original.points.at(-1) ?? first
+        const firstCorner: RectangleCorner = `${first.y <= last.y ? 'n' : 's'}${first.x <= last.x ? 'w' : 'e'}` as RectangleCorner
+        let left = Math.min(first.x, last.x)
+        let right = Math.max(first.x, last.x)
+        let top = Math.min(first.y, last.y)
+        let bottom = Math.max(first.y, last.y)
+        if (drag.rectangleEdge === 'n') top = point.y
+        if (drag.rectangleEdge === 's') bottom = point.y
+        if (drag.rectangleEdge === 'w') left = point.x
+        if (drag.rectangleEdge === 'e') right = point.x
+        const oppositeCorner: Record<RectangleCorner, RectangleCorner> = { nw: 'se', ne: 'sw', sw: 'ne', se: 'nw' }
+        const cornerPoint = (corner: RectangleCorner) => anchorPoint({
+          x: corner.endsWith('w') ? left : right,
+          y: corner.startsWith('n') ? top : bottom,
+        })
+        const points = [cornerPoint(firstCorner), cornerPoint(oppositeCorner[firstCorner])]
         drag.moved = true
         dispatch({ type: 'update', id: original.id, patch: { points } })
         return
@@ -416,6 +457,7 @@ export function DrawingOverlay({
   }
 
   const selectOrErase = (drawing: Drawing) => (event: ReactPointerEvent<SVGGElement>) => {
+    if (event.button !== 0) return
     if (activeDefinition.behavior === 'eraser') {
       event.stopPropagation()
       if ((event.ctrlKey || event.metaKey) && freehandBehaviors.includes(drawing.behavior) && drawing.points.length > 3) {
@@ -598,6 +640,18 @@ export function DrawingOverlay({
     const mid = { x: (first.x + last.x) / 2, y: (first.y + last.y) / 2 }
     const dx = last.x - first.x
     const dy = last.y - first.y
+    const rectangleCorners: { corner: RectangleCorner; x: number; y: number }[] = [
+      { corner: 'nw', x: Math.min(first.x, last.x), y: Math.min(first.y, last.y) },
+      { corner: 'ne', x: Math.max(first.x, last.x), y: Math.min(first.y, last.y) },
+      { corner: 'sw', x: Math.min(first.x, last.x), y: Math.max(first.y, last.y) },
+      { corner: 'se', x: Math.max(first.x, last.x), y: Math.max(first.y, last.y) },
+    ]
+    const rectangleEdges: { edge: RectangleEdge; x: number; y: number }[] = [
+      { edge: 'n', x: mid.x, y: Math.min(first.y, last.y) },
+      { edge: 'e', x: Math.max(first.x, last.x), y: mid.y },
+      { edge: 's', x: mid.x, y: Math.max(first.y, last.y) },
+      { edge: 'w', x: Math.min(first.x, last.x), y: mid.y },
+    ]
     let content: ReactNode
 
     if (isLineToolBehavior(behavior)) {
@@ -1072,7 +1126,12 @@ export function DrawingOverlay({
     } else if (behavior === 'curve' || behavior === 'double-curve') {
       content = <g><path d={`M${first.x},${first.y} C${mid.x},${first.y-120} ${mid.x},${last.y+120} ${last.x},${last.y}`} {...common} fill={drawing.fillEnabled ? colorWithAlpha(drawing.fillColor ?? drawing.color, drawing.fillOpacity ?? .2) : 'none'} />{behavior==='double-curve'&&<path d={`M${first.x},${first.y+55} C${mid.x},${first.y-65} ${mid.x},${last.y+175} ${last.x},${last.y+55}`} {...common} opacity=".65" />}</g>
     } else if (behavior === 'channel' || behavior === 'regression') {
-      const offset=behavior==='regression'?70:95
+      let offset = drawing.channelWidth ? drawing.channelWidth.normalized * viewportHeight : behavior === 'regression' ? 70 : 95
+      const anchor = drawing.points[0]
+      if (drawing.channelWidth?.price !== undefined && anchor.time !== undefined && anchor.price !== undefined) {
+        const edge = onProjectPoint({ time: anchor.time, price: anchor.price + drawing.channelWidth.price })
+        if (edge) offset = Math.abs(edge.y - first.y)
+      }
       // Level 0 is the upper channel line, level 1 the lower one (TradingView parallel channel).
       const levelY = (level: number) => -offset + level * offset * 2
       const levels = channelLevelsFor(drawing)
@@ -1088,6 +1147,30 @@ export function DrawingOverlay({
           stroke={level.color} strokeDasharray={dashForLineStyle(level.lineStyle)} />)}
         {boxText(first.x, yAt(first.x, 0) , last.x, yAt(first.x, 0), 14, 'top', 'left', false)}
       </g>
+      // Wide invisible stroke targets make the thin channel lines easy to grab.
+      // Keep these behind the width handles so resizing remains independent.
+      content = <>{content}{[-1, 0, 1].map(side => <line key={`hit-${side}`}
+        data-channel-move="line" x1={first.x} y1={first.y + side * offset}
+        x2={last.x} y2={last.y + side * offset}
+        stroke="transparent" strokeWidth={14} pointerEvents="stroke" style={{ cursor: 'move' }}
+      />)}</>
+      if (selected) content = <>{content}
+        <g data-channel-move="center" style={{ cursor: 'move' }}>
+          <title>拖动整体移动通道（左右 / 上下）</title>
+          <rect x={mid.x - 11} y={mid.y - 11} width={22} height={22} rx={4} fill="#131722" stroke="#90bfff" />
+          <path d={`M${mid.x - 7},${mid.y}h14 M${mid.x},${mid.y - 7}v14 M${mid.x - 7},${mid.y}l3,-3 M${mid.x - 7},${mid.y}l3,3 M${mid.x + 7},${mid.y}l-3,-3 M${mid.x + 7},${mid.y}l-3,3`} stroke="#90bfff" fill="none" pointerEvents="none" />
+        </g>
+        {[-1, 1].map(side => <ellipse
+        key={side} data-channel-width={side < 0 ? 'upper' : 'lower'}
+        cx={mid.x} cy={mid.y + side * offset} rx={7} ry={7}
+        fill="#131722" stroke="#2962ff" strokeWidth="2" vectorEffect="non-scaling-stroke"
+        style={{ cursor: 'ns-resize' }}
+        onPointerDown={event => {
+          if (event.button !== 0) return
+          startDrawingPointDrag(drawing, 0)(event)
+          if (dragRef.current) { dragRef.current.pointIndex = undefined; dragRef.current.channelWidth = true }
+        }}
+      />)}</>
     } else if (behavior === 'horizontal' || behavior === 'horizontal-ray' || behavior === 'vertical' || behavior === 'cross') {
       const hx1 = behavior === 'horizontal-ray' ? first.x : 0
       const plotRight = plotSize ? Math.min(viewportWidth, plotSize.width) : viewportWidth
@@ -1163,7 +1246,7 @@ export function DrawingOverlay({
         aria-label={`绘图对象：${getTool(drawing.tool).label}`}
         onPointerDown={selectOrErase(drawing)}
         onDoubleClick={(event) => {
-          if (!textBehaviors.includes(behavior) && !['measure', 'zoom', 'brush', 'highlighter'].includes(behavior)) {
+          if (supportsDrawingProperties(behavior)) {
             event.stopPropagation()
             onOpenProperties(drawing)
             return
@@ -1175,6 +1258,13 @@ export function DrawingOverlay({
             dispatch({ type: 'update', id: drawing.id, patch: { text } })
           }
         }}
+        onContextMenu={(event) => {
+          if (!supportsDrawingProperties(behavior)) return
+          event.preventDefault()
+          event.stopPropagation()
+          if (!selectedDrawingIds.includes(drawing.id)) dispatch({ type: 'select', id: drawing.id })
+          onOpenProperties(drawing)
+        }}
         style={{ pointerEvents: isDraft || forceSelected ? 'none' : 'all', cursor: activeDefinition.behavior === 'eraser' ? 'not-allowed' : activeDefinition.behavior === 'cursor' && !drawingsLocked ? 'move' : 'crosshair' }}
       >
         {['line', 'trend', 'arrow', 'info-line', 'angle'].includes(behavior) && <line
@@ -1183,32 +1273,36 @@ export function DrawingOverlay({
           stroke="transparent" strokeWidth="14" pointerEvents="stroke" vectorEffect="non-scaling-stroke"
         />}
         <g opacity={isDraft && !forceSelected ? .78 : 1}>{content}</g>
-        {selected && behavior === 'rectangle' && drawing.points.length >= 2 && <g className="drawing-anchor-points" pointerEvents="all">
-          {([
-            ['top', (first.x + last.x) / 2, Math.min(first.y, last.y), 'ns-resize'],
-            ['bottom', (first.x + last.x) / 2, Math.max(first.y, last.y), 'ns-resize'],
-            ['left', Math.min(first.x, last.x), (first.y + last.y) / 2, 'ew-resize'],
-            ['right', Math.max(first.x, last.x), (first.y + last.y) / 2, 'ew-resize'],
-          ] as const).map(([edge, cx, cy, cursor]) => <ellipse
-            key={edge} data-drawing-anchor={edge} cx={cx} cy={cy} rx={handleRadius.x} ry={handleRadius.y}
-            fill="#131722" stroke="#2962ff" strokeWidth="2" vectorEffect="non-scaling-stroke"
-            onPointerDown={startEdgeHandleDrag(drawing, edge)}
-            style={{ cursor }}
-          />)}
-        </g>}
-        {selected && behavior !== 'rectangle' && !['measure', 'long-position', 'short-position'].includes(behavior) && <g className="drawing-anchor-points" pointerEvents="all">
-          <ellipse
-            data-drawing-anchor="start" cx={first.x} cy={first.y} rx={handleRadius.x} ry={handleRadius.y}
-            fill="#131722" stroke="#2962ff" strokeWidth="2" vectorEffect="non-scaling-stroke"
-            onPointerDown={startDrawingPointDrag(drawing, 0)}
-            style={{ cursor: 'crosshair' }}
-          />
-          <ellipse
-            data-drawing-anchor="end" cx={last.x} cy={last.y} rx={handleRadius.x} ry={handleRadius.y}
-            fill="#131722" stroke="#2962ff" strokeWidth="2" vectorEffect="non-scaling-stroke"
-            onPointerDown={startDrawingPointDrag(drawing, drawing.points.length - 1)}
-            style={{ cursor: 'crosshair' }}
-          />
+        {selected && !['measure', 'long-position', 'short-position'].includes(behavior) && <g className="drawing-anchor-points" pointerEvents="all">
+          {['rectangle', 'zoom'].includes(behavior)
+            ? <>
+              {rectangleCorners.map(({ corner, x, y }) => <ellipse
+                key={corner} data-drawing-anchor={corner} cx={x} cy={y} rx={handleRadius.x} ry={handleRadius.y}
+                fill="#131722" stroke="#2962ff" strokeWidth="2" vectorEffect="non-scaling-stroke"
+                onPointerDown={startRectangleCornerDrag(drawing, corner)}
+                style={{ cursor: corner === 'nw' || corner === 'se' ? 'nwse-resize' : 'nesw-resize' }}
+              />)}
+              {rectangleEdges.map(({ edge, x, y }) => <ellipse
+                key={edge} data-drawing-anchor={edge} cx={x} cy={y} rx={handleRadius.x} ry={handleRadius.y}
+                fill="#131722" stroke="#2962ff" strokeWidth="2" vectorEffect="non-scaling-stroke"
+                onPointerDown={startRectangleEdgeDrag(drawing, edge)}
+                style={{ cursor: edge === 'n' || edge === 's' ? 'ns-resize' : 'ew-resize' }}
+              />)}
+            </>
+            : <>
+              <ellipse
+                data-drawing-anchor="start" cx={first.x} cy={first.y} rx={handleRadius.x} ry={handleRadius.y}
+                fill="#131722" stroke="#2962ff" strokeWidth="2" vectorEffect="non-scaling-stroke"
+                onPointerDown={startDrawingPointDrag(drawing, 0)}
+                style={{ cursor: 'crosshair' }}
+              />
+              <ellipse
+                data-drawing-anchor="end" cx={last.x} cy={last.y} rx={handleRadius.x} ry={handleRadius.y}
+                fill="#131722" stroke="#2962ff" strokeWidth="2" vectorEffect="non-scaling-stroke"
+                onPointerDown={startDrawingPointDrag(drawing, drawing.points.length - 1)}
+                style={{ cursor: 'crosshair' }}
+              />
+            </>}
         </g>}
       </g>
     )

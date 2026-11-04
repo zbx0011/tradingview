@@ -1,0 +1,1310 @@
+{
+  "version": 2,
+  "scope": "39条存档：27条原公共题池，12条原已排除；未扫描未入库行情",
+  "futureBarsInspected": false,
+  "recognitionTimesChanged": false,
+  "statisticsFiltered": false,
+  "reviews": [
+    {
+      "id": "C-causal-shape-20260701-luna-max-20260908-121-bear",
+      "endIndex": 121,
+      "sourceOffset": 0,
+      "previouslyExcluded": false,
+      "prefixSha256": "855ed5812b8ffe0dfdb633ebcfeb13eb01fc44f7af5406ffcbad40264e49d891",
+      "sheet": "sheet-01.png",
+      "verdict": "uncertain",
+      "status": "hidden",
+      "note": "K94—109下降后虽出现反弹和小回撤，宽通道是否形成独立、持续的减弱阶段不够清楚；K110后的回升与首次震荡的分界也不能从原状态标签确定。",
+      "phases": [],
+      "pivotEvidence": [],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "C-causal-shape-20260701-luna-max-20260908-446-bull",
+      "endIndex": 300,
+      "sourceOffset": 146,
+      "previouslyExcluded": false,
+      "prefixSha256": "519d0be4d33ea73203477196bd6a8d9d1a3a49e15980061407e204940708eb67",
+      "sheet": "sheet-01.png",
+      "verdict": "uncertain",
+      "status": "hidden",
+      "note": "局部K243—259上涨后先深回撤再创新高，宽通道内连续抬高高低点的证据不足；不能将一次大回撤直接认定为完整宽通道。",
+      "phases": [],
+      "pivotEvidence": [],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "C-causal-shape-20260701-luna-max-20260908-66-bear",
+      "endIndex": 66,
+      "sourceOffset": 0,
+      "previouslyExcluded": false,
+      "prefixSha256": "3df129bc13b1dfd9ab2179c28729e4887c38856488f59b5d2389d1d018c997e5",
+      "sheet": "sheet-01.png",
+      "verdict": "nonmatch",
+      "status": "hidden",
+      "note": "K30/K32在顶部回落附近，之后K35—59仍发生强下跌并再次加速；K60起是跳空回升后的短暂重叠。不能把一轮更强下跌标成力量持续衰减的宽通道。撤回此前K48—59宽通道候选草图。",
+      "phases": [],
+      "pivotEvidence": [],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "C-causal-shape-week2-20260908-astra-low-https-1310-bear",
+      "endIndex": 300,
+      "sourceOffset": 1010,
+      "previouslyExcluded": false,
+      "prefixSha256": "710c19b15639e95b575ef89bb8002bf1125150d42e71727cb39669061eed4a95",
+      "sheet": "sheet-02.png",
+      "verdict": "uncertain",
+      "status": "hidden",
+      "note": "当前前缀末段有降低高点和双向摆动，但原窄通道确认后的反弹重新抬高高点；无法唯一对应一条连续的窄—宽—震荡过程。",
+      "phases": [],
+      "pivotEvidence": [],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "C-causal-shape-week2-20260908-astra-low-https-193-bull",
+      "endIndex": 193,
+      "sourceOffset": 0,
+      "previouslyExcluded": false,
+      "prefixSha256": "26b7918786d926e19e5305cd0931a58608b23a0f553f538b6958952db19f9e5f",
+      "sheet": "sheet-02.png",
+      "verdict": "nonmatch",
+      "status": "hidden",
+      "note": "K155—160快速上涨后直接进入重叠平台；没有清楚独立的宽通道逐渐减弱阶段，正是你排除的强势后直接横盘。",
+      "phases": [],
+      "pivotEvidence": [],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "C-causal-shape-week2-20260908-astra-low-https-350-bull",
+      "endIndex": 300,
+      "sourceOffset": 50,
+      "previouslyExcluded": false,
+      "prefixSha256": "99b084b8e8a9e0acf2e67572dd67c1375965860d12d1ea32a65d25a6936713a7",
+      "sheet": "sheet-02.png",
+      "verdict": "nonmatch",
+      "status": "hidden",
+      "note": "当前前缀K261—267上行后直接在K268—300反复横盘；先前大段涨跌属于其他过程，不能拿来补齐宽通道。",
+      "phases": [],
+      "pivotEvidence": [],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "C-causal-shape-week2-20260908-astra-low-https-628-bear",
+      "endIndex": 300,
+      "sourceOffset": 328,
+      "previouslyExcluded": false,
+      "prefixSha256": "a38d90405030727a6963275f2f9120a3e579b5f86c38692cf28ef0f80a2e1675",
+      "sheet": "sheet-03.png",
+      "verdict": "match",
+      "status": "reviewed",
+      "note": "原K470窄通道确认与K592宽通道确认之间夹着平台和新一轮下跌，不能用两点画阶段。当前前缀可见另一段完整过程：源K553—569较连续下跌，K569—611反弹变深、高低点总体降低、净推进减慢，K611—628低位重叠。原K628事件时间不移动。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 225,
+          "endIndex": 241
+        },
+        {
+          "kind": "wide",
+          "startIndex": 241,
+          "endIndex": 283
+        },
+        {
+          "kind": "range",
+          "startIndex": 283,
+          "endIndex": 300
+        }
+      ],
+      "pivotEvidence": [
+        {
+          "kind": "high",
+          "points": [
+            {
+              "index": 252,
+              "sourceIndex": 580,
+              "price": 4228.5
+            },
+            {
+              "index": 259,
+              "sourceIndex": 587,
+              "price": 4221.03
+            },
+            {
+              "index": 267,
+              "sourceIndex": 595,
+              "price": 4207.015
+            }
+          ]
+        },
+        {
+          "kind": "low",
+          "points": [
+            {
+              "index": 246,
+              "sourceIndex": 574,
+              "price": 4210.505
+            },
+            {
+              "index": 261,
+              "sourceIndex": 589,
+              "price": 4187.075
+            },
+            {
+              "index": 278,
+              "sourceIndex": 606,
+              "price": 4174.215
+            }
+          ]
+        }
+      ],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "C-causal-shape-week2-20260908-astra-low-https-69-bear",
+      "endIndex": 69,
+      "sourceOffset": 0,
+      "previouslyExcluded": false,
+      "prefixSha256": "d15f8efd02361e6c32cf7007516a7f92aa5c0c3ae31c4501e1f21625bac8b09d",
+      "sheet": "sheet-03.png",
+      "verdict": "uncertain",
+      "status": "hidden",
+      "note": "K29—42下跌后反弹扩大，但K42长下影低点仍低于后续多个低点。若按实际高低点而非只看收盘，宽通道的持续降低低点依据有冲突；不强行画三阶段。",
+      "phases": [],
+      "pivotEvidence": [],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "C-causal-shape-week2-20260908-astra-low-https-855-bear",
+      "endIndex": 300,
+      "sourceOffset": 555,
+      "previouslyExcluded": false,
+      "prefixSha256": "fcab6563f41b124a3022e2cbaf145ddd7aab7e68affb0d7a2ba4c42923eb744a",
+      "sheet": "sheet-03.png",
+      "verdict": "uncertain",
+      "status": "hidden",
+      "note": "局部K254—289下跌和宽幅往返可见，但范围中仍出现新一轮急跌；末段宽通道到无方向震荡的边界不唯一，不能用源K845单点冒充整个区间。",
+      "phases": [],
+      "pivotEvidence": [],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "M02",
+      "endIndex": 300,
+      "sourceOffset": 0,
+      "previouslyExcluded": false,
+      "prefixSha256": "ed42f79a1629c80796b9949dce22641db70032d1f0816e0242ccda7ab9719ea5",
+      "sheet": "sheet-04.png",
+      "verdict": "match",
+      "status": "reviewed",
+      "note": "K214—242上行推进较连续；随后两次更深回撤仍伴随抬高的高低点，K267后高点推进停止。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 214,
+          "endIndex": 242
+        },
+        {
+          "kind": "wide",
+          "startIndex": 242,
+          "endIndex": 267
+        },
+        {
+          "kind": "range",
+          "startIndex": 267,
+          "endIndex": 300
+        }
+      ],
+      "pivotEvidence": [
+        {
+          "kind": "high",
+          "points": [
+            {
+              "index": 247,
+              "sourceIndex": 247,
+              "price": 4528.26
+            },
+            {
+              "index": 259,
+              "sourceIndex": 259,
+              "price": 4538.455
+            },
+            {
+              "index": 266,
+              "sourceIndex": 266,
+              "price": 4541.63
+            }
+          ]
+        },
+        {
+          "kind": "low",
+          "points": [
+            {
+              "index": 251,
+              "sourceIndex": 251,
+              "price": 4516.3
+            },
+            {
+              "index": 255,
+              "sourceIndex": 255,
+              "price": 4518.05
+            },
+            {
+              "index": 260,
+              "sourceIndex": 260,
+              "price": 4531.87
+            }
+          ]
+        }
+      ],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "M03",
+      "endIndex": 300,
+      "sourceOffset": 0,
+      "previouslyExcluded": false,
+      "prefixSha256": "ee2d8a7bf5d59126da0fa325db32f927ef398791a2732e5053b1f65ce4d8cfee",
+      "sheet": "sheet-04.png",
+      "verdict": "match",
+      "status": "reviewed",
+      "note": "K190—211快速下跌；随后反弹高度降低、低点小幅续低，至K252以后横向交错。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 190,
+          "endIndex": 211
+        },
+        {
+          "kind": "wide",
+          "startIndex": 211,
+          "endIndex": 252
+        },
+        {
+          "kind": "range",
+          "startIndex": 252,
+          "endIndex": 300
+        }
+      ],
+      "pivotEvidence": [
+        {
+          "kind": "high",
+          "points": [
+            {
+              "index": 227,
+              "sourceIndex": 227,
+              "price": 4508.64
+            },
+            {
+              "index": 244,
+              "sourceIndex": 244,
+              "price": 4493.22
+            },
+            {
+              "index": 249,
+              "sourceIndex": 249,
+              "price": 4491.795
+            }
+          ]
+        },
+        {
+          "kind": "low",
+          "points": [
+            {
+              "index": 212,
+              "sourceIndex": 212,
+              "price": 4490.435
+            },
+            {
+              "index": 239,
+              "sourceIndex": 239,
+              "price": 4486.355
+            },
+            {
+              "index": 251,
+              "sourceIndex": 251,
+              "price": 4482.14
+            }
+          ]
+        }
+      ],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "M05",
+      "endIndex": 300,
+      "sourceOffset": 0,
+      "previouslyExcluded": false,
+      "prefixSha256": "a9972ea82fd8177ccea8571e1a58050d28bb0fda1cca388c51eab15675b3b743",
+      "sheet": "sheet-04.png",
+      "verdict": "match",
+      "status": "reviewed",
+      "note": "K214—235下降较连续；反弹峰值约在K243、K260降低，低点继续下降但净推进变慢，K270后低位往返。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 214,
+          "endIndex": 235
+        },
+        {
+          "kind": "wide",
+          "startIndex": 235,
+          "endIndex": 270
+        },
+        {
+          "kind": "range",
+          "startIndex": 270,
+          "endIndex": 300
+        }
+      ],
+      "pivotEvidence": [
+        {
+          "kind": "high",
+          "points": [
+            {
+              "index": 244,
+              "sourceIndex": 244,
+              "price": 4470.045
+            },
+            {
+              "index": 260,
+              "sourceIndex": 260,
+              "price": 4455.14
+            },
+            {
+              "index": 265,
+              "sourceIndex": 265,
+              "price": 4450.015
+            }
+          ]
+        },
+        {
+          "kind": "low",
+          "points": [
+            {
+              "index": 235,
+              "sourceIndex": 235,
+              "price": 4450.79
+            },
+            {
+              "index": 252,
+              "sourceIndex": 252,
+              "price": 4444.265
+            },
+            {
+              "index": 267,
+              "sourceIndex": 267,
+              "price": 4436.53
+            }
+          ]
+        }
+      ],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "M06",
+      "endIndex": 300,
+      "sourceOffset": 0,
+      "previouslyExcluded": false,
+      "prefixSha256": "c5286fcce79f315771ff8edd74a1ca0edb5632aa6d68770beb50aa165cf6fcf1",
+      "sheet": "sheet-05.png",
+      "verdict": "match",
+      "status": "reviewed",
+      "note": "初段急跌延续至K213；后段反弹峰值降低且低点续低，净斜率明显减小；K264后以横向重叠为主。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 186,
+          "endIndex": 213
+        },
+        {
+          "kind": "wide",
+          "startIndex": 213,
+          "endIndex": 264
+        },
+        {
+          "kind": "range",
+          "startIndex": 264,
+          "endIndex": 300
+        }
+      ],
+      "pivotEvidence": [
+        {
+          "kind": "high",
+          "points": [
+            {
+              "index": 218,
+              "sourceIndex": 218,
+              "price": 4372.615
+            },
+            {
+              "index": 250,
+              "sourceIndex": 250,
+              "price": 4347.455
+            }
+          ]
+        },
+        {
+          "kind": "low",
+          "points": [
+            {
+              "index": 214,
+              "sourceIndex": 214,
+              "price": 4344.605
+            },
+            {
+              "index": 236,
+              "sourceIndex": 236,
+              "price": 4323.27
+            },
+            {
+              "index": 262,
+              "sourceIndex": 262,
+              "price": 4315.345
+            }
+          ]
+        }
+      ],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "M14",
+      "endIndex": 300,
+      "sourceOffset": 0,
+      "previouslyExcluded": false,
+      "prefixSha256": "cdd922659fcba9d806f10f200c1e8f2c26681720d02e2457a53f61865be19024",
+      "sheet": "sheet-05.png",
+      "verdict": "match",
+      "status": "reviewed",
+      "note": "保留你认可的样例。快速下跌后，K226—278反弹变深且高低点总体降低，K278后低位双向往返。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 212,
+          "endIndex": 226
+        },
+        {
+          "kind": "wide",
+          "startIndex": 226,
+          "endIndex": 278
+        },
+        {
+          "kind": "range",
+          "startIndex": 278,
+          "endIndex": 300
+        }
+      ],
+      "pivotEvidence": [
+        {
+          "kind": "high",
+          "points": [
+            {
+              "index": 230,
+              "sourceIndex": 230,
+              "price": 4146.235
+            },
+            {
+              "index": 246,
+              "sourceIndex": 246,
+              "price": 4140.35
+            },
+            {
+              "index": 270,
+              "sourceIndex": 270,
+              "price": 4131.535
+            }
+          ]
+        },
+        {
+          "kind": "low",
+          "points": [
+            {
+              "index": 226,
+              "sourceIndex": 226,
+              "price": 4125.7
+            },
+            {
+              "index": 254,
+              "sourceIndex": 254,
+              "price": 4124.535
+            },
+            {
+              "index": 277,
+              "sourceIndex": 277,
+              "price": 4116.7
+            }
+          ]
+        }
+      ],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "M18",
+      "endIndex": 300,
+      "sourceOffset": 0,
+      "previouslyExcluded": false,
+      "prefixSha256": "370dc93b72adbf30db4f53297ab17e1ca83f3ee64b37376e31712748d26ed719",
+      "sheet": "sheet-05.png",
+      "verdict": "match",
+      "status": "reviewed",
+      "note": "窄通道应覆盖K221起的完整连续上涨，不只截取末段。K245—265回撤变多且高低点继续抬高，之后顶部往返。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 221,
+          "endIndex": 245
+        },
+        {
+          "kind": "wide",
+          "startIndex": 245,
+          "endIndex": 265
+        },
+        {
+          "kind": "range",
+          "startIndex": 265,
+          "endIndex": 300
+        }
+      ],
+      "pivotEvidence": [
+        {
+          "kind": "high",
+          "points": [
+            {
+              "index": 248,
+              "sourceIndex": 248,
+              "price": 4110.35
+            },
+            {
+              "index": 258,
+              "sourceIndex": 258,
+              "price": 4111.24
+            },
+            {
+              "index": 264,
+              "sourceIndex": 264,
+              "price": 4118.005
+            }
+          ]
+        },
+        {
+          "kind": "low",
+          "points": [
+            {
+              "index": 250,
+              "sourceIndex": 250,
+              "price": 4101.54
+            },
+            {
+              "index": 259,
+              "sourceIndex": 259,
+              "price": 4104.725
+            }
+          ]
+        }
+      ],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "M20",
+      "endIndex": 300,
+      "sourceOffset": 0,
+      "previouslyExcluded": false,
+      "prefixSha256": "af9f7e6fe407849695853f6b232e2d847ae47e85d3ad814b27e5d8b20a569c37",
+      "sheet": "sheet-06.png",
+      "verdict": "match",
+      "status": "reviewed",
+      "note": "急跌后的反弹高点逐级降低，后续低点小幅推进；宽幅下降延续至K282附近，不能提前在K266把下降画成平台。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 227,
+          "endIndex": 240
+        },
+        {
+          "kind": "wide",
+          "startIndex": 240,
+          "endIndex": 282
+        },
+        {
+          "kind": "range",
+          "startIndex": 282,
+          "endIndex": 300
+        }
+      ],
+      "pivotEvidence": [
+        {
+          "kind": "high",
+          "points": [
+            {
+              "index": 248,
+              "sourceIndex": 248,
+              "price": 4020.355
+            },
+            {
+              "index": 256,
+              "sourceIndex": 256,
+              "price": 4018.115
+            },
+            {
+              "index": 272,
+              "sourceIndex": 272,
+              "price": 4002.025
+            }
+          ]
+        },
+        {
+          "kind": "low",
+          "points": [
+            {
+              "index": 240,
+              "sourceIndex": 240,
+              "price": 4000.23
+            },
+            {
+              "index": 263,
+              "sourceIndex": 263,
+              "price": 3990.91
+            },
+            {
+              "index": 267,
+              "sourceIndex": 267,
+              "price": 3986.58
+            }
+          ]
+        }
+      ],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "M22",
+      "endIndex": 300,
+      "sourceOffset": 0,
+      "previouslyExcluded": false,
+      "prefixSha256": "88c07c50d68bdcd761f6b0fb3bee97205967262efd57210c4c89fe695c17d5c8",
+      "sheet": "sheet-06.png",
+      "verdict": "match",
+      "status": "reviewed",
+      "note": "原K163—172急跌后出现更高反弹高点，不能与末段直接拼接。改核对后一次K203—212下跌及其后的降低高低点；K261后低位往返。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 203,
+          "endIndex": 212
+        },
+        {
+          "kind": "wide",
+          "startIndex": 212,
+          "endIndex": 261
+        },
+        {
+          "kind": "range",
+          "startIndex": 261,
+          "endIndex": 300
+        }
+      ],
+      "pivotEvidence": [
+        {
+          "kind": "high",
+          "points": [
+            {
+              "index": 219,
+              "sourceIndex": 219,
+              "price": 3997.04
+            },
+            {
+              "index": 236,
+              "sourceIndex": 236,
+              "price": 3990.51
+            },
+            {
+              "index": 254,
+              "sourceIndex": 254,
+              "price": 3982.705
+            }
+          ]
+        },
+        {
+          "kind": "low",
+          "points": [
+            {
+              "index": 212,
+              "sourceIndex": 212,
+              "price": 3982.455
+            },
+            {
+              "index": 239,
+              "sourceIndex": 239,
+              "price": 3976.69
+            },
+            {
+              "index": 251,
+              "sourceIndex": 251,
+              "price": 3969.345
+            }
+          ]
+        }
+      ],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "M27",
+      "endIndex": 300,
+      "sourceOffset": 0,
+      "previouslyExcluded": false,
+      "prefixSha256": "b38aaddf9417024c13b8958d745157f3192c5dfa7a5f2c84057c6a3855f361a9",
+      "sheet": "sheet-06.png",
+      "verdict": "nonmatch",
+      "status": "hidden",
+      "note": "急跌后K224附近深反弹、K230附近再探低、K240附近反弹；低点没有持续降低，更接近收敛/区间。橙色箭头略向下不构成宽下降通道依据。",
+      "phases": [],
+      "pivotEvidence": [],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "M28",
+      "endIndex": 300,
+      "sourceOffset": 0,
+      "previouslyExcluded": false,
+      "prefixSha256": "86c677e520db8557117a87016fae7ab429adfdccd56326ba83ebf50dddbab1a1",
+      "sheet": "sheet-07.png",
+      "verdict": "match",
+      "status": "reviewed",
+      "note": "K221—241连续上涨；中段回撤加深但高低点仍抬升，K277后不再持续向上推进。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 221,
+          "endIndex": 241
+        },
+        {
+          "kind": "wide",
+          "startIndex": 241,
+          "endIndex": 277
+        },
+        {
+          "kind": "range",
+          "startIndex": 277,
+          "endIndex": 300
+        }
+      ],
+      "pivotEvidence": [
+        {
+          "kind": "high",
+          "points": [
+            {
+              "index": 258,
+              "sourceIndex": 258,
+              "price": 4060.74
+            },
+            {
+              "index": 270,
+              "sourceIndex": 270,
+              "price": 4061.605
+            },
+            {
+              "index": 276,
+              "sourceIndex": 276,
+              "price": 4064.025
+            }
+          ]
+        },
+        {
+          "kind": "low",
+          "points": [
+            {
+              "index": 249,
+              "sourceIndex": 249,
+              "price": 4045.28
+            },
+            {
+              "index": 264,
+              "sourceIndex": 264,
+              "price": 4051.84
+            },
+            {
+              "index": 273,
+              "sourceIndex": 273,
+              "price": 4057.635
+            }
+          ]
+        }
+      ],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "M30",
+      "endIndex": 300,
+      "sourceOffset": 0,
+      "previouslyExcluded": false,
+      "prefixSha256": "c40c95d920d10d910bd5b34c3eb91baab308dad08e33ed742ce986a4368497dc",
+      "sheet": "sheet-07.png",
+      "verdict": "nonmatch",
+      "status": "hidden",
+      "note": "K254附近回抽后K269—277再次加速下跌；不能认定为持续减弱的宽通道，再接平台。",
+      "phases": [],
+      "pivotEvidence": [],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "M33",
+      "endIndex": 300,
+      "sourceOffset": 0,
+      "previouslyExcluded": false,
+      "prefixSha256": "a38615031fbd936699a014ec1f1f632bde8a404cb772034be51fbfa51108054a",
+      "sheet": "sheet-07.png",
+      "verdict": "uncertain",
+      "status": "hidden",
+      "note": "后段虽然下降变慢，但多个推进段仍较紧，独立的宽幅回撤阶段不够清楚。仅凭折线斜率变小不足以通过。",
+      "phases": [],
+      "pivotEvidence": [],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "M37",
+      "endIndex": 300,
+      "sourceOffset": 0,
+      "previouslyExcluded": false,
+      "prefixSha256": "a4f2a28aebb751f0795ad56ee07d389526df19bdf0b591692c92f04b6e61bd76",
+      "sheet": "sheet-08.png",
+      "verdict": "uncertain",
+      "status": "hidden",
+      "note": "末次急跌后较快转为小幅低位交错；宽通道阶段与平台阶段边界不清，不能确定存在独立的中间阶段。",
+      "phases": [],
+      "pivotEvidence": [],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "M39",
+      "endIndex": 300,
+      "sourceOffset": 0,
+      "previouslyExcluded": false,
+      "prefixSha256": "baa40f0e9ec46820832f30f5177e49e31db1b2274136804ba4d66dd62f7f40c9",
+      "sheet": "sheet-08.png",
+      "verdict": "match",
+      "status": "reviewed",
+      "note": "扩大窄通道起点至本次下降起步；中段反弹高点与低点总体降低、下降斜率减小，K268后横盘。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 191,
+          "endIndex": 206
+        },
+        {
+          "kind": "wide",
+          "startIndex": 206,
+          "endIndex": 268
+        },
+        {
+          "kind": "range",
+          "startIndex": 268,
+          "endIndex": 300
+        }
+      ],
+      "pivotEvidence": [
+        {
+          "kind": "high",
+          "points": [
+            {
+              "index": 212,
+              "sourceIndex": 212,
+              "price": 4387.19
+            },
+            {
+              "index": 241,
+              "sourceIndex": 241,
+              "price": 4373.435
+            },
+            {
+              "index": 254,
+              "sourceIndex": 254,
+              "price": 4363.73
+            }
+          ]
+        },
+        {
+          "kind": "low",
+          "points": [
+            {
+              "index": 209,
+              "sourceIndex": 209,
+              "price": 4357.395
+            },
+            {
+              "index": 231,
+              "sourceIndex": 231,
+              "price": 4351.355
+            },
+            {
+              "index": 266,
+              "sourceIndex": 266,
+              "price": 4343.65
+            }
+          ]
+        }
+      ],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "M40",
+      "endIndex": 300,
+      "sourceOffset": 0,
+      "previouslyExcluded": false,
+      "prefixSha256": "21a35079aa428f8e1eb7657b29a833cfce284409f8951b56a93148f1f9400129",
+      "sheet": "sheet-08.png",
+      "verdict": "match",
+      "status": "reviewed",
+      "note": "K222—235快速下降；后续更深反弹的峰值降低，低点小幅续低；K256后低位重叠，不以末端反弹盈利与否取舍。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 222,
+          "endIndex": 235
+        },
+        {
+          "kind": "wide",
+          "startIndex": 235,
+          "endIndex": 256
+        },
+        {
+          "kind": "range",
+          "startIndex": 256,
+          "endIndex": 300
+        }
+      ],
+      "pivotEvidence": [
+        {
+          "kind": "high",
+          "points": [
+            {
+              "index": 236,
+              "sourceIndex": 236,
+              "price": 4405.51
+            },
+            {
+              "index": 245,
+              "sourceIndex": 245,
+              "price": 4404.175
+            }
+          ]
+        },
+        {
+          "kind": "low",
+          "points": [
+            {
+              "index": 235,
+              "sourceIndex": 235,
+              "price": 4398.48
+            },
+            {
+              "index": 241,
+              "sourceIndex": 241,
+              "price": 4394.175
+            }
+          ]
+        }
+      ],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "M41",
+      "endIndex": 300,
+      "sourceOffset": 0,
+      "previouslyExcluded": false,
+      "prefixSha256": "a64dc305098d5190ddfc0b7e64b10aed455b099f34e543025562e0a53a2bb43b",
+      "sheet": "sheet-09.png",
+      "verdict": "uncertain",
+      "status": "hidden",
+      "note": "K196以后先出现较长横向重叠，K246附近再次加速下跌。若缩到最后一段，宽通道证据又不足；不能跨越平台拼接。",
+      "phases": [],
+      "pivotEvidence": [],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "M43",
+      "endIndex": 300,
+      "sourceOffset": 0,
+      "previouslyExcluded": false,
+      "prefixSha256": "6182ac5b63a656c18b3006880f80fb2925d30a2d05c65ae8569fc9e18f926104",
+      "sheet": "sheet-09.png",
+      "verdict": "nonmatch",
+      "status": "hidden",
+      "note": "K258附近急跌低点之后，反弹和再探低没有形成清楚的连续降低低点，更接近低位双向区间；短窄通道不能补足中间缺失阶段。",
+      "phases": [],
+      "pivotEvidence": [],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "M45",
+      "endIndex": 300,
+      "sourceOffset": 0,
+      "previouslyExcluded": false,
+      "prefixSha256": "c2379064b5db70da39ab6f3791183fadaa5c45d92cac0211cf443bfc3394820a",
+      "sheet": "sheet-09.png",
+      "verdict": "match",
+      "status": "reviewed",
+      "note": "K194—209为后一次完整快速下跌；K209—239反弹扩大、高低点降低且推进变慢，随后长时间往返。原K300只是历史候选定位，不能声称首次识别发生在K300。",
+      "phases": [
+        {
+          "kind": "narrow",
+          "startIndex": 194,
+          "endIndex": 209
+        },
+        {
+          "kind": "wide",
+          "startIndex": 209,
+          "endIndex": 239
+        },
+        {
+          "kind": "range",
+          "startIndex": 239,
+          "endIndex": 300
+        }
+      ],
+      "pivotEvidence": [
+        {
+          "kind": "high",
+          "points": [
+            {
+              "index": 210,
+              "sourceIndex": 210,
+              "price": 4487.685
+            },
+            {
+              "index": 220,
+              "sourceIndex": 220,
+              "price": 4486.84
+            }
+          ]
+        },
+        {
+          "kind": "low",
+          "points": [
+            {
+              "index": 212,
+              "sourceIndex": 212,
+              "price": 4466.13
+            },
+            {
+              "index": 224,
+              "sourceIndex": 224,
+              "price": 4460.63
+            },
+            {
+              "index": 236,
+              "sourceIndex": 236,
+              "price": 4445.455
+            }
+          ]
+        }
+      ],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "M01",
+      "endIndex": 252,
+      "sourceOffset": 0,
+      "previouslyExcluded": true,
+      "prefixSha256": "1a26828fd4e470d9a213aa4279a88809980a8fbdb6f22d21b754752e25ea5080",
+      "sheet": "sheet-10.png",
+      "verdict": "nonmatch",
+      "status": "hidden",
+      "note": "末段上涨在K210附近重新加速后直接横盘，不能解释为一直逐渐减弱。保留原排除状态。",
+      "phases": [],
+      "pivotEvidence": [],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "M11",
+      "endIndex": 300,
+      "sourceOffset": 0,
+      "previouslyExcluded": true,
+      "prefixSha256": "75f7fa6633700d1b92d68b67f55dbbf57b46df80a73ad614fcc27440efc93302",
+      "sheet": "sheet-10.png",
+      "verdict": "nonmatch",
+      "status": "hidden",
+      "note": "信号前最后一段为反弹加速后小平台；更早下跌隔着低位往返与反弹，不能拼接。保留原排除状态。",
+      "phases": [],
+      "pivotEvidence": [],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "M15",
+      "endIndex": 300,
+      "sourceOffset": 0,
+      "previouslyExcluded": true,
+      "prefixSha256": "6357599ed4ead326c6e90229de638eace3f6faea44554c98817dd6c4c80566b2",
+      "sheet": "sheet-10.png",
+      "verdict": "uncertain",
+      "status": "hidden",
+      "note": "反弹过程夹有大幅回撤及再次上冲，持续减弱解释不充分；保持原排除，不重新加回。",
+      "phases": [],
+      "pivotEvidence": [],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "M17",
+      "endIndex": 300,
+      "sourceOffset": 0,
+      "previouslyExcluded": true,
+      "prefixSha256": "8860e7c0bb12873dbb36d5643e3bdb08856e3b8f2b3c2e4bf95bd2da701fa009",
+      "sheet": "sheet-11.png",
+      "verdict": "uncertain",
+      "status": "hidden",
+      "note": "K242后回撤又在K258附近重新上冲，不能确定中段持续减弱；保持原排除。",
+      "phases": [],
+      "pivotEvidence": [],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "M24",
+      "endIndex": 300,
+      "sourceOffset": 0,
+      "previouslyExcluded": true,
+      "prefixSha256": "a371fd97a249b7ca8b50ac8f23ec5f4c5058f1d49887cec33cad61d27ba10450",
+      "sheet": "sheet-11.png",
+      "verdict": "nonmatch",
+      "status": "hidden",
+      "note": "末段K250—269上行重新加速，然后直接回落与横盘，缺少独立的减弱宽通道。",
+      "phases": [],
+      "pivotEvidence": [],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "M25",
+      "endIndex": 300,
+      "sourceOffset": 0,
+      "previouslyExcluded": true,
+      "prefixSha256": "4e9df8eaaa7f373ff8a2fc5ba671dd0d273a9019380859d6bb7bc2cba774fa1c",
+      "sheet": "sheet-11.png",
+      "verdict": "nonmatch",
+      "status": "hidden",
+      "note": "K250附近急拉后又在K277附近向上加速，随后平台；中段不是连续衰减。",
+      "phases": [],
+      "pivotEvidence": [],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "M29",
+      "endIndex": 300,
+      "sourceOffset": 0,
+      "previouslyExcluded": true,
+      "prefixSha256": "f4f0d01ece8b1d40293a4004037b5032c692f8c01ba964fbcae1c8857ad8315b",
+      "sheet": "sheet-12.png",
+      "verdict": "uncertain",
+      "status": "hidden",
+      "note": "中段夹长反弹及再次下降，单一连续衰减结构存在歧义；保持原排除。",
+      "phases": [],
+      "pivotEvidence": [],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "M31",
+      "endIndex": 300,
+      "sourceOffset": 0,
+      "previouslyExcluded": true,
+      "prefixSha256": "5771764450f402a5f33ad9fe6932a07ec03a5f6a70ee8392b454710431bc7cce",
+      "sheet": "sheet-12.png",
+      "verdict": "nonmatch",
+      "status": "hidden",
+      "note": "末段仍是大幅双向摆动，没有清楚独立的末尾无方向平台；不补画缺失阶段。",
+      "phases": [],
+      "pivotEvidence": [],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "M36",
+      "endIndex": 300,
+      "sourceOffset": 0,
+      "previouslyExcluded": true,
+      "prefixSha256": "7e8269cceb3658131d4f624ee69c41236482b8718a3d02552ec70d8f08ade179",
+      "sheet": "sheet-12.png",
+      "verdict": "nonmatch",
+      "status": "hidden",
+      "note": "K270附近上冲明显扩张，随后反向下跌；中段仍增强，不能当成渐弱。",
+      "phases": [],
+      "pivotEvidence": [],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "M38",
+      "endIndex": 300,
+      "sourceOffset": 0,
+      "previouslyExcluded": true,
+      "prefixSha256": "dbdc7c2cea4a81be6a8c102d1baa0b16d1cb3fc0c5c5c11e5b185349924062a3",
+      "sheet": "sheet-13.png",
+      "verdict": "nonmatch",
+      "status": "hidden",
+      "note": "末段短跌后直接反弹平台；更早下降与当前之间有完整上行，不能跨趋势拼接。",
+      "phases": [],
+      "pivotEvidence": [],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "M48",
+      "endIndex": 300,
+      "sourceOffset": 0,
+      "previouslyExcluded": true,
+      "prefixSha256": "289fe8390e7f5a319c11eac649cc7c80ef41d5bb4ec06d22480eed0e0ad816a7",
+      "sheet": "sheet-13.png",
+      "verdict": "nonmatch",
+      "status": "hidden",
+      "note": "上行在K255—267明显加速，之后转为下降，缺少独立宽通道减弱阶段。",
+      "phases": [],
+      "pivotEvidence": [],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    },
+    {
+      "id": "M49",
+      "endIndex": 300,
+      "sourceOffset": 0,
+      "previouslyExcluded": true,
+      "prefixSha256": "054d4a5c5477cf377f63c3df1e6ca95f0e057559c46a38cb514c8c6535fabe46",
+      "sheet": "sheet-13.png",
+      "verdict": "nonmatch",
+      "status": "hidden",
+      "note": "保留你指出的反例：强势上行后直接顶部双向震荡，中间没有清楚独立的渐弱宽通道。",
+      "phases": [],
+      "pivotEvidence": [],
+      "causalRecognitionVerified": false,
+      "reviewMethod": "逐题查看截至原事件K的冻结OHLC前缀；区间是视觉复核边界，不是新的逐根识别记录"
+    }
+  ]
+}

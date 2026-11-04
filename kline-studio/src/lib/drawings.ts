@@ -43,11 +43,11 @@ export interface FibSettings {
 
 const FIB_LEVEL_DEFAULTS: FibLevelSetting[] = [
   { id: '0', value: 0, visible: true, color: '#787b86' },
-  { id: '0236', value: .236, visible: true, color: '#f23645' },
-  { id: '0382', value: .382, visible: true, color: '#ff9800' },
+  { id: '0236', value: .236, visible: false, color: '#f23645' },
+  { id: '0382', value: .382, visible: false, color: '#ff9800' },
   { id: '05', value: .5, visible: true, color: '#4caf50' },
-  { id: '0618', value: .618, visible: true, color: '#089981' },
-  { id: '0786', value: .786, visible: true, color: '#2962ff' },
+  { id: '0618', value: .618, visible: false, color: '#089981' },
+  { id: '0786', value: .786, visible: false, color: '#2962ff' },
   { id: '1', value: 1, visible: true, color: '#787b86' },
   { id: '1618', value: 1.618, visible: false, color: '#2962ff' },
   { id: '2618', value: 2.618, visible: false, color: '#f23645' },
@@ -125,6 +125,7 @@ export interface Drawing {
   locked?: boolean
   text?: string
   fib?: FibSettings
+  channelWidth?: { normalized: number; price?: number }
   /** Line opacity 0..1 (TradingView 不透明度). */
   opacity?: number
   extendLeft?: boolean
