@@ -123,7 +123,7 @@ export function getSnapshotStatus(symbol: SymbolId): MarketDataStatus {
   if (!series) return { kind: 'simulated', label: '模拟数据', vendor: 'LOCAL', fetchedAt: null, detail: '本地确定性模拟行情' }
   return {
     kind: 'snapshot',
-    label: `${series.vendor} 最新`,
+    label: symbol === 'NQ1!' ? 'DATABENTO 历史' : `${series.vendor} 最新`,
     vendor: series.vendor,
     fetchedAt: series.lastTime,
     detail: `${series.symbol} · ${series.vendor} 静态快照 · ${series.count.toLocaleString('zh-CN')} 根 ${series.resolution} 分钟 K 线 · UTC`,
@@ -159,7 +159,10 @@ export function parseCompactHistory(payload: unknown): Candle[] {
   const file = payload as CompactHistoryFile
   if (!Array.isArray(file?.rows)) throw new Error('历史数据文件格式无效')
   const bars = file.rows.map(toCandle)
-  const sorted = mergeCandleHistory([bars])
+  // Snapshot exports are normally strictly chronological. Reuse them directly
+  // instead of building a second million-entry map for large histories.
+  const ordered = bars.every((bar, index) => index === 0 || bars[index - 1].time < bar.time)
+  const sorted = ordered ? bars : mergeCandleHistory([bars])
   if (sorted.length === 0) throw new Error('历史数据文件没有K线')
   return sorted
 }

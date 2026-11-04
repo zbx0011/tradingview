@@ -15,6 +15,8 @@ export interface FibLevelSetting {
   visible: boolean
   color: string
   text?: string
+  /** Per-level line thickness; falls back to the shared horizontal line width. */
+  width?: number
 }
 
 export interface FibSettings {
@@ -93,6 +95,23 @@ export function normalizeFibSettings(value?: Partial<FibSettings>): FibSettings 
   }
 }
 
+/** Statistics shown next to a line tool (TradingView "统计数据"). */
+export type DrawingStat = 'price-range' | 'percent-change' | 'pips-change' | 'bars-range' | 'date-time-range' | 'distance' | 'angle' | 'volume'
+
+export interface DrawingVisibilityRange { enabled: boolean; min: number; max: number }
+
+/** TradingView "可见范围": which chart resolutions show the drawing. */
+export interface DrawingVisibility {
+  ticks: boolean
+  seconds: DrawingVisibilityRange
+  minutes: DrawingVisibilityRange
+  hours: DrawingVisibilityRange
+  days: DrawingVisibilityRange
+  weeks: DrawingVisibilityRange
+  months: DrawingVisibilityRange
+  ranges: boolean
+}
+
 export interface Drawing {
   id: string
   tool: string
@@ -106,6 +125,77 @@ export interface Drawing {
   locked?: boolean
   text?: string
   fib?: FibSettings
+  /** Line opacity 0..1 (TradingView 不透明度). */
+  opacity?: number
+  extendLeft?: boolean
+  extendRight?: boolean
+  leftEnd?: 'normal' | 'arrow'
+  rightEnd?: 'normal' | 'arrow'
+  middlePoint?: boolean
+  priceLabels?: boolean
+  stats?: DrawingStat[]
+  statsPosition?: 'left' | 'center' | 'right' | 'auto'
+  alwaysShowStats?: boolean
+  textColor?: string
+  fontSize?: number
+  bold?: boolean
+  italic?: boolean
+  textVAlign?: 'top' | 'middle' | 'bottom'
+  textHAlign?: 'left' | 'center' | 'right'
+  visibility?: DrawingVisibility
+  /** Hidden from the chart via the drawing's "更多 → 隐藏" menu. */
+  hiddenOnChart?: boolean
+  /** 背景 checkbox + colour (shapes, channels, text boxes, patterns). */
+  fillEnabled?: boolean
+  fillColor?: string
+  /** 边框 checkbox + colour (text boxes, patterns, ranges). */
+  borderEnabled?: boolean
+  borderColor?: string
+  /** 中线 for rectangles. */
+  middleLine?: boolean
+  /** 时间标签 for vertical / cross lines. */
+  timeLabel?: boolean
+  /** 文字方向 for vertical lines. */
+  textOrientation?: 'vertical' | 'horizontal'
+  /** 文本换行 for text boxes. */
+  wrapText?: boolean
+  /** Parallel-channel levels (0 and 1 are the two channel lines). */
+  channelLevels?: ChannelLevel[]
+  /** Long / short position inputs and styling. */
+  position?: PositionSettings
+  /** Levels for fib time zones / channels / circles / fans and pitchforks. */
+  fibLevels?: ChannelLevel[]
+  /** 使用一种颜色: draw every level with the main colour. */
+  useOneColor?: boolean
+  /** 分叉线 样式. */
+  pitchforkStyle?: 'original' | 'schiff' | 'modified-schiff' | 'inside'
+  /** 仓位预测 colours (来源 / 目标 / 成功 / 失败). */
+  forecastColors?: Partial<Record<ForecastColorKey, string>>
+  /** 标签背景 for price / date ranges. */
+  labelBackground?: boolean
+  labelBackgroundColor?: string
+  /** Extra level groups (江恩箱 价格位/时间水平, 江恩正方 水平位/扇形/弧形 …). */
+  levelGroups?: Record<string, ChannelLevel[]>
+  /** Tool specific switches / values (反手, 角度, 逆时针方向, 完整圆圈, 镜像, VWAP / VP inputs …). */
+  options?: Record<string, boolean | number | string>
+}
+
+export type ForecastColorKey = 'sourceText' | 'sourceBackground' | 'sourceBorder' | 'targetText' | 'targetBackground' | 'targetBorder' | 'successText' | 'successBackground' | 'failureText' | 'failureBackground'
+
+export interface ChannelLevel { value: number; enabled: boolean; color: string; lineStyle: DrawingLineStyle; label?: string }
+
+export interface PositionSettings {
+  accountSize: number
+  lotSize: number
+  risk: number
+  riskUnit: 'percent' | 'currency'
+  leverage: number
+  qtyPrecision: 'default' | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
+  stopColor: string
+  targetColor: string
+  stats: string[]
+  compactStats: boolean
+  alwaysShowStats: boolean
 }
 
 export interface DrawingHistory {
@@ -124,6 +214,7 @@ export type DrawingAction =
   | { type: 'delete-many'; ids: string[] }
   | { type: 'select'; id: string | null; additive?: boolean }
   | { type: 'clear' }
+  | { type: 'reorder'; id: string; to: 'front' | 'back' | 'forward' | 'backward' }
   | { type: 'load'; drawings: Drawing[] }
   | { type: 'undo' }
   | { type: 'redo' }
@@ -200,6 +291,18 @@ export function drawingReducer(state: DrawingHistory, action: DrawingAction): Dr
     }
     case 'clear':
       return { ...commit(state, []), selectedId: null }
+    case 'reorder': {
+      const index = state.present.findIndex((item) => item.id === action.id)
+      if (index < 0) return state
+      const next = [...state.present]
+      const [item] = next.splice(index, 1)
+      const target = action.to === 'front' ? next.length
+        : action.to === 'back' ? 0
+          : action.to === 'forward' ? Math.min(next.length, index + 1)
+            : Math.max(0, index - 1)
+      next.splice(target, 0, item)
+      return commit(state, next)
+    }
     case 'load':
       return { ...initialDrawingHistory, present: action.drawings }
     case 'undo': {

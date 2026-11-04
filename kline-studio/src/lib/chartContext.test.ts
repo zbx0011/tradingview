@@ -8,6 +8,8 @@ describe('chart context menu helpers', () => {
   })
 
   it('counts visible indicators for the destructive menu label', () => {
-    expect(countActiveIndicators({ ma: true, ema: false, boll: true, volume: true })).toBe(3)
+    expect(countActiveIndicators({ ma: true, ema: false, boll: true, volume: true, smc: false })).toBe(3)
+    // The Smart Money Concepts overlay is on unless explicitly switched off.
+    expect(countActiveIndicators({ ma: true, ema: false, boll: true, volume: true })).toBe(4)
   })
 })

@@ -1,4 +1,4 @@
-export type SymbolId = 'XAUUSD' | 'XAGUSD' | 'BTCUSDT.P' | 'US500' | 'ETHUSD'
+export type SymbolId = 'XAUUSD' | 'XAGUSD' | 'BTCUSDT.P' | 'US500' | 'ETHUSD' | 'NQ1!'
 export type IntervalId = '1m' | '5m' | '15m' | '30m' | '1h' | '2h' | '4h' | '1d' | '1w'
 
 export interface Candle {
@@ -21,6 +21,7 @@ export interface SymbolInfo {
 }
 
 export const SYMBOLS: SymbolInfo[] = [
+  { id: 'NQ1!', name: '纳斯达克100 E-mini 期货', exchange: 'CME', basePrice: 28200, volatility: 0.001, precision: 2, accent: '#45b1d1' },
   { id: 'XAUUSD', name: '黄金现货/美元', exchange: 'OANDA', basePrice: 4260, volatility: 0.0019, precision: 3, accent: '#f2b90b' },
   { id: 'XAGUSD', name: '白银现货/美元', exchange: 'OANDA', basePrice: 34, volatility: 0.0032, precision: 3, accent: '#b7c4d6' },
   { id: 'BTCUSDT.P', name: '比特币/泰达币永续', exchange: 'BYBIT', basePrice: 64800, volatility: 0.0054, precision: 1, accent: '#f7931a' },

@@ -1,9 +1,9 @@
 import { ALL_DRAWING_TOOLS } from './toolCatalog'
 
-export const FAVORITE_TOOLS_KEY = 'kline-studio-favorite-tools-v1'
+export const FAVORITE_TOOLS_KEY = 'kline-studio-favorite-tools-v3'
 
 export const DEFAULT_FAVORITE_TOOLS = [
-  'arrow-line', 'text', 'horizontal', 'vertical', 'rectangle', 'arrow-up', 'parallel-channel', 'short-position',
+  'text', 'horizontal-ray', 'arrow-down', 'vertical', 'rectangle', 'arrow-up', 'long-position', 'short-position', 'horizontal', 'abcd',
 ]
 
 const knownToolIds = new Set(ALL_DRAWING_TOOLS.map((tool) => tool.id))

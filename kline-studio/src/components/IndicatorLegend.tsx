@@ -3,8 +3,9 @@ import { ChevronDown, ChevronRight, Eye, EyeOff, RefreshCcw } from 'lucide-react
 import { bollinger, ema, sma, volumeSma } from '../lib/indicators'
 import { formatPrice, INTERVALS, type Candle, type IntervalId, type SymbolId } from '../lib/market'
 import type { IndicatorSettings } from './ChartSurface'
+import { useHoverCandle } from '../lib/hoverStore'
 
-type IndicatorKey = 'ma' | 'ema' | 'boll' | 'volume'
+type IndicatorKey = 'ma' | 'ema' | 'boll' | 'volume' | 'smc'
 
 interface Props {
   data: Candle[]
@@ -29,20 +30,38 @@ interface IndicatorRow {
 
 function valueAt<T extends { time: number }>(points: T[], time: number | undefined) {
   if (time === undefined) return points.at(-1)
-  return points.find((point) => point.time === time) ?? points.at(-1)
+  // Binary search: points are sorted by time and this runs on every hovered bar.
+  let low = 0
+  let high = points.length - 1
+  while (low <= high) {
+    const middle = (low + high) >> 1
+    const candidate = points[middle].time
+    if (candidate === time) return points[middle]
+    if (candidate < time) low = middle + 1
+    else high = middle - 1
+  }
+  return points.at(-1)
 }
 
 export function IndicatorLegend({ data, candle, symbol, interval, indicators, indicatorsHidden, expanded, onToggle, onExpandedChange, onOpenSettings, onRefresh }: Props) {
   const [refreshing, setRefreshing] = useState(false)
-  const activeCandle = candle ?? data.at(-1) ?? null
+  const hoverCandle = useHoverCandle()
+  const activeCandle = hoverCandle ?? candle ?? data.at(-1) ?? null
+  // Full indicator series depend only on the data and periods; hovering just
+  // looks values up in them.
+  const maSeries = useMemo(() => sma(data, indicators.maPeriod), [data, indicators.maPeriod])
+  const emaSeries = useMemo(() => ema(data, indicators.emaPeriod), [data, indicators.emaPeriod])
+  const bollSeries = useMemo(() => bollinger(data, indicators.bollPeriod, indicators.bollDeviation), [data, indicators.bollDeviation, indicators.bollPeriod])
+  const volumeSeries = useMemo(() => volumeSma(data, 20), [data])
   const values = useMemo(() => {
     const time = activeCandle?.time
-    const ma = valueAt(sma(data, indicators.maPeriod), time)?.value
-    const emaValue = valueAt(ema(data, indicators.emaPeriod), time)?.value
-    const bollValue = valueAt(bollinger(data, indicators.bollPeriod, indicators.bollDeviation), time)
-    const volumeAverage = valueAt(volumeSma(data, 20), time)?.value
-    return { ma, ema: emaValue, boll: bollValue, volumeAverage }
-  }, [activeCandle?.time, data, indicators.bollDeviation, indicators.bollPeriod, indicators.emaPeriod, indicators.maPeriod])
+    return {
+      ma: valueAt(maSeries, time)?.value,
+      ema: valueAt(emaSeries, time)?.value,
+      boll: valueAt(bollSeries, time),
+      volumeAverage: valueAt(volumeSeries, time)?.value,
+    }
+  }, [activeCandle?.time, bollSeries, emaSeries, maSeries, volumeSeries])
   const rows: IndicatorRow[] = [
     {
       key: 'volume',
@@ -58,6 +77,7 @@ export function IndicatorLegend({ data, candle, symbol, interval, indicators, in
       detail: `BOLL ${indicators.bollPeriod} ${indicators.bollDeviation}${values.boll ? ` close ${formatPrice(values.boll.middle, symbol)}` : ''}`,
       color: '#9b7bff',
     },
+    { key: 'smc', name: 'LuxAlgo', detail: 'LuxAlgo - Smart Money Concepts', color: '#089981' },
   ]
   const total = rows.length
   const toggleRefresh = () => {
@@ -74,7 +94,7 @@ export function IndicatorLegend({ data, candle, symbol, interval, indicators, in
     </div>
     {expanded && <div className="indicator-legend-list">
       {rows.map((row) => {
-       const visible = indicators[row.key] && !indicatorsHidden
+       const visible = (row.key === 'smc' ? indicators.smc !== false : indicators[row.key]) && !indicatorsHidden
        return <div className={`indicator-legend-row${visible ? ' is-visible' : ' is-hidden'}`} data-testid={`indicator-legend-row-${row.key}`} key={row.key}>
           <button type="button" className="indicator-legend-main" onClick={onOpenSettings} title="打开指标设置"><span className="indicator-legend-name" style={{ color: row.color }}>{row.name}</span><span className="indicator-legend-detail">{row.detail}</span></button>
           <button type="button" className="indicator-legend-toggle" aria-label={`${visible ? '隐藏' : '显示'} ${row.name}`} aria-pressed={visible} title={`${visible ? '隐藏' : '显示'} ${row.name}`} onClick={() => onToggle(row.key)}>{visible ? <Eye size={17} /> : <EyeOff size={17} />}</button>

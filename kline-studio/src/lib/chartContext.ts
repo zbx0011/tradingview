@@ -43,8 +43,8 @@ export function clampContextMenuPosition(
   }
 }
 
-export function countActiveIndicators(indicators: { ma: boolean; ema: boolean; boll: boolean; volume: boolean }) {
-  return [indicators.ma, indicators.ema, indicators.boll, indicators.volume].filter(Boolean).length
+export function countActiveIndicators(indicators: { ma: boolean; ema: boolean; boll: boolean; volume: boolean; smc?: boolean }) {
+  return [indicators.ma, indicators.ema, indicators.boll, indicators.volume, indicators.smc !== false].filter(Boolean).length
 }
 
 function parseStoredArray<T>(raw: string | null, predicate: (value: unknown) => value is T): T[] {

@@ -16,7 +16,7 @@ export interface SavedWorkspace {
   priceScaleInverted?: boolean
   indicatorProfileVersion?: 1
   indicatorLegendExpanded?: boolean
-  indicators: { ma: boolean; ema: boolean; boll: boolean; volume: boolean; maPeriod: number; emaPeriod: number; bollPeriod: number; bollDeviation: number }
+  indicators: { ma: boolean; ema: boolean; boll: boolean; volume: boolean; smc?: boolean; maPeriod: number; emaPeriod: number; bollPeriod: number; bollDeviation: number }
   drawings: Drawing[]
   /** Replay-range groups that were collapsed in the Object Tree. */
   collapsedReplayRangeLayerIds?: string[]
@@ -86,19 +86,20 @@ export const DEFAULT_DECISION_CHART_STATUS_PREFERENCES: DecisionChartStatusPrefe
   position: null,
 }
 
-const DECISION_REPLAY_SYMBOLS: readonly SymbolId[] = ['XAUUSD', 'XAGUSD', 'BTCUSDT.P', 'US500', 'ETHUSD']
+const DECISION_REPLAY_SYMBOLS: readonly SymbolId[] = ['XAUUSD', 'XAGUSD', 'BTCUSDT.P', 'US500', 'ETHUSD', 'NQ1!']
 const DECISION_REPLAY_POSITION_MODES: readonly DecisionPositionSizingMode[] = ['fixed-risk', 'fixed-notional']
 
 export function parseWorkspace(raw: string | null): SavedWorkspace | null {
   if (!raw) return null
   try {
     const value = JSON.parse(raw) as Partial<SavedWorkspace>
-    if (!['XAUUSD', 'XAGUSD', 'BTCUSDT.P', 'US500', 'ETHUSD'].includes(value.symbol ?? '')) return null
+    if (!['XAUUSD', 'XAGUSD', 'BTCUSDT.P', 'US500', 'ETHUSD', 'NQ1!'].includes(value.symbol ?? '')) return null
     if (!['1m', '5m', '15m', '30m', '1h', '2h', '4h', '1d', '1w'].includes(value.interval ?? '')) return null
     if (!value.indicators || !Array.isArray(value.drawings)) return null
-    const indicators = value.indicatorProfileVersion === INDICATOR_PROFILE_VERSION
+    const migratedIndicators = value.indicatorProfileVersion === INDICATOR_PROFILE_VERSION
       ? value.indicators
       : { ...value.indicators, ma: false, ema: true, emaPeriod: 20 }
+    const indicators = { ...migratedIndicators, smc: migratedIndicators.smc !== false }
     const collapsedReplayRangeLayerIds = Array.isArray(value.collapsedReplayRangeLayerIds)
       ? value.collapsedReplayRangeLayerIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
       : []

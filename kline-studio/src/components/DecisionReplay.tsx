@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import {
   Archive, BarChart3, CalendarDays, Check, ChevronRight, CircleDollarSign, Eye, Flag, History, ListOrdered, LogOut,
-  MousePointer2, Play, RotateCcw, Shield, Star, Target, X,
+  MousePointer2, NotebookPen, Play, RotateCcw, Shield, Star, Target, X,
 } from 'lucide-react'
 import type { ReplayDecisionCandidate, ReplayDecisionSignalMarkerSelection } from '../lib/replayTradeRegistry'
 import type {
@@ -254,7 +254,7 @@ export interface DecisionSymbolStats {
   }>
 }
 
-export function DecisionReplayCenter({ open, availableCount, totalCount, symbolStats, aiDaySummariesByMode = { 'fixed-risk': [], 'fixed-notional': [] }, availableCandidateKeys = [], seenTradeKeys = [], sessions, activeSessionId, favoriteKeys = [], onToggleFavorite = () => undefined, onClose, onStart, onContinue, onResults, anomalyCount = 0, anomalyUnavailableCount = 0, anomalyLoading = false, onRedoAnomalies }: {
+export function DecisionReplayCenter({ open, availableCount, totalCount, symbolStats, aiDaySummariesByMode = { 'fixed-risk': [], 'fixed-notional': [] }, availableCandidateKeys = [], seenTradeKeys = [], sessions, activeSessionId, favoriteKeys = [], onToggleFavorite = () => undefined, onClose, onStart, onContinue, onResults, anomalyCount = 0, anomalyUnavailableCount = 0, anomalyLoading = false, onRedoAnomalies, onOpenManualPractice }: {
   open: boolean
   availableCount: number
   totalCount: number
@@ -274,6 +274,8 @@ export function DecisionReplayCenter({ open, availableCount, totalCount, symbolS
   anomalyUnavailableCount?: number
   anomalyLoading?: boolean
   onRedoAnomalies?: (positionSizingModes: DecisionPositionSizingMode[]) => void
+  /** Opens the self-directed NQ1! practice (no AI signals). */
+  onOpenManualPractice?: () => void
 }) {
   const [newSessionPreferences, setNewSessionPreferences] = useState(() => loadDecisionReplayCenterPreferences() ?? ({
     count: 30,
@@ -341,6 +343,9 @@ export function DecisionReplayCenter({ open, availableCount, totalCount, symbolS
       <div className="decision-center-body">
         {activeSessionId && <button className="decision-resume-card" onClick={onContinue}>
           <Play size={22} /><span><b>继续未完成的决策回放</b><small>当前进度已自动保存</small></span><ChevronRight size={20} />
+        </button>}
+        {onOpenManualPractice && <button className="decision-resume-card manual-practice-card" onClick={onOpenManualPractice}>
+          <NotebookPen size={22} /><span><b>NQ1! 自主逐K复盘（无AI信号）</b><small>随机一天逐根练习，开仓必须写做单理由，不开仓按 · 记录不做单理由</small></span><ChevronRight size={20} />
         </button>}
         <section className="decision-new-session">
           <div className="decision-new-session-head">
@@ -1676,7 +1681,7 @@ export function DecisionReplayPanel({ candidate, latestSignal = null, attempt, o
       </div>
       <div className="decision-resize-handle" data-testid="decision-detail-resize-handle" aria-label="调整决策详情框大小" title="拖动调整详情框大小" onPointerDown={handleResizeStart} />
     </aside>
-    <nav ref={menuRef} style={decisionMenuStyle(menuPreferences)} className={`decision-action-menu${menuDragging ? ' is-dragging' : ''}`} aria-label="决策操作菜单" data-testid="decision-action-menu">
+    <nav ref={menuRef} style={decisionMenuStyle(menuPreferences)} className={`decision-action-menu${attempt.stage === 'risk-setup' ? ' is-risk-setup' : ''}${menuDragging ? ' is-dragging' : ''}`} aria-label="决策操作菜单" data-testid="decision-action-menu">
       <div className="decision-action-progress" onPointerDown={handleMenuDragStart} title="拖动移动决策操作框">
         <span className="decision-menu-grip" role="button" aria-label="拖动移动决策操作框" data-testid="decision-action-drag-handle">⠿</span>
         <b>决策回放</b><span>{ordinal}/{total}</span><StageBadge attempt={attempt} preSignal={preSignal} />
@@ -1707,7 +1712,7 @@ export function DecisionReplayPanel({ candidate, latestSignal = null, attempt, o
       </div>}
       {attempt.stage === 'post-exit' && !daySequenceMode && <div className={`decision-active-actions post-exit-actions${canAdvanceTrade ? '' : ' no-next'}`}><button onClick={onAdvance}><kbd>1</kbd>继续观看下一根 K 线</button>{canAdvanceTrade && <button className="close-position" onClick={onNextTrade}><kbd>4</kbd>进入下一笔交易</button>}<button className="restart-trade" onClick={onRestartTrade}><kbd>5</kbd>重新开始这笔交易</button></div>}
       {attempt.stage === 'entry-price' && <div className="decision-action-hint"><MousePointer2 size={18} />请在图表上完成挂单价设置，单击确认，Esc 可取消</div>}
-      {attempt.stage === 'risk-setup' && <div className="decision-action-hint"><MousePointer2 size={18} />拖动白色虚线设置挂单价或追单价；调整止盈止损后，按 <kbd>1</kbd> 确认，按 <kbd>2</kbd> 取消</div>}
+      {attempt.stage === 'risk-setup' && <div className="decision-action-hint"><MousePointer2 size={18} /><span>拖动白色虚线调整入场价，拖动止盈、止损线调整风险。<br />按 <kbd>1</kbd> 确认，按 <kbd>2</kbd> 取消</span></div>}
     </nav>
   </>
 }
@@ -1782,8 +1787,17 @@ type DecisionRiskAmountPlacement = 'center' | 'left' | 'right'
 
 const DECISION_RISK_AMOUNT_GAP = 14
 
-export function DecisionRiskOverlay({ candidate, side, entryPrice, entryLabel = '挂单', stopLoss, takeProfit, positionMultiplier = 1, onPositionMultiplierChange, initialStopLoss = stopLoss, stopLossMode = 'close', onStopLossMode, currentCandleX = null, currentClose = null, currentPnlUsd = null, currentPnlByMode = null, positionSizingModes = ['fixed-risk'], toPrice, toY, onEntryPrice, onStopLoss, onTakeProfit, onConfirm, onCancel, editable = true, showConfirmControls = editable }: {
-  candidate: ReplayDecisionCandidate
+export function DecisionRiskOverlay({ candidate, symbol, precision: precisionOverride, amountForExit, sizeControl, hideStopMode = false, side, entryPrice, entryLabel = '挂单', stopLoss, takeProfit, positionMultiplier = 1, onPositionMultiplierChange, initialStopLoss = stopLoss, stopLossMode = 'close', onStopLossMode, currentCandleX = null, currentClose = null, currentPnlUsd = null, currentPnlByMode = null, positionSizingModes = ['fixed-risk'], toPrice, toY, onEntryPrice, onStopLoss, onTakeProfit, onConfirm, onCancel, editable = true, showConfirmControls = editable }: {
+  /** The AI candidate; self-directed practice has none and passes `symbol` instead. */
+  candidate?: ReplayDecisionCandidate
+  symbol?: SymbolId
+  /** Decimal places for prices; defaults to the symbol's replay precision. */
+  precision?: number
+  /** Replaces the fixed-risk / fixed-notional amounts with one plain dollar amount per exit price. */
+  amountForExit?: (exitPrice: number) => number
+  /** Replaces the position-multiplier stepper (e.g. contract count). */
+  sizeControl?: { label: string; onMinus: () => void; onPlus: () => void; minDisabled?: boolean; maxDisabled?: boolean }
+  hideStopMode?: boolean
   side?: TradeSide
   entryPrice: number
   entryLabel?: '挂单' | '挂单价' | '追单价' | '开仓' | '开仓价'
@@ -1832,7 +1846,7 @@ export function DecisionRiskOverlay({ candidate, side, entryPrice, entryLabel = 
   const hasCurrentPnl = currentClose !== null && currentY !== null && (currentPnlByMode !== null ? positionSizingModes.length > 0 : currentPnlUsd !== null)
   const amountModes = positionSizingModes.length > 0 ? positionSizingModes : DEFAULT_DECISION_POSITION_SIZING_MODES
   const riskSizingStopLoss = initialStopLoss ?? stopLoss
-  const positionSide = side ?? candidate.trade.side
+  const positionSide = side ?? candidate?.trade.side ?? 'long'
   const normalizedPositionMultiplier = normalizeDecisionPositionMultiplier(positionMultiplier)
   const amountAt = (exitPrice: number): Record<DecisionPositionSizingMode, number> => ({
     'fixed-risk': pnlForDecisionMode('fixed-risk', positionSide, entryPrice, exitPrice, riskSizingStopLoss, normalizedPositionMultiplier),
@@ -1974,26 +1988,26 @@ export function DecisionRiskOverlay({ candidate, side, entryPrice, entryLabel = 
   const dragEntry = useLineDrag(toPrice, onEntryPrice ?? (() => undefined))
   const dragStop = useLineDrag(toPrice, onStopLoss ?? (() => undefined))
   const dragTarget = useLineDrag(toPrice, onTakeProfit ?? (() => undefined))
-  const precision = symbolPrecision(candidate.symbol)
+  const precision = precisionOverride ?? symbolPrecision((symbol ?? candidate!.symbol))
   return <div ref={riskOverlayRef} className={`decision-risk-overlay ${editable ? 'editable' : 'locked'} ${positionSide}`} data-testid="decision-risk-overlay">
-    {targetY !== null && <div className="decision-risk-line target" data-testid="decision-take-profit-line" title={editable ? '拖动调整止盈' : undefined} style={{ top: targetY }} onPointerDown={editable ? dragTarget : undefined}><b className="decision-risk-hit-area" aria-hidden="true" /><i /><span ref={targetControlRef} style={targetControlLeft === null ? undefined : { left: targetControlLeft, right: 'auto' }}><Target size={15} />止盈 {takeProfit.toFixed(precision)}</span><div ref={targetAmountRef} className={amountClassName(targetAmountPlacement)} data-testid="decision-take-profit-amount" style={amountPosition}><small>止盈金额</small><DecisionModeMoneyStack modes={amountModes} valueFor={(mode) => takeProfitAmountByMode[mode]} /></div></div>}
-    {entryY !== null && <div className={`decision-risk-line entry${entryLabel === '开仓' ? ' filled' : ''}${editable && onEntryPrice ? ' draggable' : ''} has-position-controls`} data-testid="decision-entry-price-line" title={editable && onEntryPrice ? '拖动白色虚线调整挂单价或追单价' : undefined} style={{ top: entryY }} onPointerDown={editable && onEntryPrice ? dragEntry : undefined}>{editable && onEntryPrice && <b className="decision-risk-hit-area" aria-hidden="true" />}<span ref={entryControlRef} style={entryControlLeft === null ? undefined : { left: entryControlLeft, right: 'auto', transform: 'none' }}><span>{entryLabel} {entryPrice.toFixed(precision)} · 盈亏比 1 : {ratio.toFixed(2)}</span><span className="decision-position-size" role="group" aria-label="本笔仓位倍数" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}><button type="button" aria-label="减小仓位" title="减小仓位" disabled={!onPositionMultiplierChange || normalizedPositionMultiplier === 0.5} onClick={() => onPositionMultiplierChange?.(nextDecisionPositionMultiplier(normalizedPositionMultiplier, -1))}>−</button><b>仓位 {normalizedPositionMultiplier}×</b><button type="button" aria-label="增加仓位" title="增加仓位" disabled={!onPositionMultiplierChange || normalizedPositionMultiplier === 3} onClick={() => onPositionMultiplierChange?.(nextDecisionPositionMultiplier(normalizedPositionMultiplier, 1))}>+</button></span></span></div>}
-    {hasCurrentPnl && <div className={`decision-position-pnl-line${currentPnlValue === null ? '' : currentPnlValue >= 0 ? ' positive' : ' negative'}`} style={{ top: currentY! }} data-testid="decision-position-pnl-line"><span>收盘 {formatPrice(currentClose!, candidate.symbol)} · {currentPnlByMode !== null ? <DecisionModeMoneyStack modes={positionSizingModes} compact={false} valueFor={(mode) => currentPnlByMode[mode] ?? 0} valueLabel={(value) => value >= 0 ? '浮盈' : '浮亏'} /> : <>{currentPnlUsd! >= 0 ? '浮盈' : '浮亏'} {formatDecisionPnl(currentPnlUsd!)}</>}</span></div>}
+    {targetY !== null && <div className="decision-risk-line target" data-testid="decision-take-profit-line" title={editable ? '拖动调整止盈' : undefined} style={{ top: targetY }} onPointerDown={editable ? dragTarget : undefined}><b className="decision-risk-hit-area" aria-hidden="true" /><i /><span ref={targetControlRef} style={targetControlLeft === null ? undefined : { left: targetControlLeft, right: 'auto' }}><Target size={15} />止盈 {takeProfit.toFixed(precision)}</span><div ref={targetAmountRef} className={amountClassName(targetAmountPlacement)} data-testid="decision-take-profit-amount" style={amountPosition}><small>止盈金额</small>{amountForExit ? <span className="decision-mode-stack"><span className="decision-mode-value"><b className={amountForExit(takeProfit) >= 0 ? 'positive' : 'negative'}>{money(amountForExit(takeProfit))}</b></span></span> : <DecisionModeMoneyStack modes={amountModes} valueFor={(mode) => takeProfitAmountByMode[mode]} />}</div></div>}
+    {entryY !== null && <div className={`decision-risk-line entry${entryLabel === '开仓' ? ' filled' : ''}${editable && onEntryPrice ? ' draggable' : ''} has-position-controls`} data-testid="decision-entry-price-line" title={editable && onEntryPrice ? '拖动白色虚线调整挂单价或追单价' : undefined} style={{ top: entryY }} onPointerDown={editable && onEntryPrice ? dragEntry : undefined}>{editable && onEntryPrice && <b className="decision-risk-hit-area" aria-hidden="true" />}<span ref={entryControlRef} style={entryControlLeft === null ? undefined : { left: entryControlLeft, right: 'auto', transform: 'none' }}><span>{entryLabel} {entryPrice.toFixed(precision)} · 盈亏比 1 : {ratio.toFixed(2)}</span>{sizeControl ? <span className="decision-position-size" role="group" aria-label="本笔手数" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}><button type="button" aria-label="减少手数" title="减少手数" disabled={sizeControl.minDisabled} onClick={sizeControl.onMinus}>−</button><b>{sizeControl.label}</b><button type="button" aria-label="增加手数" title="增加手数" disabled={sizeControl.maxDisabled} onClick={sizeControl.onPlus}>+</button></span> : <span className="decision-position-size" role="group" aria-label="本笔仓位倍数" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}><button type="button" aria-label="减小仓位" title="减小仓位" disabled={!onPositionMultiplierChange || normalizedPositionMultiplier === 0.5} onClick={() => onPositionMultiplierChange?.(nextDecisionPositionMultiplier(normalizedPositionMultiplier, -1))}>−</button><b>仓位 {normalizedPositionMultiplier}×</b><button type="button" aria-label="增加仓位" title="增加仓位" disabled={!onPositionMultiplierChange || normalizedPositionMultiplier === 3} onClick={() => onPositionMultiplierChange?.(nextDecisionPositionMultiplier(normalizedPositionMultiplier, 1))}>+</button></span>}</span></div>}
+    {hasCurrentPnl && <div className={`decision-position-pnl-line${currentPnlValue === null ? '' : currentPnlValue >= 0 ? ' positive' : ' negative'}`} style={{ top: currentY! }} data-testid="decision-position-pnl-line"><span>收盘 {(precisionOverride !== undefined ? currentClose!.toFixed(precisionOverride) : formatPrice(currentClose!, (symbol ?? candidate!.symbol)))} · {currentPnlByMode !== null ? <DecisionModeMoneyStack modes={positionSizingModes} compact={false} valueFor={(mode) => currentPnlByMode[mode] ?? 0} valueLabel={(value) => value >= 0 ? '浮盈' : '浮亏'} /> : <>{currentPnlUsd! >= 0 ? '浮盈' : '浮亏'} {formatDecisionPnl(currentPnlUsd!)}</>}</span></div>}
     {stopY !== null && <div className="decision-risk-line stop" data-testid="decision-stop-loss-line" title={editable ? '拖动调整止损；按钮只切换本笔模式，不移动价格' : undefined} style={{ top: stopY }} onPointerDown={editable ? dragStop : undefined}>
       <b className="decision-risk-hit-area" aria-hidden="true" /><i />
       <span ref={stopControlRef} className="decision-stop-control" style={{ left: stopControlLeft ?? 12, right: 'auto' }}><Shield size={15} />止损 {stopLoss.toFixed(precision)}
-        <span className="decision-stop-mode" role="group" aria-label="本笔止损触发方式" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
+        {!hideStopMode && <span className="decision-stop-mode" role="group" aria-label="本笔止损触发方式" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
           <button type="button" aria-pressed={stopLossMode === 'close'} disabled={!editable || !onStopLossMode} title="默认模式：收盘越过止损线才按收盘价退出，系统先退出则跟随；实际亏损可能超过止损线参考金额" onClick={() => onStopLossMode?.('close')}>收盘止损</button>
           <button type="button" aria-pressed={stopLossMode === 'touch'} disabled={!editable || !onStopLossMode} title="仅本笔：盘中触碰止损线即退出，跳空按开盘价；下一笔恢复收盘止损" onClick={() => onStopLossMode?.('touch')}>触碰止损</button>
-        </span>
+        </span>}
       </span>
-      <div ref={stopAmountRef} className={amountClassName(stopAmountPlacement)} data-testid="decision-stop-loss-amount" style={amountPosition}><small>{stopLossMode === 'close' ? '止损线参考盈亏（非最大亏损）' : '止损金额'}</small><DecisionModeMoneyStack modes={amountModes} valueFor={(mode) => stopLossAmountByMode[mode]} /></div>
+      <div ref={stopAmountRef} className={amountClassName(stopAmountPlacement)} data-testid="decision-stop-loss-amount" style={amountPosition}><small>{stopLossMode === 'close' ? '止损线参考盈亏（非最大亏损）' : '止损金额'}</small>{amountForExit ? <span className="decision-mode-stack"><span className="decision-mode-value"><b className={amountForExit(stopLoss) >= 0 ? 'positive' : 'negative'}>{money(amountForExit(stopLoss))}</b></span></span> : <DecisionModeMoneyStack modes={amountModes} valueFor={(mode) => stopLossAmountByMode[mode]} />}</div>
     </div>}
-    {editable && showConfirmControls && <div className="decision-risk-confirm"><div><b>{onEntryPrice ? '拖动白色开仓线、止盈线和止损线' : '拖动上下两个控制点'}</b><small>当前盈亏比 1 : {ratio.toFixed(2)} · 仓位 {normalizedPositionMultiplier}× · {decisionSizingLabels(positionSizingModes)}</small><small>{stopLossMode === 'close' ? '默认收盘止损：可能比止损线亏更多；系统平仓优先' : '触碰止损仅本笔生效，下笔默认收盘止损'}</small></div><button onClick={onCancel}>取消</button><button className="primary" onClick={onConfirm}><Check size={17} />确认并进入下一根 K 线</button></div>}
+    {editable && showConfirmControls && <div className="decision-risk-confirm"><div><b>{onEntryPrice ? '拖动入场、止盈和止损线' : '拖动控制点调整风险'}</b><small>当前盈亏比 1 : {ratio.toFixed(2)} · 仓位 {normalizedPositionMultiplier}× · {decisionSizingLabels(positionSizingModes)}</small><small>{stopLossMode === 'close' ? '默认收盘止损：可能比止损线亏更多；系统平仓优先' : '触碰止损仅本笔生效，下笔默认收盘止损'}</small></div><button onClick={onCancel}>取消 · 2</button><button className="primary" onClick={onConfirm}><Check size={13} />确认 · 1</button></div>}
   </div>
 }
 
-export function DecisionChartAnnotations({ candidate, latestSignal = null, attempt, result, historicalResults = [], data, toX, toY, hidden = false }: {
+export function DecisionChartAnnotations({ candidate, latestSignal = null, attempt, result, historicalResults = [], data, toX, toY, hidden = false, showSystem = true }: {
   candidate: ReplayDecisionCandidate
   latestSignal?: ReplayDecisionSignalMarkerSelection | null
   attempt?: DecisionAttempt | null
@@ -2003,11 +2017,13 @@ export function DecisionChartAnnotations({ candidate, latestSignal = null, attem
   data: readonly Candle[]
   toX: (time: number) => number | null
   toY: (price: number) => number | null
+  showSystem?: boolean
   hidden?: boolean
 }) {
   const reasonTrade = latestSignal?.trade ?? candidate.trade
   const reasonSection = latestSignal?.kind ?? 'entry'
   const reasonReferences = useMemo(() => {
+    if (!showSystem) return []
     const references = resolveTradeCandleReferences(reasonTrade, data)
     // Day-sequence playback can reveal several later entry/opposite signals
     // while the exercise still belongs to its original candidate. Keep the
@@ -2015,7 +2031,7 @@ export function DecisionChartAnnotations({ candidate, latestSignal = null, attem
     // panel. Its causal AI fill/exit points follow that same revealed trade;
     // the exercise totals remain tied to the question candidates below.
     return references.filter((reference) => reference.sections.includes(reasonSection))
-  }, [data, reasonSection, reasonTrade])
+  }, [data, reasonSection, reasonTrade, showSystem])
   // A decision chart is a causal tape. The system's fill and exit may be
   // known from the replay data before the user has made the corresponding
   // decision, but they must not appear until their own candles arrive.
@@ -2041,8 +2057,8 @@ export function DecisionChartAnnotations({ candidate, latestSignal = null, attem
     return projected === null ? null : toX(projected)
   }
   const systemTrade = latestSignal?.trade ?? candidate.trade
-  const systemEntryVisible = systemTrade.entry.time <= revealedThrough
-  const systemExitVisible = systemTrade.exit.time <= revealedThrough
+  const systemEntryVisible = showSystem && systemTrade.entry.time <= revealedThrough
+  const systemExitVisible = showSystem && systemTrade.exit.time <= revealedThrough
   const signalTime = latestSignal?.signalTime ?? candidate.trade.entry.signalTime
   const signalX = projectX(signalTime)
   const systemEntryX = systemEntryVisible ? projectX(systemTrade.entry.time) : null
@@ -2139,7 +2155,7 @@ export function DecisionChartAnnotations({ candidate, latestSignal = null, attem
     className={`decision-chart-annotations${hidden ? ' is-hidden' : ''}`}
     aria-hidden="true"
   >
-    {signalX !== null && signalTime <= revealedThrough && <div className="decision-signal-cursor" style={{ left: signalX }}><span>信号 K</span></div>}
+    {showSystem && signalX !== null && signalTime <= revealedThrough && <div className="decision-signal-cursor" style={{ left: signalX }}><span>信号 K</span></div>}
     {reasonReferences.length > 0 && <svg className="decision-reason-connectors" width="100%" height="100%" preserveAspectRatio="none">
       {reasonReferences.map((reference) => {
         const exitOnly = reference.sections.length === 1 && reference.sections[0] === 'exit'
@@ -2201,9 +2217,10 @@ export function DecisionChartAnnotations({ candidate, latestSignal = null, attem
   </div>
 }
 
-export function DecisionResultsDialog({ session, systemCandidates = null, onClose, onReview, onNew, onReturnToSource, favoriteKeys = [], onToggleFavorite = () => undefined }: {
+export function DecisionResultsDialog({ session, systemCandidates = null, onClose, onFullReview, onReview, onNew, onReturnToSource, favoriteKeys = [], onToggleFavorite = () => undefined }: {
   session: DecisionReplaySession | null
   systemCandidates?: readonly ReplayDecisionCandidate[] | null
+  onFullReview: () => void
   onClose: () => void
   onReview: (result: DecisionTradeResult) => void
   onNew: () => void
@@ -2283,7 +2300,7 @@ export function DecisionResultsDialog({ session, systemCandidates = null, onClos
         })}
         {results.length === 0 && <div className="decision-empty">本场尚未完成任何一笔交易。</div>}
       </div>
-       <footer><button onClick={onClose}>关闭</button>{session.origin === 'review' && session.sourceSessionId && onReturnToSource && <button onClick={onReturnToSource}>返回原本场次对比</button>}<button className="decision-primary" onClick={onNew}><RotateCcw size={17} />开始新一场</button></footer>
+       <footer><button onClick={onClose}>关闭</button><button onClick={onFullReview}><Eye size={17} />完整回看</button>{session.origin === 'review' && session.sourceSessionId && onReturnToSource && <button onClick={onReturnToSource}>返回原本场次对比</button>}<button className="decision-primary" onClick={onNew}><RotateCcw size={17} />开始新一场</button></footer>
     </section>
   </div>
 }

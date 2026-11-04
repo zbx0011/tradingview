@@ -17,6 +17,7 @@ import {
   type UTCTimestamp,
 } from 'lightweight-charts'
 import { bollinger, ema, sma, volumeSma } from '../lib/indicators'
+import { attachSmartMoneyOverlay } from '../lib/smartMoneyOverlay'
 import {
   centeredLatestLogicalRange,
   initialChartLogicalRange,
@@ -52,6 +53,8 @@ export interface IndicatorSettings {
   ma: boolean
   ema: boolean
   boll: boolean
+  /** Smart Money Concepts (LuxAlgo port) overlay. */
+  smc?: boolean
   volume: boolean
   maPeriod: number
   emaPeriod: number
@@ -61,6 +64,7 @@ export interface IndicatorSettings {
 
 export interface ChartSurfaceHandle {
   fitContent: () => void
+  plotSize: () => { width: number; height: number } | null
   showDuration: (seconds: number | null) => void
   zoomToFraction: (from: number, to: number) => void
   coordinateToTime: (x: number) => number | null
@@ -82,6 +86,8 @@ interface Props {
   interval: IntervalId
   chartType: 'candles' | 'hollow' | 'line' | 'area'
   theme: 'dark' | 'light'
+  /** Bars painted solid black (e.g. the candle a manual-practice trade entered on). */
+  blackBarTimes?: readonly number[]
   indicators: IndicatorSettings
   priceScaleAuto: boolean
   priceScaleLog: boolean
@@ -115,6 +121,7 @@ interface SeriesState {
   bollMiddle?: any
   bollLower?: any
   markers?: any
+  smc?: { setData: (candles: readonly Candle[]) => void; destroy: () => void }
 }
 
 interface TradeConnectionSegment extends ReplayTradeConnectionSpec {
@@ -297,11 +304,16 @@ function tradeMarkerPanelStyle(position: TradeMarkerPanelPosition | null, size: 
 
 const toLine = (points: { time: number; value: number }[]) => points.map((point) => ({ time: point.time as UTCTimestamp, value: point.value }))
 
-function updateSeries(series: SeriesState, data: Candle[], chartType: Props['chartType'], indicators: IndicatorSettings) {
+const blackBarPoint = (candle: Candle, border: string) => ({
+  time: candle.time as UTCTimestamp, open: candle.open, high: candle.high, low: candle.low, close: candle.close,
+  color: '#000000', borderColor: border, wickColor: border,
+})
+
+function updateSeries(series: SeriesState, data: Candle[], chartType: Props['chartType'], indicators: IndicatorSettings, black?: { times: ReadonlySet<number>; border: string }) {
   if (chartType === 'line' || chartType === 'area') {
     series.main.setData(data.map(({ time, close }) => ({ time: time as UTCTimestamp, value: close })))
   } else {
-    series.main.setData(data.map(({ time, open, high, low, close }) => ({ time: time as UTCTimestamp, open, high, low, close })))
+    series.main.setData(data.map((candle) => black?.times.has(candle.time) ? blackBarPoint(candle, black.border) : ({ time: candle.time as UTCTimestamp, open: candle.open, high: candle.high, low: candle.low, close: candle.close })))
   }
   if (series.volume) {
     series.volume.setData(data.map((item) => ({
@@ -319,6 +331,44 @@ function updateSeries(series: SeriesState, data: Candle[], chartType: Props['cha
     series.bollMiddle.setData(toLine(points.map((point) => ({ time: point.time, value: point.middle }))))
     series.bollLower.setData(toLine(points.map((point) => ({ time: point.time, value: point.lower }))))
   }
+}
+
+// lightweight-charts 5.2's series-markers plugin calls `series.data()` on every
+// render just to test whether the series is empty. `data()` copies the whole
+// series, so with 200k+ bars (e.g. NQ1! Databento history) every pan/zoom frame
+// spent ~40 ms allocating a 200k-element array and dragging dropped to ~15 fps.
+// Cache the copy until the series data actually changes.
+function memoizeSeriesData(series: any) {
+  if (!series || series.__klineDataMemoized) return
+  const originalData = series.data.bind(series)
+  let cached: unknown = null
+  const invalidate = () => { cached = null }
+  series.data = () => {
+    if (cached === null) cached = originalData()
+    return cached
+  }
+  for (const method of ['setData', 'update', 'pop'] as const) {
+    if (typeof series[method] !== 'function') continue
+    const original = series[method].bind(series)
+    series[method] = (...args: unknown[]) => {
+      invalidate()
+      return original(...args)
+    }
+  }
+  series.__klineDataMemoized = true
+}
+
+function candleAtTime(data: readonly Candle[], time: number): Candle | null {
+  let low = 0
+  let high = data.length - 1
+  while (low <= high) {
+    const middle = (low + high) >> 1
+    const candidate = data[middle].time
+    if (candidate === time) return data[middle]
+    if (candidate < time) low = middle + 1
+    else high = middle - 1
+  }
+  return null
 }
 
 function candleTimeExists(data: readonly Candle[], time: number): boolean {
@@ -379,9 +429,19 @@ function visibleTradeMarkers(
   return chartMarkersForVisibility(markers, markersHidden)
 }
 
+// lightweight-charts only lets update() touch the newest bar, so repainting an older bar means re-setting the
+// main series. That only happens when a trade is entered or removed, and manual-practice data is small.
+function paintBlackBars(series: SeriesState | null, data: readonly Candle[], times: readonly number[], border: string, chartType: Props['chartType']) {
+  if (!series || chartType === 'line' || chartType === 'area') return
+  const black = new Set(times)
+  series.main.setData(data.map((candle) => black.has(candle.time)
+    ? blackBarPoint(candle, border)
+    : { time: candle.time as UTCTimestamp, open: candle.open, high: candle.high, low: candle.low, close: candle.close }) as never)
+}
+
 export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function ChartSurface(
   {
-    data, symbol, interval, chartType, theme, indicators, priceScaleAuto, priceScaleLog, priceScalePercent, priceScaleInverted,
+    data, symbol, interval, chartType, theme, blackBarTimes, indicators, priceScaleAuto, priceScaleLog, priceScalePercent, priceScaleInverted,
     visibleTradeLayerSourceIds = [], decisionSignalSourceIds = [], decisionSignalAfterTime = null,
     visibleRangeLayerSourceIds = [], suppressedRangeObjectIds = [], selectedRangeObjectId = null, onSelectRangeObject,
     followLatest = false, focusLatestKey = 0, suppressAutoFocus = false, centerLatestByDefault = false, markersHidden = false, onHover, onPriceScaleStateChange, onViewportChange,
@@ -392,9 +452,21 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<SeriesState | null>(null)
   const dataRef = useRef(data)
+  const blackBarTimesRef = useRef<readonly number[]>(blackBarTimes ?? [])
+  const blackBarsAppliedRef = useRef<readonly number[]>([])
   const symbolRef = useRef(symbol)
   const intervalRef = useRef(interval)
   const previousLengthRef = useRef(data.length)
+  const blackBorderRef = useRef(theme === 'dark' ? '#9aa3b5' : '#000000')
+  useEffect(() => { blackBorderRef.current = theme === 'dark' ? '#9aa3b5' : '#000000' }, [theme])
+  useEffect(() => {
+    // Declared before the data effect, so the data effect already sees the new list.
+    const next = blackBarTimes ?? []
+    blackBarTimesRef.current = next
+    if (next.join(',') === blackBarsAppliedRef.current.join(',')) return
+    paintBlackBars(seriesRef.current, dataRef.current, next, theme === 'dark' ? '#9aa3b5' : '#000000', chartType)
+    blackBarsAppliedRef.current = next
+  }, [blackBarTimes, chartType, theme])
   const previousDataIdentityRef = useRef(data)
   const followLatestRef = useRef(followLatest)
   const focusLatestKeyRef = useRef(focusLatestKey)
@@ -647,6 +719,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     viewportRangeCache.set(viewportRangeCacheKey(symbolRef.current, intervalRef.current), { from: range.from, to: range.to })
   }, [])
 
+  const flushProjectionRef = useRef(false)
   const requestViewportProjectionSync = useCallback(() => {
     if (viewportProjectionSyncFrameRef.current !== null) return
     if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
@@ -661,7 +734,10 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       cacheVisibleViewport()
       requestTradeConnectionSync()
       requestSignalRangeSync()
-      onViewportChangeRef.current?.()
+      // While the wheel is zooming, commit the drawing projection in the same
+      // frame as the canvas instead of letting React defer it one frame.
+      if (flushProjectionRef.current) flushSync(() => { onViewportChangeRef.current?.() })
+      else onViewportChangeRef.current?.()
     })
   }, [cacheVisibleViewport, requestSignalRangeSync, requestTradeConnectionSync])
 
@@ -744,6 +820,12 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
   }, [activeTrade, decisionSignalAfterTime, decisionSignalSourceIds, interval, markersHidden, requestTradeConnectionSync, symbol, tradeReferenceMarkers, visibleTradeLayerSourceIds])
 
   useImperativeHandle(forwardedRef, () => ({
+    plotSize: () => {
+      const chart = chartRef.current
+      const container = containerRef.current
+      if (!chart || !container) return null
+      return { width: chart.timeScale().width(), height: Math.max(0, container.clientHeight - chart.timeScale().height()) }
+    },
     fitContent: () => chartRef.current?.timeScale().fitContent(),
     showDuration: (seconds) => {
       const currentData = dataRef.current
@@ -886,15 +968,15 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     const chart = createChart(container, {
       autoSize: true,
       layout: {
-        background: { type: ColorType.Solid, color: dark ? '#131722' : '#f7f9fc' },
-        textColor: dark ? '#b2b5be' : '#4a5568',
+        background: { type: ColorType.Solid, color: dark ? '#131722' : '#ffffff' },
+        textColor: dark ? '#b2b5be' : '#787b86',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, sans-serif',
         fontSize: 14,
         attributionLogo: true,
       },
       grid: {
-        vertLines: { color: dark ? '#1e222d' : '#e9edf3', style: 1 },
-        horzLines: { color: dark ? '#1e222d' : '#e9edf3', style: 1 },
+        vertLines: { color: dark ? '#1e222d' : '#f0f3fa', style: 1 },
+        horzLines: { color: dark ? '#1e222d' : '#f0f3fa', style: 1 },
       },
       crosshair: {
         mode: CrosshairMode.Normal,
@@ -907,8 +989,8 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
         invertScale: priceScaleInvertedRef.current,
         visible: true,
         borderVisible: true,
-        borderColor: dark ? '#2a2e39' : '#d8dee8',
-        textColor: dark ? '#b2b5be' : '#4a5568',
+        borderColor: dark ? '#2a2e39' : '#e0e3eb',
+        textColor: dark ? '#b2b5be' : '#787b86',
         ticksVisible: true,
         entireTextOnly: true,
         minimumWidth: 108,
@@ -952,8 +1034,10 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
         lineColor: '#2962ff', topColor: 'rgba(41, 98, 255, .34)', bottomColor: 'rgba(41, 98, 255, .02)', lineWidth: 2,
       })
     } else {
-      mainSeries = chart.addSeries(CandlestickSeries, {
-        upColor: chartType === 'hollow' ? (dark ? '#131722' : '#f7f9fc') : '#f1f3f6',
+      // Light theme follows the SMC reference chart: white bodies for up candles,
+      // black bodies for down candles, all outlined in black.
+      mainSeries = chart.addSeries(CandlestickSeries, dark ? {
+        upColor: chartType === 'hollow' ? '#131722' : '#f1f3f6',
         downColor: '#2962ff',
         borderUpColor: '#f1f3f6',
         borderDownColor: '#2962ff',
@@ -962,9 +1046,20 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
         priceLineVisible: true,
         priceLineColor: '#d1d4dc',
         priceLineStyle: 3,
+      } : {
+        upColor: '#ffffff',
+        downColor: chartType === 'hollow' ? '#ffffff' : '#000000',
+        borderUpColor: '#000000',
+        borderDownColor: '#000000',
+        wickUpColor: '#000000',
+        wickDownColor: '#000000',
+        priceLineVisible: true,
+        priceLineColor: '#b2b5be',
+        priceLineStyle: 3,
       })
     }
 
+    memoizeSeriesData(mainSeries)
     const series: SeriesState = { main: mainSeries }
     if (indicators.volume) {
       series.volume = chart.addSeries(HistogramSeries, { priceScaleId: 'volume', priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false })
@@ -972,7 +1067,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       series.volumeAverage = chart.addSeries(LineSeries, { priceScaleId: 'volume', color: '#ff9800', lineWidth: 2, priceLineVisible: false, lastValueVisible: false })
     }
     if (indicators.ma) series.ma = chart.addSeries(LineSeries, { color: '#f59e0b', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
-    if (indicators.ema) series.ema = chart.addSeries(LineSeries, { color: '#2962ff', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
+    if (indicators.ema) series.ema = chart.addSeries(LineSeries, { color: '#2962ff', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
     if (indicators.boll) {
       const options = { lineWidth: 1 as const, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }
       series.bollUpper = chart.addSeries(LineSeries, { ...options, color: '#9b7bff' })
@@ -980,7 +1075,12 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       series.bollLower = chart.addSeries(LineSeries, { ...options, color: '#9b7bff' })
     }
     seriesRef.current = series
-    updateSeries(series, dataRef.current, chartType, indicators)
+    if (indicators.smc !== false && chartType !== 'line' && chartType !== 'area') {
+      series.smc = attachSmartMoneyOverlay(container, chart, mainSeries, symbolRef.current === 'NQ1!')
+      series.smc.setData(dataRef.current)
+    }
+    blackBarsAppliedRef.current = blackBarTimesRef.current
+    updateSeries(series, dataRef.current, chartType, indicators, { times: new Set(blackBarTimesRef.current), border: dark ? '#9aa3b5' : '#000000' })
     series.markers = createSeriesMarkers(mainSeries, visibleTradeMarkers(
       symbol,
       interval,
@@ -993,7 +1093,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       markersHiddenRef.current,
     ))
     const timeScale = chart.timeScale()
-    let wheelZoomBurstActive = false
+    const wheelZoomBurstActive = false
     let mousePanBurstActive = false
     let wheelProjectionIdleTimer: number | null = null
     const onTimeScaleChange = () => {
@@ -1047,7 +1147,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
         return
       }
       const timestamp = typeof param.time === 'number' ? param.time : 0
-      onHoverRef.current(dataRef.current.find((item) => item.time === timestamp) ?? null)
+      onHoverRef.current(candleAtTime(dataRef.current, timestamp))
     })
     const onChartClick = (param: MouseEventParams) => {
       const clearMarkerDetails = () => {
@@ -1132,17 +1232,15 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       }
     }
     const deferWheelProjectionUntilIdle = () => {
-      wheelZoomBurstActive = true
-      // A projection queued just before the first wheel event would still run
-      // in the middle of the gesture and block the chart canvas. The final
-      // idle sync below recreates the exact latest overlay state.
-      cancelQueuedProjectionSync()
+      // Drawings follow every wheel frame (flushed in the same frame as the
+      // canvas); the idle sync below only settles the final exact state.
+      flushProjectionRef.current = true
       if (wheelProjectionIdleTimer !== null) window.clearTimeout(wheelProjectionIdleTimer)
       wheelProjectionIdleTimer = window.setTimeout(() => {
         wheelProjectionIdleTimer = null
-        wheelZoomBurstActive = false
+        flushProjectionRef.current = false
         requestViewportProjectionSync()
-      }, 80)
+      }, 120)
     }
     const flushWheelZoom = () => {
       wheelZoomFrame = null
@@ -1311,6 +1409,53 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       }
       if (event.pointerType === 'mouse' && event.buttons === 0) finishMousePan()
     }
+    // Dragging (or wheel-scaling) the price axis changes the vertical mapping
+    // without any time-scale event, so DOM/SVG drawings stayed at their old
+    // coordinates until the next gesture. Poll the mapping while the axis is
+    // being used and re-project whenever it changes, plus once at the end.
+    let axisActive = false
+    let axisFrame: number | null = null
+    let axisProbe = ''
+    let axisWheelTimer: number | null = null
+    const pollAxis = () => {
+      axisFrame = null
+      const probe = `${mainSeries.priceToCoordinate(0)}|${mainSeries.priceToCoordinate(1000)}`
+      if (probe !== axisProbe) {
+        axisProbe = probe
+        requestViewportProjectionSync()
+      }
+      if (axisActive) axisFrame = window.requestAnimationFrame(pollAxis)
+      else requestViewportProjectionSync()
+    }
+    const startAxisPoll = () => {
+      axisActive = true
+      if (axisFrame === null) axisFrame = window.requestAnimationFrame(pollAxis)
+    }
+    const stopAxisPoll = () => {
+      if (!axisActive) return
+      axisActive = false
+      if (axisFrame === null) axisFrame = window.requestAnimationFrame(pollAxis)
+    }
+    const onPointOnPriceAxis = (clientX: number) => {
+      const bounds = container.getBoundingClientRect()
+      return clientX - bounds.left > Math.max(0, bounds.width - chart.priceScale('right').width())
+    }
+    const axisPointerDown = (event: PointerEvent) => {
+      if (!event.isPrimary || event.button !== 0 || !onPointOnPriceAxis(event.clientX)) return
+      axisProbe = ''
+      startAxisPoll()
+    }
+    const axisWheel = (event: WheelEvent) => {
+      if (!onPointOnPriceAxis(event.clientX)) return
+      axisProbe = ''
+      startAxisPoll()
+      if (axisWheelTimer !== null) window.clearTimeout(axisWheelTimer)
+      axisWheelTimer = window.setTimeout(() => { axisWheelTimer = null; stopAxisPoll() }, 250)
+    }
+    container.addEventListener('pointerdown', axisPointerDown, true)
+    container.addEventListener('wheel', axisWheel, { passive: true, capture: true })
+    window.addEventListener('pointerup', stopAxisPoll, true)
+    window.addEventListener('pointercancel', stopAxisPoll, true)
     const projectionResizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(requestViewportProjectionSync)
     projectionResizeObserver?.observe(container)
     container.addEventListener('pointerdown', armMousePan, true)
@@ -1321,6 +1466,13 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     window.addEventListener('blur', finishMousePan)
     return () => {
       projectionResizeObserver?.disconnect()
+      container.removeEventListener('pointerdown', axisPointerDown, true)
+      container.removeEventListener('wheel', axisWheel, true)
+      window.removeEventListener('pointerup', stopAxisPoll, true)
+      window.removeEventListener('pointercancel', stopAxisPoll, true)
+      axisActive = false
+      if (axisFrame !== null) window.cancelAnimationFrame(axisFrame)
+      if (axisWheelTimer !== null) window.clearTimeout(axisWheelTimer)
       container.removeEventListener('pointerdown', armMousePan, true)
       container.removeEventListener('pointermove', rejectUnpressedMouseMove, true)
       container.removeEventListener('wheel', handleChartWheel, true)
@@ -1362,6 +1514,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       setTradeConnectionSegments([])
       signalRangeSegmentsRef.current = []
       setSignalRangeSegments([])
+      series.smc?.destroy()
       chart.remove()
       chartRef.current = null
       seriesRef.current = null
@@ -1404,7 +1557,11 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     // from the actual trade being entered.
     const focusReady = shouldFocusLatest && dataChanged && data.length > 0
     const wasAtRealtime = isRealtimeScrollPosition(timeScale.scrollPosition())
-    if (dataChanged) updateSeries(series, data, chartType, indicators)
+    if (dataChanged) {
+      blackBarsAppliedRef.current = blackBarTimesRef.current
+      updateSeries(series, data, chartType, indicators, { times: new Set(blackBarTimesRef.current), border: blackBorderRef.current })
+      series.smc?.setData(data)
+    }
     const revealedMarkers = visibleTradeMarkers(symbol, interval, data, visibleTradeLayerSourceIds, activeTradeRef.current, tradeReferenceMarkers, decisionSignalSourceIds, decisionSignalAfterTime, markersHidden)
     series.markers?.setMarkers(revealedMarkers)
     if (!markersHidden && selectedTradeMarkerIdRef.current && !revealedMarkers.some((marker) => marker.id === selectedTradeMarkerIdRef.current)) {

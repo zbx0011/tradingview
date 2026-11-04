@@ -1,24 +1,35 @@
+import { fullReviewBounds } from './lib/decisionFullReview'
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import {
   Activity, AlarmClock, AlarmClockPlus, AreaChart, BarChart3, Bell, CalendarDays, Camera, ChartCandlestick, ChevronsLeft,
-  ChevronDown, CircleHelp, Database, Download, Grid2X2, History, Layers3, List, Lock, Maximize2, Moon,
-  BrainCircuit, MessageSquare, PanelRightClose, Plus, Radio, Redo2, RefreshCcw, Rewind, Scissors, Search, Settings2, Square, Sun, Trash2, TrendingUp, Undo2, Upload, X,
+  ChevronDown, CircleHelp, Database, Download, Grid2X2, History, Layers3, List, Maximize2, Moon,
+  BrainCircuit, MessageSquare, NotebookPen, PanelRightClose, Plus, Radio, Redo2, RefreshCcw, Rewind, Scissors, Search, Settings2, Square, Sun, TrendingUp, Undo2, Upload, X,
 } from 'lucide-react'
 import { ChartSurface, type ChartSurfaceHandle, type IndicatorSettings } from './components/ChartSurface'
 import { AlertDialog, DataTableDialog, ObjectTreeDialog, OrderDialog } from './components/ChartActionDialogs'
 import { IndicatorLegend } from './components/IndicatorLegend'
+import { getHoverCandle, setHoverCandle, useHoverCandle } from './lib/hoverStore'
+import { ManualBarPicker, ManualPracticeAnnotations, ManualPracticeCenter, ManualPracticePanel, ManualTimelineDialog, NoteKindSwitch, OpenTradeDialog, ReasonEditor } from './components/ManualPractice'
+import { useManualPracticeKeys } from './components/useManualPracticeKeys'
+import {
+  advanceManualSession, aggregateMinutes, barTimeFor, cleanReasons, contextStartTime, createManualSession, findManualTradingDays, finishManualSession,
+  lastRevealedMinute, loadManualPracticeStore, lowerBound, MANUAL_PRACTICE_SYMBOL, openTrade as manualOpenTrade, pickRandomTradingDay, saveManualPracticeStore,
+  latestBackground, upsertBarNote, MANUAL_MAX_QUANTITY, NQ_POINT_VALUE_USD, tradeQuantity, type ManualPendingOrder, type ManualPracticeSession, type ManualPracticeStore, type ManualSide, type ManualTimelineItem,
+} from './lib/manualPractice'
 import { ChartContextMenu, type ChartContextData } from './components/TradingViewContextMenu'
 import { DrawingOverlay } from './components/DrawingOverlay'
 import { DrawingToolbar, type MagnetMode } from './components/DrawingToolbar'
 import { QuickDrawingToolbar } from './components/QuickDrawingToolbar'
 import { FibSettingsDialog } from './components/FibSettingsDialog'
+import { DrawingFloatingToolbar, LineToolSettingsDialog, type LineSettingsTab } from './components/LineToolSettings'
+import { defaultLineToolStyle, loadDrawingTemplate, loadLastDrawingStyle, rememberDrawingStyle, saveDrawingTemplate, templateFieldsOf } from './lib/lineToolSettings'
 import { ReplayToolbar, type ReplayStartMode } from './components/ReplayToolbar'
 import {
   DecisionChartAnnotations, DecisionChartStatus, DecisionHistoryDialog, DecisionPricePicker, DecisionReplayCenter, DecisionReplayPanel, DecisionResultsDialog,
   DecisionRiskOverlay,
 } from './components/DecisionReplay'
 import type { DecisionSymbolStats } from './components/DecisionReplay'
-import { drawingReducer, duplicateDrawing, hitTestDrawing, initialDrawingHistory, moveDrawing, withoutTransientMeasurements, type Drawing } from './lib/drawings'
+import { drawingReducer, duplicateDrawing, hitTestDrawing, initialDrawingHistory, moveDrawing, withoutTransientMeasurements, type Drawing, type DrawingAction } from './lib/drawings'
 import {
   clampContextMenuPosition, countActiveIndicators, loadChartAlerts, loadPaperOrders, saveChartAlerts, savePaperOrders,
   type ChartAlert, type PaperOrder,
@@ -74,10 +85,26 @@ type PrivateSyncOperation = 'sync' | 'receive' | 'history-sync' | 'history-recei
 type CodeDeployPhase = 'checking' | 'ready' | 'publishing' | 'published' | 'updating' | 'unavailable' | 'status-error' | 'error'
 
 const DEFAULT_INDICATORS: IndicatorSettings = {
-  ma: false, ema: true, boll: false, volume: true,
+  ma: false, ema: true, boll: false, volume: true, smc: true,
   maPeriod: 20, emaPeriod: 20, bollPeriod: 20, bollDeviation: 2,
 }
 const DEFAULT_INTERVAL: IntervalId = '5m'
+
+// The white SMC look is the new default. Workspaces saved before it existed keep
+// their stored theme only after the first visit with this version, so the
+// refreshed chart is shown once instead of being hidden behind an old dark setting.
+const THEME_DEFAULT_MIGRATION_KEY = 'kline-studio-light-smc-default-v1'
+function initialTheme(saved: Theme | undefined): Theme {
+  try {
+    if (localStorage.getItem(THEME_DEFAULT_MIGRATION_KEY) !== 'done') {
+      localStorage.setItem(THEME_DEFAULT_MIGRATION_KEY, 'done')
+      return 'light'
+    }
+  } catch {
+    // Storage can be unavailable; fall through to the saved/default theme.
+  }
+  return saved ?? 'light'
+}
 
 function workspaceBackupFileName(kind: 'sync' | 'before-merge' | 'before-import' | 'before-undo') {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').replace('Z', '')
@@ -141,7 +168,7 @@ function App() {
   const [symbol, setSymbol] = useState<SymbolId>(initialSymbol)
   const [interval, setIntervalId] = useState<IntervalId>(initialInterval)
   const [chartType, setChartType] = useState<ChartType>(saved?.chartType ?? 'candles')
-  const [theme, setTheme] = useState<Theme>(saved?.theme ?? 'dark')
+  const [theme, setTheme] = useState<Theme>(() => initialTheme(saved?.theme))
   const [priceScaleAuto, setPriceScaleAuto] = useState(saved?.priceScaleAuto ?? true)
   const [priceScaleLog, setPriceScaleLog] = useState(saved?.priceScaleLog ?? false)
   const [priceScalePercent, setPriceScalePercent] = useState(saved?.priceScalePercent ?? false)
@@ -149,9 +176,11 @@ function App() {
   const [indicators, setIndicators] = useState<IndicatorSettings>(saved?.indicators ?? DEFAULT_INDICATORS)
   const [indicatorLegendExpanded, setIndicatorLegendExpanded] = useState(saved?.indicatorLegendExpanded ?? true)
   const [drawings, dispatchDrawing] = useReducer(drawingReducer, { ...initialDrawingHistory, present: withoutTransientMeasurements(saved?.drawings ?? []) })
+  const [fullReviewDrawings, dispatchFullReviewDrawing] = useReducer(drawingReducer, initialDrawingHistory)
+  const [fullReviewShowUser, setFullReviewShowUser] = useState(true)
   const [decisionDrawings, dispatchDecisionDrawing] = useReducer(drawingReducer, initialDrawingHistory)
   const [activeTool, setActiveTool] = useState('cursor')
-  const [drawingColor, setDrawingColor] = useState('#9abfff')
+  const [drawingColor] = useState('#9abfff')
   const [magnetMode, setMagnetMode] = useState<MagnetMode>('off')
   const [keepDrawing, setKeepDrawing] = useState(false)
   const [shiftMeasureActive, setShiftMeasureActive] = useState(false)
@@ -162,7 +191,6 @@ function App() {
   const [drawingsHidden, setDrawingsHidden] = useState(false)
   const [indicatorsHidden, setIndicatorsHidden] = useState(false)
   const [syncDrawings, setSyncDrawings] = useState(false)
-  const [hoverCandle, setHoverCandle] = useState<Candle | null>(null)
   const [chartAnnotationsHidden, setChartAnnotationsHidden] = useState(false)
   const [symbolPickerOpen, setSymbolPickerOpen] = useState(false)
   const [symbolQuery, setSymbolQuery] = useState('')
@@ -177,6 +205,7 @@ function App() {
   const [goToDateOpen, setGoToDateOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [drawingSettingsId, setDrawingSettingsId] = useState<string | null>(null)
+  const [drawingSettingsTab, setDrawingSettingsTab] = useState<LineSettingsTab>('style')
   const [chartContext, setChartContext] = useState<ChartContextData | null>(null)
   const [alertDraft, setAlertDraft] = useState<{ price: number } | null>(null)
   const [orderDraft, setOrderDraft] = useState<{ price: number; side: PaperOrder['side']; type: PaperOrder['type'] } | null>(null)
@@ -207,7 +236,6 @@ function App() {
   const [replayAutoResolution, setReplayAutoResolution] = useState(true)
   const [replayStartMode, setReplayStartMode] = useState<ReplayStartMode>('bar')
   const [replayPointer, setReplayPointer] = useState<{ x: number; time: number } | null>(null)
-  const [clock, setClock] = useState(() => new Date())
   const [toast, setToast] = useState('')
   const [privateSyncBusy, setPrivateSyncBusy] = useState(false)
   const [privateSyncStatus, setPrivateSyncStatus] = useState<PrivateSyncStatus>('checking')
@@ -226,6 +254,7 @@ function App() {
   const [decisionFavoriteKeys, setDecisionFavoriteKeys] = useState(loadDecisionReplayFavorites)
   const [decisionCenterOpen, setDecisionCenterOpen] = useState(false)
   const [decisionHistoryOpen, setDecisionHistoryOpen] = useState(false)
+  const [fullReviewSession, setFullReviewSession] = useState<DecisionReplaySession | null>(null)
   const [decisionResultsSessionId, setDecisionResultsSessionId] = useState<string | null>(null)
   // When an old result is redone, keep the official active exercise resumable
   // underneath the independent review session.
@@ -234,6 +263,26 @@ function App() {
   const [decisionPriceDraft, setDecisionPriceDraft] = useState<number | null>(null)
   const [decisionRiskDraft, setDecisionRiskDraft] = useState<{ stopLoss: number; takeProfit: number } | null>(null)
   const [decisionCurrentCandleX, setDecisionCurrentCandleX] = useState<number | null>(null)
+  // 自主逐K复盘（NQ1!，无AI信号）. `activeSessionId` is the paper currently on the chart;
+  // paused papers keep status "active" and are resumed from the start dialog.
+  const [manualStore, setManualStore] = useState<ManualPracticeStore>(loadManualPracticeStore)
+  const [manualCenterOpen, setManualCenterOpen] = useState(false)
+  const [manualReviewId, setManualReviewId] = useState<string | null>(null)
+  const [manualTimelineOpen, setManualTimelineOpen] = useState(false)
+  const [manualDialog, setManualDialog] = useState<
+    | { type: 'open'; side: ManualSide; price: number }
+    | { type: 'close' }
+    | { type: 'note'; barTime: number; interval: IntervalId; initial: string[]; background: string; existing: boolean; kind: 'no-trade' | 'should-trade'; side: ManualSide }
+    | { type: 'edit'; item: ManualTimelineItem }
+    | null
+  >(null)
+  // Live stop / target / contracts for the trade being opened (dragged on the chart, mirrored in the card).
+  const [manualRisk, setManualRisk] = useState<{ entryPrice: number; stopLoss: number; takeProfit: number; quantity: number } | null>(null)
+  const [manualFocusTick, setManualFocusTick] = useState(0)
+  // Look-back mode: the next chart click picks an earlier candle to record reasons for.
+  const [manualPicking, setManualPicking] = useState(false)
+  const [manualHighlightTime, setManualHighlightTime] = useState<number | null>(null)
+  const [manualLoading, setManualLoading] = useState(false)
   const decisionDrawingContextRef = useRef<string | null>(null)
   const decisionDrawingLoadingRef = useRef(false)
   const decisionStoreRef = useRef(decisionStore)
@@ -249,9 +298,9 @@ function App() {
   // historical sessions on every candle advance blocked Edge's main thread.
   const normalizedDecisionStore = decisionStore
 
-  const activeDecisionSession = useMemo(() => normalizedDecisionStore.activeSessionId
+  const activeDecisionSession = useMemo(() => !fullReviewSession && normalizedDecisionStore.activeSessionId
     ? normalizedDecisionStore.sessions.find((session) => session.id === normalizedDecisionStore.activeSessionId && session.status === 'active') ?? null
-    : null, [normalizedDecisionStore])
+    : null, [normalizedDecisionStore, fullReviewSession])
   const activeDecisionCandidate = currentDecisionCandidate(activeDecisionSession)
   const activeDecisionAttempt = currentDecisionAttempt(activeDecisionSession)
   const activeDecisionDaySequence = decisionSessionPracticeMode(activeDecisionSession) === 'day-sequence'
@@ -292,8 +341,41 @@ function App() {
     )
   }, [decisionResultsSession])
   const decisionMode = Boolean(activeDecisionCandidate)
-  const uiDrawings = decisionMode ? decisionDrawings : drawings
-  const dispatchUiDrawing = decisionMode ? dispatchDecisionDrawing : dispatchDrawing
+  const fullReviewGroups = useMemo(() => fullReviewSession ? [...new Map(fullReviewSession.candidates.map(c => [`${c.symbol}:${c.interval}`, c])).values()] : [], [fullReviewSession])
+  const fullReviewCandidate = fullReviewGroups.find(c => c.symbol === symbol && c.interval === interval) ?? fullReviewGroups.find(c => c.symbol === symbol) ?? fullReviewGroups[0] ?? null
+  const fullReviewResults = useMemo(() => fullReviewSession && fullReviewCandidate ? sessionResults(fullReviewSession).filter(r => r.candidate.symbol === fullReviewCandidate.symbol && r.candidate.interval === fullReviewCandidate.interval) : [], [fullReviewSession, fullReviewCandidate])
+  const fullReviewSourceIds = useMemo(() => fullReviewSession && fullReviewCandidate ? [...new Set(fullReviewSession.candidates.filter(c => c.symbol === fullReviewCandidate.symbol && c.interval === fullReviewCandidate.interval && !c.manualContinuation).map(c => c.sourceId))] : [], [fullReviewSession, fullReviewCandidate])
+  const uiDrawings = fullReviewSession ? fullReviewDrawings : decisionMode ? decisionDrawings : drawings
+  const dispatchUiDrawing = fullReviewSession ? dispatchFullReviewDrawing : decisionMode ? dispatchDecisionDrawing : dispatchDrawing
+  // New drawings pick up the style saved with "模板 → 保存为..." for their tool.
+  const dispatchWithDrawingTemplates = (action: DrawingAction) => {
+    if (action.type === 'add' && action.drawing.opacity === undefined) {
+      // Saved template first, then whatever the user last changed on this tool (each tool keeps its own memory).
+      const saved = loadDrawingTemplate(action.drawing.tool)
+      const last = loadLastDrawingStyle(action.drawing.tool)
+      const template = saved || last ? { ...(saved ?? {}), ...(last ?? {}) } : null
+      if (template) { dispatchUiDrawing({ ...action, drawing: { ...action.drawing, ...template, opacity: template.opacity ?? 1 } }); return }
+    }
+    dispatchUiDrawing(action)
+  }
+  // Watch style edits (floating toolbar, settings dialog, anything) and remember them for that tool only.
+  const drawingStyleSeenRef = useRef(new Map<string, Partial<Drawing>>())
+  useEffect(() => {
+    const seen = drawingStyleSeenRef.current
+    const alive = new Set<string>()
+    for (const drawing of uiDrawings.present) {
+      alive.add(drawing.id)
+      const current = templateFieldsOf(drawing) as Record<string, unknown>
+      const before = seen.get(drawing.id) as Record<string, unknown> | undefined
+      if (before) {
+        const changed: Record<string, unknown> = {}
+        for (const key of Object.keys(current)) if (JSON.stringify(current[key]) !== JSON.stringify(before[key])) changed[key] = current[key]
+        if (Object.keys(changed).length) rememberDrawingStyle(drawing.tool, changed as Partial<Drawing>)
+      }
+      seen.set(drawing.id, current as Partial<Drawing>)
+    }
+    for (const id of [...seen.keys()]) if (!alive.has(id)) seen.delete(id)
+  }, [uiDrawings.present])
   const symbolInfo = SYMBOLS.find((item) => item.id === symbol) ?? SYMBOLS[0]
   const effectiveDrawingTool = activeTool === 'cursor' && shiftMeasureActive ? 'measure' : activeTool
   const activeDefinition = getTool(effectiveDrawingTool)
@@ -316,7 +398,7 @@ function App() {
     { id: 'shortcut-help', label: '键盘快捷键', detail: '查看 TradingView 快捷键清单', shortcut: 'Ctrl+/' },
     ...ALL_DRAWING_TOOLS.map((tool) => ({ id: `tool-${tool.id}`, label: tool.label, detail: `${tool.section} · ${tool.description}`, shortcut: tool.shortcut, toolId: tool.id })),
   ], [])
-  const visibleIndicators = useMemo(() => indicatorsHidden ? { ...indicators, ma: false, ema: false, boll: false, volume: false } : indicators, [indicators, indicatorsHidden])
+  const visibleIndicators = useMemo(() => indicatorsHidden ? { ...indicators, ma: false, ema: false, boll: false, volume: false, smc: false } : indicators, [indicators, indicatorsHidden])
   const minuteHistory = useMemo(() => remoteMarket?.symbol === symbol ? remoteMarket.bars : decisionHistoryBySymbol[symbol] ?? null, [decisionHistoryBySymbol, remoteMarket, symbol])
   const availableDecisionHistoryBySymbol = useMemo(() => {
     const histories = { ...decisionHistoryBySymbol }
@@ -394,12 +476,53 @@ function App() {
     const knownMinutes = candlesKnownAt(decisionMinuteHistory, decisionCutoff)
     return interval === '1m' ? knownMinutes : aggregateCandles(knownMinutes, INTERVALS[interval].seconds)
   }, [decisionCutoff, decisionMinuteHistory, decisionSubject, interval])
-  const data = useMemo(() => decisionMode
+  const fullReviewData = useMemo(() => {
+    if (!fullReviewSession || !fullReviewCandidate) return []
+    const bounds = fullReviewBounds(fullReviewSession, fullReviewCandidate.symbol, fullReviewCandidate.interval)
+    const known = (availableDecisionHistoryBySymbol[fullReviewCandidate.symbol] ?? []).filter(c => c.time < bounds.to)
+    // Keep all earlier context, just as the exercise chart does. Only the
+    // upper cutoff is frozen; panning left must never reveal an empty day boundary.
+    return aggregateCandles(known, INTERVALS[interval].seconds)
+  }, [fullReviewSession, fullReviewCandidate, availableDecisionHistoryBySymbol, interval])
+  const manualActiveSession = useMemo(() => manualStore.activeSessionId
+    ? manualStore.sessions.find((session) => session.id === manualStore.activeSessionId && session.status === 'active') ?? null
+    : null, [manualStore])
+  const manualReviewSession = useMemo(() => !manualActiveSession && manualReviewId
+    ? manualStore.sessions.find((session) => session.id === manualReviewId) ?? null
+    : null, [manualActiveSession, manualReviewId, manualStore.sessions])
+  // The paper on the chart: the one being played, or a finished one under review.
+  const manualSession = manualActiveSession ?? manualReviewSession
+  const manualMode = manualSession !== null
+  const nqMinutes = availableDecisionHistoryBySymbol[MANUAL_PRACTICE_SYMBOL] ?? null
+  const manualDays = useMemo(() => nqMinutes?.length && (manualCenterOpen || manualMode) ? findManualTradingDays(nqMinutes) : null, [manualCenterOpen, manualMode, nqMinutes])
+  const manualCutoff = manualSession ? (manualActiveSession ? manualSession.cursorTime : manualSession.endTime) : null
+  const manualData = useMemo(() => {
+    if (!manualSession || manualCutoff === null || !nqMinutes?.length) return null
+    const from = manualDays ? contextStartTime(manualDays, manualSession) : manualSession.startTime - 3 * 86_400
+    const minutes = nqMinutes.slice(lowerBound(nqMinutes, from), lowerBound(nqMinutes, manualCutoff))
+    return aggregateMinutes(minutes, INTERVALS[interval].seconds)
+  }, [interval, manualCutoff, manualDays, manualSession, nqMinutes])
+  const manualLastMinute = useMemo(() => manualSession && nqMinutes && manualCutoff !== null ? lastRevealedMinute(nqMinutes, manualCutoff) : null, [manualCutoff, manualSession, nqMinutes])
+  const manualPosition = manualActiveSession ? manualOpenTrade(manualActiveSession) : null
+  // The candle each manual trade entered on is painted black.
+  const manualEntryBarKey = manualSession ? manualSession.trades.map((trade) => barTimeFor(trade.entryTime, interval)).join(',') : ''
+  const manualEntryBarTimes = useMemo(() => manualEntryBarKey ? manualEntryBarKey.split(',').map(Number) : [], [manualEntryBarKey])
+  const manualCurrentBarTime = manualLastMinute ? barTimeFor(manualLastMinute.time, interval) : null
+  const manualCurrentBarNote = manualActiveSession && manualCurrentBarTime !== null
+    ? manualActiveSession.notes.find((note) => note.barTime === manualCurrentBarTime && note.interval === interval) ?? null
+    : null
+  const data = useMemo(() => manualData ? manualData : fullReviewSession ? fullReviewData : decisionMode
     ? decisionData
     : replaySelecting ? baseData : (normalizedReplayCursor === null ? liveData : replayCandles(baseData, normalizedReplayCursor, chartSeconds)),
-  [baseData, chartSeconds, decisionData, decisionMode, liveData, normalizedReplayCursor, replaySelecting])
+  [baseData, chartSeconds, decisionData, decisionMode, liveData, manualData, normalizedReplayCursor, replaySelecting, fullReviewSession, fullReviewData])
+  useEffect(() => {
+    if (!fullReviewSession || !fullReviewData.length) return
+    const timer = window.setTimeout(() => chartRef.current?.focusLatest(), 0)
+    return () => window.clearTimeout(timer)
+  }, [fullReviewSession, fullReviewCandidate, interval, fullReviewData.length])
   const replayAtEnd = normalizedReplayCursor !== null && normalizedReplayCursor >= baseData.at(-1)!.time + chartSeconds
-  const candle = hoverCandle ?? data.at(-1) ?? baseData.at(-1)!
+  // Latest candle. The crosshair candle lives in lib/hoverStore so hovering does not re-render App.
+  const candle = data.at(-1) ?? baseData.at(-1)!
   const decisionCurrentCandle = decisionMode ? data.at(-1) ?? null : null
   const decisionPositionCandle = activeDecisionAttempt?.stage === 'position-open' ? data.at(-1) ?? null : null
   const activeDecisionUserSide = activeDecisionCandidate && activeDecisionAttempt
@@ -465,8 +588,6 @@ function App() {
       decisionSystemCurrentCandle.close,
     )
   }, [activeDecisionSession, decisionDayMode, decisionDaySystemCandidates, decisionSystemCurrentCandle, decisionSystemRevealedThrough])
-  const change = candle.close - candle.open
-  const changePercent = (change / candle.open) * 100
   const activeIndicatorCount = countActiveIndicators(indicators)
   const visibleTradeLayerSourceIds = useMemo(
     () => replayTradeLayers.filter((layer) => layer.symbol === symbol && layer.interval === interval && layer.visible).map((layer) => layer.sourceId),
@@ -626,12 +747,17 @@ function App() {
     return () => { active = false; controller.abort() }
   }, [marketRefreshTick])
 
-  useEffect(() => {
-    const timer = window.setInterval(() => setClock(new Date()), 1000)
-    return () => window.clearInterval(timer)
-  }, [])
-
   useEffect(() => saveChartAlerts(chartAlerts), [chartAlerts])
+  useEffect(() => saveManualPracticeStore(manualStore), [manualStore])
+  // The practice paper is NQ1! only; keep the chart header in step with it.
+  useEffect(() => {
+    if (!manualMode || symbol === MANUAL_PRACTICE_SYMBOL) return
+    const timer = window.setTimeout(() => setSymbol(MANUAL_PRACTICE_SYMBOL), 0)
+    return () => window.clearTimeout(timer)
+  }, [manualMode, symbol])
+
+  // A crosshair candle from the previous symbol/interval must not linger in the readouts.
+  useEffect(() => setHoverCandle(null), [symbol, interval])
   useEffect(() => savePaperOrders(paperOrders), [paperOrders])
   useEffect(() => saveWeeklyMergedReplayTradeLayers(replayTradeLayers), [replayTradeLayers])
   useEffect(() => saveReplayRangeLayers(replayRangeLayers), [replayRangeLayers])
@@ -852,8 +978,10 @@ function App() {
 
   useEffect(() => {
     const chart = chartRef.current
-    const nextDecisionCurrentCandleX = chart && decisionCurrentCandle !== null
-      ? chart.timeToCoordinate(decisionCurrentCandle.time)
+    // Manual practice draws its order lines from the same "current candle" x.
+    const overlayCandle = decisionCurrentCandle ?? (manualMode ? data.at(-1) ?? null : null)
+    const nextDecisionCurrentCandleX = chart && overlayCandle !== null
+      ? chart.timeToCoordinate(overlayCandle.time)
       : null
     setDecisionCurrentCandleX((current) => current === nextDecisionCurrentCandleX ? current : nextDecisionCurrentCandleX)
     if (!chart) return
@@ -864,7 +992,7 @@ function App() {
       alertY,
       orderY,
     })
-  }, [chartAlerts, clock, data, decisionCurrentCandle, decisionMode, drawingProjectionTick, lockedCursorTime, paperOrders, symbol])
+  }, [chartAlerts, data, decisionCurrentCandle, decisionMode, drawingProjectionTick, lockedCursorTime, manualMode, paperOrders, symbol])
 
   useEffect(() => {
     if (!live) return
@@ -1993,7 +2121,7 @@ function App() {
 
   const resetWorkspace = () => {
     clearWorkspace()
-    setSymbol('XAUUSD'); setIntervalId(DEFAULT_INTERVAL); setChartType('candles'); setTheme('dark'); setIndicators(DEFAULT_INDICATORS)
+    setSymbol('XAUUSD'); setIntervalId(DEFAULT_INTERVAL); setChartType('candles'); setTheme('light'); setIndicators(DEFAULT_INDICATORS)
     setIndicatorLegendExpanded(true)
     setCollapsedReplayRangeLayerIds([])
     setPriceScaleAuto(true); setPriceScaleLog(false); setPriceScalePercent(false); setPriceScaleInverted(false)
@@ -2183,10 +2311,10 @@ function App() {
         event.preventDefault(); setGoToDateOpen(true); return
       }
       if (event.altKey && !event.shiftKey && key === 'a') {
-        event.preventDefault(); openAlertAt(candle.close); return
+        event.preventDefault(); openAlertAt((getHoverCandle() ?? candle).close); return
       }
       if (event.altKey && event.shiftKey && (key === 'b' || key === 's')) {
-        event.preventDefault(); openOrderAt(candle.close, key === 'b' ? 'buy' : 'sell', key === 'b' ? 'limit' : 'stop'); return
+        event.preventDefault(); openOrderAt((getHoverCandle() ?? candle).close, key === 'b' ? 'buy' : 'sell', key === 'b' ? 'limit' : 'stop'); return
       }
       if (event.altKey && !event.shiftKey && key === 's') {
         event.preventDefault(); takeSnapshotShortcut(); return
@@ -2215,14 +2343,14 @@ function App() {
       const drawingShortcut = event.altKey ? (
         event.shiftKey && key === 'r' ? 'rectangle' :
           key === 't' ? 'trend' : key === 'h' ? 'horizontal' : key === 'v' ? 'vertical' :
-            key === 'c' ? 'cross-line' : key === 'f' ? 'fib' : null
+            key === 'c' ? 'cross-line' : key === 'j' ? 'horizontal-ray' : key === 'f' ? 'fib' : null
       ) : null
       if (drawingShortcut) {
         event.preventDefault(); setQuickMeasurement(null); setActiveTool(drawingShortcut); return
       }
 
       if (!mod && !event.altKey && event.shiftKey && key === 't') {
-        event.preventDefault(); openOrderAt(candle.close, 'buy', 'limit'); return
+        event.preventDefault(); openOrderAt((getHoverCandle() ?? candle).close, 'buy', 'limit'); return
       }
 
       if (!mod && !event.altKey && event.key === '/') {
@@ -2269,7 +2397,7 @@ function App() {
     }
     window.addEventListener('keydown', keyHandler)
     return () => window.removeEventListener('keydown', keyHandler)
-  }, [activeDecisionAttempt, activeDecisionSession, activeSelectedReplayRangeId, activeTool, advanceActiveDecision, baseData, candle.close, cancelDecisionSetup, cancelPendingDecisionAndAdvance, chartSeconds, chooseDayExtremeOrder, chooseFreePriceOrder, chooseSignalExtremeOrder, closeActiveDecisionAtMarket, confirmDecisionRisk, decisionDayMode, decisionResultsSession, deleteReplayRangeObject, dispatchUiDrawing, effectiveReplayResolution, goToNextDecisionTrade, interval, loadSavedLayout, navigateDecisionExercise, normalizedReplayCursor, notify, openAlertAt, openOrderAt, priceScaleAuto, priceScaleInverted, priceScaleLog, priceScalePercent, replayAtEnd, restartActiveDecisionTrade, saveCurrentLayout, selectedDrawing, selectedDrawingIds, skipActiveDecision, symbol, takeSnapshotShortcut, uiDrawings.present, uiDrawings.selectedId, uiDrawings.selectedIds, watchlistOpen])
+  }, [activeDecisionAttempt, activeDecisionSession, activeSelectedReplayRangeId, activeTool, advanceActiveDecision, baseData, candle, cancelDecisionSetup, cancelPendingDecisionAndAdvance, chartSeconds, chooseDayExtremeOrder, chooseFreePriceOrder, chooseSignalExtremeOrder, closeActiveDecisionAtMarket, confirmDecisionRisk, decisionDayMode, decisionResultsSession, deleteReplayRangeObject, dispatchUiDrawing, effectiveReplayResolution, goToNextDecisionTrade, interval, loadSavedLayout, navigateDecisionExercise, normalizedReplayCursor, notify, openAlertAt, openOrderAt, priceScaleAuto, priceScaleInverted, priceScaleLog, priceScalePercent, replayAtEnd, restartActiveDecisionTrade, saveCurrentLayout, selectedDrawing, selectedDrawingIds, skipActiveDecision, symbol, takeSnapshotShortcut, uiDrawings.present, uiDrawings.selectedId, uiDrawings.selectedIds, watchlistOpen])
 
   useEffect(() => {
     const cancelMeasure = () => {
@@ -2294,12 +2422,279 @@ function App() {
     ['1天', 86400], ['5天', 432000], ['1个月', 2592000], ['3个月', 7776000], ['6个月', 15552000], ['年初至今', 18921600], ['1年', 31536000], ['5年', 157680000], ['全部', null],
   ]
 
+  /* ---------------- 自主逐K复盘 handlers ---------------- */
+  const updateManualSession = (sessionId: string, update: (session: ManualPracticeSession) => ManualPracticeSession) => {
+    setManualStore((store) => ({ ...store, sessions: store.sessions.map((session) => session.id === sessionId ? update(session) : session) }))
+  }
+  const enterManualView = () => {
+    setManualCenterOpen(false)
+    setDecisionCenterOpen(false)
+    setManualTimelineOpen(false)
+    setManualHighlightTime(null)
+    setReplayCursor(null); setReplayPlaying(false); setReplaySelecting(false)
+    if (symbol !== MANUAL_PRACTICE_SYMBOL) setSymbol(MANUAL_PRACTICE_SYMBOL)
+    if (INTERVALS[interval].seconds > 3600) setIntervalId('5m')
+    setManualFocusTick((value) => value + 1)
+  }
+  const manualBlockedByDecision = () => {
+    if (activeDecisionSession || fullReviewSession) {
+      notify('请先退出当前的决策回放，再开始自主复盘')
+      return true
+    }
+    return false
+  }
+  const ensureNqMinutes = async () => {
+    if (nqMinutes?.length) return nqMinutes
+    setManualLoading(true)
+    try {
+      const bars = await loadSnapshotCandles(MANUAL_PRACTICE_SYMBOL, '1m')
+      if (bars?.length) setDecisionHistoryBySymbol((current) => current[MANUAL_PRACTICE_SYMBOL] === bars ? current : { ...current, [MANUAL_PRACTICE_SYMBOL]: bars })
+      return bars ?? null
+    } catch {
+      return null
+    } finally {
+      setManualLoading(false)
+    }
+  }
+  const startManualPractice = async () => {
+    if (manualBlockedByDecision()) return
+    const minutes = await ensureNqMinutes()
+    if (!minutes?.length) { notify('NQ1! 历史数据加载失败，暂时无法出卷'); return }
+    const days = findManualTradingDays(minutes)
+    const day = pickRandomTradingDay(days, new Set(manualStore.sessions.map((session) => session.dayKey)))
+    if (!day) { notify('NQ1! 历史里没有完整的交易日'); return }
+    const session = createManualSession(day)
+    setManualReviewId(null)
+    setManualStore((store) => ({ ...store, activeSessionId: session.id, sessions: [session, ...store.sessions] }))
+    enterManualView()
+    notify(`已抽到 ${day.label}，按 1 揭示开盘第一根K线`)
+  }
+  const continueManualPractice = async (sessionId: string) => {
+    if (manualBlockedByDecision()) return
+    await ensureNqMinutes()
+    setManualReviewId(null)
+    setManualStore((store) => ({ ...store, activeSessionId: sessionId }))
+    enterManualView()
+  }
+  const reviewManualPractice = async (sessionId: string) => {
+    if (manualBlockedByDecision()) return
+    await ensureNqMinutes()
+    setManualStore((store) => ({ ...store, activeSessionId: null }))
+    setManualReviewId(sessionId)
+    enterManualView()
+    setManualTimelineOpen(true)
+  }
+  const exitManualView = () => {
+    setManualDialog(null)
+    setManualTimelineOpen(false)
+    setManualHighlightTime(null)
+    if (manualActiveSession) {
+      setManualStore((store) => ({ ...store, activeSessionId: null }))
+      notify('已暂停，进度已保存；在“自主复盘”里可以继续')
+    }
+    setManualReviewId(null)
+  }
+  // Keep the newest candle on screen as the paper advances.
+  const keepManualLatestVisible = (barTime: number) => {
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+      const chart = chartRef.current
+      const x = chart?.timeToCoordinate(barTime)
+      const width = chart?.plotSize()?.width
+      if (!chart || !width) return
+      if (x === null || x === undefined || x < 0 || x > width) chart.focusLatest()
+      else if (x > width - 90) chart.moveVisibleRange(Math.max(1, Math.round((x - (width - 90)) / 6)))
+    }))
+  }
+  const advanceManual = () => {
+    if (!manualActiveSession || !nqMinutes?.length || manualDialog) return
+    const outcome = advanceManualSession(manualActiveSession, nqMinutes, INTERVALS[interval].seconds)
+    updateManualSession(manualActiveSession.id, () => outcome.session)
+    if (outcome.closedTrade) {
+      const trade = outcome.closedTrade
+      const points = ((trade.exitPrice ?? trade.entryPrice) - trade.entryPrice) * (trade.side === 'long' ? 1 : -1)
+      notify(`${trade.exitKind === 'stop' ? '触发止损' : '触发止盈'} @ ${trade.exitPrice?.toFixed(2)}（${points >= 0 ? '+' : ''}${points.toFixed(2)} 点）`)
+    }
+    if (outcome.filledTrade) {
+      const filled = outcome.filledTrade
+      notify(`${filled.side === 'long' ? '多单' : '空单'}已成交 @ ${filled.entryPrice.toFixed(2)}`)
+    }
+    if (outcome.finished) {
+      setManualStore((store) => ({ ...store, activeSessionId: null }))
+      setManualReviewId(outcome.session.id)
+      setManualTimelineOpen(true)
+      setManualFocusTick((value) => value + 1)
+      notify('今天的K线已经走完，来复盘一下你的理由')
+      return
+    }
+    keepManualLatestVisible(barTimeFor(outcome.session.cursorTime - 60, interval))
+  }
+  const manualStarted = Boolean(manualActiveSession && manualActiveSession.cursorTime > manualActiveSession.startTime)
+  const MANUAL_TICK = 0.25
+  const snapManualPrice = (value: number) => Math.round(value / MANUAL_TICK) * MANUAL_TICK
+  const manualUsdAt = (side: ManualSide, entry: number, exit: number, quantity: number) => (exit - entry) * (side === 'long' ? 1 : -1) * NQ_POINT_VALUE_USD * quantity
+  // Keep a dragged level on the correct side of the reference price (at least one tick away).
+  const clampManualLevel = (field: 'stopLoss' | 'takeProfit', side: ManualSide, reference: number, value: number) => {
+    const snapped = snapManualPrice(value)
+    const below = (field === 'stopLoss') === (side === 'long')
+    return below ? Math.min(snapped, reference - MANUAL_TICK) : Math.max(snapped, reference + MANUAL_TICK)
+  }
+  const requestManualOpen = (side: ManualSide) => {
+    if (!manualActiveSession || manualPosition || manualActiveSession.pendingOrder || !manualStarted || !manualLastMinute) return
+    const price = manualLastMinute.close
+    // Stop entry: buy a break above the last candle's high / sell a break below its low (never on the wrong side of the close).
+    const lastBar = data[data.length - 1]
+    const entryPrice = side === 'long'
+      ? Math.max(snapManualPrice(lastBar?.high ?? price) + MANUAL_TICK, price + MANUAL_TICK)
+      : Math.min(snapManualPrice(lastBar?.low ?? price) - MANUAL_TICK, price - MANUAL_TICK)
+    // Same default as the decision replay: protect beyond the last five candles, 1R target.
+    const recent = data.slice(-5)
+    const structure = recent.length ? (side === 'long' ? Math.min(...recent.map((candle) => candle.low)) : Math.max(...recent.map((candle) => candle.high))) : null
+    const suggested = structure !== null && (side === 'long' ? structure < entryPrice : structure > entryPrice) ? structure : null
+    const levels = defaultDecisionLevels(side, entryPrice, suggested)
+    setManualRisk({
+      entryPrice,
+      stopLoss: clampManualLevel('stopLoss', side, entryPrice, levels.stopLoss),
+      takeProfit: clampManualLevel('takeProfit', side, entryPrice, levels.takeProfit),
+      quantity: 1,
+    })
+    setManualDialog({ type: 'open', side, price })
+  }
+  const setManualRiskLevel = (field: 'stopLoss' | 'takeProfit', value: number) => {
+    if (manualDialog?.type !== 'open') return
+    const { side } = manualDialog
+    setManualRisk((current) => current ? { ...current, [field]: clampManualLevel(field, side, current.entryPrice, value) } : current)
+  }
+  // Keep the entry between stop and target; stop / target keep their absolute prices (as in the decision replay).
+  const clampManualEntry = (side: ManualSide, stopLoss: number, takeProfit: number, value: number) => {
+    const snapped = snapManualPrice(value)
+    return side === 'long'
+      ? Math.min(Math.max(snapped, stopLoss + MANUAL_TICK), takeProfit - MANUAL_TICK)
+      : Math.max(Math.min(snapped, stopLoss - MANUAL_TICK), takeProfit + MANUAL_TICK)
+  }
+  // Dragging the entry line away from the close makes a resting order; back onto the close is a market fill.
+  const setManualEntryPrice = (value: number) => {
+    if (manualDialog?.type !== 'open') return
+    const { side, price } = manualDialog
+    setManualRisk((current) => {
+      if (!current) return current
+      const snapped = snapManualPrice(value)
+      const entryPrice = side === 'long' ? Math.max(snapped, price + MANUAL_TICK) : Math.min(snapped, price - MANUAL_TICK)
+      // Stop / target keep their prices unless the entry runs past them.
+      const stopLoss = side === 'long' ? Math.min(current.stopLoss, entryPrice - MANUAL_TICK) : Math.max(current.stopLoss, entryPrice + MANUAL_TICK)
+      const takeProfit = side === 'long' ? Math.max(current.takeProfit, entryPrice + MANUAL_TICK) : Math.min(current.takeProfit, entryPrice - MANUAL_TICK)
+      return { ...current, entryPrice, stopLoss, takeProfit }
+    })
+  }
+  // Manual practice enters with stop orders (追单): the order fills when price trades through the entry line.
+  const manualOpenOrderKind: 'stop' | null = manualDialog?.type === 'open' && manualRisk ? 'stop' : null
+  const manualPending: ManualPendingOrder | null = manualActiveSession && !manualPosition ? manualActiveSession.pendingOrder ?? null : null
+  const dragManualPending = (field: 'entryPrice' | 'stopLoss' | 'takeProfit', value: number) => {
+    if (!manualActiveSession || !manualPending || !manualLastMinute) return
+    const order = manualPending
+    let patch: Partial<ManualPendingOrder>
+    if (field === 'entryPrice') patch = { entryPrice: clampManualEntry(order.side, order.stopLoss, order.takeProfit, value), orderKind: 'stop' }
+    else if (field === 'stopLoss') patch = { stopLoss: clampManualLevel('stopLoss', order.side, order.entryPrice, value) }
+    else patch = { takeProfit: clampManualLevel('takeProfit', order.side, order.entryPrice, value) }
+    updateManualSession(manualActiveSession.id, (session) => ({
+      ...session,
+      updatedAt: Date.now(),
+      pendingOrder: session.pendingOrder ? { ...session.pendingOrder, ...patch } : session.pendingOrder,
+    }))
+  }
+  const cancelManualOrder = () => {
+    if (!manualActiveSession?.pendingOrder) return
+    updateManualSession(manualActiveSession.id, (session) => ({ ...session, updatedAt: Date.now(), pendingOrder: null }))
+    notify('已取消挂单')
+  }
+  const stepManualQuantity = (delta: number) => setManualRisk((current) => current ? { ...current, quantity: Math.max(1, Math.min(MANUAL_MAX_QUANTITY, current.quantity + delta)) } : current)
+  // Dragging an open position's line on the chart (clamped instead of rejected, so the drag never spams errors).
+  const dragManualPositionLevel = (field: 'stopLoss' | 'takeProfit', value: number) => {
+    if (!manualActiveSession || !manualPosition || !manualLastMinute) return
+    const next = clampManualLevel(field, manualPosition.side, manualLastMinute.close, value)
+    updateManualSession(manualActiveSession.id, (session) => ({
+      ...session,
+      updatedAt: Date.now(),
+      trades: session.trades.map((trade) => trade.id === manualPosition.id ? { ...trade, [field]: next } : trade),
+    }))
+  }
+  const requestManualClose = () => {
+    if (!manualActiveSession || !manualPosition) return
+    setManualDialog({ type: 'close' })
+  }
+  const requestManualNote = (barTime: number | null = manualCurrentBarTime) => {
+    if (!manualActiveSession || !manualStarted || barTime === null) return
+    const existing = manualActiveSession.notes.find((note) => note.barTime === barTime && note.interval === interval && note.kind === 'no-trade')
+      ?? manualActiveSession.notes.find((note) => note.barTime === barTime && note.interval === interval)
+    setManualPicking(false)
+    setManualDialog({
+      type: 'note',
+      barTime,
+      interval,
+      initial: existing?.reasons ?? [],
+      // Background rarely changes candle to candle: start from the last one written.
+      background: existing?.background || latestBackground(manualActiveSession),
+      existing: Boolean(existing),
+      kind: existing?.kind ?? 'no-trade',
+      side: existing?.side ?? 'long',
+    })
+  }
+  const toggleManualPicking = () => {
+    if (!manualActiveSession || !manualStarted || manualDialog) return
+    setManualPicking((current) => !current)
+  }
+  const finishManualToday = () => {
+    if (!manualActiveSession || !nqMinutes?.length) return
+    const finished = finishManualSession(manualActiveSession, nqMinutes)
+    updateManualSession(manualActiveSession.id, () => finished)
+    setManualStore((store) => ({ ...store, activeSessionId: null }))
+    setManualReviewId(finished.id)
+    setManualTimelineOpen(true)
+    setManualFocusTick((value) => value + 1)
+  }
+  const updateManualRisk = (field: 'stopLoss' | 'takeProfit', value: number | null) => {
+    if (!manualActiveSession || !manualPosition) return
+    const price = manualLastMinute?.close
+    if (value !== null && price !== undefined) {
+      const long = manualPosition.side === 'long'
+      const valid = field === 'stopLoss' ? (long ? value < price : value > price) : (long ? value > price : value < price)
+      if (!valid) {
+        notify(`${field === 'stopLoss' ? '止损' : '止盈'}必须${(field === 'stopLoss') === long ? '低于' : '高于'}现价 ${price.toFixed(2)}`)
+        return
+      }
+    }
+    updateManualSession(manualActiveSession.id, (session) => ({
+      ...session,
+      updatedAt: Date.now(),
+      trades: session.trades.map((trade) => trade.id === manualPosition.id ? { ...trade, [field]: value } : trade),
+    }))
+  }
+  useManualPracticeKeys(Boolean(manualActiveSession) || manualLoading, {
+    blocked: Boolean(manualDialog) || manualPicking || !manualActiveSession,
+    advance: advanceManual,
+    key2: () => { if (manualPosition) requestManualClose(); else if (manualActiveSession?.pendingOrder) cancelManualOrder(); else requestManualOpen('long') },
+    key3: () => { if (!manualPosition && !manualActiveSession?.pendingOrder) requestManualOpen('short') },
+    note: () => requestManualNote(),
+  })
+  const saveManualEdit = (item: ManualTimelineItem, reasons: string[], background: string) => {
+    if (!manualSession) return
+    const cleaned = cleanReasons(reasons)
+    updateManualSession(manualSession.id, (session) => {
+      if ((item.kind === 'no-trade' || item.kind === 'should-trade') && item.note) return upsertBarNote(session, item.note.barTime, item.note.interval, cleaned, background, item.note.kind, item.note.side)
+      if (!item.trade) return session
+      return {
+        ...session,
+        updatedAt: Date.now(),
+        trades: session.trades.map((trade) => trade.id !== item.trade!.id ? trade : item.kind === 'entry' ? { ...trade, reasons: cleaned, background: background.trim() } : { ...trade, exitReasons: cleaned }),
+      }
+    })
+  }
+
   return (
-    <div className={`app theme-${theme}${objectTreeOpen ? ' object-tree-docked' : ''}`} ref={workspaceRef} tabIndex={-1}>
+    <div className={`app${chartAnnotationsHidden ? ' chart-annotations-hidden' : ''} theme-${theme}${objectTreeOpen ? ' object-tree-docked' : ''}`} ref={workspaceRef} tabIndex={-1}>
       <header className="topbar">
         <div className="profile-avatar" title="当前账户"><span>D</span><b>12</b></div>
         <div className="symbol-trigger-wrap">
-          <button className="symbol-trigger" type="button" aria-label="选择交易品种" aria-expanded={symbolPickerOpen} onClick={() => decisionMode ? notify('决策回放中品种由当前题目锁定') : setSymbolPickerOpen((value) => !value)}>
+          <button className="symbol-trigger" type="button" aria-label="选择交易品种" aria-expanded={symbolPickerOpen} onClick={() => decisionMode || fullReviewSession ? notify('请使用回看控制栏切换本卷品种') : setSymbolPickerOpen((value) => !value)}>
             <span className="symbol-code">{symbol}</span><span className="symbol-shield">◇</span>
           </button>
           {symbolPickerOpen && (
@@ -2336,6 +2731,7 @@ function App() {
           <button type="button" disabled={decisionMode} className="replay-entry-button replay-rewind-button" aria-label="回放上一格" title="回退一格并进入回放" onClick={stepReplayBack}><Rewind size={24} /></button>
         </div>
         <button type="button" className={`decision-entry-button ${decisionMode ? 'active' : ''}`} onClick={() => setDecisionCenterOpen(true)} title="随机交易决策回放"><BrainCircuit size={20} /><span>决策回放</span>{activeDecisionSession && <b>{activeDecisionSession.currentIndex + 1}/{activeDecisionSession.candidates.length}</b>}</button>
+        <button type="button" className={`decision-entry-button manual-entry-button ${manualMode ? 'active' : ''}`} onClick={() => setManualCenterOpen(true)} title="NQ1! 自主逐K复盘（无AI信号）"><NotebookPen size={19} /><span>自主复盘</span>{manualActiveSession && <b>进行中</b>}</button>
         <button type="button" className={`decision-entry-button decision-history-button ${decisionHistoryOpen ? 'active' : ''}`} onClick={() => { setDecisionCenterOpen(false); setDecisionResultsSessionId(null); setDecisionHistoryOpen(true) }} title="查看决策历史记录（可切换当前或全部标的）" aria-label="查看决策历史记录"><History size={19} /><span>历史记录</span></button>
         <div className="toolbar-divider" />
         <IconButton label="撤销 (Ctrl+Z)" disabled={uiDrawings.past.length === 0} onClick={() => dispatchUiDrawing({ type: 'undo' })}><Undo2 size={18} /></IconButton>
@@ -2347,7 +2743,7 @@ function App() {
           if (replayCursor !== null) jumpToRealtime()
           else if (isMarketHistory) { setMarketRefreshTick((value) => value + 1); notify(`正在刷新 ${marketStatus.vendor} 行情`) }
           else { setLive((value) => !value); setLiveTick(0) }
-        }} title={decisionMode ? '决策回放严格因果模式' : replayCursor !== null ? '退出回放并跳转实时' : marketStatus.detail}><span className="live-dot" />{decisionMode ? '决策中' : replayCursor !== null ? '回放中' : isMarketHistory ? marketStatusLabel : live ? '模拟实时' : '已暂停'}</button>
+        }} title={decisionMode ? '决策回放严格因果模式' : replayCursor !== null ? '退出回放并跳转实时' : marketStatus.detail}><span className="live-dot" />{fullReviewSession ? '整卷回看' : decisionMode ? '决策中' : replayCursor !== null ? '回放中' : isMarketHistory ? marketStatusLabel : live ? '模拟实时' : '已暂停'}</button>
         <IconButton label="下载图表截图" onClick={() => { chartRef.current?.downloadScreenshot(); notify('图表截图已下载') }}><Camera size={18} /></IconButton>
         <IconButton label="全屏" onClick={toggleFullscreen}><Maximize2 size={18} /></IconButton>
         <button type="button" className="save-status" onClick={() => notify('工作区已保存到本机')}><span>✓</span> 已保存</button>
@@ -2368,7 +2764,9 @@ function App() {
           drawingsHidden={drawingsHidden} setDrawingsHidden={setDrawingsHidden}
           indicatorsHidden={indicatorsHidden} setIndicatorsHidden={setIndicatorsHidden}
           syncDrawings={syncDrawings} setSyncDrawings={setSyncDrawings}
-          removeIndicators={() => setIndicators((current) => ({ ...current, ma: false, ema: false, boll: false, volume: false }))}
+          positionsHidden={chartAnnotationsHidden} setPositionsHidden={setChartAnnotationsHidden}
+          indicatorCount={activeIndicatorCount}
+          removeIndicators={() => setIndicators((current) => ({ ...current, ma: false, ema: false, boll: false, volume: false, smc: false }))}
           notify={notify}
         />
 
@@ -2407,15 +2805,16 @@ function App() {
           >
             <ChartSurface
               ref={chartRef} data={data} symbol={symbol} interval={interval} chartType={chartType} theme={theme}
+              blackBarTimes={manualEntryBarTimes}
               indicators={visibleIndicators} priceScaleAuto={priceScaleAuto} priceScaleLog={priceScaleLog}
               priceScalePercent={priceScalePercent} priceScaleInverted={priceScaleInverted}
-              visibleTradeLayerSourceIds={decisionDayMode ? decisionDayTradeSourceIds : decisionMode ? [] : visibleTradeLayerSourceIds}
-              decisionSignalSourceIds={decisionSignalSourceIds}
+              visibleTradeLayerSourceIds={manualMode || fullReviewSession ? [] : decisionDayMode ? decisionDayTradeSourceIds : decisionMode ? [] : visibleTradeLayerSourceIds}
+              decisionSignalSourceIds={manualMode || fullReviewSession ? [] : decisionSignalSourceIds}
               // Keep every signal and system execution that has already been
               // revealed. Collision handling must move the interactive labels;
               // it must never erase earlier replay context.
               decisionSignalAfterTime={null}
-              visibleRangeLayerSourceIds={decisionMode ? [] : visibleRangeLayerSourceIds}
+              visibleRangeLayerSourceIds={manualMode ? [] : fullReviewSession ? fullReviewSourceIds : decisionMode ? [] : visibleRangeLayerSourceIds}
               suppressedRangeObjectIds={suppressedRangeObjectIds}
               selectedRangeObjectId={activeSelectedReplayRangeId}
               onSelectRangeObject={(id) => {
@@ -2423,9 +2822,9 @@ function App() {
                 dispatchUiDrawing({ type: 'select', id: null })
                 setSelectedReplayRangeId(id)
               }}
-              followLatest={!decisionMode && marketStatus.kind === 'live' && replayCursor === null}
-              focusLatestKey={marketHydrationKey + (decisionMode && !decisionDayMode ? 10_000 + decisionFocusTick : 0)}
-              suppressAutoFocus={decisionDayMode}
+              followLatest={!fullReviewSession && !decisionMode && marketStatus.kind === 'live' && replayCursor === null}
+              focusLatestKey={(fullReviewSession ? 0 : marketHydrationKey) + (decisionMode && !decisionDayMode ? 10_000 + decisionFocusTick : 0) + (manualMode ? 20_000 + manualFocusTick : 0)}
+              suppressAutoFocus={decisionDayMode || Boolean(fullReviewSession)}
               centerLatestByDefault={decisionMode && !decisionDayMode}
               markersHidden={chartAnnotationsHidden}
               onHover={setHoverCandle}
@@ -2437,6 +2836,19 @@ function App() {
                 setPriceScaleInverted(inverted)
               }}
             />
+            {fullReviewSession && fullReviewSession.attempts.at(-1) && <DecisionChartStatus
+              session={{ ...fullReviewSession, currentIndex: Math.min(fullReviewSession.currentIndex, fullReviewSession.candidates.length - 1) }}
+              attempt={fullReviewSession.attempts.at(-1)!}
+              currentPnlByMode={null}
+              systemTrades={revealedDecisionSystemTrades(
+                fullReviewSession.daySequence
+                  ? decisionSystemCandidatesForDay(replayDecisionCandidates(fullReviewSourceIds), fullReviewSession.daySequence)
+                  : fullReviewSession.candidates.filter(c => c.symbol === fullReviewCandidate?.symbol && c.interval === fullReviewCandidate?.interval),
+                data.at(-1) ? data.at(-1)!.time + chartSeconds - 1 : Number.NEGATIVE_INFINITY,
+                data.at(-1)?.close ?? 0,
+              )}
+              positionSizingModes={decisionSessionPositionSizingModes(fullReviewSession)}
+            />}
             {activeDecisionSession && activeDecisionCandidate && activeDecisionAttempt && <DecisionChartStatus
               session={activeDecisionSession}
               attempt={activeDecisionAttempt}
@@ -2449,6 +2861,13 @@ function App() {
             {contextOverlayPositions.lockedCursorX !== null && <div className="locked-time-cursor" data-testid="locked-time-cursor" style={{ left: contextOverlayPositions.lockedCursorX }}><span>{new Date(lockedCursorTime! * 1000).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}</span></div>}
             {!decisionMode && chartAlerts.filter((alert) => alert.symbol === symbol).map((alert) => contextOverlayPositions.alertY[alert.id] === null || contextOverlayPositions.alertY[alert.id] === undefined ? null : <div className="context-price-line alert" data-testid="alert-price-line" key={alert.id} style={{ top: contextOverlayPositions.alertY[alert.id]! }}><span>警报 {formatPrice(alert.price, symbol)}</span></div>)}
             {!decisionMode && paperOrders.filter((order) => order.symbol === symbol).map((order) => contextOverlayPositions.orderY[order.id] === null || contextOverlayPositions.orderY[order.id] === undefined ? null : <div className={`context-price-line order-${order.side}`} data-testid="paper-order-line" key={order.id} style={{ top: contextOverlayPositions.orderY[order.id]! }}><span>{order.side === 'buy' ? '买' : '卖'} {order.quantity} @ {formatPrice(order.price, symbol)}</span></div>)}
+            {fullReviewSession && <div className="full-review-controls" aria-label="整卷回看控制栏">
+              <b>完整回看 · 已冻结最后一根</b>
+              {fullReviewGroups.length > 1 && <select aria-label="整卷回看品种" value={`${fullReviewCandidate?.symbol}:${fullReviewCandidate?.interval}`} onChange={e => { const c = fullReviewGroups.find(c => `${c.symbol}:${c.interval}` === e.target.value); if (c) { setSymbol(c.symbol); setIntervalId(c.interval) } }}>{fullReviewGroups.map(c => <option key={`${c.symbol}:${c.interval}`} value={`${c.symbol}:${c.interval}`}>{c.symbol} {INTERVALS[c.interval].label}</option>)}</select>}
+              <label><input type="checkbox" checked={fullReviewShowUser} onChange={e => setFullReviewShowUser(e.target.checked)} />你的交易</label>
+              <button onClick={() => chartRef.current?.fitContent()}>显示整卷</button>
+              <button onClick={() => { const id = fullReviewSession.id; setFullReviewSession(null); setDecisionResultsSessionId(id) }}>返回成绩</button>
+            </div>}
             <div className="chart-header">
               <div className="instrument-line">
                 <span className="asset-dot" style={{ background: symbolInfo.accent }}>{symbol === 'XAUUSD' ? '◆' : symbolInfo.id.slice(0, 1)}</span>
@@ -2459,12 +2878,9 @@ function App() {
                   : <span className={`market-data-badge ${marketStatus.kind}`} data-testid="market-data-status" title={`${marketStatus.detail}${marketStatus.fetchedAt ? ` · 截止 ${new Date(marketStatus.fetchedAt * 1000).toLocaleString('zh-CN', { timeZone: 'UTC', hour12: false })} UTC` : ''}`}>{marketStatusLabel}</span>}
                 {replayCursor !== null && <span className="replay-badge"><History size={12} />回放</span>}
                 {decisionMode && <span className="decision-causal-badge"><BrainCircuit size={12} />严格因果 · 未来 K 线已隐藏</span>}
-                <span className="market-status"><i />市场开放</span>
+                <span className="market-status"><i />{fullReviewSession ? "整卷回看 · 已冻结" : "市场开放"}</span>
               </div>
-              <div className="ohlc-line">
-                <span>开=<b>{formatPrice(candle.open, symbol)}</b></span><span>高=<b>{formatPrice(candle.high, symbol)}</b></span><span>低=<b>{formatPrice(candle.low, symbol)}</b></span><span>收=<b>{formatPrice(candle.close, symbol)}</b></span>
-                <span className={change >= 0 ? 'positive' : 'negative'}>{change >= 0 ? '+' : ''}{formatPrice(change, symbol)} ({changePercent >= 0 ? '+' : ''}{changePercent.toFixed(2)}%)</span>
-              </div>
+              <OhlcLine latest={candle} symbol={symbol} />
             </div>
             <button type="button" className="currency-selector" onClick={() => notify('当前价格单位：美元')}>美元<ChevronDown size={16} /></button>
             <div className="price-scale-controls" role="group" aria-label="价格坐标模式">
@@ -2494,10 +2910,11 @@ function App() {
             />}
             <DrawingOverlay
               key={`${decisionContextKey ?? 'normal'}-${effectiveDrawingTool}-${drawingsLocked}-${drawingsHidden}`}
-              activeTool={effectiveDrawingTool} history={uiDrawings} dispatch={dispatchUiDrawing} color={drawingColor}
+              activeTool={effectiveDrawingTool} history={uiDrawings} dispatch={dispatchWithDrawingTemplates} color={drawingColor}
               magnetMode={magnetMode} drawingsLocked={drawingsLocked} hidden={drawingsHidden}
               candles={data} symbol={symbol} interval={interval}
               quickMeasurement={quickMeasurement}
+              onPlotSize={() => chartRef.current?.plotSize() ?? null}
               onMeasurePoint={(point) => chartRef.current?.measurementAt(point.x, point.y) ?? null}
               onProjectPoint={(point) => {
                 const x = chartRef.current?.timeToCoordinate(point.time)
@@ -2507,8 +2924,116 @@ function App() {
               onQuickMeasurementChange={setQuickMeasurement}
               onToolComplete={() => { if (shouldExitDrawingMode(effectiveDrawingTool, keepDrawing)) setActiveTool('cursor') }}
               onZoomSelection={(from, to) => chartRef.current?.zoomToFraction(from, to)}
-              onOpenProperties={(drawing) => setDrawingSettingsId(drawing.id)}
+              onOpenProperties={(drawing) => { dispatchUiDrawing({ type: 'checkpoint' }); setDrawingSettingsTab('style'); setDrawingSettingsId(drawing.id) }}
             />
+            {manualSession && <ManualPracticeAnnotations
+              session={manualSession}
+              interval={interval}
+              hidden={chartAnnotationsHidden}
+              highlightTime={manualHighlightTime}
+              hideLevels={Boolean(manualActiveSession && ((manualDialog?.type === 'open' && manualRisk) || (manualPosition && manualPosition.stopLoss !== null && manualPosition.takeProfit !== null)))}
+              toX={(time) => chartRef.current?.timeToCoordinate(time) ?? null}
+              toY={(price) => chartRef.current?.priceToCoordinate(price) ?? null}
+            />}
+            {manualActiveSession && manualPicking && manualCurrentBarTime !== null && <ManualBarPicker
+              interval={interval}
+              maxBarTime={manualCurrentBarTime}
+              toTime={(x) => chartRef.current?.coordinateToTime(x) ?? null}
+              toX={(time) => chartRef.current?.timeToCoordinate(time) ?? null}
+              onPick={(barTime) => requestManualNote(barTime)}
+              onCancel={() => setManualPicking(false)}
+            />}
+            {manualActiveSession && manualDialog?.type === 'open' && manualRisk && <DecisionRiskOverlay
+              symbol={MANUAL_PRACTICE_SYMBOL}
+              precision={2}
+              side={manualDialog.side}
+              stopLossMode="touch"
+              hideStopMode
+              entryPrice={manualRisk.entryPrice}
+              entryLabel={manualOpenOrderKind === 'stop' ? '追单价' : manualOpenOrderKind === 'limit' ? '挂单价' : '开仓价'}
+              stopLoss={manualRisk.stopLoss}
+              takeProfit={manualRisk.takeProfit}
+              amountForExit={(exit) => manualUsdAt(manualDialog.side, manualRisk.entryPrice, exit, manualRisk.quantity)}
+              sizeControl={{ label: `${manualRisk.quantity} 手`, onMinus: () => stepManualQuantity(-1), onPlus: () => stepManualQuantity(1), minDisabled: manualRisk.quantity <= 1, maxDisabled: manualRisk.quantity >= MANUAL_MAX_QUANTITY }}
+              currentCandleX={decisionCurrentCandleX}
+              toPrice={(y) => chartRef.current?.coordinateToPrice(y) ?? null}
+              toY={(price) => chartRef.current?.priceToCoordinate(price) ?? null}
+              onEntryPrice={setManualEntryPrice}
+              onStopLoss={(value) => setManualRiskLevel('stopLoss', value)}
+              onTakeProfit={(value) => setManualRiskLevel('takeProfit', value)}
+              editable
+              showConfirmControls={false}
+            />}
+            {manualActiveSession && manualPending && manualLastMinute && manualDialog?.type !== 'open' && <DecisionRiskOverlay
+              symbol={MANUAL_PRACTICE_SYMBOL}
+              precision={2}
+              side={manualPending.side}
+              stopLossMode="touch"
+              hideStopMode
+              entryPrice={manualPending.entryPrice}
+              entryLabel={manualPending.orderKind === 'stop' ? '追单价' : '挂单价'}
+              stopLoss={manualPending.stopLoss}
+              takeProfit={manualPending.takeProfit}
+              amountForExit={(exit) => manualUsdAt(manualPending.side, manualPending.entryPrice, exit, manualPending.quantity)}
+              sizeControl={{ label: `${manualPending.quantity} 手`, onMinus: () => undefined, onPlus: () => undefined, minDisabled: true, maxDisabled: true }}
+              currentCandleX={decisionCurrentCandleX}
+              toPrice={(y) => chartRef.current?.coordinateToPrice(y) ?? null}
+              toY={(price) => chartRef.current?.priceToCoordinate(price) ?? null}
+              onEntryPrice={(value) => dragManualPending('entryPrice', value)}
+              onStopLoss={(value) => dragManualPending('stopLoss', value)}
+              onTakeProfit={(value) => dragManualPending('takeProfit', value)}
+              editable
+              showConfirmControls={false}
+            />}
+            {manualActiveSession && manualPosition && manualPosition.stopLoss !== null && manualPosition.takeProfit !== null && manualLastMinute && manualDialog?.type !== 'open' && <DecisionRiskOverlay
+              symbol={MANUAL_PRACTICE_SYMBOL}
+              precision={2}
+              side={manualPosition.side}
+              stopLossMode="touch"
+              hideStopMode
+              entryPrice={manualPosition.entryPrice}
+              entryLabel="开仓"
+              stopLoss={manualPosition.stopLoss}
+              takeProfit={manualPosition.takeProfit}
+              amountForExit={(exit) => manualUsdAt(manualPosition.side, manualPosition.entryPrice, exit, tradeQuantity(manualPosition))}
+              sizeControl={{ label: `${tradeQuantity(manualPosition)} 手`, onMinus: () => undefined, onPlus: () => undefined, minDisabled: true, maxDisabled: true }}
+              currentCandleX={decisionCurrentCandleX}
+              currentClose={manualLastMinute.close}
+              currentPnlUsd={manualUsdAt(manualPosition.side, manualPosition.entryPrice, manualLastMinute.close, tradeQuantity(manualPosition))}
+              toPrice={(y) => chartRef.current?.coordinateToPrice(y) ?? null}
+              toY={(price) => chartRef.current?.priceToCoordinate(price) ?? null}
+              onStopLoss={(value) => dragManualPositionLevel('stopLoss', value)}
+              onTakeProfit={(value) => dragManualPositionLevel('takeProfit', value)}
+              editable
+              showConfirmControls={false}
+            />}
+            {manualSession && <ManualPracticePanel
+              session={manualSession}
+              review={!manualActiveSession}
+              lastPrice={manualLastMinute?.close ?? null}
+              interval={interval}
+              currentBarNote={manualCurrentBarNote}
+              onAdvance={advanceManual}
+              onOpen={requestManualOpen}
+              onClose={requestManualClose}
+              onCancelOrder={cancelManualOrder}
+              onNote={() => requestManualNote()}
+              onPickBack={toggleManualPicking}
+              picking={manualPicking}
+              onRisk={updateManualRisk}
+              onFinish={finishManualToday}
+              onExit={exitManualView}
+              onOpenTimeline={() => setManualTimelineOpen(true)}
+            />}
+            {fullReviewSession && fullReviewCandidate && <DecisionChartAnnotations
+              candidate={fullReviewCandidate} attempt={null} result={null}
+              historicalResults={fullReviewShowUser ? fullReviewResults : []}
+              data={data}
+              toX={(time) => chartRef.current?.timeToCoordinate(time) ?? null}
+              toY={(price) => chartRef.current?.priceToCoordinate(price) ?? null}
+              hidden={chartAnnotationsHidden}
+              showSystem={false}
+            />}
             {decisionSubject && decisionSignalReached && <DecisionChartAnnotations
               candidate={decisionSubject}
               latestSignal={latestRevealedDecisionSignal}
@@ -2625,7 +3150,7 @@ function App() {
             </div>}
             <IndicatorLegend
               data={data}
-              candle={hoverCandle ?? data.at(-1) ?? null}
+              candle={data.at(-1) ?? null}
               symbol={symbol}
               interval={interval}
               indicators={indicators}
@@ -2639,18 +3164,29 @@ function App() {
               onOpenSettings={() => setIndicatorPanelOpen(true)}
               onRefresh={() => notify('指标已重新计算')}
             />
-            {selectedDrawing && <div className="floating-tool-options drawing-properties" data-testid="drawing-properties">
-              {['fib', 'fib-extension'].includes(selectedDrawing.behavior)
-                ? <button type="button" className="property-tool-glyph property-settings-trigger" aria-label="打开斐波那契设置" title="斐波那契设置" onClick={() => setDrawingSettingsId(selectedDrawing.id)}>{getTool(selectedDrawing.tool).glyph}</button>
-                : <span className="property-tool-glyph">{getTool(selectedDrawing.tool).glyph}</span>}
-              <strong>{selectedDrawing.label}</strong>
-              <input aria-label="绘图颜色" type="color" value={selectedDrawing.color} onPointerDown={() => dispatchUiDrawing({ type: 'checkpoint' })} onChange={(event) => { setDrawingColor(event.target.value); dispatchUiDrawing({ type: 'update', id: selectedDrawing.id, patch: { color: event.target.value } }) }} />
-              <select aria-label="线型" value={selectedDrawing.lineStyle ?? 'solid'} onChange={(event) => { dispatchUiDrawing({ type: 'checkpoint' }); dispatchUiDrawing({ type: 'update', id: selectedDrawing.id, patch: { lineStyle: event.target.value as 'solid' | 'dashed' | 'dotted' } }) }}><option value="solid">实线</option><option value="dashed">虚线</option><option value="dotted">点线</option></select>
-              <input className="width-range" aria-label="线宽" type="range" min="1" max="14" step="0.5" value={selectedDrawing.width} onPointerDown={() => dispatchUiDrawing({ type: 'checkpoint' })} onKeyDown={(event) => { if (!event.repeat) dispatchUiDrawing({ type: 'checkpoint' }) }} onChange={(event) => dispatchUiDrawing({ type: 'update', id: selectedDrawing.id, patch: { width: Number(event.target.value) } })} />
-              <button onClick={() => { dispatchUiDrawing({ type: 'checkpoint' }); dispatchUiDrawing({ type: 'update', id: selectedDrawing.id, patch: { locked: !selectedDrawing.locked } }) }} title={selectedDrawing.locked ? '解锁绘图' : '锁定绘图'}><Lock size={15} /></button>
-              <button onClick={() => dispatchUiDrawing({ type: 'delete', id: selectedDrawing.id })} title="删除选中绘图"><Trash2 size={15} /></button>
-              <button onClick={() => { setActiveTool('cursor'); dispatchUiDrawing({ type: 'select', id: null }) }} title="退出绘图"><X size={15} /></button>
-            </div>}
+            {selectedDrawing && <DrawingFloatingToolbar
+              key={selectedDrawing.id}
+              drawing={selectedDrawing}
+              syncDrawings={syncDrawings}
+              onUpdate={(patch, checkpoint) => {
+                if (checkpoint) dispatchUiDrawing({ type: 'checkpoint' })
+                dispatchUiDrawing({ type: 'update', id: selectedDrawing.id, patch })
+              }}
+              onOpenSettings={(tab) => { setDrawingSettingsTab(tab ?? 'style'); setDrawingSettingsId(selectedDrawing.id) }}
+              onAddAlert={() => {
+                const price = selectedDrawing.points.at(-1)?.price ?? selectedDrawing.points[0]?.price ?? candle.close
+                setAlertDraft({ price })
+              }}
+              onToggleLock={() => { dispatchUiDrawing({ type: 'checkpoint' }); dispatchUiDrawing({ type: 'update', id: selectedDrawing.id, patch: { locked: !selectedDrawing.locked } }) }}
+              onDelete={() => dispatchUiDrawing({ type: 'delete', id: selectedDrawing.id })}
+              onClone={() => { dispatchUiDrawing({ type: 'add', drawing: duplicateDrawing(selectedDrawing) }); notify('已克隆绘图对象') }}
+              onCopy={() => { drawingClipboardRef.current = selectedDrawing; setDrawingClipboardAvailable(true); notify('已复制绘图对象') }}
+              onReorder={(to) => dispatchUiDrawing({ type: 'reorder', id: selectedDrawing.id, to })}
+              onHide={() => { dispatchUiDrawing({ type: 'checkpoint' }); dispatchUiDrawing({ type: 'update', id: selectedDrawing.id, patch: { hiddenOnChart: true } }); dispatchUiDrawing({ type: 'select', id: null }); notify('绘图已隐藏，可在对象树中恢复') }}
+              onSyncChange={(value) => { setSyncDrawings(value); notify(value ? '已同步到所有图表' : '已关闭绘图同步') }}
+              onSaveTemplate={() => { saveDrawingTemplate(selectedDrawing); notify(`已将当前样式保存为${selectedDrawing.label}的默认模板`) }}
+              onApplyDefaults={() => { dispatchUiDrawing({ type: 'checkpoint' }); dispatchUiDrawing({ type: 'update', id: selectedDrawing.id, patch: loadDrawingTemplate(selectedDrawing.tool) ?? defaultLineToolStyle(selectedDrawing.behavior) }) }}
+            />}
             <div className="chart-watermark"><span>TV</span><div><b>K线工坊</b><small>专业模拟行情工作台</small></div></div>
             {watchlistOpen && <Watchlist active={symbol} onSelect={(id) => { setQuickMeasurement(null); setSymbol(id); setIntervalId(DEFAULT_INTERVAL); setLiveTick(0) }} onClose={() => setWatchlistOpen(false)} />}
           </div>
@@ -2690,13 +3226,13 @@ function App() {
             <div className="ranges">{rangeButtons.map(([label, seconds]) => <button key={label} type="button" onClick={() => chartRef.current?.showDuration(seconds)}>{label}</button>)}</div>
             <button className="goto-button" title="适应全部数据" onClick={() => chartRef.current?.fitContent()}><ChevronsLeft size={17} /><span>适应</span></button>
             <div className="bottom-spacer" />
-            <span className="clock">{clock.toLocaleTimeString('zh-CN', { hour12: false })} UTC+8</span>
+            <ClockLabel />
           </footer>
         </main>
 
         <aside className="right-toolbar" aria-label="右侧工具">
           <IconButton label="自选列表" active={watchlistOpen} onClick={() => setWatchlistOpen((value) => !value)}><List size={21} /></IconButton>
-          <IconButton label="价格提醒" onClick={() => openAlertAt(candle.close)}><AlarmClock size={21} /></IconButton>
+          <IconButton label="价格提醒" onClick={() => openAlertAt((getHoverCandle() ?? candle).close)}><AlarmClock size={21} /></IconButton>
           <IconButton label="对象树" active={objectTreeOpen} onClick={() => setObjectTreeOpen((value) => !value)}><Layers3 size={21} /></IconButton>
           <IconButton label="消息中心" onClick={() => notify('当前没有新消息')}><MessageSquare size={21} /></IconButton>
           <IconButton label="数据窗口" active={dataTableOpen} onClick={() => setDataTableOpen(true)}><Database size={21} /></IconButton>
@@ -2804,6 +3340,18 @@ function App() {
       {intervalDialogOpen && <IntervalShortcutDialog value={intervalDraft} onChange={setIntervalDraft} onApply={applyIntervalInput} onClose={() => setIntervalDialogOpen(false)} />}
       {goToDateOpen && <GoToDateDialog initialTime={data.at(-1)?.time ?? 0} onSelect={(time) => { chartRef.current?.goToTime(time); setGoToDateOpen(false); notify('已转到指定日期') }} onClose={() => setGoToDateOpen(false)} />}
       {shortcutsOpen && <ShortcutHelpDialog onClose={() => setShortcutsOpen(false)} />}
+      {drawingSettingsTarget && !['fib', 'fib-extension'].includes(drawingSettingsTarget.behavior) && <LineToolSettingsDialog
+        key={drawingSettingsTarget.id}
+        drawing={drawingSettingsTarget}
+        candles={data}
+        symbol={symbol}
+        initialTab={drawingSettingsTab}
+        onPreview={(patch) => dispatchUiDrawing({ type: 'update', id: drawingSettingsTarget.id, patch })}
+        onConfirm={() => { setDrawingSettingsId(null); notify(`${drawingSettingsTarget.label}设置已更新`) }}
+        onCancel={(original) => { dispatchUiDrawing({ type: 'update', id: original.id, patch: original }); setDrawingSettingsId(null) }}
+        onSaveTemplate={(drawing) => { saveDrawingTemplate(drawing); notify(`已将当前样式保存为${drawing.label}的默认模板`) }}
+        onApplyDefaults={() => dispatchUiDrawing({ type: 'update', id: drawingSettingsTarget.id, patch: loadDrawingTemplate(drawingSettingsTarget.tool) ?? defaultLineToolStyle(drawingSettingsTarget.behavior) })}
+      />}
       {drawingSettingsTarget && ['fib', 'fib-extension'].includes(drawingSettingsTarget.behavior) && <FibSettingsDialog
         drawing={drawingSettingsTarget}
         logScale={priceScaleLog}
@@ -2834,9 +3382,120 @@ function App() {
         anomalyUnavailableCount={decisionAnomalies.length - replayableDecisionAnomalies.length}
         anomalyLoading={!availableDecisionHistoryBySymbol.XAUUSD?.length}
         onRedoAnomalies={beginAnomalyReview}
+        onOpenManualPractice={() => { setDecisionCenterOpen(false); setManualCenterOpen(true) }}
         onContinue={() => { setDecisionCenterOpen(false); setDecisionResultsSessionId(null); focusCurrentDecisionChart() }}
         onResults={(sessionId) => { setDecisionCenterOpen(false); setDecisionResultsSessionId(sessionId) }}
       />
+      {manualCenterOpen && <ManualPracticeCenter
+        store={manualStore}
+        dayCount={manualDays?.length ?? null}
+        loading={manualLoading || !nqMinutes?.length}
+        onStart={() => { void startManualPractice() }}
+        onContinue={(sessionId) => { void continueManualPractice(sessionId) }}
+        onReview={(sessionId) => { void reviewManualPractice(sessionId) }}
+        onDelete={(sessionId) => {
+          setManualStore((store) => ({ ...store, activeSessionId: store.activeSessionId === sessionId ? null : store.activeSessionId, sessions: store.sessions.filter((session) => session.id !== sessionId) }))
+          if (manualReviewId === sessionId) setManualReviewId(null)
+        }}
+        onClose={() => setManualCenterOpen(false)}
+      />}
+      {manualTimelineOpen && manualSession && <ManualTimelineDialog
+        session={manualSession}
+        onClose={() => setManualTimelineOpen(false)}
+        onJump={(time) => {
+          const bar = barTimeFor(time, interval)
+          setManualHighlightTime(bar)
+          chartRef.current?.goToTime(bar)
+        }}
+        onEditItem={(item) => setManualDialog({ type: 'edit', item })}
+      />}
+      {manualDialog?.type === 'open' && manualRisk && <OpenTradeDialog
+        side={manualDialog.side}
+        price={manualRisk.entryPrice}
+        orderKind={manualOpenOrderKind}
+        quantity={manualRisk.quantity}
+        stopLoss={manualRisk.stopLoss}
+        takeProfit={manualRisk.takeProfit}
+        onStopLoss={(value) => setManualRiskLevel('stopLoss', value)}
+        onTakeProfit={(value) => setManualRiskLevel('takeProfit', value)}
+        initialBackground={manualActiveSession ? latestBackground(manualActiveSession) : ''}
+        onCancel={() => { setManualDialog(null); setManualRisk(null) }}
+        onConfirm={(reasons, background) => {
+          const dialog = manualDialog
+          const risk = manualRisk
+          const kind = manualOpenOrderKind
+          setManualDialog(null)
+          setManualRisk(null)
+          if (!manualActiveSession || !manualLastMinute || manualPosition || manualActiveSession.pendingOrder) return
+          const tradeId = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}`
+          if (kind) {
+            updateManualSession(manualActiveSession.id, (session) => ({
+              ...session,
+              updatedAt: Date.now(),
+              pendingOrder: {
+                id: tradeId, side: dialog.side, orderKind: kind, entryPrice: risk.entryPrice,
+                stopLoss: risk.stopLoss, takeProfit: risk.takeProfit, quantity: risk.quantity,
+                background, reasons, createdTime: manualLastMinute.time,
+              },
+            }))
+            notify(`已挂${dialog.side === 'long' ? '多' : '空'}单${kind === 'stop' ? '（追单）' : '（挂单）'} @ ${risk.entryPrice.toFixed(2)}，价格触到后成交`)
+            return
+          }
+          updateManualSession(manualActiveSession.id, (session) => ({
+            ...session,
+            updatedAt: Date.now(),
+            trades: [...session.trades, {
+              id: tradeId, side: dialog.side, entryTime: manualLastMinute.time, entryPrice: dialog.price,
+              stopLoss: risk.stopLoss, takeProfit: risk.takeProfit, quantity: risk.quantity,
+              exitTime: null, exitPrice: null, exitKind: null, background, reasons, exitReasons: [],
+            }],
+          }))
+        }}
+      />}
+      {manualDialog?.type === 'close' && manualPosition && manualLastMinute && <ReasonEditor
+        title={`平仓 @ ${manualLastMinute.close.toFixed(2)} · 平仓理由（可选）`}
+        subtitle="可以留空直接平仓；写下来复盘时能看到当时为什么离场。"
+        confirmLabel="确认平仓"
+        onCancel={() => setManualDialog(null)}
+        onSave={(reasons) => {
+          setManualDialog(null)
+          if (!manualActiveSession) return
+          updateManualSession(manualActiveSession.id, (session) => ({
+            ...session,
+            updatedAt: Date.now(),
+            trades: session.trades.map((trade) => trade.id === manualPosition.id
+              ? { ...trade, exitTime: manualLastMinute.time, exitPrice: manualLastMinute.close, exitKind: 'manual' as const, exitReasons: reasons }
+              : trade),
+          }))
+        }}
+      />}
+      {manualDialog?.type === 'note' && <ReasonEditor
+        key={`${manualDialog.barTime}-${manualDialog.kind}-${manualDialog.side}`}
+        tone={manualDialog.kind === 'should-trade' ? manualDialog.side : 'neutral'}
+        title={manualDialog.kind === 'should-trade' ? `应该开${manualDialog.side === 'long' ? '多' : '空'}的理由` : manualPosition && manualDialog.barTime === manualCurrentBarTime ? '本根K线理由（持仓中）' : '未开单理由'}
+        subtitle={`${new Date(manualDialog.barTime * 1000).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })} · ${INTERVALS[manualDialog.interval].label} K线`}
+        initial={manualActiveSession?.notes.find((note) => note.barTime === manualDialog.barTime && note.interval === manualDialog.interval && note.kind === manualDialog.kind)?.reasons ?? (manualDialog.kind === 'no-trade' ? manualDialog.initial : [])}
+        background={{ initial: manualActiveSession?.notes.find((note) => note.barTime === manualDialog.barTime && note.interval === manualDialog.interval && note.kind === manualDialog.kind)?.background ?? manualDialog.background }}
+        allowClear={Boolean(manualActiveSession?.notes.some((note) => note.barTime === manualDialog.barTime && note.interval === manualDialog.interval && note.kind === manualDialog.kind))}
+        onCancel={() => setManualDialog(null)}
+        onSave={(reasons, background) => {
+          const dialog = manualDialog
+          setManualDialog(null)
+          if (manualActiveSession) updateManualSession(manualActiveSession.id, (session) => upsertBarNote(session, dialog.barTime, dialog.interval, reasons, background, dialog.kind, dialog.side))
+        }}
+      >
+        <NoteKindSwitch kind={manualDialog.kind} side={manualDialog.side} onChange={(kind, side) => setManualDialog((current) => current?.type === 'note' ? { ...current, kind, side } : current)} />
+      </ReasonEditor>}
+      {manualDialog?.type === 'edit' && <ReasonEditor
+        title={manualDialog.item.kind === 'entry' ? '编辑做单理由' : manualDialog.item.kind === 'exit' ? '编辑平仓理由' : manualDialog.item.kind === 'should-trade' ? '编辑应该开单理由' : '编辑未开单理由'}
+        subtitle={manualDialog.item.title}
+        initial={manualDialog.item.reasons}
+        required={manualDialog.item.kind === 'entry'}
+        background={manualDialog.item.background !== null ? { initial: manualDialog.item.background } : null}
+        allowClear={manualDialog.item.kind === 'no-trade' || manualDialog.item.kind === 'should-trade'}
+        onCancel={() => setManualDialog(null)}
+        onSave={(reasons, background) => { const item = manualDialog.item; setManualDialog(null); saveManualEdit(item, reasons, background) }}
+      />}
       <DecisionHistoryDialog
         key={`${symbol}-${decisionHistoryOpen ? 'open' : 'closed'}`}
         open={decisionHistoryOpen}
@@ -2877,6 +3536,20 @@ function App() {
           setDecisionResultsSessionId(null)
           setDecisionReviewReturnSessionId(null)
         }}
+        onFullReview={() => {
+          if (!decisionResultsSession) return
+          const session = decisionResultsSession
+          const candidate = session.candidates[0]
+          if (!candidate) return
+          const snapshot = [...new Map(session.attempts.flatMap(a => a.drawings.length ? a.drawings : a.result?.drawings ?? []).map(d => [d.id, d])).values()]
+          dispatchFullReviewDrawing({ type: 'load', drawings: withoutTransientMeasurements(snapshot) })
+          setFullReviewSession(session)
+          setDecisionResultsSessionId(null)
+          setSymbol(candidate.symbol); setIntervalId(candidate.interval)
+          setLive(false); setReplayPlaying(false); setReplaySelecting(false); setReplayPanelOpen(false); setReplayCursor(null)
+          setHoverCandle(null); setActiveTool('cursor'); setChartAnnotationsHidden(false)
+          setFullReviewShowUser(true)
+        }}
         onReview={(result) => startDecisionReplayFromResult(decisionResultsSession, result)}
         onReturnToSource={() => {
           const sourceSessionId = decisionResultsSession?.sourceSessionId
@@ -2901,13 +3574,14 @@ function Watchlist({ active, onSelect, onClose }: { active: SymbolId; onSelect: 
 }
 
 function IndicatorPanel({ value, onChange, onClose }: { value: IndicatorSettings; onChange: (value: IndicatorSettings) => void; onClose: () => void }) {
-  const rows: { key: 'ma' | 'ema' | 'boll' | 'volume'; name: string; detail: string; color: string }[] = [
+  const rows: { key: 'ma' | 'ema' | 'boll' | 'volume' | 'smc'; name: string; detail: string; color: string }[] = [
     { key: 'ma', name: '移动平均线', detail: `MA ${value.maPeriod}`, color: '#f59e0b' },
     { key: 'ema', name: '指数移动平均', detail: `EMA ${value.emaPeriod}`, color: '#296cff' },
     { key: 'boll', name: '布林带', detail: `BOLL ${value.bollPeriod}, ${value.bollDeviation}`, color: '#9b7bff' },
     { key: 'volume', name: '成交量', detail: 'Volume + MA20', color: '#21a179' },
+    { key: 'smc', name: 'LuxAlgo - Smart Money Concepts', detail: 'BOS / CHoCH、订单块、EQH/EQL、强弱高低点、溢价/折价区', color: '#089981' },
   ]
-  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section className="modal indicator-modal" role="dialog" aria-modal="true" aria-label="指标设置"><div className="modal-header"><div><b>技术指标</b><small>叠加到主图的本地计算指标</small></div><button onClick={onClose} aria-label="关闭"><X size={18} /></button></div><div className="indicator-list">{rows.map((row) => <div className="indicator-row" key={row.key}><span className="indicator-color" style={{ background: row.color }} /><div><b>{row.name}</b><small>{row.detail}</small></div><label className="switch" aria-label={`${row.name}开关`} title={`${row.name}开关`}><input type="checkbox" checked={value[row.key]} onChange={(event) => onChange({ ...value, [row.key]: event.target.checked })} /><span /></label></div>)}</div><div className="parameter-grid"><label>MA 周期<input type="number" min="2" max="200" value={value.maPeriod} onChange={(event) => onChange({ ...value, maPeriod: Number(event.target.value) })} /></label><label>EMA 周期<input type="number" min="2" max="200" value={value.emaPeriod} onChange={(event) => onChange({ ...value, emaPeriod: Number(event.target.value) })} /></label><label>BOLL 周期<input type="number" min="2" max="200" value={value.bollPeriod} onChange={(event) => onChange({ ...value, bollPeriod: Number(event.target.value) })} /></label><label>标准差<input type="number" step="0.1" min="0.1" max="5" value={value.bollDeviation} onChange={(event) => onChange({ ...value, bollDeviation: Number(event.target.value) })} /></label></div><div className="modal-footer"><button onClick={() => onChange(DEFAULT_INDICATORS)}>恢复指标默认</button><button className="primary" onClick={onClose}>完成</button></div></section></div>
+  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section className="modal indicator-modal" role="dialog" aria-modal="true" aria-label="指标设置"><div className="modal-header"><div><b>技术指标</b><small>叠加到主图的本地计算指标</small></div><button onClick={onClose} aria-label="关闭"><X size={18} /></button></div><div className="indicator-list">{rows.map((row) => <div className="indicator-row" key={row.key}><span className="indicator-color" style={{ background: row.color }} /><div><b>{row.name}</b><small>{row.detail}</small></div><label className="switch" aria-label={`${row.name}开关`} title={`${row.name}开关`}><input type="checkbox" checked={row.key === 'smc' ? value.smc !== false : value[row.key]} onChange={(event) => onChange({ ...value, [row.key]: event.target.checked })} /><span /></label></div>)}</div><div className="parameter-grid"><label>MA 周期<input type="number" min="2" max="200" value={value.maPeriod} onChange={(event) => onChange({ ...value, maPeriod: Number(event.target.value) })} /></label><label>EMA 周期<input type="number" min="2" max="200" value={value.emaPeriod} onChange={(event) => onChange({ ...value, emaPeriod: Number(event.target.value) })} /></label><label>BOLL 周期<input type="number" min="2" max="200" value={value.bollPeriod} onChange={(event) => onChange({ ...value, bollPeriod: Number(event.target.value) })} /></label><label>标准差<input type="number" step="0.1" min="0.1" max="5" value={value.bollDeviation} onChange={(event) => onChange({ ...value, bollDeviation: Number(event.target.value) })} /></label></div><div className="modal-footer"><button onClick={() => onChange(DEFAULT_INDICATORS)}>恢复指标默认</button><button className="primary" onClick={onClose}>完成</button></div></section></div>
 }
 
 function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProgress, onPrivateReceive, onPrivateSync, onHistoryReceive, onHistorySync, privateSyncBusy, privateSyncOperation, privateSyncStatus, codeDeployPhase, codeDeployStatus, codeDeployError, codeDeployActivity, onCodeDeployRefresh, onCodePublish, onCodeUpdate, onImportWorkspace, onRestoreLastImport, canRestoreWorkspace, onClose }: {
@@ -3051,3 +3725,26 @@ function ShortcutHelpDialog({ onClose }: { onClose: () => void }) {
 }
 
 export default App
+
+// The OHLC readout and the clock re-render on their own; keeping them out of
+// App means hovering the chart and the 1 s clock tick no longer re-render the
+// whole workspace (chart, overlays, toolbars) on every frame/second.
+function OhlcLine({ latest, symbol }: { latest: Candle; symbol: SymbolId }) {
+  const hover = useHoverCandle()
+  const candle = hover ?? latest
+  const change = candle.close - candle.open
+  const changePercent = (change / candle.open) * 100
+  return <div className="ohlc-line">
+    <span>开=<b>{formatPrice(candle.open, symbol)}</b></span><span>高=<b>{formatPrice(candle.high, symbol)}</b></span><span>低=<b>{formatPrice(candle.low, symbol)}</b></span><span>收=<b>{formatPrice(candle.close, symbol)}</b></span>
+    <span className={change >= 0 ? 'positive' : 'negative'}>{change >= 0 ? '+' : ''}{formatPrice(change, symbol)} ({changePercent >= 0 ? '+' : ''}{changePercent.toFixed(2)}%)</span>
+  </div>
+}
+
+function ClockLabel() {
+  const [clock, setClock] = useState(() => new Date())
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock(new Date()), 1000)
+    return () => window.clearInterval(timer)
+  }, [])
+  return <span className="clock">{clock.toLocaleTimeString('zh-CN', { hour12: false })} UTC+8</span>
+}

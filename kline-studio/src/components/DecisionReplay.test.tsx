@@ -621,7 +621,7 @@ describe('decision replay components', () => {
     expect(markup).toContain('title="拖动白色虚线调整挂单价或追单价"')
     expect(markup).toContain('title="拖动调整止盈"')
     expect(markup).toContain('title="拖动调整止损；按钮只切换本笔模式，不移动价格"')
-    expect(markup).toContain('拖动白色开仓线、止盈线和止损线')
+    expect(markup).toContain('拖动入场、止盈和止损线')
   })
 
   it('renders position decrease and increase controls and scales setup amounts', () => {
@@ -933,7 +933,7 @@ describe('decision replay components', () => {
       ...createDecisionSession([item], 1, 1), status: 'completed' as const, activeSessionId: null,
       attempts: [{ ...pending, result }], finishedAt: 2,
     }
-    const markup = renderToStaticMarkup(<DecisionResultsDialog session={session} onClose={noop} onReview={noop} onNew={noop} />)
+    const markup = renderToStaticMarkup(<DecisionResultsDialog onFullReview={() => undefined} session={session} onClose={noop} onReview={noop} onNew={noop} />)
     expect(markup).toContain('挂单未成交')
     expect(markup).not.toContain('未参与</span>')
   })
@@ -949,7 +949,7 @@ describe('decision replay components', () => {
       ...createDecisionSession([item], 1, 1, ['fixed-notional']), status: 'completed' as const,
       attempts: [{ ...filled, stage: 'post-exit' as const, result }], finishedAt: 2,
     }
-    const resultsMarkup = renderToStaticMarkup(<DecisionResultsDialog session={session} onClose={noop} onReview={noop} onNew={noop} />)
+    const resultsMarkup = renderToStaticMarkup(<DecisionResultsDialog onFullReview={() => undefined} session={session} onClose={noop} onReview={noop} onNew={noop} />)
     const reviewMarkup = renderToStaticMarkup(<DecisionReviewPanel result={result} positionSizingModes={['fixed-notional']} onBack={noop} />)
     for (const markup of [resultsMarkup, reviewMarkup]) {
       expect(markup).toContain('固定仓位 10,000U')
@@ -971,7 +971,7 @@ describe('decision replay components', () => {
       ...createDecisionSession([item], 1, 1, ['fixed-risk', 'fixed-notional']), status: 'completed' as const,
       attempts: [{ ...filled, stage: 'post-exit' as const, result }], finishedAt: 2,
     }
-    const markup = renderToStaticMarkup(<DecisionResultsDialog session={session} onClose={noop} onReview={noop} onNew={noop} />)
+    const markup = renderToStaticMarkup(<DecisionResultsDialog onFullReview={() => undefined} session={session} onClose={noop} onReview={noop} onNew={noop} />)
     expect(markup).toContain('固定风险 100U')
     expect(markup).toContain('固定仓位 10,000U')
     expect(markup).toContain('+$33.33')
@@ -1012,7 +1012,7 @@ describe('decision replay components', () => {
       attempts: [{ ...filled, stage: 'complete' as const, result }],
       finishedAt: 2,
     }
-    const markup = renderToStaticMarkup(<DecisionResultsDialog session={session} systemCandidates={[first, second, third]} onClose={noop} onReview={noop} onNew={noop} />)
+    const markup = renderToStaticMarkup(<DecisionResultsDialog onFullReview={() => undefined} session={session} systemCandidates={[first, second, third]} onClose={noop} onReview={noop} onNew={noop} />)
 
     expect(markup).toContain('V5 系统参与部分净盈亏')
     expect(markup).toContain('参与部分胜率 风险 100U 100.0% · 对应 1 笔')
@@ -1198,7 +1198,7 @@ describe('decision replay components', () => {
       ...createDecisionSession([item], 1, 1), status: 'completed' as const,
       attempts: [{ ...filled, stage: 'post-exit' as const, result }], finishedAt: 2,
     }
-    const markup = renderToStaticMarkup(<DecisionResultsDialog session={session} onClose={noop} onReview={noop} onNew={noop} />)
+    const markup = renderToStaticMarkup(<DecisionResultsDialog onFullReview={() => undefined} session={session} onClose={noop} onReview={noop} onNew={noop} />)
 
     expect(markup).toContain('你的总盈亏（R）')
     expect(markup).toContain('每笔订单平均盈亏（R）')

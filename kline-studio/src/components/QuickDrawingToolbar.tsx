@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getTool } from '../lib/toolCatalog'
+import { QuickToolIcon } from './QuickToolIcon'
 import {
   clampQuickDrawingToolbarPosition,
   loadQuickDrawingToolbarPosition,
@@ -127,13 +128,13 @@ export function QuickDrawingToolbar({ favoriteTools, onSelectTool, onOpenSetting
       role="button"
       tabIndex={0}
       aria-label="拖动移动快捷绘图工具条"
-      title="拖动移动工具条"
+      title="拖动移动工具条，双击打开绘图设置"
       onPointerDown={handleDragStart}
+      onDoubleClick={onOpenSettings}
     >⠿</span>
     {favoriteTools.map((toolId) => {
       const tool = getTool(toolId)
-      return <button key={toolId} type="button" data-testid={`quick-tool-${toolId}`} aria-label={tool.label} title={tool.label} onClick={() => onSelectTool(toolId)}>{tool.glyph}</button>
+      return <button key={toolId} type="button" data-testid={`quick-tool-${toolId}`} aria-label={tool.label} title={tool.label} onClick={() => onSelectTool(toolId)}><QuickToolIcon toolId={toolId} fallback={tool.glyph} /></button>
     })}
-    <button type="button" aria-label="绘图设置" title="绘图设置" onClick={onOpenSettings}>—</button>
   </div>
 }

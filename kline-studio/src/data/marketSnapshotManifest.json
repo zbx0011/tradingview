@@ -46,6 +46,15 @@
       "count": 16280,
       "firstTime": 1783177200,
       "lastTime": 1788060900
+    },
+    "NQ1!": {
+      "symbol": "CME:NQ.c.0",
+      "vendor": "DATABENTO",
+      "resolution": "1",
+      "file": "data/market-snapshots/nq-c0-1m.json",
+      "count": 1049284,
+      "firstTime": 1698969600,
+      "lastTime": 1793650380
     }
   }
 }

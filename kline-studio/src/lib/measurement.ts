@@ -20,6 +20,7 @@ export interface ChartMeasurement {
 }
 
 const tickSize: Record<SymbolId, number> = {
+  'NQ1!': 0.25,
   XAUUSD: 0.01,
   XAGUSD: 0.001,
   'BTCUSDT.P': 0.1,

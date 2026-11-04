@@ -48,9 +48,9 @@ describe('position drawing rendering', () => {
 
     expect(markup).toContain('data-position-side="short"')
     expect(markup).toContain('data-testid="position-upper-zone"')
-    expect(markup).toContain('fill="rgba(242,54,69,.2)"')
+    expect(markup).toContain('fill="#f2364533"')
     expect(markup).toContain('data-testid="position-lower-zone"')
-    expect(markup).toContain('fill="rgba(8,153,129,.2)"')
+    expect(markup).toContain('fill="#08998133"')
     expect(markup).toContain('data-testid="position-entry-line"')
     expect(markup).toContain('stroke="#787b86"')
     expect(markup).toContain('data-testid="position-stop-label"')
