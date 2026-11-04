@@ -691,8 +691,15 @@ export function ManualTimelineDialog({ session, onClose, onJump, onEditItem }: {
   const timeline = manualTimeline(session)
   const [filter, setFilter] = useState<'all' | 'entry' | 'no-trade' | 'should-trade' | 'exit'>('all')
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
-  // 平仓理由 only exists for exits the user chose to make; stop / target hits are passive.
-  const visible = filter === 'all' ? timeline : timeline.filter((item) => item.kind === filter && !(item.kind === 'exit' && item.passive))
+  // One card per trade: the entry and the exit it ended with belong together. 平仓理由 only exists
+  // for exits the user chose to make; stop / target / end-of-day exits are passive.
+  const rows = timeline.flatMap((item) => {
+    if (item.kind === 'exit') return []
+    const exit = item.kind === 'entry' && item.trade ? timeline.find((other) => other.kind === 'exit' && other.trade?.id === item.trade!.id) : undefined
+    return [{ item, exit }]
+  })
+  const visible = rows.filter(({ item, exit }) => filter === 'all'
+    || (filter === 'exit' ? Boolean(exit && !exit.passive) : item.kind === filter))
   return <FloatingCard
     id="timeline"
     className="mp-timeline"
@@ -719,21 +726,33 @@ export function ManualTimelineDialog({ session, onClose, onJump, onEditItem }: {
         {visible.length === 0
           ? <div className="mp-empty">这一类还没有记录。</div>
           : <ol className="mp-timeline-list">
-            {visible.map((item, index) => {
-              const points = item.kind === 'exit' && item.trade ? tradePoints(item.trade) : null
+            {visible.map(({ item, exit }, index) => {
               const itemKey = `${item.kind}-${item.time}-${item.trade?.id ?? item.note?.interval ?? ''}`
-              const select = () => { setSelectedKey(itemKey); onJump(item) }
-              return <li key={`${itemKey}-${index}`} className={`kind-${item.kind}${item.trade ? ` side-${item.trade.side}` : ''}${selectedKey === itemKey ? ' selected' : ''}`} onClick={select} title="点击在图上定位到这根K线并标注">
-                <button type="button" className="mp-timeline-time" onClick={(event) => { event.stopPropagation(); select() }} title="在图上定位到这根K线">{formatBeijing(item.time)}</button>
+              const exitKey = exit ? `exit-${exit.time}-${exit.trade?.id ?? ''}` : null
+              const select = (target: ManualTimelineItem, key: string) => { setSelectedKey(key); onJump(target) }
+              const points = exit && exit.trade ? tradePoints(exit.trade) : null
+              const selected = selectedKey === itemKey || (exitKey !== null && selectedKey === exitKey)
+              return <li key={`${itemKey}-${index}`} className={`kind-${item.kind}${item.trade ? ` side-${item.trade.side}` : ''}${selected ? ' selected' : ''}`} onClick={() => select(item, itemKey)} title="点击在图上定位到这根K线并标注">
+                <div className="mp-timeline-times">
+                  <button type="button" className={`mp-timeline-time${selectedKey === itemKey ? ' on' : ''}`} onClick={(event) => { event.stopPropagation(); select(item, itemKey) }} title="在图上定位到这根K线">{formatBeijing(item.time)}</button>
+                  {exit && exitKey && <button type="button" className={`mp-timeline-time exit${selectedKey === exitKey ? ' on' : ''}`} onClick={(event) => { event.stopPropagation(); select(exit, exitKey) }} title="在图上定位到平仓这根K线">{formatBeijing(exit.time)}</button>}
+                </div>
                 <div className="mp-timeline-body">
-                  <div className="mp-timeline-title"><b>{item.title}</b>{points !== null && <span className={points >= 0 ? 'positive' : 'negative'}>{formatPoints(points)} · {formatUsd((item.trade ? tradeUsd(item.trade) : null) ?? points * NQ_POINT_VALUE_USD)}</span>}
-                    {!(item.kind === 'exit' && item.passive) && <button type="button" className="mp-icon" aria-label="编辑理由" title="编辑理由" onClick={(event) => { event.stopPropagation(); onEditItem(item) }}><Pencil size={13} /></button>}
+                  <div className="mp-timeline-title"><b>{item.title}</b>
+                    <button type="button" className="mp-icon" aria-label="编辑理由" title="编辑理由" onClick={(event) => { event.stopPropagation(); onEditItem(item) }}><Pencil size={13} /></button>
                   </div>
                   {item.background !== null && <p className={`mp-timeline-background${item.background ? '' : ' missing'}`}><span>背景</span>{item.background || '未填写'}</p>}
                   {item.reasons.length > 0
                     ? <ol className="mp-reason-list">{item.reasons.map((reason, reasonIndex) => <li key={reasonIndex}>{reason}</li>)}</ol>
-                    : item.kind === 'exit' && item.passive ? null
-                    : <p className="mp-muted">{item.kind === 'exit' ? '未填写平仓理由' : item.kind === 'no-trade' || item.kind === 'should-trade' ? '只写了背景，没有分条理由' : '未填写理由'}</p>}
+                    : <p className="mp-muted">{item.kind === 'no-trade' || item.kind === 'should-trade' ? '只写了背景，没有分条理由' : '未填写理由'}</p>}
+                  {exit && exitKey && <div className={`mp-timeline-exit${selectedKey === exitKey ? ' selected' : ''}`} onClick={(event) => { event.stopPropagation(); select(exit, exitKey) }} title="点击在图上定位到平仓这根K线并标注">
+                    <div className="mp-timeline-title"><b>{exit.title}</b>{points !== null && <span className={points >= 0 ? 'positive' : 'negative'}>{formatPoints(points)} · {formatUsd((exit.trade ? tradeUsd(exit.trade) : null) ?? points * NQ_POINT_VALUE_USD)}</span>}
+                      {!exit.passive && <button type="button" className="mp-icon" aria-label="编辑平仓理由" title="编辑平仓理由" onClick={(event) => { event.stopPropagation(); onEditItem(exit) }}><Pencil size={13} /></button>}
+                    </div>
+                    {exit.reasons.length > 0
+                      ? <ol className="mp-reason-list">{exit.reasons.map((reason, reasonIndex) => <li key={reasonIndex}>{reason}</li>)}</ol>
+                      : exit.passive ? null : <p className="mp-muted">未填写平仓理由</p>}
+                  </div>}
                 </div>
               </li>
             })}
