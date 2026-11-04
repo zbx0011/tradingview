@@ -228,17 +228,27 @@ async function publishCode() {
 function scheduleRestart(response: ServerResponse, projectRoot: string, port: number, expectedCommit: string, previousServerInstanceId: string, installDependencies: boolean) {
   const helper = path.join(projectRoot, 'scripts', 'restart-after-code-update.ps1')
   response.once('finish', () => {
-    const child = spawn('powershell.exe', [
-      '-NoProfile', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', helper,
-      '-ProjectDirectory', projectRoot,
-      '-Port', String(port),
-      '-ParentPid', String(process.pid),
-      '-ExpectedCommit', expectedCommit,
-      '-PreviousServerInstanceId', previousServerInstanceId,
-      ...(installDependencies ? ['-InstallDependencies'] : []),
-    ], { detached: true, stdio: 'ignore', windowsHide: true })
-    child.unref()
-    setTimeout(() => process.exit(0), 900)
+    void (async () => {
+      const logDirectory = path.join(process.env.LOCALAPPDATA ?? os.tmpdir(), 'KlineStudio', 'logs')
+      await fs.mkdir(logDirectory, { recursive: true })
+      const log = await fs.open(path.join(logDirectory, 'code-update-helper.log'), 'a')
+      try {
+        const child = spawn('powershell.exe', [
+          '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', helper,
+          '-ProjectDirectory', projectRoot,
+          '-Port', String(port),
+          '-ParentPid', String(process.pid),
+          '-ExpectedCommit', expectedCommit,
+          '-PreviousServerInstanceId', previousServerInstanceId,
+          ...(installDependencies ? ['-InstallDependencies'] : []),
+        ], { detached: true, stdio: ['ignore', log.fd, log.fd], windowsHide: true })
+        await new Promise<void>((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject) })
+        child.unref()
+        setTimeout(() => process.exit(0), 900)
+      } finally {
+        await log.close()
+      }
+    })().catch((error) => { process.stderr.write(`Code update restart helper failed: ${String(error)}\n`) })
   })
 }
 
