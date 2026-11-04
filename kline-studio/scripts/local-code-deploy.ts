@@ -231,23 +231,16 @@ function scheduleRestart(response: ServerResponse, projectRoot: string, port: nu
     void (async () => {
       const logDirectory = path.join(process.env.LOCALAPPDATA ?? os.tmpdir(), 'KlineStudio', 'logs')
       await fs.mkdir(logDirectory, { recursive: true })
-      const log = await fs.open(path.join(logDirectory, 'code-update-helper.log'), 'a')
-      try {
-        const child = spawn('powershell.exe', [
-          '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', helper,
-          '-ProjectDirectory', projectRoot,
-          '-Port', String(port),
-          '-ParentPid', String(process.pid),
-          '-ExpectedCommit', expectedCommit,
-          '-PreviousServerInstanceId', previousServerInstanceId,
-          ...(installDependencies ? ['-InstallDependencies'] : []),
-        ], { detached: true, stdio: ['ignore', log.fd, log.fd], windowsHide: true })
-        await new Promise<void>((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject) })
-        child.unref()
-        setTimeout(() => process.exit(0), 900)
-      } finally {
-        await log.close()
-      }
+      const psLiteral = (value: string) => `'${value.replaceAll("'", "''")}'`
+      const script = `& ${psLiteral(helper)} -ProjectDirectory ${psLiteral(projectRoot)} -Port ${port} -ParentPid ${process.pid} -ExpectedCommit ${psLiteral(expectedCommit)} -PreviousServerInstanceId ${psLiteral(previousServerInstanceId)} ${installDependencies ? '-InstallDependencies' : ''}`
+      const commandLine = `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ${Buffer.from(script, 'utf16le').toString('base64')}`
+      // WMI creates a process independent of the npm/Vite process job, so it
+      // survives when that job and its console close during the restart.
+      const launch = await runFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+        "$ErrorActionPreference='Stop'; $startup=New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ShowWindow=[uint16]0}; $r=Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine=$env:KLINE_RESTART_COMMAND;CurrentDirectory=$env:KLINE_RESTART_DIRECTORY;ProcessStartupInformation=$startup}; if($r.ReturnValue -ne 0){throw ('Restart launch failed: '+$r.ReturnValue)}; Write-Output $r.ProcessId",
+      ], { env: { KLINE_RESTART_COMMAND: commandLine, KLINE_RESTART_DIRECTORY: projectRoot } })
+      await fs.appendFile(path.join(logDirectory, 'code-update-helper.log'), `${new Date().toISOString()} started restart helper ${launch.stdout.trim()}\n`)
+      setTimeout(() => process.exit(0), 900)
     })().catch((error) => { process.stderr.write(`Code update restart helper failed: ${String(error)}\n`) })
   })
 }
