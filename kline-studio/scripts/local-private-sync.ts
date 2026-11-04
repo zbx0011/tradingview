@@ -15,6 +15,10 @@ const MAX_BACKUP_FILES = 300
 const MAX_BACKUP_BYTES = 768 * 1024 * 1024
 const REPLAY_KEY = 'kline-studio-decision-replay-v1'
 const FAVORITES_KEY = 'kline-studio-decision-replay-favorites-v1'
+const MANUAL_PRACTICE_KEY = 'kline-studio-manual-practice-v1'
+const PROGRESS_KEYS = [REPLAY_KEY, FAVORITES_KEY, MANUAL_PRACTICE_KEY]
+// Fixed key order so the browser and this server hash the same bytes.
+const progressEntries = (entries: Record<string, string>) => Object.fromEntries(PROGRESS_KEYS.filter((key) => typeof entries[key] === 'string').map((key) => [key, entries[key]]))
 
 interface PortableWorkspace {
   app: 'kline-studio'
@@ -165,7 +169,7 @@ function serializeWorkspace(workspace: PortableWorkspace) {
 function historyWorkspace(workspace: PortableWorkspace): PortableWorkspace {
   return {
     ...workspace,
-    entries: Object.fromEntries(Object.entries(workspace.entries).filter(([key]) => key === REPLAY_KEY || key === FAVORITES_KEY)),
+    entries: progressEntries(workspace.entries),
   }
 }
 
@@ -197,6 +201,7 @@ function progressFingerprint(workspace: PortableWorkspace) {
   return sha256(JSON.stringify([
     workspace.entries[REPLAY_KEY] ?? null,
     workspace.entries[FAVORITES_KEY] ?? null,
+    workspace.entries[MANUAL_PRACTICE_KEY] ?? null,
   ]))
 }
 
@@ -351,7 +356,7 @@ async function collectProgressSnapshots(repositoryPath: string) {
     const workspace = workspaceFromUnknown(parsed)
     snapshots.push({
       ...workspace,
-      entries: Object.fromEntries(Object.entries(workspace.entries).filter(([key]) => key === REPLAY_KEY || key === FAVORITES_KEY)),
+      entries: progressEntries(workspace.entries),
     })
     sourcePaths.push(path.relative(repositoryPath, file).replaceAll(path.sep, '/'))
   }

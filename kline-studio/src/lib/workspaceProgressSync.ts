@@ -18,6 +18,7 @@ import {
   type PortableWorkspace,
   type StorageLike,
 } from './portableWorkspace'
+import { MANUAL_PRACTICE_STORAGE_KEY, mergeManualPracticeStores, parseManualPracticeStore } from './manualPractice'
 
 export interface WorkspaceProgressMergeSummary {
   sourceCount: number
@@ -38,9 +39,10 @@ export interface WorkspaceProgressMergeOptions {
 export function decisionHistoryWorkspace(workspace: PortableWorkspace): PortableWorkspace {
   return {
     ...workspace,
-    entries: Object.fromEntries(Object.entries(workspace.entries).filter(([key]) => (
-      key === DECISION_REPLAY_STORAGE_KEY || key === DECISION_REPLAY_FAVORITES_STORAGE_KEY
-    ))),
+    // Fixed key order so both sides of the sync hash the same bytes.
+    entries: Object.fromEntries([DECISION_REPLAY_STORAGE_KEY, DECISION_REPLAY_FAVORITES_STORAGE_KEY, MANUAL_PRACTICE_STORAGE_KEY]
+      .filter((key) => typeof workspace.entries[key] === 'string')
+      .map((key) => [key, workspace.entries[key]])),
   }
 }
 
@@ -104,6 +106,17 @@ export function mergePortableWorkspaceProgress(
     mergedStore = mergeDecisionReplayStores(mergedStore, importedStore)
     mergedFavorites = [...new Set([...mergedFavorites, ...importedFavorites])]
   })
+  // Self-review (自主复盘) papers travel with the history too: merged by paper, newest copy wins.
+  const localManualRaw = storage.getItem(MANUAL_PRACTICE_STORAGE_KEY)
+  let mergedManual = parseManualPracticeStore(localManualRaw)
+  let manualChanged = false
+  for (const snapshot of snapshots) {
+    const raw = snapshot.entries[MANUAL_PRACTICE_STORAGE_KEY]
+    if (typeof raw !== 'string') continue
+    mergedManual = mergeManualPracticeStores(mergedManual, parseManualPracticeStore(raw))
+    manualChanged = true
+  }
+  const mergedManualSerialized = JSON.stringify(mergedManual)
 
   const persistRecovery = options.persistRecovery !== false
   // File imports require a durable browser rollback point. Background sync stores this snapshot
@@ -113,6 +126,7 @@ export function mergePortableWorkspaceProgress(
     const canonicalStore = canonicalDecisionReplayStore(mergedStore)
     storage.setItem(DECISION_REPLAY_STORAGE_KEY, canonicalStore.serialized)
     storage.setItem(DECISION_REPLAY_FAVORITES_STORAGE_KEY, JSON.stringify(mergedFavorites))
+    if (manualChanged && mergedManualSerialized !== localManualRaw) storage.setItem(MANUAL_PRACTICE_STORAGE_KEY, mergedManualSerialized)
 
     const verifiedStore = parseDecisionReplayStoreChecked(storage.getItem(DECISION_REPLAY_STORAGE_KEY))
     const verifiedFavorites = parseDecisionReplayFavoritesChecked(storage.getItem(DECISION_REPLAY_FAVORITES_STORAGE_KEY))

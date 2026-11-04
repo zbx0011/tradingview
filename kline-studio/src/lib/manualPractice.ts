@@ -200,6 +200,31 @@ export function parseManualPracticeStore(raw: string | null): ManualPracticeStor
   }
 }
 
+const sessionRank = (session: ManualPracticeSession) => [session.updatedAt, session.status === 'completed' ? 1 : 0, session.cursorTime, session.trades.length + session.notes.length]
+
+function isNewerSession(candidate: ManualPracticeSession, current: ManualPracticeSession) {
+  const a = sessionRank(candidate)
+  const b = sessionRank(current)
+  for (let index = 0; index < a.length; index += 1) if (a[index] !== b[index]) return a[index] > b[index]
+  return false
+}
+
+/**
+ * Merge two computers' self-review papers. Papers are matched by id and the most recently
+ * updated copy wins, so a half-finished paper continues from wherever it got furthest.
+ * The base store keeps its open paper; otherwise the incoming one's open paper is adopted.
+ */
+export function mergeManualPracticeStores(base: ManualPracticeStore, incoming: ManualPracticeStore): ManualPracticeStore {
+  const byId = new Map(base.sessions.map((session) => [session.id, session]))
+  for (const session of incoming.sessions) {
+    const current = byId.get(session.id)
+    if (!current || isNewerSession(session, current)) byId.set(session.id, session)
+  }
+  const sessions = [...byId.values()].sort((left, right) => right.createdAt - left.createdAt)
+  const stillActive = (id: string | null) => id !== null && sessions.some((session) => session.id === id && session.status === 'active') ? id : null
+  return { version: 1, activeSessionId: stillActive(base.activeSessionId) ?? stillActive(incoming.activeSessionId), sessions }
+}
+
 export function loadManualPracticeStore(): ManualPracticeStore {
   try {
     return parseManualPracticeStore(localStorage.getItem(MANUAL_PRACTICE_STORAGE_KEY))

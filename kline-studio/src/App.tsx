@@ -13,7 +13,7 @@ import { ManualBarPicker, ManualPracticeAnnotations, ManualPracticeCenter, Manua
 import { useManualPracticeKeys } from './components/useManualPracticeKeys'
 import {
   advanceManualSession, aggregateMinutes, barTimeFor, cleanReasons, contextStartTime, createManualSession, findManualTradingDays, finishManualSession,
-  lastRevealedMinute, loadManualPracticeStore, lowerBound, MANUAL_PRACTICE_SYMBOL, openTrade as manualOpenTrade, pickRandomTradingDay, saveManualPracticeStore,
+  lastRevealedMinute, loadManualPracticeStore, lowerBound, mergeManualPracticeStores, MANUAL_PRACTICE_SYMBOL, openTrade as manualOpenTrade, pickRandomTradingDay, saveManualPracticeStore,
   latestBackground, upsertBarNote, MANUAL_MAX_QUANTITY, NQ_POINT_VALUE_USD, tradeQuantity, type ManualPendingOrder, type ManualPracticeSession, type ManualPracticeStore, type ManualSide, type ManualTimelineItem,
 } from './lib/manualPractice'
 import { ChartContextMenu, type ChartContextData } from './components/TradingViewContextMenu'
@@ -1754,6 +1754,13 @@ function App() {
       window.setTimeout(() => window.location.reload(), 250)
     }).catch((error) => notify(`合并失败，本机记录未被覆盖：${error instanceof Error ? error.message : '无法读取备份文件'}`))
   }, [notify])
+  // A sync can merge in self-review papers from another computer: adopt them in the open page
+  // (keeping anything newer from this tab) so the stale in-memory copy never overwrites them.
+  const adoptSyncedManualStore = useCallback(() => {
+    const synced = loadManualPracticeStore()
+    setManualStore((current) => mergeManualPracticeStores(synced, current))
+    return synced.sessions.length
+  }, [])
   const syncPrivateRepository = useCallback((scope: LocalSyncScope = 'workspace') => {
     if (privateSyncInFlightRef.current) return
     if (decisionPersistTimerRef.current !== null) {
@@ -1795,8 +1802,9 @@ function App() {
       decisionFavoriteKeysRef.current = syncedFavorites
       setDecisionStore(syncedStore)
       setDecisionFavoriteKeys(syncedFavorites)
+      const manualCount = adoptSyncedManualStore()
       setPrivateSyncStatus('synced')
-      notify(`${scope === 'history' ? '仅同步做题历史' : '一键同步'}完成：${summary.sessionCount} 场、${summary.resultCount} 笔、${summary.favoriteCount} 个收藏；远端已回下载校验`)
+      notify(`${scope === 'history' ? '仅同步做题历史' : '一键同步'}完成：${summary.sessionCount} 场、${summary.resultCount} 笔、${summary.favoriteCount} 个收藏、自主复盘 ${manualCount} 卷；远端已回下载校验`)
     }
     void runWithLocalPrivateSyncLock(executeSync, true).then((result) => {
       if (!result.acquired) setPrivateSyncStatus('ready')
@@ -1808,7 +1816,7 @@ function App() {
       setPrivateSyncBusy(false)
       setPrivateSyncOperation(null)
     })
-  }, [notify])
+  }, [adoptSyncedManualStore, notify])
 
   const receivePrivateRepository = useCallback((scope: LocalSyncScope = 'workspace') => {
     if (privateSyncInFlightRef.current) return
@@ -1839,8 +1847,9 @@ function App() {
       decisionFavoriteKeysRef.current = receivedFavorites
       setDecisionStore(receivedStore)
       setDecisionFavoriteKeys(receivedFavorites)
+      const manualCount = adoptSyncedManualStore()
       setPrivateSyncStatus('received')
-      notify(`${scope === 'history' ? '仅接收做题历史' : '一键接收'}完成：${summary.sessionCount} 场、${summary.resultCount} 笔、${summary.favoriteCount} 个收藏；接收前备份已保存到 ${received.recovery.path}，本次没有上传`)
+      notify(`${scope === 'history' ? '仅接收做题历史' : '一键接收'}完成：${summary.sessionCount} 场、${summary.resultCount} 笔、${summary.favoriteCount} 个收藏、自主复盘 ${manualCount} 卷；接收前备份已保存到 ${received.recovery.path}，本次没有上传`)
     }
     void runWithLocalPrivateSyncLock(executeReceive, true).then((result) => {
       if (!result.acquired) setPrivateSyncStatus('ready')
@@ -1852,7 +1861,7 @@ function App() {
       setPrivateSyncBusy(false)
       setPrivateSyncOperation(null)
     })
-  }, [notify])
+  }, [adoptSyncedManualStore, notify])
 
   useEffect(() => {
     let cancelled = false

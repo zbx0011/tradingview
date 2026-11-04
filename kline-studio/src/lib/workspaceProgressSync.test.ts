@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { DECISION_REPLAY_STORAGE_KEY, parseDecisionReplayStore, type DecisionReplaySession, type DecisionReplayStore } from './decisionReplay'
 import { DECISION_REPLAY_FAVORITES_STORAGE_KEY } from './decisionReplayFavorites'
 import { PORTABLE_WORKSPACE_RECOVERY_STORAGE_KEY, loadPortableWorkspaceRecovery, type PortableWorkspace } from './portableWorkspace'
+import { MANUAL_PRACTICE_STORAGE_KEY, parseManualPracticeStore, type ManualPracticeSession, type ManualPracticeStore } from './manualPractice'
 import { mergePortableWorkspaceProgress, mergePortableWorkspaceProgressSnapshots, receivePortableWorkspaceSafely, receivePortableWorkspaceSnapshotsSafely } from './workspaceProgressSync'
 
 function session(id: string, startedAt: number): DecisionReplaySession {
@@ -200,5 +201,38 @@ describe('workspace progress sync', () => {
     })
     expect(storage.getItem(PORTABLE_WORKSPACE_RECOVERY_STORAGE_KEY)).toBeNull()
     expect(storage.getItem('kline-studio-workspace-v1')).toBe('remote-settings')
+  })
+
+  it('carries self-review papers across computers, keeping the furthest copy of a half-finished paper', () => {
+    const paper = (id: string, cursorTime: number, updatedAt: number, status: 'active' | 'completed' = 'active'): ManualPracticeSession => ({
+      id, symbol: 'NQ1!', dayKey: id, dayLabel: id, startTime: 0, endTime: 10_000, cursorTime, status,
+      createdAt: updatedAt, updatedAt, completedAt: status === 'completed' ? updatedAt : null, trades: [], notes: [], pendingOrder: null,
+    })
+    const manual = (activeSessionId: string | null, sessions: ManualPracticeSession[]): ManualPracticeStore => ({ version: 1, activeSessionId, sessions })
+    // This computer: an older copy of the half-done paper plus a local-only finished one.
+    const storage = createStorage({
+      [DECISION_REPLAY_STORAGE_KEY]: JSON.stringify(store(session('local', 1000))),
+      [MANUAL_PRACTICE_STORAGE_KEY]: JSON.stringify(manual(null, [paper('shared', 600, 100), paper('local-only', 9000, 50, 'completed')])),
+      'kline-studio-workspace-v1': 'local-settings',
+    })
+    // The other computer got further on the shared paper and still has it open.
+    const latest = snapshot(store(session('remote', 2000)), [])
+    latest.entries[MANUAL_PRACTICE_STORAGE_KEY] = JSON.stringify(manual('shared', [paper('shared', 4200, 300)]))
+    latest.entries['kline-studio-workspace-v1'] = 'remote-settings'
+
+    receivePortableWorkspaceSnapshotsSafely([latest], storage, { persistRecovery: false })
+    const received = parseManualPracticeStore(storage.getItem(MANUAL_PRACTICE_STORAGE_KEY))
+    expect(received.activeSessionId).toBe('shared')
+    expect(received.sessions.find((item) => item.id === 'shared')?.cursorTime).toBe(4200)
+    expect(received.sessions.map((item) => item.id).sort()).toEqual(['local-only', 'shared'])
+
+    // Publishing back merges the remote papers into this browser instead of dropping them.
+    const other = createStorage({ [MANUAL_PRACTICE_STORAGE_KEY]: JSON.stringify(manual(null, [paper('mine', 100, 10)])) })
+    mergePortableWorkspaceProgress([latest], other, { persistRecovery: false })
+    expect(parseManualPracticeStore(other.getItem(MANUAL_PRACTICE_STORAGE_KEY)).sessions.map((item) => item.id).sort()).toEqual(['mine', 'shared'])
+
+    // History-only snapshots carry the papers too, in a fixed key order.
+    const compacted = mergePortableWorkspaceProgressSnapshots([latest])
+    expect(Object.keys(compacted.entries)).toEqual([DECISION_REPLAY_STORAGE_KEY, DECISION_REPLAY_FAVORITES_STORAGE_KEY, MANUAL_PRACTICE_STORAGE_KEY])
   })
 })
