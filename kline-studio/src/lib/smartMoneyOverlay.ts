@@ -160,7 +160,7 @@ export function attachSmartMoneyOverlay(container: HTMLElement, chart: IChartApi
       if (step > 0 && step < 86_400) {
         const horizon = futuresSession ? futureTimes.length : 0
         const timeAt = (index: number) => index <= lastPos ? lastData![index].time : futureTimes[index - lastPos - 1]
-        const from = Math.max(1, Math.floor(range.from) - 1)
+        const from = Math.min(lastPos + horizon + 1, Math.max(1, Math.floor(range.from) - 1))
         const to = Math.min(lastPos + horizon, Math.ceil(range.to) + 1)
         const reachesOpen = (time: number) => {
           const minute = newYorkMinuteOfDay(time)

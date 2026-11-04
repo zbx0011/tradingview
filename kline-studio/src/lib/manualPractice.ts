@@ -545,6 +545,8 @@ export interface ManualTimelineItem {
   reasons: string[]
   trade?: ManualTrade
   note?: ManualBarNote
+  /** A stop / target / end-of-day exit is triggered by the market, not decided by the user, so it has no 平仓理由. */
+  passive?: boolean
 }
 
 /** Every reason in time order, for the review screen. */
@@ -559,7 +561,7 @@ export function manualTimeline(session: ManualPracticeSession): ManualTimelineIt
     items.push({ time: trade.entryTime, kind: 'entry', title: `${trade.side === 'long' ? '开多' : '开空'} @ ${trade.entryPrice.toFixed(2)}`, background: trade.background, reasons: trade.reasons, trade })
     if (trade.exitTime !== null) {
       const label = trade.exitKind === 'stop' ? '止损' : trade.exitKind === 'target' ? '止盈' : trade.exitKind === 'session-end' ? '收盘平仓' : '手动平仓'
-      items.push({ time: trade.exitTime, kind: 'exit', title: `${label} @ ${trade.exitPrice?.toFixed(2)}`, background: null, reasons: trade.exitReasons, trade })
+      items.push({ time: trade.exitTime, kind: 'exit', title: `${label} @ ${trade.exitPrice?.toFixed(2)}`, background: null, reasons: trade.exitReasons, trade, passive: trade.exitKind !== 'manual' })
     }
   }
   return items.sort((a, b) => a.time - b.time || (a.kind === 'exit' ? -1 : 1))

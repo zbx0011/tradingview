@@ -608,13 +608,15 @@ function PriceField({ label, value, hint, onCommit }: { label: string; value: nu
 /* Chart annotations                                                   */
 /* ------------------------------------------------------------------ */
 
-export function ManualPracticeAnnotations({ session, interval, hidden, toX, toY, highlightTime = null, hideLevels = false }: {
+export function ManualPracticeAnnotations({ session, interval, hidden, toX, toY, highlightTime = null, highlightPrice = null, hideLevels = false }: {
   session: ManualPracticeSession
   interval: IntervalId
   hidden: boolean
   toX: (time: number) => number | null
   toY: (price: number) => number | null
   highlightTime?: number | null
+  /** Price to ring on the highlighted candle (entry / exit fills). */
+  highlightPrice?: number | null
   /** The draggable risk overlay already draws the open position's entry / stop / target. */
   hideLevels?: boolean
 }) {
@@ -661,6 +663,16 @@ export function ManualPracticeAnnotations({ session, interval, hidden, toX, toY,
       const title = [info.noTrade ? `未开单理由：${info.noTrade} 条` : '', info.should ? `应该开单理由：${info.should} 条` : ''].filter(Boolean).join('；')
       return <span key={bar} className={`mp-note-badge${info.should ? ' should' : ''}${highlightTime === bar ? ' highlight' : ''}`} style={{ left: x }} title={title}>{info.count}</span>
     })}
+    {highlightTime !== null && (() => {
+      const x = toX(highlightTime)
+      if (x === null) return null
+      const y = highlightPrice !== null ? toY(highlightPrice) : null
+      return <>
+        <div className="mp-focus-band" style={{ left: x }} />
+        {y !== null && <span className="mp-focus-ring" style={{ left: x, top: y }} />}
+        <span className="mp-focus-tag" style={{ left: x }}>{formatBeijing(highlightTime)}</span>
+      </>
+    })()}
   </div>
 }
 
@@ -671,13 +683,16 @@ export function ManualPracticeAnnotations({ session, interval, hidden, toX, toY,
 export function ManualTimelineDialog({ session, onClose, onJump, onEditItem }: {
   session: ManualPracticeSession
   onClose: () => void
-  onJump: (time: number) => void
+  /** Locate the candle a reason belongs to (and mark it on the chart). */
+  onJump: (item: ManualTimelineItem) => void
   onEditItem: (item: ManualTimelineItem) => void
 }) {
   const summary = sessionSummary(session)
   const timeline = manualTimeline(session)
   const [filter, setFilter] = useState<'all' | 'entry' | 'no-trade' | 'should-trade' | 'exit'>('all')
-  const visible = filter === 'all' ? timeline : timeline.filter((item) => item.kind === filter)
+  const [selectedKey, setSelectedKey] = useState<string | null>(null)
+  // 平仓理由 only exists for exits the user chose to make; stop / target hits are passive.
+  const visible = filter === 'all' ? timeline : timeline.filter((item) => item.kind === filter && !(item.kind === 'exit' && item.passive))
   return <FloatingCard
     id="timeline"
     className="mp-timeline"
@@ -706,15 +721,18 @@ export function ManualTimelineDialog({ session, onClose, onJump, onEditItem }: {
           : <ol className="mp-timeline-list">
             {visible.map((item, index) => {
               const points = item.kind === 'exit' && item.trade ? tradePoints(item.trade) : null
-              return <li key={`${item.kind}-${item.time}-${index}`} className={`kind-${item.kind}${item.trade ? ` side-${item.trade.side}` : ''}`}>
-                <button type="button" className="mp-timeline-time" onClick={() => onJump(item.time)} title="在图上定位到这根K线">{formatBeijing(item.time)}</button>
+              const itemKey = `${item.kind}-${item.time}-${item.trade?.id ?? item.note?.interval ?? ''}`
+              const select = () => { setSelectedKey(itemKey); onJump(item) }
+              return <li key={`${itemKey}-${index}`} className={`kind-${item.kind}${item.trade ? ` side-${item.trade.side}` : ''}${selectedKey === itemKey ? ' selected' : ''}`} onClick={select} title="点击在图上定位到这根K线并标注">
+                <button type="button" className="mp-timeline-time" onClick={(event) => { event.stopPropagation(); select() }} title="在图上定位到这根K线">{formatBeijing(item.time)}</button>
                 <div className="mp-timeline-body">
                   <div className="mp-timeline-title"><b>{item.title}</b>{points !== null && <span className={points >= 0 ? 'positive' : 'negative'}>{formatPoints(points)} · {formatUsd((item.trade ? tradeUsd(item.trade) : null) ?? points * NQ_POINT_VALUE_USD)}</span>}
-                    <button type="button" className="mp-icon" aria-label="编辑理由" title="编辑理由" onClick={() => onEditItem(item)}><Pencil size={13} /></button>
+                    {!(item.kind === 'exit' && item.passive) && <button type="button" className="mp-icon" aria-label="编辑理由" title="编辑理由" onClick={(event) => { event.stopPropagation(); onEditItem(item) }}><Pencil size={13} /></button>}
                   </div>
                   {item.background !== null && <p className={`mp-timeline-background${item.background ? '' : ' missing'}`}><span>背景</span>{item.background || '未填写'}</p>}
                   {item.reasons.length > 0
                     ? <ol className="mp-reason-list">{item.reasons.map((reason, reasonIndex) => <li key={reasonIndex}>{reason}</li>)}</ol>
+                    : item.kind === 'exit' && item.passive ? null
                     : <p className="mp-muted">{item.kind === 'exit' ? '未填写平仓理由' : item.kind === 'no-trade' || item.kind === 'should-trade' ? '只写了背景，没有分条理由' : '未填写理由'}</p>}
                 </div>
               </li>

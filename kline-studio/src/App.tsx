@@ -302,6 +302,7 @@ function App() {
   // Look-back mode: the next chart click picks an earlier candle to record reasons for.
   const [manualPicking, setManualPicking] = useState(false)
   const [manualHighlightTime, setManualHighlightTime] = useState<number | null>(null)
+  const [manualHighlightPrice, setManualHighlightPrice] = useState<number | null>(null)
   const [manualLoading, setManualLoading] = useState(false)
   const decisionDrawingContextRef = useRef<string | null>(null)
   const decisionDrawingLoadingRef = useRef(false)
@@ -2653,6 +2654,7 @@ function App() {
     setDecisionCenterOpen(false)
     setManualTimelineOpen(false)
     setManualHighlightTime(null)
+    setManualHighlightPrice(null)
     setReplayCursor(null); setReplayPlaying(false); setReplaySelecting(false)
     if (symbol !== MANUAL_PRACTICE_SYMBOL) setSymbol(MANUAL_PRACTICE_SYMBOL)
     if (INTERVALS[interval].seconds > 3600) setIntervalId('5m')
@@ -2710,6 +2712,7 @@ function App() {
     setManualDialog(null)
     setManualTimelineOpen(false)
     setManualHighlightTime(null)
+    setManualHighlightPrice(null)
     if (manualActiveSession) {
       setManualStore((store) => ({ ...store, activeSessionId: null }))
       notify('已暂停，进度已保存；在“自主复盘”里可以继续')
@@ -3167,6 +3170,7 @@ function App() {
               interval={interval}
               hidden={chartAnnotationsHidden}
               highlightTime={manualHighlightTime}
+              highlightPrice={manualHighlightPrice}
               hideLevels={Boolean(manualActiveSession && ((manualDialog?.type === 'open' && manualRisk) || (manualPosition && manualPosition.stopLoss !== null && manualPosition.takeProfit !== null)))}
               toX={(time) => chartRef.current?.timeToCoordinate(time) ?? null}
               toY={(price) => chartRef.current?.priceToCoordinate(price) ?? null}
@@ -3662,9 +3666,10 @@ function App() {
       {manualTimelineOpen && manualSession && <ManualTimelineDialog
         session={manualSession}
         onClose={() => setManualTimelineOpen(false)}
-        onJump={(time) => {
-          const bar = barTimeFor(time, interval)
+        onJump={(item) => {
+          const bar = barTimeFor(item.time, interval)
           setManualHighlightTime(bar)
+          setManualHighlightPrice(item.trade ? (item.kind === 'entry' ? item.trade.entryPrice : item.trade.exitPrice) : null)
           chartRef.current?.goToTime(bar)
         }}
         onEditItem={(item) => setManualDialog({ type: 'edit', item })}

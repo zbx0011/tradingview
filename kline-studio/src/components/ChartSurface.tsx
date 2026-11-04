@@ -504,6 +504,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     futureTradingTimesRef.current = futureTradingTimes ?? []
     seriesRef.current?.smc?.setFutureTimes(futureTradingTimesRef.current)
   }, [futureTradingTimes])
+  const pendingRangeRef = useRef<{ range: { from: number; to: number }; expires: number } | null>(null)
   const blackBarTimesRef = useRef<readonly number[]>(blackBarTimes ?? [])
   const blackBarsAppliedRef = useRef<readonly number[]>([])
   const symbolRef = useRef(symbol)
@@ -1035,7 +1036,12 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       const found = currentData.findIndex((candle) => candle.time >= time)
       const index = found === -1 ? currentData.length - 1 : found
       const span = range.to - range.from
-      scale.setVisibleLogicalRange({ from: index - span / 2, to: index + span / 2 })
+      const range2 = { from: index - span / 2, to: index + span / 2 }
+      // lightweight-charts applies a requested range on the next frame and keeps reporting the old one
+      // until then. Remember the request so the data effect (which re-applies the "current" range when
+      // React re-renders) does not put the stale range back and undo the jump.
+      pendingRangeRef.current = { range: range2, expires: performance.now() + 600 }
+      scale.setVisibleLogicalRange(range2)
     },
     selectResearchSignal: (markerId) => {
       selectedResearchSignalMarkerIdRef.current = markerId
@@ -1681,7 +1687,8 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     }
     const previousLength = previousLengthRef.current
     const timeScale = chart.timeScale()
-    const visibleRange = timeScale.getVisibleLogicalRange()
+    const pendingRange = pendingRangeRef.current && pendingRangeRef.current.expires > performance.now() ? pendingRangeRef.current.range : null
+    const visibleRange = pendingRange ?? timeScale.getVisibleLogicalRange()
     const shouldFocusLatest = !suppressAutoFocus && focusLatestKeyRef.current !== focusLatestKey
     // A decision-focus request is issued while the candidate panel changes,
     // but the new candidate's candles can arrive one render later.  Do not
