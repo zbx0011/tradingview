@@ -18,6 +18,7 @@ import {
 } from 'lightweight-charts'
 import { bollinger, ema, sma, volumeSma } from '../lib/indicators'
 import { attachSmartMoneyOverlay } from '../lib/smartMoneyOverlay'
+import { futureTimeOffset } from '../lib/futureTradingTimeline'
 import {
   centeredLatestLogicalRange,
   initialChartLogicalRange,
@@ -95,6 +96,7 @@ interface Props {
   theme: 'dark' | 'light'
   /** Bars painted solid black (e.g. the candle a manual-practice trade entered on). */
   blackBarTimes?: readonly number[]
+  futureTradingTimes?: readonly number[]
   indicators: IndicatorSettings
   priceScaleAuto: boolean
   priceScaleLog: boolean
@@ -135,7 +137,7 @@ interface SeriesState {
   bollMiddle?: any
   bollLower?: any
   markers?: any
-  smc?: { setData: (candles: readonly Candle[]) => void; destroy: () => void }
+  smc?: { setData: (candles: readonly Candle[]) => void; setFutureTimes: (times: readonly number[]) => void; destroy: () => void }
 }
 
 interface TradeConnectionSegment extends ReplayTradeConnectionSpec {
@@ -486,7 +488,7 @@ function apprenticeActionSeriesMarkers(markers: readonly ApprenticeActionMarker[
 
 export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function ChartSurface(
   {
-    data, symbol, interval, chartType, theme, blackBarTimes, indicators, priceScaleAuto, priceScaleLog, priceScalePercent, priceScaleInverted,
+    data, symbol, interval, chartType, theme, blackBarTimes, futureTradingTimes, indicators, priceScaleAuto, priceScaleLog, priceScalePercent, priceScaleInverted,
     visibleTradeLayerSourceIds = [], visibleResearchSignalSourceIds = [], showAllResearchReviews = true, exerciseSignalMarkers = [], apprenticeActionMarkers = [], apprenticeOnly = false, apprenticeFocusRange = null, decisionSignalSourceIds = [], decisionSignalAfterTime = null,
     visibleRangeLayerSourceIds = [], suppressedRangeObjectIds = [], selectedRangeObjectId = null, onSelectRangeObject,
     followLatest = false, focusLatestKey = 0, focusHistoryBars = 110, suppressAutoFocus = false, centerLatestByDefault = false, markersHidden = false, onHover, onPriceScaleStateChange, onViewportChange,
@@ -497,6 +499,11 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<SeriesState | null>(null)
   const dataRef = useRef(data)
+  const futureTradingTimesRef = useRef<readonly number[]>(futureTradingTimes ?? [])
+  useEffect(() => {
+    futureTradingTimesRef.current = futureTradingTimes ?? []
+    seriesRef.current?.smc?.setFutureTimes(futureTradingTimesRef.current)
+  }, [futureTradingTimes])
   const blackBarTimesRef = useRef<readonly number[]>(blackBarTimes ?? [])
   const blackBarsAppliedRef = useRef<readonly number[]>([])
   const symbolRef = useRef(symbol)
@@ -944,7 +951,18 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
         const lastIndex = currentData.length - 1
         const intervalSeconds = INTERVALS[intervalRef.current].seconds
         if (logical < 0) time = currentData[0].time + logical * intervalSeconds
-        else if (logical > lastIndex) time = currentData[lastIndex].time + (logical - lastIndex) * intervalSeconds
+        else if (logical > lastIndex) {
+          const future = futureTradingTimesRef.current
+          const offset = logical - lastIndex
+          const index = Math.floor(offset)
+          const start = index === 0 ? currentData[lastIndex].time : future[index - 1]
+          const end = future[index]
+          time = start !== undefined && end !== undefined
+            ? start + (end - start) * (offset - index)
+            : future.length > 0 && offset >= future.length
+              ? future[future.length - 1] + (offset - future.length) * intervalSeconds
+              : currentData[lastIndex].time + offset * intervalSeconds
+        }
         else {
           const lowerIndex = Math.max(0, Math.floor(logical))
           const upperIndex = Math.min(lastIndex, Math.ceil(logical))
@@ -970,7 +988,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       const intervalSeconds = INTERVALS[intervalRef.current].seconds
       let logical: number
       if (time <= currentData[0].time) logical = (time - currentData[0].time) / intervalSeconds
-      else if (time >= currentData[lastIndex].time) logical = lastIndex + (time - currentData[lastIndex].time) / intervalSeconds
+      else if (time >= currentData[lastIndex].time) logical = lastIndex + futureTimeOffset(time, currentData[lastIndex].time, futureTradingTimesRef.current, intervalSeconds)
       else {
         let low = 1
         let high = lastIndex
@@ -1157,6 +1175,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     if (indicators.smc !== false && chartType !== 'line' && chartType !== 'area') {
       series.smc = attachSmartMoneyOverlay(container, chart, mainSeries, symbolRef.current === 'NQ1!')
       series.smc.setData(dataRef.current)
+      series.smc.setFutureTimes(futureTradingTimesRef.current)
     }
     blackBarsAppliedRef.current = blackBarTimesRef.current
     updateSeries(series, dataRef.current, chartType, indicators, { times: new Set(blackBarTimesRef.current), border: dark ? '#9aa3b5' : '#000000' })

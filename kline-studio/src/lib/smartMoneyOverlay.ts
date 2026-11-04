@@ -7,6 +7,7 @@ import { computeSmartMoney, emptySmcResult, SMC_COLORS, type SmcResult } from '.
 
 interface Overlay {
   setData: (candles: readonly Candle[]) => void
+  setFutureTimes: (times: readonly number[]) => void
   destroy: () => void
 }
 
@@ -96,6 +97,7 @@ export function attachSmartMoneyOverlay(container: HTMLElement, chart: IChartApi
 
   let result: SmcResult = emptySmcResult()
   let lastData: readonly Candle[] | null = null
+  let futureTimes: readonly number[] = []
   let dataVersion = 0
   let signature = ''
   let frame = 0
@@ -156,8 +158,8 @@ export function attachSmartMoneyOverlay(container: HTMLElement, chart: IChartApi
       const lastPos = lastData.length - 1
       const step = lastData[lastPos].time - lastData[lastPos - 1].time
       if (step > 0 && step < 86_400) {
-        const horizon = futuresSession ? Math.floor(129_600 / step) : 0 // project up to 36h ahead
-        const timeAt = (index: number) => index <= lastPos ? lastData![index].time : lastData![lastPos].time + (index - lastPos) * step
+        const horizon = futuresSession ? futureTimes.length : 0
+        const timeAt = (index: number) => index <= lastPos ? lastData![index].time : futureTimes[index - lastPos - 1]
         const from = Math.max(1, Math.floor(range.from) - 1)
         const to = Math.min(lastPos + horizon, Math.ceil(range.to) + 1)
         const reachesOpen = (time: number) => {
@@ -328,6 +330,12 @@ export function attachSmartMoneyOverlay(container: HTMLElement, chart: IChartApi
   schedule()
 
   return {
+    setFutureTimes(times) {
+      if (futureTimes === times) return
+      futureTimes = times
+      dataVersion += 1
+      schedule()
+    },
     setData(candles) {
       if (candles === lastData) return
       lastData = candles

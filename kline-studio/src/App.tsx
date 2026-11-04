@@ -32,6 +32,7 @@ import {
 import type { DecisionSymbolStats } from './components/DecisionReplay'
 import { applyShapeCuration, loadShapeExclusions, SHAPE_EXCLUSIONS_KEY, removeShapeQuestion, shapeAiMarkers, confirmedShapeQuestionKeys, filterShapeCandidates, shapePatternOptions, shapeDecisionHistory } from './lib/shapeDecisionPractice'
 import { shapePhaseAnnotationFor } from './lib/shapePhaseAnnotations'
+import { futureTradingBarTimes } from './lib/futureTradingTimeline'
 import { drawingReducer, duplicateDrawing, hitTestDrawing, initialDrawingHistory, moveDrawing, withoutTransientMeasurements, type Drawing, type DrawingAction } from './lib/drawings'
 import {
   clampContextMenuPosition, countActiveIndicators, loadChartAlerts, loadPaperOrders, saveChartAlerts, savePaperOrders,
@@ -603,6 +604,13 @@ function App() {
     ? decisionData
     : replaySelecting ? baseData : (normalizedReplayCursor === null ? liveData : replayCandles(baseData, normalizedReplayCursor, chartSeconds)),
   [baseData, chartSeconds, decisionData, decisionMode, decisionOverviewData, decisionOverviewMode, liveData, manualData, normalizedReplayCursor, replaySelecting, fullReviewSession, fullReviewData])
+  const manualFutureTimes = useMemo(() => {
+    const lastTime = manualData?.at(-1)?.time
+    if (lastTime === undefined || !nqMinutes) return []
+    const from = lowerBound(nqMinutes, lastTime + INTERVALS[interval].seconds)
+    const count = 432 * Math.max(1, INTERVALS[interval].seconds / 60) + 5000
+    return futureTradingBarTimes(nqMinutes.slice(from, from + count), lastTime, INTERVALS[interval].seconds)
+  }, [manualData, nqMinutes, interval])
   useEffect(() => {
     if (!fullReviewSession || !fullReviewData.length) return
     const timer = window.setTimeout(() => chartRef.current?.focusLatest(), 0)
@@ -3020,6 +3028,7 @@ function App() {
           >
             <ChartSurface
               ref={chartRef} data={data} symbol={symbol} interval={interval} chartType={chartType} theme={theme}
+              futureTradingTimes={manualMode ? manualFutureTimes : undefined}
               blackBarTimes={manualEntryBarTimes}
               indicators={visibleIndicators} priceScaleAuto={apprenticeMode || priceScaleAuto} priceScaleLog={priceScaleLog}
               priceScalePercent={priceScalePercent} priceScaleInverted={priceScaleInverted}
