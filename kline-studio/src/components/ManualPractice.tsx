@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import { BookOpenCheck, CalendarDays, ChevronRight, ClipboardList, Eye, NotebookPen, Pencil, Play, Plus, Trash2, X } from 'lucide-react'
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { BookOpenCheck, CalendarDays, ChevronRight, ClipboardList, Eye, NotebookPen, Pencil, Play, Plus, Rewind, Trash2, X } from 'lucide-react'
 import { INTERVALS, type IntervalId } from '../lib/market'
 import {
   barTimeFor,
-  manualTimeline,
+  manualReasonRows,
   NQ_POINT_VALUE_USD,
   openTrade,
   sessionSummary,
@@ -33,8 +33,15 @@ const exitLabel = (trade: ManualTrade) => trade.exitKind === 'stop' ? '止损' :
 
 interface CardBox { left: number; top: number; width: number; height: number | null }
 const CARD_STORAGE_PREFIX = 'kline-studio-manual-card-v1:'
+const TIMELINE_COMPACT_FLAG = 'kline-studio-manual-card-timeline-compact-v1'
 function loadCardBox(id: string): CardBox | null {
   try {
+    // The timeline window was redesigned smaller: forget its old remembered size once.
+    if (id === 'timeline' && localStorage.getItem(TIMELINE_COMPACT_FLAG) !== '1') {
+      localStorage.setItem(TIMELINE_COMPACT_FLAG, '1')
+      localStorage.removeItem(CARD_STORAGE_PREFIX + id)
+      return null
+    }
     const value = JSON.parse(localStorage.getItem(CARD_STORAGE_PREFIX + id) ?? 'null') as Partial<CardBox> | null
     if (!value || typeof value.left !== 'number' || typeof value.top !== 'number' || typeof value.width !== 'number') return null
     return { left: value.left, top: value.top, width: value.width, height: typeof value.height === 'number' ? value.height : null }
@@ -210,8 +217,10 @@ export function FloatingCard({ id, title, icon, meta, tone = 'neutral', classNam
 /* Reason editor: one reason per row, Tab / Enter moves to the next row */
 /* ------------------------------------------------------------------ */
 
-export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initial = [], required = false, background = null, unsupportedReasons = null, allowClear = false, confirmLabel = '保存', tone = 'neutral', children, onSave, onCancel }: {
+export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initial = [], required = false, background = null, unsupportedReasons = null, allowClear = false, confirmLabel = '保存', tone = 'neutral', draftRef, children, onSave, onCancel }: {
   cardId?: string
+  /** Lets the parent read the unsaved text (e.g. to keep it when the record type is switched). */
+  draftRef?: { current: (() => { reasons: string[]; background: string }) | null }
   title: string
   subtitle?: ReactNode
   initial?: readonly string[]
@@ -236,6 +245,9 @@ export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initia
     ...(initial.length > 0 ? initial : ['']),
   ])
   const [error, setError] = useState('')
+  useEffect(() => {
+    if (draftRef) draftRef.current = () => ({ reasons: rows.slice(offset).map((row) => row.trim()).filter(Boolean), background: background ? rows[0].trim() : '' })
+  })
   const [unsupportedDraft, setUnsupportedDraft] = useState(unsupportedReasons?.initial ?? '')
   const inputRefs = useRef<Array<HTMLInputElement | null>>([])
   // Start in 背景 when it is empty, otherwise on the last reason.
@@ -626,8 +638,14 @@ function PriceField({ label, value, hint, onCommit }: { label: string; value: nu
 /* Chart annotations                                                   */
 /* ------------------------------------------------------------------ */
 
-export function ManualPracticeAnnotations({ session, interval, hidden, toX, toY, highlightTime = null, highlightPrice = null, hideLevels = false }: {
+export function ManualPracticeAnnotations({ session, interval, hidden, toX, toY, highlightTime = null, highlightPrice = null, hideLevels = false, clipAfterBar = null, barRange, onOpenBar }: {
   session: ManualPracticeSession
+  /** Clicking a number opens that candle's reason for editing. */
+  onOpenBar?: (barTime: number) => void
+  /** High / low of a candle (by bar open time): entry arrows sit outside it so they never cover the candle. */
+  barRange?: (barTime: number) => { high: number; low: number } | null
+  /** Review replay: hide everything right of this candle (bar open times of the newest and the one before). */
+  clipAfterBar?: { last: number; previous: number | null } | null
   interval: IntervalId
   hidden: boolean
   toX: (time: number) => number | null
@@ -641,15 +659,12 @@ export function ManualPracticeAnnotations({ session, interval, hidden, toX, toY,
   if (hidden) return null
   const position = openTrade(session)
   const snap = (time: number) => toX(barTimeFor(time, interval))
-  const noteBars = new Map<number, { count: number; should: number; noTrade: number }>()
-  for (const note of session.notes) {
-    const bar = barTimeFor(note.barTime, interval)
-    const entry = noteBars.get(bar) ?? { count: 0, should: 0, noTrade: 0 }
-    const amount = Math.max(1, note.reasons.length)
-    entry.count += amount
-    if (note.kind === 'should-trade') entry.should += amount
-    else entry.noTrade += amount
-    noteBars.set(bar, entry)
+  const seqBars = new Map<number, { seqs: number[]; cls: string }>()
+  for (const { item, seq } of manualReasonRows(session)) {
+    const bar = barTimeFor(item.time, interval)
+    const entry = seqBars.get(bar) ?? { seqs: [], cls: item.kind === 'entry' ? `entry-${item.trade?.side ?? 'long'}` : 'note' }
+    entry.seqs.push(seq)
+    seqBars.set(bar, entry)
   }
   const line = (price: number | null, className: string, label: string) => {
     if (price === null) return null
@@ -657,7 +672,13 @@ export function ManualPracticeAnnotations({ session, interval, hidden, toX, toY,
     if (y === null) return null
     return <div className={`mp-level ${className}`} style={{ top: y }}><span>{label} {price.toFixed(2)}</span></div>
   }
-  return <div className="mp-annotations" aria-hidden="true">
+  let clipRightX: number | null = null
+  if (clipAfterBar) {
+    const lastX = toX(clipAfterBar.last)
+    const previousX = clipAfterBar.previous === null ? null : toX(clipAfterBar.previous)
+    clipRightX = lastX === null ? 0 : lastX + (previousX !== null && lastX > previousX ? (lastX - previousX) / 2 : 3)
+  }
+  return <div className="mp-annotations" aria-hidden="true" style={clipRightX === null ? undefined : { clipPath: `inset(0px calc(100% - ${Math.max(0, clipRightX)}px) 0px 0px)` }}>
     {position && !hideLevels && <>
       {line(position.entryPrice, 'entry', position.side === 'long' ? '多单' : '空单')}
       {line(position.stopLoss, 'stop', '止损')}
@@ -666,20 +687,25 @@ export function ManualPracticeAnnotations({ session, interval, hidden, toX, toY,
     {session.trades.map((trade) => {
       const entryX = snap(trade.entryTime)
       const entryY = toY(trade.entryPrice)
+      // The arrow hugs the outside of the entry candle (above the high for shorts, below the low for longs).
+      const range = barRange?.(barTimeFor(trade.entryTime, interval)) ?? null
+      const arrowY = range ? toY(trade.side === 'long' ? range.low : range.high) : entryY
+      const arrowTop = arrowY === null ? null : arrowY + (trade.side === 'long' ? 5 : -5)
       const exitX = trade.exitTime !== null ? snap(trade.exitTime) : null
       const exitY = trade.exitPrice !== null ? toY(trade.exitPrice) : null
       const points = tradePoints(trade)
       return <div key={trade.id}>
-        {entryX !== null && entryY !== null && <span className={`mp-marker entry side-${trade.side}`} style={{ left: entryX, top: entryY }} title={trade.reasons.join('\n')}>{trade.side === 'long' ? '▲' : '▼'}</span>}
+        {entryX !== null && arrowTop !== null && <span className={`mp-marker entry side-${trade.side}`} style={{ left: entryX, top: arrowTop }} title={trade.reasons.join('\n')}>{trade.side === 'long' ? '▲' : '▼'}</span>}
         {exitX !== null && exitY !== null && <span className={`mp-marker exit${points !== null && points < 0 ? ' loss' : ''}`} style={{ left: exitX, top: exitY }} title={`${exitLabel(trade)} ${points !== null ? formatPoints(points) : ''}`}>✕</span>}
         {entryX !== null && entryY !== null && exitX !== null && exitY !== null && <svg className="mp-trade-path"><line x1={entryX} y1={entryY} x2={exitX} y2={exitY} className={points !== null && points < 0 ? 'loss' : 'win'} /></svg>}
       </div>
     })}
-    {[...noteBars.entries()].map(([bar, info]) => {
+    {[...seqBars.entries()].map(([bar, info]) => {
       const x = toX(bar)
       if (x === null) return null
-      const title = [info.noTrade ? `未开单理由：${info.noTrade} 条` : '', info.should ? `应该开单理由：${info.should} 条` : ''].filter(Boolean).join('；')
-      return <span key={bar} className={`mp-note-badge${info.should ? ' should' : ''}${highlightTime === bar ? ' highlight' : ''}`} style={{ left: x }} title={title}>{info.count}</span>
+      // Numbers sit in a thin lane along the top of the chart, never on a candle or drawing.
+      const title = `理由 ${info.seqs.join('、')}`
+      return <Fragment key={bar}><div className="mp-seq-line" style={{ left: x }} /><span className={`mp-note-badge ${info.cls}${highlightTime === bar ? ' highlight' : ''}`} style={{ left: x }} title={`${title}（点击编辑）`} onClick={() => onOpenBar?.(bar)}>{info.seqs.join(',')}</span></Fragment>
     })}
     {highlightTime !== null && (() => {
       const x = toX(highlightTime)
@@ -706,16 +732,11 @@ export function ManualTimelineDialog({ session, onClose, onJump, onEditItem }: {
   onEditItem: (item: ManualTimelineItem) => void
 }) {
   const summary = sessionSummary(session)
-  const timeline = manualTimeline(session)
   const [filter, setFilter] = useState<'all' | 'entry' | 'no-trade' | 'should-trade' | 'exit'>('all')
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   // One card per trade: the entry and the exit it ended with belong together. 平仓理由 only exists
   // for exits the user chose to make; stop / target / end-of-day exits are passive.
-  const rows = timeline.flatMap((item) => {
-    if (item.kind === 'exit') return []
-    const exit = item.kind === 'entry' && item.trade ? timeline.find((other) => other.kind === 'exit' && other.trade?.id === item.trade!.id) : undefined
-    return [{ item, exit }]
-  })
+  const rows = manualReasonRows(session)
   const visible = rows.filter(({ item, exit }) => filter === 'all'
     || (filter === 'exit' ? Boolean(exit && !exit.passive) : item.kind === filter))
   return <FloatingCard
@@ -725,8 +746,8 @@ export function ManualTimelineDialog({ session, onClose, onJump, onEditItem }: {
     icon={<BookOpenCheck size={14} />}
     title="理由时间线"
     meta={`${session.dayLabel} · ${session.status === 'completed' ? '已完成' : '进行中'}`}
-    defaultStyle={{ left: 64, top: 70, width: 520, height: 460 }}
-    minWidth={340}
+    defaultStyle={{ left: 64, top: 70, width: 400, height: 420 }}
+    minWidth={300}
     minHeight={200}
     onClose={onClose}
   >
@@ -744,7 +765,7 @@ export function ManualTimelineDialog({ session, onClose, onJump, onEditItem }: {
         {visible.length === 0
           ? <div className="mp-empty">这一类还没有记录。</div>
           : <ol className="mp-timeline-list">
-            {visible.map(({ item, exit }, index) => {
+            {visible.map(({ item, exit, seq }, index) => {
               const itemKey = `${item.kind}-${item.time}-${item.trade?.id ?? item.note?.interval ?? ''}`
               const exitKey = exit ? `exit-${exit.time}-${exit.trade?.id ?? ''}` : null
               const select = (target: ManualTimelineItem, key: string) => { setSelectedKey(key); onJump(target) }
@@ -756,7 +777,7 @@ export function ManualTimelineDialog({ session, onClose, onJump, onEditItem }: {
                   {exit && exitKey && <button type="button" className={`mp-timeline-time exit${selectedKey === exitKey ? ' on' : ''}`} onClick={(event) => { event.stopPropagation(); select(exit, exitKey) }} title="在图上定位到平仓这根K线">{formatBeijing(exit.time)}</button>}
                 </div>
                 <div className="mp-timeline-body">
-                  <div className="mp-timeline-title"><b>{item.title}</b>
+                  <div className="mp-timeline-title"><span className={`mp-seq ${item.kind === 'entry' ? `entry-${item.trade?.side ?? 'long'}` : 'note'}`} title={`序号 ${seq}`}>{seq}</span><b>{item.title}</b>
                     <button type="button" className="mp-icon" aria-label="编辑理由" title="编辑理由" onClick={(event) => { event.stopPropagation(); onEditItem(item) }}><Pencil size={13} /></button>
                   </div>
                   {item.background !== null && <p className={`mp-timeline-background${item.background ? '' : ' missing'}`}><span>背景</span>{item.background || '未填写'}</p>}
@@ -783,7 +804,24 @@ export function ManualTimelineDialog({ session, onClose, onJump, onEditItem }: {
  * Look-back picker: while active, a click on the chart picks the candle under the cursor (never a future one).
  * It listens at window level so the chart stays scrollable / zoomable while the user looks for the candle.
  */
-export function ManualBarPicker({ interval, maxBarTime, toTime, toX, onPick, onCancel }: {
+/** Review look-back control above the time axis: pick a candle to replay from, then 1 = next candle, 2 = exit. */
+export function ManualReplayControls({ picking, replayTime, onPick, onExit }: {
+  picking: boolean
+  /** Bar open time of the newest candle while replaying, otherwise null. */
+  replayTime: number | null
+  onPick: () => void
+  onExit: () => void
+}) {
+  return <div className={`mp-replay-controls${replayTime !== null ? ' is-replaying' : ''}`} role="group" aria-label="复盘回放">
+    {replayTime !== null && <span className="mp-replay-status"><b>回放中</b><em>{formatBeijing(replayTime)}</em><span><kbd>1</kbd>下一根</span><span><kbd>2</kbd>退出</span></span>}
+    <button type="button" className={picking ? 'active' : ''} aria-pressed={picking} onClick={onPick} title="点击图上任意一根K线，从那里开始回放（Esc 取消）"><Rewind size={14} />{picking ? '点图上的K线…' : '往回选K线'}</button>
+    {replayTime !== null && <button type="button" onClick={onExit} title="退出回放，恢复全部K线和绘图（快捷键 2）"><X size={13} />退出回放</button>}
+  </div>
+}
+
+export function ManualBarPicker({ interval, maxBarTime, toTime, toX, onPick, onCancel, hint = '点击要记录的K线（只能选已出现的）· Esc 取消' }: {
+  /** Text shown while picking. */
+  hint?: string
   interval: IntervalId
   /** Newest revealed candle (bar open time): later candles do not exist yet. */
   maxBarTime: number
@@ -833,7 +871,7 @@ export function ManualBarPicker({ interval, maxBarTime, toTime, toX, onPick, onC
   }, [])
   const x = hover === null ? null : toX(hover)
   return <div ref={rootRef} className="mp-picker" aria-hidden="true">
-    <div className="mp-picker-hint">点击要记录的K线（只能选已出现的）· Esc 取消</div>
+    <div className="mp-picker-hint">{hint}</div>
     {x !== null && <div className="mp-picker-line" style={{ left: x }}><span>{formatBeijing(hover!)}</span></div>}
   </div>
 }

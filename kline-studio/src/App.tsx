@@ -1,5 +1,5 @@
 import { fullReviewBounds } from './lib/decisionFullReview'
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
 import {
   Activity, AlarmClock, AlarmClockPlus, AreaChart, BarChart3, Bell, CalendarDays, Camera, ChartCandlestick, ChevronsLeft,
   ChevronDown, CircleHelp, Database, Download, Grid2X2, History, Layers3, List, Maximize2, Moon,
@@ -10,10 +10,11 @@ import { AlSwingApprenticePanel, type ApprenticeActionMarker } from './component
 import { AlertDialog, DataTableDialog, ObjectTreeDialog, OrderDialog } from './components/ChartActionDialogs'
 import { IndicatorLegend } from './components/IndicatorLegend'
 import { getHoverCandle, setHoverCandle, useHoverCandle } from './lib/hoverStore'
-import { ManualBarPicker, ManualPracticeAnnotations, ManualPracticeCenter, ManualPracticePanel, ManualTimelineDialog, NoteKindSwitch, OpenTradeDialog, ReasonEditor } from './components/ManualPractice'
+import { ManualBarPicker, ManualPracticeAnnotations, ManualPracticeCenter, ManualPracticePanel, ManualReplayControls, ManualTimelineDialog, NoteKindSwitch, OpenTradeDialog, ReasonEditor } from './components/ManualPractice'
 import { useManualPracticeKeys } from './components/useManualPracticeKeys'
 import {
   advanceManualSession, aggregateMinutes, barTimeFor, cleanReasons, contextStartTime, createManualSession, findManualTradingDays, finishManualSession,
+  manualReasonRows,
   manualTimeline,
   lastRevealedMinute, loadManualPracticeStore, lowerBound, mergeManualPracticeStores, MANUAL_PRACTICE_SYMBOL, openTrade as manualOpenTrade, pickRandomTradingDay, saveManualPracticeStore,
   latestBackground, upsertBarNote, MANUAL_MAX_QUANTITY, NQ_POINT_VALUE_USD, tradeQuantity, type ManualPendingOrder, type ManualPracticeSession, type ManualPracticeStore, type ManualSide, type ManualTimelineItem,
@@ -291,6 +292,13 @@ function App() {
   const [manualCenterOpen, setManualCenterOpen] = useState(false)
   const [manualReviewId, setManualReviewId] = useState<string | null>(null)
   const [manualTimelineOpen, setManualTimelineOpen] = useState(false)
+  // Review look-back: end time (exclusive) of the candles still shown while replaying a finished paper.
+  const [manualReplayEnd, setManualReplayEnd] = useState<number | null>(null)
+  // Auto-scale is frozen while replaying so hiding the later candles does not rescale the chart.
+  const manualReplayAutoScaleRef = useRef<boolean | null>(null)
+  const manualNoteDraftRef = useRef<(() => { reasons: string[]; background: string }) | null>(null)
+  // Drawings that existed when the replay started (only these are clipped at the replay candle).
+  const [manualReplayDrawingIds, setManualReplayDrawingIds] = useState<ReadonlySet<string> | null>(null)
   const [manualDialog, setManualDialog] = useState<
     | { type: 'open'; side: ManualSide; price: number }
     | { type: 'close' }
@@ -587,7 +595,10 @@ function App() {
   const manualMode = manualSession !== null
   const nqMinutes = availableDecisionHistoryBySymbol[MANUAL_PRACTICE_SYMBOL] ?? null
   const manualDays = useMemo(() => nqMinutes?.length && (manualCenterOpen || manualMode) ? findManualTradingDays(nqMinutes) : null, [manualCenterOpen, manualMode, nqMinutes])
-  const manualCutoff = manualSession ? (manualActiveSession ? manualSession.cursorTime : manualSession.endTime) : null
+  const manualReplaying = manualReplayEnd !== null && manualReviewSession !== null
+  const manualCutoff = manualSession
+    ? (manualActiveSession ? manualSession.cursorTime : manualReplaying ? Math.min(manualReplayEnd, manualSession.endTime) : manualSession.endTime)
+    : null
   const manualData = useMemo(() => {
     if (!manualSession || manualCutoff === null || !nqMinutes?.length) return null
     const from = manualDays ? contextStartTime(manualDays, manualSession) : manualSession.startTime - 3 * 86_400
@@ -607,6 +618,18 @@ function App() {
     ? decisionData
     : replaySelecting ? baseData : (normalizedReplayCursor === null ? liveData : replayCandles(baseData, normalizedReplayCursor, chartSeconds)),
   [baseData, chartSeconds, decisionData, decisionMode, decisionOverviewData, decisionOverviewMode, liveData, manualData, normalizedReplayCursor, replaySelecting, fullReviewSession, fullReviewData])
+  // Candles after the replay point stay on the time axis as empty slots, so picking a candle never shifts the view.
+  const manualReplayTail = useMemo(() => {
+    if (!manualReplaying || !manualReviewSession || !nqMinutes?.length || manualCutoff === null) return []
+    const lastShown = manualData?.at(-1)?.time ?? -Infinity
+    const minutes = nqMinutes.slice(lowerBound(nqMinutes, manualCutoff), lowerBound(nqMinutes, manualReviewSession.endTime))
+    const times: number[] = []
+    for (const minute of minutes) {
+      const bar = barTimeFor(minute.time, interval)
+      if (bar > lastShown && times[times.length - 1] !== bar) times.push(bar)
+    }
+    return times
+  }, [interval, manualCutoff, manualData, manualReplaying, manualReviewSession, nqMinutes])
   const manualFutureTimes = useMemo(() => {
     const lastTime = manualData?.at(-1)?.time
     if (lastTime === undefined || !nqMinutes) return []
@@ -1093,7 +1116,9 @@ function App() {
   // its visible logical range as key 1 reveals each candle, matching ordinary
   // custom practice and preventing horizontal/vertical layout jumps.
 
-  useEffect(() => {
+  // Layout effect: alert / order lines and the locked cursor must move in the same
+  // frame as the candles, not one frame later.
+  useLayoutEffect(() => {
     const chart = chartRef.current
     // Manual practice draws its order lines from the same "current candle" x.
     const overlayCandle = decisionCurrentCandle ?? (manualMode ? data.at(-1) ?? null : null)
@@ -2669,6 +2694,8 @@ function App() {
     setManualStore((store) => ({ ...store, sessions: store.sessions.map((session) => session.id === sessionId ? update(session) : session) }))
   }
   const enterManualView = () => {
+    setManualReplayEnd(null)
+    setManualPicking(false)
     setManualCenterOpen(false)
     setDecisionCenterOpen(false)
     setManualTimelineOpen(false)
@@ -2677,6 +2704,8 @@ function App() {
     setReplayCursor(null); setReplayPlaying(false); setReplaySelecting(false)
     if (symbol !== MANUAL_PRACTICE_SYMBOL) setSymbol(MANUAL_PRACTICE_SYMBOL)
     if (INTERVALS[interval].seconds > 3600) setIntervalId('5m')
+    // The remembered price range belongs to whatever was on screen before: always refit to the paper.
+    setPriceScaleAuto(true)
     setManualFocusTick((value) => value + 1)
   }
   const manualBlockedByDecision = () => {
@@ -2728,6 +2757,7 @@ function App() {
     setManualTimelineOpen(true)
   }
   const exitManualView = () => {
+    exitManualReplay()
     setManualDialog(null)
     setManualTimelineOpen(false)
     setManualHighlightTime(null)
@@ -2897,6 +2927,42 @@ function App() {
     if (!manualActiveSession || !manualStarted || manualDialog) return
     setManualPicking((current) => !current)
   }
+  // Review look-back: pick any candle, hide everything after it (and all drawings), then walk forward with key 1.
+  const toggleManualReplayPicking = () => {
+    if (!manualReviewSession || manualDialog) return
+    setManualPicking((current) => !current)
+  }
+  // Like TradingView's replay: the layout stays exactly where it is, only the later candles
+  // (and the part of the drawings after the chosen candle) disappear.
+  const pickManualReplayBar = (barTime: number) => {
+    if (!manualReviewSession) return
+    setManualPicking(false)
+    if (manualReplayEnd === null) {
+      manualReplayAutoScaleRef.current = priceScaleAuto
+      setManualReplayDrawingIds(new Set(uiDrawings.present.map((drawing) => drawing.id)))
+    }
+    // Freeze the price range first, then shrink the data on the next tick, so the vertical scale cannot refit.
+    setPriceScaleAuto(false)
+    const end = barTime + INTERVALS[interval].seconds
+    if (manualReplayEnd === null) window.setTimeout(() => setManualReplayEnd(end), 60)
+    else setManualReplayEnd(end)
+    setManualHighlightTime(null)
+    setManualHighlightPrice(null)
+  }
+  const advanceManualReplay = () => {
+    if (!manualReviewSession || manualReplayEnd === null) return
+    if (manualReplayEnd >= manualReviewSession.endTime) { notify('已经是最后一根K线，按 2 退出回放'); return }
+    const next = Math.min(manualReplayEnd + INTERVALS[interval].seconds, manualReviewSession.endTime)
+    setManualReplayEnd(next)
+    keepManualLatestVisible(barTimeFor(next - 1, interval))
+  }
+  const exitManualReplay = () => {
+    if (manualReplayEnd !== null && manualReplayAutoScaleRef.current !== null) setPriceScaleAuto(manualReplayAutoScaleRef.current)
+    manualReplayAutoScaleRef.current = null
+    setManualReplayDrawingIds(null)
+    setManualReplayEnd(null)
+    setManualPicking(false)
+  }
   const finishManualToday = () => {
     if (!manualActiveSession || !nqMinutes?.length) return
     const finished = finishManualSession(manualActiveSession, nqMinutes)
@@ -2923,13 +2989,69 @@ function App() {
       trades: session.trades.map((trade) => trade.id === manualPosition.id ? { ...trade, [field]: value } : trade),
     }))
   }
-  useManualPracticeKeys(Boolean(manualActiveSession) || manualLoading, {
-    blocked: Boolean(manualDialog) || manualPicking || !manualActiveSession,
-    advance: advanceManual,
-    key2: () => { if (manualPosition) requestManualClose(); else if (manualActiveSession?.pendingOrder) cancelManualOrder(); else requestManualOpen('long') },
-    key3: () => { if (!manualPosition && !manualActiveSession?.pendingOrder) requestManualOpen('short') },
-    note: () => requestManualNote(),
+  useManualPracticeKeys(Boolean(manualActiveSession) || manualLoading || manualReplaying, {
+    blocked: Boolean(manualDialog) || manualPicking || (!manualActiveSession && !manualReplaying),
+    advance: manualReplaying ? advanceManualReplay : advanceManual,
+    key2: () => {
+      if (manualReplaying) { exitManualReplay(); return }
+      if (manualPosition) requestManualClose(); else if (manualActiveSession?.pendingOrder) cancelManualOrder(); else requestManualOpen('long')
+    },
+    key3: () => { if (!manualReplaying && !manualPosition && !manualActiveSession?.pendingOrder) requestManualOpen('short') },
+    note: () => { if (!manualReplaying) requestManualNote() },
   })
+  // Newest revealed candle while replaying: drawings / annotations are clipped at its right edge.
+  const manualReplayBars = manualReplaying && data.length > 0 ? { last: data[data.length - 1].time, previous: data.length > 1 ? data[data.length - 2].time : null } : null
+  // A 未开单 / 应该开单 card opens the full note editor, so its type (and direction) can be changed there.
+  const editManualItem = (item: ManualTimelineItem) => {
+    if ((item.kind === 'no-trade' || item.kind === 'should-trade') && item.note) {
+      setManualDialog({ type: 'note', barTime: item.note.barTime, interval: item.note.interval, initial: item.note.reasons, background: item.note.background, existing: true, kind: item.note.kind, side: item.note.side ?? 'long' })
+      return
+    }
+    setManualDialog({ type: 'edit', item })
+  }
+  // Review: a number (or its candle) opens that candle's reason straight in the editor.
+  const openManualBarReason = (barTime: number) => {
+    if (!manualSession) return
+    const rows = manualReasonRows(manualSession).filter(({ item }) => barTimeFor(item.time, interval) === barTime)
+    if (rows.length === 0) return
+    setManualHighlightTime(barTime)
+    setManualHighlightPrice(null)
+    editManualItem(rows[0].item)
+  }
+  const openManualBarReasonRef = useRef(openManualBarReason)
+  useEffect(() => { openManualBarReasonRef.current = openManualBarReason })
+  const manualClickReady = Boolean(manualReviewSession) && !manualPicking && !manualDialog && activeTool === 'cursor'
+  useEffect(() => {
+    if (!manualClickReady) return
+    let down: { x: number; y: number } | null = null
+    const onDown = (event: PointerEvent) => {
+      down = event.button === 0 && event.target instanceof HTMLElement && event.target.closest('.chart-area canvas') ? { x: event.clientX, y: event.clientY } : null
+    }
+    const onUp = (event: PointerEvent) => {
+      const start = down
+      down = null
+      if (!start || event.button !== 0 || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4) return
+      const target = event.target
+      const canvas = target instanceof HTMLElement ? target.closest('canvas') : null
+      const root = canvas?.closest('.chart-canvas')
+      const handle = chartRef.current
+      if (!canvas || !root || !handle) return
+      const x = event.clientX - root.getBoundingClientRect().left
+      const time = handle.coordinateToTime(x)
+      if (time === null) return
+      const bar = barTimeFor(time, interval)
+      const barX = handle.timeToCoordinate(bar)
+      const nextX = handle.timeToCoordinate(bar + INTERVALS[interval].seconds)
+      if (barX === null) return
+      // Only a click on the candle itself counts, not the empty space near it.
+      const half = Math.max(2, nextX === null ? 3 : Math.abs(nextX - barX) / 2)
+      if (Math.abs(x - barX) > half) return
+      openManualBarReasonRef.current(bar)
+    }
+    window.addEventListener('pointerdown', onDown, true)
+    window.addEventListener('pointerup', onUp, true)
+    return () => { window.removeEventListener('pointerdown', onDown, true); window.removeEventListener('pointerup', onUp, true) }
+  }, [interval, manualClickReady])
   const saveManualEdit = (item: ManualTimelineItem, reasons: string[], background: string, unsupportedReasons: string) => {
     if (!manualSession) return
     const cleaned = cleanReasons(reasons)
@@ -3062,6 +3184,7 @@ function App() {
             <ChartSurface
               ref={chartRef} data={data} symbol={symbol} interval={interval} chartType={chartType} theme={theme}
               futureTradingTimes={manualMode ? manualFutureTimes : undefined}
+              hiddenTailTimes={manualReplaying ? manualReplayTail : undefined}
               blackBarTimes={manualEntryBarTimes}
               indicators={visibleIndicators} priceScaleAuto={apprenticeMode || priceScaleAuto} priceScaleLog={priceScaleLog}
               priceScalePercent={priceScalePercent} priceScaleInverted={priceScaleInverted}
@@ -3085,12 +3208,12 @@ function App() {
                 dispatchUiDrawing({ type: 'select', id: null })
                 setSelectedReplayRangeId(id)
               }}
-              followLatest={!fullReviewSession && !decisionOverviewMode && !decisionMode && marketStatus.kind === 'live' && replayCursor === null}
+              followLatest={!fullReviewSession && !manualReviewSession && !decisionOverviewMode && !decisionMode && marketStatus.kind === 'live' && replayCursor === null}
               focusLatestKey={(fullReviewSession ? 0 : marketHydrationKey) + (decisionMode && !decisionDayMode ? 10_000 + decisionFocusTick : 0) + (manualMode ? 20_000 + manualFocusTick : 0)}
               focusHistoryBars={activeDecisionCandidate?.shapePracticeId ? Math.max(110, activeDecisionCandidate.trade.entry.signalIdx - (shapePhaseAnnotationFor(activeDecisionCandidate)?.phases[0]?.startIndex ?? activeDecisionCandidate.trade.entry.signalIdx) + 25) : 110}
               suppressAutoFocus={decisionDayMode || decisionOverviewMode || Boolean(fullReviewSession) || Boolean(requestedResearch)}
               centerLatestByDefault={decisionMode && !decisionDayMode && !decisionOverviewMode}
-              markersHidden={chartAnnotationsHidden}
+              markersHidden={chartAnnotationsHidden || manualReplaying}
               onHover={setHoverCandle}
               onViewportChange={refreshDrawingProjection}
               onPriceScaleStateChange={(autoScale, logarithmic, percentage, inverted) => {
@@ -3181,6 +3304,7 @@ function App() {
               key={`${decisionContextKey ?? 'normal'}-${decisionOverviewSessionId ?? 'normal'}-${effectiveDrawingTool}-${drawingsLocked}-${drawingsHidden}`}
               activeTool={decisionOverviewMode ? 'cursor' : effectiveDrawingTool} history={uiDrawings} dispatch={dispatchWithDrawingTemplates} color={drawingColor}
               magnetMode={magnetMode} drawingsLocked={decisionOverviewMode || drawingsLocked} hidden={decisionOverviewMode ? false : drawingsHidden}
+              revealClipIds={manualReplaying ? manualReplayDrawingIds : null}
               candles={data} symbol={symbol} interval={interval}
               quickMeasurement={quickMeasurement}
               onPlotSize={() => chartRef.current?.plotSize() ?? null}
@@ -3199,11 +3323,14 @@ function App() {
               session={manualSession}
               interval={interval}
               hidden={chartAnnotationsHidden}
+              clipAfterBar={manualReplayBars}
               highlightTime={manualHighlightTime}
               highlightPrice={manualHighlightPrice}
               hideLevels={Boolean(manualActiveSession && ((manualDialog?.type === 'open' && manualRisk) || (manualPosition && manualPosition.stopLoss !== null && manualPosition.takeProfit !== null)))}
               toX={(time) => chartRef.current?.timeToCoordinate(time) ?? null}
               toY={(price) => chartRef.current?.priceToCoordinate(price) ?? null}
+              onOpenBar={openManualBarReason}
+              barRange={(barTime) => { for (let i = data.length - 1; i >= 0; i -= 1) { if (data[i].time === barTime) return { high: data[i].high, low: data[i].low }; if (data[i].time < barTime) break } return null }}
             />}
             {manualActiveSession && manualPicking && manualCurrentBarTime !== null && <ManualBarPicker
               interval={interval}
@@ -3212,6 +3339,21 @@ function App() {
               toX={(time) => chartRef.current?.timeToCoordinate(time) ?? null}
               onPick={(barTime) => requestManualNote(barTime)}
               onCancel={() => setManualPicking(false)}
+            />}
+            {manualReviewSession && manualPicking && data.at(-1) && <ManualBarPicker
+              interval={interval}
+              maxBarTime={data.at(-1)!.time}
+              toTime={(x) => chartRef.current?.coordinateToTime(x) ?? null}
+              toX={(time) => chartRef.current?.timeToCoordinate(time) ?? null}
+              hint="点击要回放的K线，后面的K线和绘图会隐藏 · Esc 取消"
+              onPick={pickManualReplayBar}
+              onCancel={() => setManualPicking(false)}
+            />}
+            {manualReviewSession && <ManualReplayControls
+              picking={manualPicking}
+              replayTime={manualReplaying ? data.at(-1)?.time ?? null : null}
+              onPick={toggleManualReplayPicking}
+              onExit={exitManualReplay}
             />}
             {manualActiveSession && manualDialog?.type === 'open' && manualRisk && <DecisionRiskOverlay
               symbol={MANUAL_PRACTICE_SYMBOL}
@@ -3277,8 +3419,8 @@ function App() {
               editable
               showConfirmControls={false}
             />}
-            {manualSession && <ManualPracticePanel
-              session={manualSession}
+            {manualActiveSession && <ManualPracticePanel
+              session={manualActiveSession}
               review={!manualActiveSession}
               lastPrice={manualLastMinute?.close ?? null}
               interval={interval}
@@ -3699,16 +3841,18 @@ function App() {
         }}
         onClose={() => setManualCenterOpen(false)}
       />}
-      {manualTimelineOpen && manualSession && <ManualTimelineDialog
+      {manualTimelineOpen && manualSession && !manualReplaying && <ManualTimelineDialog
         session={manualSession}
-        onClose={() => setManualTimelineOpen(false)}
+        // In review the timeline is the only window: closing it leaves the review.
+        onClose={manualReviewSession ? exitManualView : () => setManualTimelineOpen(false)}
         onJump={(item) => {
           const bar = barTimeFor(item.time, interval)
           setManualHighlightTime(bar)
           setManualHighlightPrice(item.trade ? (item.kind === 'entry' ? item.trade.entryPrice : item.trade.exitPrice) : null)
+          setPriceScaleAuto(true)
           chartRef.current?.goToTime(bar)
         }}
-        onEditItem={(item) => setManualDialog({ type: 'edit', item })}
+        onEditItem={editManualItem}
       />}
       {manualDialog?.type === 'open' && manualRisk && <OpenTradeDialog
         side={manualDialog.side}
@@ -3773,6 +3917,7 @@ function App() {
       {manualDialog?.type === 'note' && <ReasonEditor
         key={`${manualDialog.barTime}-${manualDialog.kind}-${manualDialog.side}`}
         tone={manualDialog.kind === 'should-trade' ? manualDialog.side : 'neutral'}
+        draftRef={manualNoteDraftRef}
         title={manualDialog.kind === 'should-trade' ? `应该开${manualDialog.side === 'long' ? '多' : '空'}的理由` : manualPosition && manualDialog.barTime === manualCurrentBarTime ? '本根K线理由（持仓中）' : '未开单理由'}
         subtitle={`${new Date(manualDialog.barTime * 1000).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })} · ${INTERVALS[manualDialog.interval].label} K线`}
         initial={manualSession?.notes.find((note) => note.barTime === manualDialog.barTime && note.interval === manualDialog.interval && note.kind === manualDialog.kind)?.reasons ?? (manualDialog.kind === 'no-trade' ? manualDialog.initial : [])}
@@ -3788,7 +3933,15 @@ function App() {
           }
         }}
       >
-        <NoteKindSwitch kind={manualDialog.kind} side={manualDialog.side} onChange={(kind, side) => setManualDialog((current) => current?.type === 'note' ? { ...current, kind, side } : current)} />
+        <NoteKindSwitch kind={manualDialog.kind} side={manualDialog.side} onChange={(kind, side) => {
+          // Keep what was typed: it is saved under the current type, then the other type's text (if any) is shown.
+          const dialog = manualDialog
+          const draft = manualNoteDraftRef.current?.()
+          if (draft && manualSession && (draft.reasons.length > 0 || manualSession.notes.some((note) => note.barTime === dialog.barTime && note.interval === dialog.interval && note.kind === dialog.kind))) {
+            updateManualSession(manualSession.id, (session) => upsertBarNote(session, dialog.barTime, dialog.interval, draft.reasons, draft.background, dialog.kind, dialog.side))
+          }
+          setManualDialog({ ...dialog, kind, side })
+        }} />
       </ReasonEditor>}
       {manualDialog?.type === 'edit' && <ReasonEditor
         title={manualDialog.item.kind === 'entry' ? '编辑做单理由' : manualDialog.item.kind === 'exit' ? '编辑平仓理由' : manualDialog.item.kind === 'should-trade' ? '编辑应该开单理由' : '编辑未开单理由'}

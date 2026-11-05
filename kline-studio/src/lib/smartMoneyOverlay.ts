@@ -209,6 +209,27 @@ export function attachSmartMoneyOverlay(container: HTMLElement, chart: IChartApi
       }
     }
 
+    // Fair value gaps, as in the script: two stacked half boxes from the middle candle of the pattern to the
+    // candle that completed it (the script's "Extend FVG" set to 0, so the box is one bar wide). Orange = bullish gap, red = bearish gap. Filled gaps are not kept.
+    for (const gap of result.fairValueGaps) {
+      if (gap.startIndex + 2 < range.from - 1 || gap.startIndex + 1 > range.to + 1) continue
+      const left = x(gap.startIndex + 1)
+      const right = x(gap.startIndex + 2)
+      const top = y(gap.top)
+      const bottom = y(gap.bottom)
+      if (left === null || right === null || top === null || bottom === null) continue
+      const mid = (top + bottom) / 2
+      const color = gap.bullish ? SMC_COLORS.bullishFairValueGap : SMC_COLORS.bearishFairValueGap
+      context.fillStyle = withAlpha(color, 0.8)
+      context.strokeStyle = withAlpha(color, 0.8)
+      context.lineWidth = 1
+      for (const [from, to] of [[Math.min(top, bottom), mid], [mid, Math.max(top, bottom)]]) {
+        const height = Math.max(to - from, 1)
+        context.fillRect(left, from, right - left, height)
+        context.strokeRect(left + 0.5, from + 0.5, Math.max(right - left - 1, 0), Math.max(height - 1, 0))
+      }
+    }
+
     // Internal order blocks extend to the right edge (extend.right in the script).
     for (const block of result.orderBlocks) {
       fillBox(block.startIndex, 'edge', block.top, block.bottom, block.bullish ? SMC_COLORS.internalBullishOrderBlock : SMC_COLORS.internalBearishOrderBlock)

@@ -574,3 +574,16 @@ export function manualTimeline(session: ManualPracticeSession): ManualTimelineIt
   }
   return items.sort((a, b) => a.time - b.time || (a.kind === 'exit' ? -1 : 1))
 }
+
+/**
+ * One numbered row per reason card, in time order. A trade's exit belongs to the card of its entry.
+ * The number is shown on the card and on the chart, so both always agree (and stay stable when filtering).
+ */
+export function manualReasonRows(session: ManualPracticeSession) {
+  const timeline = manualTimeline(session)
+  return timeline.flatMap((item) => {
+    if (item.kind === 'exit') return []
+    const exit = item.kind === 'entry' && item.trade ? timeline.find((other) => other.kind === 'exit' && other.trade?.id === item.trade!.id) : undefined
+    return [{ item, exit }]
+  }).map((row, index) => ({ ...row, seq: index + 1 }))
+}

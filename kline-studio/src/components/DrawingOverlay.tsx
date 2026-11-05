@@ -18,6 +18,12 @@ import { channelLevelsFor, drawingOption, fibLevelsFor, forecastColor, isLineToo
 import type { MagnetMode } from './DrawingToolbar'
 
 interface Props {
+  /**
+   * Review replay: drawings that already existed when the replay started (these ids) are clipped at the
+   * right edge of the newest candle, so only their part after the replay point is hidden.
+   * Drawings made during the replay are never clipped.
+   */
+  revealClipIds?: ReadonlySet<string> | null
   activeTool: string
   history: DrawingHistory
   dispatch: Dispatch<DrawingAction>
@@ -71,7 +77,7 @@ type RectangleCorner = 'nw' | 'ne' | 'sw' | 'se'
 type RectangleEdge = 'n' | 'e' | 's' | 'w'
 
 export function DrawingOverlay({
-  activeTool, history, dispatch, color, magnetMode, drawingsLocked, hidden, candles, symbol, interval, quickMeasurement, onPlotSize, onMeasurePoint, onProjectPoint, onQuickMeasurementChange, onToolComplete, onZoomSelection, onOpenProperties,
+  activeTool, history, dispatch, color, magnetMode, drawingsLocked, hidden, candles, symbol, interval, quickMeasurement, onPlotSize, onMeasurePoint, onProjectPoint, onQuickMeasurementChange, onToolComplete, onZoomSelection, onOpenProperties, revealClipIds = null,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
   const [viewportSize, setViewportSize] = useState({ width: 1000, height: 1000 })
@@ -89,6 +95,16 @@ export function DrawingOverlay({
   const plotSize = onPlotSize?.()
   // Clip painting and hit testing, without resizing the coordinate system.
   // Anchors remain in the same chart pixel coordinates used by time/price projection.
+  const revealClip = (() => {
+    if (!revealClipIds) return null
+    const last = candles.at(-1)
+    if (!last) return { x: 0, ids: revealClipIds }
+    const lastX = onProjectPoint({ time: last.time, price: last.close })?.x
+    if (typeof lastX !== 'number') return { x: 0, ids: revealClipIds }
+    const previous = candles.at(-2)
+    const previousX = previous ? onProjectPoint({ time: previous.time, price: previous.close })?.x : undefined
+    return { x: lastX + (typeof previousX === 'number' && lastX > previousX ? (lastX - previousX) / 2 : 3), ids: revealClipIds }
+  })()
   const plotClip = plotSize ? `inset(0px ${Math.max(0, viewportWidth - plotSize.width)}px ${Math.max(0, viewportHeight - plotSize.height)}px 0px)` : undefined
   const handleRadius = {
     x: 5,
@@ -1358,8 +1374,14 @@ export function DrawingOverlay({
         <marker id="arrow-head" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill={color} /></marker>
         <marker id="measure-arrow-up" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 L3,5 Z" fill="#22ab94" /></marker>
         <marker id="measure-arrow-down" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 L3,5 Z" fill="#ff525f" /></marker>
+        {revealClip && <clipPath id="replay-reveal-clip" clipPathUnits="userSpaceOnUse"><rect x={-100000} y={-100000} width={100000 + Math.max(0, revealClip.x)} height={200000} /></clipPath>}
       </defs>
-      {history.present.filter((drawing) => drawing.tool !== 'measure').map((drawing) => renderDrawing(drawing))}
+      {revealClip
+        ? <>
+          <g clipPath="url(#replay-reveal-clip)">{history.present.filter((drawing) => drawing.tool !== 'measure' && revealClip.ids.has(drawing.id)).map((drawing) => renderDrawing(drawing))}</g>
+          {history.present.filter((drawing) => drawing.tool !== 'measure' && !revealClip.ids.has(drawing.id)).map((drawing) => renderDrawing(drawing))}
+        </>
+        : history.present.filter((drawing) => drawing.tool !== 'measure').map((drawing) => renderDrawing(drawing))}
       {quickMeasurement && renderDrawing(quickMeasurement, false, true)}
       {draft && renderDrawing(draft, true)}
       </svg>

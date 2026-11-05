@@ -97,6 +97,8 @@ interface Props {
   /** Bars painted solid black (e.g. the candle a manual-practice trade entered on). */
   blackBarTimes?: readonly number[]
   futureTradingTimes?: readonly number[]
+  /** Candle times hidden after a replay point: kept as empty slots so the time axis (and the layout) does not move. */
+  hiddenTailTimes?: readonly number[]
   indicators: IndicatorSettings
   priceScaleAuto: boolean
   priceScaleLog: boolean
@@ -325,11 +327,18 @@ const blackBarPoint = (candle: Candle, border: string) => ({
   color: '#000000', borderColor: border, wickColor: border,
 })
 
-function updateSeries(series: SeriesState, data: Candle[], chartType: Props['chartType'], indicators: IndicatorSettings, black?: { times: ReadonlySet<number>; border: string }) {
+function updateSeries(series: SeriesState, data: Candle[], chartType: Props['chartType'], indicators: IndicatorSettings, black?: { times: ReadonlySet<number>; border: string }, hiddenTail: readonly number[] = []) {
+  // Hidden replay candles stay in the series as fully transparent flat bars: the time scale keeps the same
+  // last bar, so nothing slides or rescales when later candles are hidden (empty slots would move the base index).
+  const hold = data.at(-1)?.close ?? 0
+  const clear = 'rgba(0,0,0,0)'
   if (chartType === 'line' || chartType === 'area') {
-    series.main.setData(data.map(({ time, close }) => ({ time: time as UTCTimestamp, value: close })))
+    series.main.setData([...data.map(({ time, close }) => ({ time: time as UTCTimestamp, value: close })), ...hiddenTail.map((time) => ({ time: time as UTCTimestamp }))] as never)
   } else {
-    series.main.setData(data.map((candle) => black?.times.has(candle.time) ? blackBarPoint(candle, black.border) : ({ time: candle.time as UTCTimestamp, open: candle.open, high: candle.high, low: candle.low, close: candle.close })))
+    series.main.setData([
+      ...data.map((candle) => black?.times.has(candle.time) ? blackBarPoint(candle, black.border) : ({ time: candle.time as UTCTimestamp, open: candle.open, high: candle.high, low: candle.low, close: candle.close })),
+      ...hiddenTail.map((time) => ({ time: time as UTCTimestamp, open: hold, high: hold, low: hold, close: hold, color: clear, borderColor: clear, wickColor: clear })),
+    ] as never)
   }
   if (series.volume) {
     series.volume.setData(data.map((item) => ({
@@ -488,7 +497,7 @@ function apprenticeActionSeriesMarkers(markers: readonly ApprenticeActionMarker[
 
 export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function ChartSurface(
   {
-    data, symbol, interval, chartType, theme, blackBarTimes, futureTradingTimes, indicators, priceScaleAuto, priceScaleLog, priceScalePercent, priceScaleInverted,
+    data, symbol, interval, chartType, theme, blackBarTimes, futureTradingTimes, hiddenTailTimes, indicators, priceScaleAuto, priceScaleLog, priceScalePercent, priceScaleInverted,
     visibleTradeLayerSourceIds = [], visibleResearchSignalSourceIds = [], showAllResearchReviews = true, exerciseSignalMarkers = [], apprenticeActionMarkers = [], apprenticeOnly = false, apprenticeFocusRange = null, decisionSignalSourceIds = [], decisionSignalAfterTime = null,
     visibleRangeLayerSourceIds = [], suppressedRangeObjectIds = [], selectedRangeObjectId = null, onSelectRangeObject,
     followLatest = false, focusLatestKey = 0, focusHistoryBars = 110, suppressAutoFocus = false, centerLatestByDefault = false, markersHidden = false, onHover, onPriceScaleStateChange, onViewportChange,
@@ -500,6 +509,8 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
   const seriesRef = useRef<SeriesState | null>(null)
   const dataRef = useRef(data)
   const futureTradingTimesRef = useRef<readonly number[]>(futureTradingTimes ?? [])
+  const hiddenTailRef = useRef<readonly number[]>([])
+  useEffect(() => { hiddenTailRef.current = hiddenTailTimes ?? [] }, [hiddenTailTimes])
   useEffect(() => {
     futureTradingTimesRef.current = futureTradingTimes ?? []
     seriesRef.current?.smc?.setFutureTimes(futureTradingTimesRef.current)
@@ -795,10 +806,10 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       cacheVisibleViewport()
       requestTradeConnectionSync()
       requestSignalRangeSync()
-      // While the wheel is zooming, commit the drawing projection in the same
-      // frame as the canvas instead of letting React defer it one frame.
-      if (flushProjectionRef.current) flushSync(() => { onViewportChangeRef.current?.() })
-      else onViewportChangeRef.current?.()
+      // Commit the drawing projection in the same frame as the canvas (wheel zoom,
+      // trackpad scrolling, keyboard scrolling...). A deferred React render would
+      // paint the drawings one frame after the candles, so they visibly trail.
+      flushSync(() => { onViewportChangeRef.current?.() })
     })
   }, [cacheVisibleViewport, requestSignalRangeSync, requestTradeConnectionSync])
 
@@ -1184,7 +1195,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       series.smc.setFutureTimes(futureTradingTimesRef.current)
     }
     blackBarsAppliedRef.current = blackBarTimesRef.current
-    updateSeries(series, dataRef.current, chartType, indicators, { times: new Set(blackBarTimesRef.current), border: dark ? '#9aa3b5' : '#000000' })
+    updateSeries(series, dataRef.current, chartType, indicators, { times: new Set(blackBarTimesRef.current), border: dark ? '#9aa3b5' : '#000000' }, hiddenTailRef.current)
     series.markers = createSeriesMarkers(mainSeries, visibleTradeMarkers(
       symbol,
       interval,
@@ -1428,7 +1439,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     const collectPanPreviewTargets = () => {
       const root = container.closest('.chart-area') ?? container
       const targetGroups: Array<{ selector: string; axis: PanPreviewTarget['axis'] }> = [
-        { selector: '.decision-chart-annotations, .drawing-overlay, .signal-range-overlay, .trade-connection-overlay', axis: 'both' },
+        { selector: '.decision-chart-annotations, .drawing-overlay, .signal-range-overlay, .trade-connection-overlay, .mp-annotations', axis: 'both' },
         { selector: '.locked-time-cursor', axis: 'x' },
         { selector: '.context-price-line, .decision-price-line, .decision-risk-line, .decision-position-pnl-line', axis: 'y' },
       ]
@@ -1442,13 +1453,42 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       ))
       for (const target of mousePanPreviewTargets) target.element.style.willChange = 'translate'
     }
+    // The preview offset is read from the chart itself (where a reference candle and
+    // price now sit) instead of the mouse delta, so it matches the canvas exactly even
+    // when the pointer leaves the chart or the library clamps the scroll at the edge.
+    let panReference: { logical: Logical; x: number; price: number; y: number } | null = null
+    const capturePanReference = () => {
+      panReference = null
+      const range = timeScale.getVisibleLogicalRange()
+      if (!range) return
+      const logical = Math.round((range.from + range.to) / 2) as Logical
+      const x = timeScale.logicalToCoordinate(logical)
+      const y = Math.round((chart.panes()[0]?.getHeight() ?? container.clientHeight) / 2)
+      const price = mainSeries?.coordinateToPrice(y) as number | null | undefined
+      if (x === null || price === null || price === undefined) return
+      panReference = { logical, x, price, y }
+    }
+    const modelPanOffset = () => {
+      if (!panReference) return null
+      const x = timeScale.logicalToCoordinate(panReference.logical)
+      const y = mainSeries?.priceToCoordinate(panReference.price) as number | null | undefined
+      if (x === null || y === null || y === undefined) return null
+      return { x: x - panReference.x, y: y - panReference.y }
+    }
     const applyPanPreview = () => {
       mousePanPreviewFrame = null
+      const offset = modelPanOffset()
+      const offsetX = offset?.x ?? mousePanPreviewX
+      const offsetY = offset?.y ?? mousePanPreviewY
       for (const target of mousePanPreviewTargets) {
-        const x = target.axis === 'y' ? 0 : mousePanPreviewX
-        const y = target.axis === 'x' ? 0 : mousePanPreviewY
+        const x = target.axis === 'y' ? 0 : offsetX
+        const y = target.axis === 'x' ? 0 : offsetY
         target.element.style.translate = `${x}px ${y}px`
       }
+      // Follow the chart on every frame of the drag. The callback is queued a frame
+      // ahead, so it runs after that frame's input has moved the chart and before the
+      // library paints, putting overlay and candles in the same frame.
+      if (armedPricePan) mousePanPreviewFrame = window.requestAnimationFrame(applyPanPreview)
     }
     const requestPanPreview = (x: number, y: number) => {
       mousePanPreviewX = x
@@ -1468,6 +1508,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       mousePanPreviewTargets = []
       mousePanPreviewX = 0
       mousePanPreviewY = 0
+      panReference = null
     }
     let armedPricePan: {
       pointerId: number
@@ -1500,7 +1541,9 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       if (autoScaleWasOn) priceScale.setAutoScale(false)
       clearPanPreview()
       collectPanPreviewTargets()
+      capturePanReference()
       armedPricePan = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, maxVerticalDistance: 0, autoScaleWasOn }
+      mousePanPreviewFrame = window.requestAnimationFrame(applyPanPreview)
       container.dataset.pricePanActive = 'true'
       mousePanBurstActive = true
       cancelQueuedProjectionSync()
@@ -1661,11 +1704,18 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
   }, [apprenticeOnly, cacheVisibleViewport, centerLatestByDefault, chartType, indicators, interval, requestSignalRangeSync, requestTradeConnectionSync, requestViewportProjectionSync, symbol, syncSignalRanges, syncTradeConnections, theme])
 
   useEffect(() => {
-    chartRef.current?.priceScale('right').applyOptions({
-      autoScale: priceScaleAuto,
-      mode: priceScalePercent ? PriceScaleMode.Percentage : priceScaleLog ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
-      invertScale: priceScaleInverted,
-    })
+    const scale = chartRef.current?.priceScale('right')
+    if (scale) {
+      // Only touch mode / invert when they really changed: re-applying the same mode refits the price range,
+      // which made the chart jump when auto-scale was switched off (e.g. when a replay starts).
+      const current = scale.options()
+      const mode = priceScalePercent ? PriceScaleMode.Percentage : priceScaleLog ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal
+      scale.applyOptions({
+        autoScale: priceScaleAuto,
+        ...(current.mode !== mode ? { mode } : {}),
+        ...(current.invertScale !== priceScaleInverted ? { invertScale: priceScaleInverted } : {}),
+      })
+    }
     requestTradeConnectionSync()
     requestSignalRangeSync()
     onViewportChangeRef.current?.()
@@ -1699,7 +1749,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     const wasAtRealtime = isRealtimeScrollPosition(timeScale.scrollPosition())
     if (dataChanged) {
       blackBarsAppliedRef.current = blackBarTimesRef.current
-      updateSeries(series, data, chartType, indicators, { times: new Set(blackBarTimesRef.current), border: blackBorderRef.current })
+      updateSeries(series, data, chartType, indicators, { times: new Set(blackBarTimesRef.current), border: blackBorderRef.current }, hiddenTailRef.current)
       series.smc?.setData(data)
     }
     const revealedMarkers = visibleTradeMarkers(symbol, interval, data, visibleTradeLayerSourceIds, activeTradeRef.current, tradeReferenceMarkers, decisionSignalSourceIds, decisionSignalAfterTime, markersHidden, visibleResearchSignalSourceIds, showAllResearchReviews, apprenticeActionMarkers, apprenticeOnly)
@@ -1736,6 +1786,11 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       timeScale.scrollToRealTime()
     } else if (viewportAction === 'preserve' && visibleRange) {
       timeScale.setVisibleLogicalRange(visibleRange)
+      // setData keeps the library's right offset, so a shorter / longer series would slide the
+      // candles sideways. The range above only lands on the next frame and getVisibleLogicalRange()
+      // reports the slid range until then; remember it so an effect re-run in the meantime does
+      // not re-apply the slid range (e.g. review replay hiding the later candles).
+      if (dataChanged && previousLength !== data.length) pendingRangeRef.current = { range: { from: visibleRange.from, to: visibleRange.to }, expires: performance.now() + 600 }
     }
     // The apprentice report supplies a fixed historical review window.  A
     // normal workspace viewport may have a cached range from a different
