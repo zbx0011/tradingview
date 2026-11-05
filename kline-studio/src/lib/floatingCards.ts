@@ -35,6 +35,11 @@ export function registerFloatingCard(id: string, element: HTMLElement) {
 export function bringFloatingCardToFront(element: HTMLElement) {
   const id = cards.get(element)
   if (id === undefined) return
+  bringFloatingCardIdToFront(id)
+}
+
+/** Opening an existing editor must raise it before its autofocus/layout commit. */
+export function bringFloatingCardIdToFront(id: string) {
   order = [...savedOrder().filter(value => value !== id), id].slice(-64)
   syncLayers()
   remember()

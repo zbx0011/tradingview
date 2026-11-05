@@ -107,6 +107,34 @@ describe('floating card stacking', () => {
     expect(second.style.zIndex).toBe('removed')
   })
 
+  it('raises a known editor by ID before remount and persists the reopened order', async () => {
+    const saved = storage()
+    vi.stubGlobal('localStorage', saved)
+    const { registerFloatingCard, bringFloatingCardToFront, bringFloatingCardIdToFront } = await import('./floatingCards')
+    const timeline = card()
+    const editor = card()
+    registerFloatingCard('timeline', timeline)
+    const unregisterEditor = registerFloatingCard('comment-editor', editor)
+    unregisterEditor()
+    bringFloatingCardToFront(timeline)
+    expect(JSON.parse(saved.getItem(STORAGE_KEY)!)).toEqual(['comment-editor', 'timeline'])
+
+    bringFloatingCardIdToFront('comment-editor')
+    const reopenedEditor = card()
+    registerFloatingCard('comment-editor', reopenedEditor)
+    expect(level(reopenedEditor)).toBeGreaterThan(level(timeline))
+    expect(JSON.parse(saved.getItem(STORAGE_KEY)!)).toEqual(['timeline', 'comment-editor'])
+
+    vi.resetModules()
+    const restored = await import('./floatingCards')
+    const restoredEditor = card()
+    const restoredTimeline = card()
+    restored.registerFloatingCard('comment-editor', restoredEditor)
+    restored.registerFloatingCard('timeline', restoredTimeline)
+    expect(level(restoredEditor)).toBeGreaterThan(level(restoredTimeline))
+    expect(JSON.parse(saved.getItem(STORAGE_KEY)!)).toEqual(['timeline', 'comment-editor'])
+  })
+
   it('keeps distinct IDs independent even when they share prefixes', async () => {
     const { registerFloatingCard, bringFloatingCardToFront } = await import('./floatingCards')
     const chartOne = card()

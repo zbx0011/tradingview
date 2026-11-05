@@ -13,6 +13,7 @@ import { getHoverCandle, setHoverCandle, useHoverCandle } from './lib/hoverStore
 import { ManualBarPicker, ManualPracticeAnnotations, ManualPracticeCenter, ManualPracticePanel, ManualReplayControls, ManualTimelineDialog, OpenTradeDialog, ReasonEditor } from './components/ManualPractice'
 import { ManualCandleBiasEditor } from './components/ManualCandleBiasEditor'
 import { ManualReviewCommentEditor } from './components/ManualReviewCommentEditor'
+import { bringFloatingCardIdToFront } from './lib/floatingCards'
 import { useManualPracticeKeys } from './components/useManualPracticeKeys'
 import {
   advanceManualSession, aggregateMinutes, barTimeFor, cleanReasons, contextStartTime, createManualSession, findManualTradingDays, finishManualSession,
@@ -3913,7 +3914,10 @@ function App() {
           chartRef.current?.goToTime(bar)
         }}
         onEditItem={editManualItem}
-        onReviewItem={manualReviewSession ? (item) => setManualDialog({ type: 'review-comment', item }) : undefined}
+        onReviewItem={manualReviewSession ? (item) => {
+          bringFloatingCardIdToFront('review-comment-editor')
+          setManualDialog({ type: 'review-comment', item })
+        } : undefined}
       />}
       {manualDialog?.type === 'open' && manualRisk && <OpenTradeDialog
         persistenceId={`${manualSession?.id}:open:${manualDialog.price}:${manualDialog.side}`}

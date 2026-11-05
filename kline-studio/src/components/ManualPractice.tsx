@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { BookOpenCheck, CalendarDays, ChevronRight, ClipboardList, Eye, MessageSquare, NotebookPen, Pencil, Play, Plus, Rewind, Trash2, X } from 'lucide-react'
 import { INTERVALS, type IntervalId } from '../lib/market'
 import { loadPanelState, savePanelState, usePanelDraft } from '../lib/panelDraft'
