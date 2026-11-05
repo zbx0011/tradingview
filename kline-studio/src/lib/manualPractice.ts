@@ -45,6 +45,8 @@ export interface ManualTrade {
   quantity?: number
 }
 
+export type ManualCandleBias = 'no-trade' | 'long' | 'short'
+
 export interface ManualBarNote {
   /** Chart bar the note belongs to (bar open time). */
   barTime: number
@@ -56,10 +58,18 @@ export interface ManualBarNote {
   /** 背景 — market context for this candle; mandatory when a note is saved. */
   background: string
   reasons: string[]
+  /** Preference order for this candle: 0 is the strongest inclination. */
+  biasRank?: number
   updatedAt: number
 }
 
 export type ManualOrderKind = 'stop' | 'limit'
+
+/** A later review of a reason record, stored separately from the original decision. */
+export interface ManualReviewComment {
+  text: string
+  updatedAt: number
+}
 
 /** A resting order waiting for price: 追单 (stop, beyond price) or 挂单 (limit, back at price). */
 export interface ManualPendingOrder {
@@ -94,6 +104,8 @@ export interface ManualPracticeSession {
   completedAt: number | null
   trades: ManualTrade[]
   notes: ManualBarNote[]
+  /** Empty text is a deletion tombstone, retained for cross-computer synchronization. */
+  reviewComments?: Record<string, ManualReviewComment>
   /** At most one resting order, filled by a later minute that trades through its price. */
   pendingOrder?: ManualPendingOrder | null
 }
@@ -166,7 +178,8 @@ function parseNote(value: unknown): ManualBarNote | null {
   const note = value as Partial<ManualBarNote> | null
   if (!note || !isFiniteNumber(note.barTime) || typeof note.interval !== 'string' || !(note.interval in INTERVALS)) return null
   const kind = note.kind === 'should-trade' ? 'should-trade' : 'no-trade'
-  return { barTime: note.barTime, interval: note.interval as IntervalId, kind, ...(kind === 'should-trade' ? { side: note.side === 'short' ? 'short' as const : 'long' as const } : {}), background: typeof note.background === 'string' ? note.background : '', reasons: stringList(note.reasons), updatedAt: isFiniteNumber(note.updatedAt) ? note.updatedAt : 0 }
+  const biasRank = Number.isInteger(note.biasRank) && note.biasRank! >= 0 && note.biasRank! <= 2 ? note.biasRank : undefined
+  return { barTime: note.barTime, interval: note.interval as IntervalId, kind, ...(kind === 'should-trade' ? { side: note.side === 'short' ? 'short' as const : 'long' as const } : {}), ...(biasRank === undefined ? {} : { biasRank }), background: typeof note.background === 'string' ? note.background : '', reasons: stringList(note.reasons), updatedAt: isFiniteNumber(note.updatedAt) ? note.updatedAt : 0 }
 }
 
 function parseSession(value: unknown): ManualPracticeSession | null {
@@ -187,8 +200,32 @@ function parseSession(value: unknown): ManualPracticeSession | null {
     completedAt: isFiniteNumber(session.completedAt) ? session.completedAt : null,
     trades: (Array.isArray(session.trades) ? session.trades : []).map(parseTrade).filter((item): item is ManualTrade => item !== null),
     notes: (Array.isArray(session.notes) ? session.notes : []).map(parseNote).filter((item): item is ManualBarNote => item !== null),
+    ...(session.reviewComments === undefined ? {} : { reviewComments: parseReviewComments(session.reviewComments) }),
     pendingOrder: parsePendingOrder(session.pendingOrder),
   }
+}
+
+function parseReviewComments(value: unknown): Record<string, ManualReviewComment> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return Object.fromEntries(Object.entries(value).flatMap(([key, entry]) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return []
+    const comment = entry as Partial<ManualReviewComment>
+    return typeof comment.text === 'string' && isFiniteNumber(comment.updatedAt)
+      ? [[key, { text: comment.text, updatedAt: comment.updatedAt }]]
+      : []
+  }))
+}
+
+function mergeReviewComments(left: Record<string, ManualReviewComment> = {}, right: Record<string, ManualReviewComment> = {}) {
+  return Object.fromEntries([...new Set([...Object.keys(left), ...Object.keys(right)])].sort().map((key) => {
+    const a = Object.hasOwn(left, key) ? left[key] : undefined
+    const b = Object.hasOwn(right, key) ? right[key] : undefined
+    // Equal-clock conflicts converge in either merge order. A deletion wins a tie.
+    const winner = !a ? b! : !b ? a : a.updatedAt !== b.updatedAt
+      ? (a.updatedAt > b.updatedAt ? a : b)
+      : a.text === '' ? a : b.text === '' ? b : a.text >= b.text ? a : b
+    return [key, winner]
+  }))
 }
 
 export function parseManualPracticeStore(raw: string | null): ManualPracticeStore {
@@ -217,13 +254,20 @@ function isNewerSession(candidate: ManualPracticeSession, current: ManualPractic
 /**
  * Merge two computers' self-review papers. Papers are matched by id and the most recently
  * updated copy wins, so a half-finished paper continues from wherever it got furthest.
+ * Later review comments merge independently by their own timestamps, without rewriting decisions.
  * The base store keeps its open paper; otherwise the incoming one's open paper is adopted.
  */
 export function mergeManualPracticeStores(base: ManualPracticeStore, incoming: ManualPracticeStore): ManualPracticeStore {
   const byId = new Map(base.sessions.map((session) => [session.id, session]))
   for (const session of incoming.sessions) {
     const current = byId.get(session.id)
-    if (!current || isNewerSession(session, current)) byId.set(session.id, session)
+    if (!current) byId.set(session.id, session)
+    else {
+      const winner = isNewerSession(session, current) ? session : current
+      byId.set(session.id, current.reviewComments === undefined && session.reviewComments === undefined ? winner : {
+        ...winner, reviewComments: mergeReviewComments(current.reviewComments, session.reviewComments),
+      })
+    }
   }
   const sessions = [...byId.values()].sort((left, right) => right.createdAt - left.createdAt)
   const stillActive = (id: string | null) => id !== null && sessions.some((session) => session.id === id && session.status === 'active') ? id : null
@@ -504,8 +548,8 @@ export function sessionSummary(session: ManualPracticeSession) {
     winRate: closed.length ? wins / closed.length : null,
     totalPoints,
     totalUsd: closed.reduce((sum, trade) => sum + (tradeUsd(trade) ?? 0), 0),
-    noTradeNotes: session.notes.filter((note) => note.kind !== 'should-trade').length,
-    shouldTradeNotes: session.notes.filter((note) => note.kind === 'should-trade').length,
+    noTradeNotes: new Set(session.notes.filter((note) => note.kind !== 'should-trade').map(note => `${note.barTime}:${note.interval}`)).size,
+    shouldTradeNotes: new Set(session.notes.filter((note) => note.kind === 'should-trade').map(note => `${note.barTime}:${note.interval}`)).size,
     reasonCount: session.trades.reduce((sum, trade) => sum + trade.reasons.length + trade.exitReasons.length, 0)
       + session.notes.reduce((sum, note) => sum + note.reasons.length, 0),
   }
@@ -519,12 +563,34 @@ export function cleanReasons(reasons: readonly string[]) {
 export function upsertBarNote(session: ManualPracticeSession, barTime: number, interval: IntervalId, reasons: readonly string[], background: string, kind: ManualBarNote['kind'] = 'no-trade', side?: ManualSide, now = Date.now()): ManualPracticeSession {
   const cleaned = cleanReasons(reasons)
   const context = background.trim()
-  // One note per candle and kind: a candle can carry both a 未开单 and an 应该开单 note.
-  const others = session.notes.filter((note) => !(note.barTime === barTime && note.interval === interval && note.kind === kind))
+  // Each candle can retain all three alternatives independently.
+  const matches = (note: ManualBarNote) => note.barTime === barTime && note.interval === interval && note.kind === kind && (kind !== 'should-trade' || (note.side ?? 'long') === (side ?? 'long'))
+  const previous = session.notes.find(matches)
+  const others = session.notes.filter((note) => !matches(note))
   const notes = cleaned.length > 0 || context
-    ? [...others, { barTime, interval, kind, ...(kind === 'should-trade' ? { side: side ?? 'long' } : {}), background: context, reasons: cleaned, updatedAt: now } as ManualBarNote].sort((a, b) => a.barTime - b.barTime)
+    ? [...others, { barTime, interval, kind, ...(kind === 'should-trade' ? { side: side ?? 'long' } : {}), ...(previous?.biasRank === undefined ? {} : { biasRank: previous.biasRank }), background: context, reasons: cleaned, updatedAt: now } as ManualBarNote].sort((a, b) => a.barTime - b.barTime)
     : others
   return { ...session, notes, updatedAt: now }
+}
+
+/** Atomically save the three alternatives for one candle in strongest-first order. */
+export function saveCandleBiasNotes(session: ManualPracticeSession, barTime: number, interval: IntervalId, background: string, entries: readonly { bias: ManualCandleBias; reasons: readonly string[] }[], now = Date.now()): ManualPracticeSession {
+  const alternatives: { bias: ManualCandleBias; reasons: string[] }[] = []
+  for (const entry of entries) {
+    if (!['no-trade', 'long', 'short'].includes(entry.bias) || alternatives.some((item) => item.bias === entry.bias)) continue
+    alternatives.push({ bias: entry.bias, reasons: cleanReasons(entry.reasons) })
+  }
+  for (const bias of ['no-trade', 'long', 'short'] as const) {
+    if (!alternatives.some((item) => item.bias === bias)) alternatives.push({ bias, reasons: [] })
+  }
+  const context = background.trim()
+  const others = session.notes.filter((note) => note.barTime !== barTime || note.interval !== interval)
+  const notes: ManualBarNote[] = !context && alternatives.every((entry) => entry.reasons.length === 0) ? [] : alternatives.map((entry, biasRank) => ({
+    barTime, interval, kind: entry.bias === 'no-trade' ? 'no-trade' : 'should-trade',
+    ...(entry.bias === 'no-trade' ? {} : { side: entry.bias }),
+    background: context, reasons: entry.reasons, biasRank, updatedAt: now,
+  }))
+  return { ...session, notes: [...others, ...notes].sort((a, b) => a.barTime - b.barTime), updatedAt: now }
 }
 
 /** The most recent background written in this paper, used to pre-fill the next one. */
@@ -557,6 +623,24 @@ export interface ManualTimelineItem {
   passive?: boolean
 }
 
+/** Stable identities survive timeline filtering, ranking and insertion of other records. */
+export function manualReviewCommentKey(item: ManualTimelineItem): string {
+  if (item.trade && (item.kind === 'entry' || item.kind === 'exit')) return JSON.stringify(['trade', item.trade.id, item.kind])
+  if (item.note) {
+    const note = item.note
+    return JSON.stringify(['note', note.kind, note.barTime, note.interval, note.kind === 'should-trade' ? note.side ?? 'long' : null])
+  }
+  return JSON.stringify(['timeline', item.kind, item.time])
+}
+
+/** Save hindsight only; never mutate the original decision or advance/reopen its session. */
+export function saveManualReviewComment(session: ManualPracticeSession, item: ManualTimelineItem, text: string, now = Date.now()): ManualPracticeSession {
+  return {
+    ...session,
+    reviewComments: { ...session.reviewComments, [manualReviewCommentKey(item)]: { text: text.trim(), updatedAt: now } },
+  }
+}
+
 /** Every reason in time order, for the review screen. */
 export function manualTimeline(session: ManualPracticeSession): ManualTimelineItem[] {
   const items: ManualTimelineItem[] = []
@@ -572,7 +656,30 @@ export function manualTimeline(session: ManualPracticeSession): ManualTimelineIt
       items.push({ time: trade.exitTime, kind: 'exit', title: `${label} @ ${trade.exitPrice?.toFixed(2)}`, background: null, reasons: trade.exitReasons, trade, passive: trade.exitKind !== 'manual' })
     }
   }
-  return items.sort((a, b) => a.time - b.time || (a.kind === 'exit' ? -1 : 1))
+  const timeline = items.sort((a, b) => {
+    if (a.time !== b.time) return a.time - b.time
+    if (a.kind === 'exit' && b.kind !== 'exit') return -1
+    if (b.kind === 'exit' && a.kind !== 'exit') return 1
+    return 0
+  })
+  // Rank within a candle/period without moving unrelated timeframes or trades.
+  const alternatives = new Map<string, ManualTimelineItem[]>()
+  for (const item of timeline) {
+    if (!item.note) continue
+    const key = `${item.note.barTime}:${item.note.interval}`
+    const group = alternatives.get(key) ?? []
+    group.push(item)
+    alternatives.set(key, group)
+  }
+  for (const group of alternatives.values()) group.sort((a, b) => (a.note!.biasRank ?? 3) - (b.note!.biasRank ?? 3))
+  const consumed = new Map<string, number>()
+  return timeline.map((item) => {
+    if (!item.note) return item
+    const key = `${item.note.barTime}:${item.note.interval}`
+    const index = consumed.get(key) ?? 0
+    consumed.set(key, index + 1)
+    return alternatives.get(key)![index]
+  })
 }
 
 /**
@@ -581,9 +688,20 @@ export function manualTimeline(session: ManualPracticeSession): ManualTimelineIt
  */
 export function manualReasonRows(session: ManualPracticeSession) {
   const timeline = manualTimeline(session)
-  return timeline.flatMap((item) => {
-    if (item.kind === 'exit') return []
+  const rows: { item: ManualTimelineItem; exit: ManualTimelineItem | undefined; biasItems?: ManualTimelineItem[] }[] = []
+  const grouped = new Set<string>()
+  for (const item of timeline) {
+    if (item.kind === 'exit') continue
+    if (item.note) {
+      const key = `${item.note.barTime}:${item.note.interval}`
+      if (grouped.has(key)) continue
+      grouped.add(key)
+      const biasItems = timeline.filter((other) => other.note?.barTime === item.note!.barTime && other.note.interval === item.note!.interval)
+      rows.push({ item, exit: undefined, biasItems })
+      continue
+    }
     const exit = item.kind === 'entry' && item.trade ? timeline.find((other) => other.kind === 'exit' && other.trade?.id === item.trade!.id) : undefined
-    return [{ item, exit }]
-  }).map((row, index) => ({ ...row, seq: index + 1 }))
+    rows.push({ item, exit })
+  }
+  return rows.map((row, index) => ({ ...row, seq: index + 1 }))
 }

@@ -1,9 +1,12 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import { BookOpenCheck, CalendarDays, ChevronRight, ClipboardList, Eye, NotebookPen, Pencil, Play, Plus, Rewind, Trash2, X } from 'lucide-react'
+import { BookOpenCheck, CalendarDays, ChevronRight, ClipboardList, Eye, MessageSquare, NotebookPen, Pencil, Play, Plus, Rewind, Trash2, X } from 'lucide-react'
 import { INTERVALS, type IntervalId } from '../lib/market'
+import { loadPanelState, savePanelState, usePanelDraft } from '../lib/panelDraft'
+import { bringFloatingCardToFront, registerFloatingCard } from '../lib/floatingCards'
 import {
   barTimeFor,
   manualReasonRows,
+  manualReviewCommentKey,
   NQ_POINT_VALUE_USD,
   openTrade,
   sessionSummary,
@@ -77,6 +80,22 @@ export function FloatingCard({ id, title, icon, meta, tone = 'neutral', classNam
   children: ReactNode
 }) {
   const ref = useRef<HTMLElement>(null)
+  useLayoutEffect(() => {
+    const element = ref.current
+    if (element) return registerFloatingCard(id, element)
+  }, [id])
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const scrollReady = useRef(false)
+  const scrollId = `card-scroll:${id}:${typeof meta === 'string' ? meta : ''}`
+  useEffect(() => {
+    scrollReady.current = false
+    const savedScroll = loadPanelState(scrollId, 0, (value): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0)
+    const frame = requestAnimationFrame(() => {
+      if (bodyRef.current) bodyRef.current.scrollTop = savedScroll
+      scrollReady.current = true
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [scrollId])
   const [box, setBox] = useState<CardBox | null>(() => loadCardBox(id))
   // Dragging and resizing write straight to the element (a GPU transform for
   // moves) once per frame; React state is only updated when the gesture ends.
@@ -181,10 +200,12 @@ export function FloatingCard({ id, title, icon, meta, tone = 'neutral', classNam
   return <section
     ref={ref}
     className={`mp-card tone-${tone}${box?.height ? ' has-height' : ''} ${className}`}
-    style={style}
+    style={{ ...style, zIndex: 70 }}
     role="dialog"
     aria-label={ariaLabel}
     data-testid={testId}
+    onPointerDownCapture={() => { if (ref.current) bringFloatingCardToFront(ref.current) }}
+    onFocusCapture={() => { if (ref.current) bringFloatingCardToFront(ref.current) }}
     onKeyDown={onKeyDown}
   >
     <header
@@ -200,7 +221,7 @@ export function FloatingCard({ id, title, icon, meta, tone = 'neutral', classNam
       {meta && <span className="mp-card-meta">{meta}</span>}
       {onClose && <button type="button" className="mp-icon" aria-label={closeLabel} title={closeLabel} onClick={onClose}><X size={14} /></button>}
     </header>
-    <div className="mp-card-body">{children}</div>
+    <div className="mp-card-body" ref={bodyRef} onScroll={event => { if (scrollReady.current) savePanelState(scrollId, event.currentTarget.scrollTop) }}>{children}</div>
     <span
       className="mp-card-resize"
       aria-hidden="true"
@@ -217,8 +238,15 @@ export function FloatingCard({ id, title, icon, meta, tone = 'neutral', classNam
 /* Reason editor: one reason per row, Tab / Enter moves to the next row */
 /* ------------------------------------------------------------------ */
 
-export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initial = [], required = false, background = null, unsupportedReasons = null, allowClear = false, confirmLabel = '保存', tone = 'neutral', draftRef, children, onSave, onCancel }: {
+interface ReasonDraft { rows: string[]; unsupported: string }
+const validReasonDraft = (value: unknown): value is ReasonDraft => {
+  const draft = value as ReasonDraft | null
+  return Boolean(draft && Array.isArray(draft.rows) && draft.rows.length > 0 && draft.rows.every(row => typeof row === 'string') && typeof draft.unsupported === 'string')
+}
+
+export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initial = [], required = false, background = null, unsupportedReasons = null, allowClear = false, confirmLabel = '保存', tone = 'neutral', draftRef, persistenceId, children, onSave, onCancel }: {
   cardId?: string
+  persistenceId?: string
   /** Lets the parent read the unsaved text (e.g. to keep it when the record type is switched). */
   draftRef?: { current: (() => { reasons: string[]; background: string }) | null }
   title: string
@@ -235,20 +263,39 @@ export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initia
   confirmLabel?: string
   tone?: 'neutral' | 'long' | 'short'
   children?: ReactNode
-  onSave: (reasons: string[], background: string, unsupportedReasons: string) => void
+  onSave: (reasons: string[], background: string, unsupportedReasons: string) => void | boolean
   onCancel: () => void
 }) {
   // With a background, row 0 is 背景 and rows 1.. are the numbered reasons.
   const offset = background ? 1 : 0
-  const [rows, setRows] = useState<string[]>(() => [
-    ...(background ? [background.initial] : []),
-    ...(initial.length > 0 ? initial : ['']),
-  ])
+  const [editorDraft, setEditorDraft, discardDraft] = usePanelDraft(`reason:${persistenceId ?? JSON.stringify([cardId, title, typeof subtitle === 'string' ? subtitle : null, initial, background?.initial, unsupportedReasons?.initial])}`, () => ({
+    rows: [...(background ? [background.initial] : []), ...(initial.length > 0 ? initial : [''])],
+    unsupported: unsupportedReasons?.initial ?? '',
+  }), validReasonDraft)
+  const rows = editorDraft.rows
+  const setRows = (update: (current: string[]) => string[]) => setEditorDraft(current => ({ ...current, rows: update(current.rows) }))
+  const unsupportedDraft = editorDraft.unsupported
+  // Keep the persisted multiline string compatible with old trades and drafts,
+  // but edit each line as a separately numbered reason.
+  const unsupportedRows = unsupportedDraft.split(/\r\n|\r|\n/)
+  const setUnsupportedRows = (update: (current: string[]) => string[]) => setEditorDraft(current => ({
+    ...current, unsupported: update(current.unsupported.split(/\r\n|\r|\n/)).join('\n'),
+  }))
+  const unsupportedRefs = useRef<Array<HTMLInputElement | null>>([])
+  const pendingUnsupportedFocus = useRef<number | null>(null)
+  useEffect(() => {
+    const index = pendingUnsupportedFocus.current
+    if (index === null) return
+    pendingUnsupportedFocus.current = null
+    const input = unsupportedRefs.current[index]
+    input?.focus()
+    if (input) input.setSelectionRange(input.value.length, input.value.length)
+  })
+  const cancel = () => { discardDraft(); onCancel() }
   const [error, setError] = useState('')
   useEffect(() => {
     if (draftRef) draftRef.current = () => ({ reasons: rows.slice(offset).map((row) => row.trim()).filter(Boolean), background: background ? rows[0].trim() : '' })
   })
-  const [unsupportedDraft, setUnsupportedDraft] = useState(unsupportedReasons?.initial ?? '')
   const inputRefs = useRef<Array<HTMLInputElement | null>>([])
   // Start in 背景 when it is empty, otherwise on the last reason.
   const pendingFocusRef = useRef<number | null>(background && !background.initial.trim() ? 0 : offset + Math.max(0, initial.length - 1))
@@ -272,7 +319,7 @@ export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initia
   const save = () => {
     const context = background ? rows[0].trim() : ''
     const reasons = rows.slice(offset).map((row) => row.trim()).filter(Boolean)
-    if (allowClear && !context && reasons.length === 0) { onSave([], '', ''); return }
+    if (allowClear && !context && reasons.length === 0) { discardDraft(); onSave([], '', ''); return }
     if (background && !context) {
       setError('背景是必填项，请先写下当前的背景')
       focusRow(0)
@@ -283,12 +330,12 @@ export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initia
       focusRow(offset)
       return
     }
-    onSave(reasons, context, unsupportedReasons ? unsupportedDraft.trim() : '')
+    if (onSave(reasons, context, unsupportedReasons ? unsupportedRows.map(row => row.trim()).filter(Boolean).join('\n') : '') !== false) discardDraft()
   }
 
   const goNext = (index: number) => {
     if (index < rows.length - 1) { focusRow(index + 1); return }
-    if (!rows[index].trim()) return
+    if (!rows[index].trim()) { if (unsupportedReasons) unsupportedRefs.current[0]?.focus(); return }
     setRows((current) => [...current, ''])
     pendingFocusRef.current = index + 1
   }
@@ -302,7 +349,7 @@ export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initia
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>, index: number) => {
     // Never act while a Chinese IME candidate is being composed.
     if (event.nativeEvent.isComposing || event.keyCode === 229) return
-    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onCancel(); return }
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancel(); return }
     if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); save(); return }
     if (event.key === 'Tab' && event.shiftKey) {
       if (index > 0) { event.preventDefault(); focusRow(index - 1) }
@@ -317,6 +364,42 @@ export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initia
     if (event.key === 'ArrowUp' && index > 0) { event.preventDefault(); focusRow(index - 1) }
   }
 
+  const addUnsupportedRow = () => {
+    setUnsupportedRows(current => [...current, ''])
+    pendingUnsupportedFocus.current = unsupportedRows.length
+  }
+  const removeUnsupportedRow = (index: number) => {
+    setUnsupportedRows(current => current.filter((_, i) => i !== index))
+    pendingUnsupportedFocus.current = Math.max(0, index - 1)
+  }
+  const handleUnsupportedKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>, index: number) => {
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); save(); return }
+    if (event.key === 'Tab' && event.shiftKey) {
+      event.preventDefault()
+      if (index > 0) unsupportedRefs.current[index - 1]?.focus()
+      else focusRow(rows.length - 1)
+      return
+    }
+    if (event.key === 'Enter' || event.key === 'Tab') {
+      event.preventDefault()
+      if (index < unsupportedRows.length - 1) unsupportedRefs.current[index + 1]?.focus()
+      else if (unsupportedRows[index].trim()) addUnsupportedRow()
+      return
+    }
+    if (event.key === 'Backspace' && !unsupportedRows[index] && unsupportedRows.length > 1) {
+      event.preventDefault(); removeUnsupportedRow(index); return
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      if (index > 0) unsupportedRefs.current[index - 1]?.focus()
+      else focusRow(rows.length - 1)
+    }
+    if (event.key === 'ArrowDown' && index < unsupportedRows.length - 1) {
+      event.preventDefault(); unsupportedRefs.current[index + 1]?.focus()
+    }
+  }
+
   return <FloatingCard
     id={cardId}
     className="mp-editor"
@@ -327,9 +410,9 @@ export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initia
     defaultStyle={{ left: 64, bottom: 56, width: 440 }}
     minWidth={320}
     minHeight={180}
-    onClose={onCancel}
+    onClose={cancel}
     closeLabel="取消"
-    onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onCancel() } }}
+    onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancel() } }}
   >
       {subtitle && <p className="mp-editor-subtitle">{subtitle}</p>}
       {children}
@@ -353,24 +436,24 @@ export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initia
         })}
       </ol>
       <button type="button" className="mp-add-row" tabIndex={-1} onClick={() => { setRows((current) => [...current, '']); pendingFocusRef.current = rows.length }}><Plus size={14} />添加一条</button>
-      {unsupportedReasons && <label className="mp-unsupported-reasons">
+      {unsupportedReasons && <section className="mp-unsupported-reasons" aria-label="不支持理由条目">
         <span>不支持理由<small>（可选）</small></span>
-        <textarea
-          aria-label="不支持理由"
-          value={unsupportedDraft}
-          rows={3}
-          placeholder="记录不支持本次做单的因素，可分行填写"
-          onChange={(event) => setUnsupportedDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.nativeEvent.isComposing || event.keyCode === 229) return
-            if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); save() }
-          }}
-        />
-      </label>}
+        <ol className="mp-reason-rows">{unsupportedRows.map((row, index) => <li key={index}>
+          <span className="mp-reason-index">{index + 1}</span>
+          <input ref={element => { unsupportedRefs.current[index] = element }}
+            aria-label={`不支持理由 ${index + 1}`} value={row}
+            placeholder="每条填写一个不支持理由"
+            onChange={event => { const value = event.target.value; setUnsupportedRows(current => current.map((item, i) => i === index ? value : item)) }}
+            onKeyDown={event => handleUnsupportedKeyDown(event, index)}
+          />
+          {unsupportedRows.length > 1 && <button type="button" tabIndex={-1} aria-label={`删除不支持理由 ${index + 1}`} onClick={() => removeUnsupportedRow(index)}><Trash2 size={14} /></button>}
+        </li>)}</ol>
+        <button type="button" className="mp-add-row" tabIndex={-1} aria-label="添加不支持理由" onClick={addUnsupportedRow}><Plus size={14} />添加一条</button>
+      </section>}
       {error && <p className="mp-editor-error" role="alert">{error}</p>}
       <footer>
         <span className="mp-editor-hint"><kbd>Tab</kbd>/<kbd>Enter</kbd> 下一条 · <kbd>Shift+Tab</kbd> 上一条 · <kbd>Ctrl+Enter</kbd> 保存 · <kbd>Esc</kbd> 取消</span>
-        <button type="button" className="mp-secondary" onClick={onCancel}>取消</button>
+        <button type="button" className="mp-secondary" onClick={cancel}>取消</button>
         <button type="button" className={`mp-primary tone-${tone}`} onClick={save}>{confirmLabel}</button>
       </footer>
   </FloatingCard>
@@ -574,7 +657,8 @@ function RiskInput({ label, value, onCommit }: { label: string; value: number | 
 /* Open-position dialog: side, optional stop/target, mandatory reasons */
 /* ------------------------------------------------------------------ */
 
-export function OpenTradeDialog({ side, price, orderKind = null, quantity, stopLoss, takeProfit, initialBackground = '', onStopLoss, onTakeProfit, onConfirm, onCancel }: {
+export function OpenTradeDialog({ side, price, orderKind = null, quantity, stopLoss, takeProfit, initialBackground = '', persistenceId, onStopLoss, onTakeProfit, onConfirm, onCancel }: {
+  persistenceId?: string
   initialBackground?: string
   side: ManualSide
   /** Entry price: the close for a market fill, or the dragged order price. */
@@ -596,6 +680,7 @@ export function OpenTradeDialog({ side, price, orderKind = null, quantity, stopL
   const usdText = (exit: number) => `${usdAt(exit) >= 0 ? '+' : '-'}$${Math.abs(usdAt(exit)).toLocaleString('zh-CN', { maximumFractionDigits: 0 })}`
   return <ReasonEditor
     cardId="open-trade"
+    persistenceId={persistenceId}
     title={`${long ? '做多' : '做空'}${orderKind === 'stop' ? '追单' : orderKind === 'limit' ? '挂单' : ''} ${quantity} 手 @ ${price.toFixed(2)} · 做单理由`}
     subtitle={orderKind ? '追单（stop 入场）：价格突破开仓线才成交，成交后才开始判断止损 / 止盈（每点 $20）。拖动图上的开仓、止损、止盈线调整；手数在开仓线上加减。' : '按当前K线收盘价成交（每点 $20）。拖动止损 / 止盈线调整风险，手数在开仓线上加减。'}
     required
@@ -605,8 +690,8 @@ export function OpenTradeDialog({ side, price, orderKind = null, quantity, stopL
     background={{ initial: initialBackground }}
     unsupportedReasons={{ initial: '' }}
     onSave={(reasons, background, unsupportedReasons) => {
-      if (long ? stopLoss >= price : stopLoss <= price) { setRiskError(`止损必须${long ? '低于' : '高于'}开仓价`); return }
-      if (long ? takeProfit <= price : takeProfit >= price) { setRiskError(`止盈必须${long ? '高于' : '低于'}开仓价`); return }
+      if (long ? stopLoss >= price : stopLoss <= price) { setRiskError(`止损必须${long ? '低于' : '高于'}开仓价`); return false }
+      if (long ? takeProfit <= price : takeProfit >= price) { setRiskError(`止盈必须${long ? '高于' : '低于'}开仓价`); return false }
       onConfirm(reasons, background, unsupportedReasons)
     }}
   >
@@ -657,11 +742,14 @@ export function ManualPracticeAnnotations({ session, interval, hidden, toX, toY,
   hideLevels?: boolean
 }) {
   if (hidden) return null
-  const position = openTrade(session)
+  const isBarRevealed = (time: number) => !clipAfterBar || barTimeFor(time, interval) <= clipAfterBar.last
+  const openPosition = openTrade(session)
+  const position = openPosition && isBarRevealed(openPosition.entryTime) ? openPosition : null
   const snap = (time: number) => toX(barTimeFor(time, interval))
   const seqBars = new Map<number, { seqs: number[]; cls: string }>()
   for (const { item, seq } of manualReasonRows(session)) {
     const bar = barTimeFor(item.time, interval)
+    if (!isBarRevealed(bar)) continue
     const entry = seqBars.get(bar) ?? { seqs: [], cls: item.kind === 'entry' ? `entry-${item.trade?.side ?? 'long'}` : 'note' }
     entry.seqs.push(seq)
     seqBars.set(bar, entry)
@@ -685,15 +773,19 @@ export function ManualPracticeAnnotations({ session, interval, hidden, toX, toY,
       {line(position.takeProfit, 'target', '止盈')}
     </>}
     {session.trades.map((trade) => {
+      if (!isBarRevealed(trade.entryTime)) return null
       const entryX = snap(trade.entryTime)
       const entryY = toY(trade.entryPrice)
       // The arrow hugs the outside of the entry candle (above the high for shorts, below the low for longs).
       const range = barRange?.(barTimeFor(trade.entryTime, interval)) ?? null
       const arrowY = range ? toY(trade.side === 'long' ? range.low : range.high) : entryY
       const arrowTop = arrowY === null ? null : arrowY + (trade.side === 'long' ? 5 : -5)
-      const exitX = trade.exitTime !== null ? snap(trade.exitTime) : null
-      const exitY = trade.exitPrice !== null ? toY(trade.exitPrice) : null
-      const points = tradePoints(trade)
+      // Cropping a future exit still leaks its direction and price through the
+      // visible half of the dashed connection. Wait for the exit candle itself.
+      const exitRevealed = trade.exitTime !== null && isBarRevealed(trade.exitTime)
+      const exitX = exitRevealed ? snap(trade.exitTime!) : null
+      const exitY = exitRevealed && trade.exitPrice !== null ? toY(trade.exitPrice) : null
+      const points = exitRevealed ? tradePoints(trade) : null
       return <div key={trade.id}>
         {entryX !== null && arrowTop !== null && <span className={`mp-marker entry side-${trade.side}`} style={{ left: entryX, top: arrowTop }} title={trade.reasons.join('\n')}>{trade.side === 'long' ? '▲' : '▼'}</span>}
         {exitX !== null && exitY !== null && <span className={`mp-marker exit${points !== null && points < 0 ? ' loss' : ''}`} style={{ left: exitX, top: exitY }} title={`${exitLabel(trade)} ${points !== null ? formatPoints(points) : ''}`}>✕</span>}
@@ -707,7 +799,7 @@ export function ManualPracticeAnnotations({ session, interval, hidden, toX, toY,
       const title = `理由 ${info.seqs.join('、')}`
       return <Fragment key={bar}><div className="mp-seq-line" style={{ left: x }} /><span className={`mp-note-badge ${info.cls}${highlightTime === bar ? ' highlight' : ''}`} style={{ left: x }} title={`${title}（点击编辑）`} onClick={() => onOpenBar?.(bar)}>{info.seqs.join(',')}</span></Fragment>
     })}
-    {highlightTime !== null && (() => {
+    {highlightTime !== null && isBarRevealed(highlightTime) && (() => {
       const x = toX(highlightTime)
       if (x === null) return null
       const y = highlightPrice !== null ? toY(highlightPrice) : null
@@ -724,21 +816,29 @@ export function ManualPracticeAnnotations({ session, interval, hidden, toX, toY,
 /* Review: summary + every reason in time order                        */
 /* ------------------------------------------------------------------ */
 
-export function ManualTimelineDialog({ session, onClose, onJump, onEditItem }: {
+export function ManualTimelineDialog({ session, onClose, onJump, onEditItem, onReviewItem }: {
   session: ManualPracticeSession
   onClose: () => void
   /** Locate the candle a reason belongs to (and mark it on the chart). */
   onJump: (item: ManualTimelineItem) => void
   onEditItem: (item: ManualTimelineItem) => void
+  onReviewItem?: (item: ManualTimelineItem) => void
 }) {
   const summary = sessionSummary(session)
-  const [filter, setFilter] = useState<'all' | 'entry' | 'no-trade' | 'should-trade' | 'exit'>('all')
-  const [selectedKey, setSelectedKey] = useState<string | null>(null)
+  const [filter, setFilter] = usePanelDraft<'all' | 'entry' | 'no-trade' | 'should-trade' | 'exit'>(`timeline:${session.id}:filter`, () => 'all', (value): value is 'all' | 'entry' | 'no-trade' | 'should-trade' | 'exit' => typeof value === 'string' && ['all', 'entry', 'no-trade', 'should-trade', 'exit'].includes(value))
+  const [selectedKey, setSelectedKey] = usePanelDraft<string | null>(`timeline:${session.id}:selected`, () => null, (value): value is string | null => value === null || typeof value === 'string')
   // One card per trade: the entry and the exit it ended with belong together. 平仓理由 only exists
   // for exits the user chose to make; stop / target / end-of-day exits are passive.
   const rows = manualReasonRows(session)
-  const visible = rows.filter(({ item, exit }) => filter === 'all'
-    || (filter === 'exit' ? Boolean(exit && !exit.passive) : item.kind === filter))
+  const visible = rows.filter(({ item, exit, biasItems }) => filter === 'all'
+    || (filter === 'exit' ? Boolean(exit && !exit.passive) : (biasItems ?? [item]).some(entry => entry.kind === filter)))
+  const commentFor = (item: ManualTimelineItem) => session.reviewComments?.[manualReviewCommentKey(item)]?.text ?? ''
+  const reviewAction = (item: ManualTimelineItem, label = '复盘评论') => onReviewItem && <button type="button" className="mp-review-action"
+    aria-label={`${commentFor(item) ? '编辑' : '添加'}${label}`} title={label}
+    onClick={event => { event.stopPropagation(); onReviewItem(item) }}><MessageSquare size={12} />评论</button>
+  const reviewComment = (item: ManualTimelineItem) => commentFor(item) && <div className="mp-review-comment" onClick={event => event.stopPropagation()}>
+    <b>复盘评论</b><p>{commentFor(item)}</p>
+  </div>
   return <FloatingCard
     id="timeline"
     className="mp-timeline"
@@ -765,7 +865,7 @@ export function ManualTimelineDialog({ session, onClose, onJump, onEditItem }: {
         {visible.length === 0
           ? <div className="mp-empty">这一类还没有记录。</div>
           : <ol className="mp-timeline-list">
-            {visible.map(({ item, exit, seq }, index) => {
+            {visible.map(({ item, exit, seq, biasItems }, index) => {
               const itemKey = `${item.kind}-${item.time}-${item.trade?.id ?? item.note?.interval ?? ''}`
               const exitKey = exit ? `exit-${exit.time}-${exit.trade?.id ?? ''}` : null
               const select = (target: ManualTimelineItem, key: string) => { setSelectedKey(key); onJump(target) }
@@ -777,21 +877,29 @@ export function ManualTimelineDialog({ session, onClose, onJump, onEditItem }: {
                   {exit && exitKey && <button type="button" className={`mp-timeline-time exit${selectedKey === exitKey ? ' on' : ''}`} onClick={(event) => { event.stopPropagation(); select(exit, exitKey) }} title="在图上定位到平仓这根K线">{formatBeijing(exit.time)}</button>}
                 </div>
                 <div className="mp-timeline-body">
-                  <div className="mp-timeline-title"><span className={`mp-seq ${item.kind === 'entry' ? `entry-${item.trade?.side ?? 'long'}` : 'note'}`} title={`序号 ${seq}`}>{seq}</span><b>{item.title}</b>
+                  <div className="mp-timeline-title"><span className={`mp-seq ${item.kind === 'entry' ? `entry-${item.trade?.side ?? 'long'}` : 'note'}`} title={`序号 ${seq}`}>{seq}</span><b>{biasItems ? `${INTERVALS[item.note!.interval].label} K线 · 偏向与理由` : item.title}</b>
+                    {!biasItems && reviewAction(item)}
                     <button type="button" className="mp-icon" aria-label="编辑理由" title="编辑理由" onClick={(event) => { event.stopPropagation(); onEditItem(item) }}><Pencil size={13} /></button>
                   </div>
                   {item.background !== null && <p className={`mp-timeline-background${item.background ? '' : ' missing'}`}><span>背景</span>{item.background || '未填写'}</p>}
-                  {item.reasons.length > 0
+                  {biasItems ? biasItems.map((entry, rank) => <div className="mp-timeline-bias" key={entry.kind === 'no-trade' ? 'no-trade' : entry.note?.side}>
+                    <div className="mp-bias-heading"><b>{rank + 1}. {entry.kind === 'no-trade' ? '不开单' : entry.note?.side === 'short' ? '做空' : '做多'}{rank === 0 ? ' · 最偏向' : ''}</b>{reviewAction(entry, `${entry.kind === 'no-trade' ? '不开单' : entry.note?.side === 'short' ? '做空' : '做多'}复盘评论`)}</div>
+                    {entry.reasons.length > 0 ? <ol className="mp-reason-list">{entry.reasons.map((reason, index) => <li key={index}>{reason}</li>)}</ol> : <p className="mp-muted">未填写理由</p>}
+                    {reviewComment(entry)}
+                  </div>) : item.reasons.length > 0
                     ? <ol className="mp-reason-list">{item.reasons.map((reason, reasonIndex) => <li key={reasonIndex}>{reason}</li>)}</ol>
                     : <p className="mp-muted">{item.kind === 'no-trade' || item.kind === 'should-trade' ? '只写了背景，没有分条理由' : '未填写理由'}</p>}
-                  {item.kind === 'entry' && item.unsupportedReasons && <p className="mp-timeline-unsupported"><span>不支持理由</span>{item.unsupportedReasons}</p>}
+                  {item.kind === 'entry' && item.unsupportedReasons?.trim() && <div className="mp-timeline-unsupported"><span>不支持理由</span><ol className="mp-reason-list">{item.unsupportedReasons.split(/\r\n|\r|\n/).map(reason => reason.trim()).filter(Boolean).map((reason, index) => <li key={index}>{reason}</li>)}</ol></div>}
+                  {!biasItems && reviewComment(item)}
                   {exit && exitKey && <div className={`mp-timeline-exit${selectedKey === exitKey ? ' selected' : ''}`} onClick={(event) => { event.stopPropagation(); select(exit, exitKey) }} title="点击在图上定位到平仓这根K线并标注">
                     <div className="mp-timeline-title"><b>{exit.title}</b>{points !== null && <span className={points >= 0 ? 'positive' : 'negative'}>{formatPoints(points)} · {formatUsd((exit.trade ? tradeUsd(exit.trade) : null) ?? points * NQ_POINT_VALUE_USD)}</span>}
+                      {reviewAction(exit, '平仓复盘评论')}
                       {!exit.passive && <button type="button" className="mp-icon" aria-label="编辑平仓理由" title="编辑平仓理由" onClick={(event) => { event.stopPropagation(); onEditItem(exit) }}><Pencil size={13} /></button>}
                     </div>
                     {exit.reasons.length > 0
                       ? <ol className="mp-reason-list">{exit.reasons.map((reason, reasonIndex) => <li key={reasonIndex}>{reason}</li>)}</ol>
                       : exit.passive ? null : <p className="mp-muted">未填写平仓理由</p>}
+                    {reviewComment(exit)}
                   </div>}
                 </div>
               </li>

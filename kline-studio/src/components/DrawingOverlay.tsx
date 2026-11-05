@@ -7,7 +7,8 @@ import {
   calculateChartMeasurement, formatMeasurementDuration, formatMeasurementTime, formatMeasurementVolume, formatSignedMeasurement,
 } from '../lib/measurement'
 import { calculateFibLevelGeometry, layoutFibLabels } from '../lib/fibLayout'
-import { formatPrice, type Candle, type IntervalId, type SymbolId } from '../lib/market'
+import { formatPrice, INTERVALS, type Candle, type IntervalId, type SymbolId } from '../lib/market'
+import { drawingIsRevealed } from '../lib/drawingReplay'
 import {
   calculatePositionMetrics, calculatePositionMetricsFromLevels, createDefaultPositionPoints, formatPositionNumber,
   resolvePositionGeometry, updatePositionPoints,
@@ -19,9 +20,9 @@ import type { MagnetMode } from './DrawingToolbar'
 
 interface Props {
   /**
-   * Review replay: drawings that already existed when the replay started (these ids) are clipped at the
-   * right edge of the newest candle, so only their part after the replay point is hidden.
-   * Drawings made during the replay are never clipped.
+   * Review replay: historical drawings stay entirely hidden until all their anchor candles
+   * have been revealed. Their extensions are then clipped at the newest candle.
+   * Drawings made during this replay are unaffected.
    */
   revealClipIds?: ReadonlySet<string> | null
   activeTool: string
@@ -93,6 +94,9 @@ export function DrawingOverlay({
   const viewportWidth = Math.max(1, viewportSize.width)
   const viewportHeight = Math.max(1, viewportSize.height)
   const plotSize = onPlotSize?.()
+  const revealedDrawings = history.present.filter(drawing => drawingIsRevealed(
+    drawing, revealClipIds, candles.at(-1)?.time ?? null, INTERVALS[interval].seconds,
+  ))
   // Clip painting and hit testing, without resizing the coordinate system.
   // Anchors remain in the same chart pixel coordinates used by time/price projection.
   const revealClip = (() => {
@@ -1069,9 +1073,13 @@ export function DrawingOverlay({
           : <rect {...props} x={cx - handleWidth / 2} y={cy - handleHeight / 2} width={handleWidth} height={handleHeight} rx={2 * unitX} />
       }
       content = <g className="position-drawing" data-position-side={long ? 'long' : 'short'}>
-        <rect data-testid="position-upper-zone" x={x} y={top} width={w} height={Math.max(0, entry - top)} fill={colorWithAlpha(upperIsTarget ? green : red, drawing.fillOpacity ?? .2)} stroke={upperIsTarget ? green : red} strokeWidth="1" vectorEffect="non-scaling-stroke" />
-        <rect data-testid="position-lower-zone" x={x} y={entry} width={w} height={Math.max(0, bottom - entry)} fill={colorWithAlpha(upperIsTarget ? red : green, drawing.fillOpacity ?? .2)} stroke={upperIsTarget ? red : green} strokeWidth="1" vectorEffect="non-scaling-stroke" />
-        <line data-testid="position-entry-line" x1={x} x2={x + w} y1={entry} y2={entry} stroke="#787b86" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+        <rect data-testid="position-upper-zone" x={x} y={top} width={w} height={Math.max(0, entry - top)} fill={colorWithAlpha(upperIsTarget ? green : red, drawing.fillOpacity ?? .2)} stroke={upperIsTarget ? green : red} strokeWidth="1" vectorEffect="non-scaling-stroke" pointerEvents="none" />
+        <rect data-testid="position-lower-zone" x={x} y={entry} width={w} height={Math.max(0, bottom - entry)} fill={colorWithAlpha(upperIsTarget ? red : green, drawing.fillOpacity ?? .2)} stroke={upperIsTarget ? red : green} strokeWidth="1" vectorEffect="non-scaling-stroke" pointerEvents="none" />
+        <line data-testid="position-entry-line" x1={x} x2={x + w} y1={entry} y2={entry} stroke="#787b86" strokeWidth="1" vectorEffect="non-scaling-stroke" pointerEvents="none" />
+        {/* Keep the large filled zones click-through, while their edges remain easy to grab. */}
+        <path data-testid="position-move-hit-target"
+          d={`M${x},${top} H${x + w} V${bottom} H${x} Z M${x},${entry} H${x + w}`}
+          fill="none" stroke="transparent" strokeWidth="14" pointerEvents="stroke" vectorEffect="non-scaling-stroke" />
 
         <g data-testid="position-stop-label" transform={`translate(${outsideX} ${stopY})`}>
           <rect width={outsideWidth} height={labelHeight} rx={4 * unitX} fill={red} />
@@ -1349,7 +1357,7 @@ export function DrawingOverlay({
 
   if (hidden) return null
   const drawingMode = !['cursor', 'eraser'].includes(activeDefinition.behavior)
-  const selectedMeasurement = history.present.find((drawing) => drawing.behavior === 'measure' && selectedDrawingIds.includes(drawing.id)) ?? null
+  const selectedMeasurement = revealedDrawings.find((drawing) => drawing.behavior === 'measure' && selectedDrawingIds.includes(drawing.id)) ?? null
   const displayedMeasurement = draft?.behavior === 'measure'
     ? { drawing: draft, draft: true, forceSelected: false }
     : quickMeasurement
@@ -1378,10 +1386,10 @@ export function DrawingOverlay({
       </defs>
       {revealClip
         ? <>
-          <g clipPath="url(#replay-reveal-clip)">{history.present.filter((drawing) => drawing.tool !== 'measure' && revealClip.ids.has(drawing.id)).map((drawing) => renderDrawing(drawing))}</g>
-          {history.present.filter((drawing) => drawing.tool !== 'measure' && !revealClip.ids.has(drawing.id)).map((drawing) => renderDrawing(drawing))}
+          <g clipPath="url(#replay-reveal-clip)">{revealedDrawings.filter((drawing) => drawing.tool !== 'measure' && revealClip.ids.has(drawing.id)).map((drawing) => renderDrawing(drawing))}</g>
+          {revealedDrawings.filter((drawing) => drawing.tool !== 'measure' && !revealClip.ids.has(drawing.id)).map((drawing) => renderDrawing(drawing))}
         </>
-        : history.present.filter((drawing) => drawing.tool !== 'measure').map((drawing) => renderDrawing(drawing))}
+        : revealedDrawings.filter((drawing) => drawing.tool !== 'measure').map((drawing) => renderDrawing(drawing))}
       {quickMeasurement && renderDrawing(quickMeasurement, false, true)}
       {draft && renderDrawing(draft, true)}
       </svg>

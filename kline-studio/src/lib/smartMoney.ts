@@ -4,8 +4,8 @@
 // (© LuxAlgo, licensed under CC BY-NC-SA 4.0 — https://creativecommons.org/licenses/by-nc-sa/4.0/).
 // The port keeps the original defaults: Historical mode, Colored style, internal
 // + swing structure, internal order blocks, EQH/EQL, strong/weak high & low and
-// premium/discount zones. Fair value gaps follow the script's own logic (gaps disappear
-// once price fills them; the Auto Threshold is optional, see SmcOptions). MTF levels and
+// premium/discount zones. Fair value gaps follow the script's detection logic; filled
+// gaps retain each first-filled price layer for stepped historical refill bands. MTF levels and
 // swing order blocks, off by default in the script, are not ported.
 //
 // All positions are expressed as candle indexes so the overlay can map them to
@@ -85,6 +85,11 @@ export interface SmcFairValueGap {
   top: number
   bottom: number
   bullish: boolean
+  /** Unfilled price bounds shrink on every deeper penetration, never on a shallower retest. */
+  remainingTop: number
+  remainingBottom: number
+  /** Disjoint price layers, each ending at the first candle that filled it. */
+  refills: { index: number; top: number; bottom: number }[]
   /** Index of the candle that fully filled the gap, or null while it is still open. */
   endIndex: number | null
 }
@@ -103,6 +108,7 @@ export interface SmcResult {
   equals: SmcEqual[]
   orderBlocks: SmcOrderBlock[]
   fairValueGaps: SmcFairValueGap[]
+  filledFairValueGaps: SmcFairValueGap[]
   trailing: SmcTrailing | null
   /** Current swing trend: 1 bullish, -1 bearish, 0 unknown. */
   swingBias: number
@@ -130,7 +136,7 @@ const ATR_LENGTH = 200
 const newPivot = (): Pivot => ({ current: Number.NaN, last: Number.NaN, crossed: false, barIndex: 0 })
 
 export function emptySmcResult(): SmcResult {
-  return { structures: [], equals: [], orderBlocks: [], fairValueGaps: [], trailing: null, swingBias: 0, lastIndex: -1 }
+  return { structures: [], equals: [], orderBlocks: [], fairValueGaps: [], filledFairValueGaps: [], trailing: null, swingBias: 0, lastIndex: -1 }
 }
 
 export function computeSmartMoney(candles: readonly Candle[], partial: Partial<SmcOptions> = {}): SmcResult {
@@ -298,11 +304,25 @@ export function computeSmartMoney(candles: readonly Candle[], partial: Partial<S
       displayStructure(false, index)
     }
 
-    // Fair value gaps (drawFairValueGaps / deleteFairValueGaps in the script).
-    // Mitigated gaps are removed first, then a new gap may be created from candles [i-2], [i-1], [i].
+    // Mitigate only the newly touched layer. Recording its first candle gives
+    // the historical band a staircase edge instead of waiting for a full fill.
+    // Process existing gaps before creating a gap from [i-2], [i-1], [i].
     if (openGaps.length > 0) {
       openGaps = openGaps.filter((gap) => {
-        const filled = gap.bullish ? candle.low < gap.bottom : candle.high > gap.top
+        if (gap.bullish) {
+          const nextTop = Math.max(gap.bottom, Math.min(gap.remainingTop, candle.low))
+          if (nextTop < gap.remainingTop) {
+            gap.refills.push({ index, top: gap.remainingTop, bottom: nextTop })
+            gap.remainingTop = nextTop
+          }
+        } else {
+          const nextBottom = Math.min(gap.top, Math.max(gap.remainingBottom, candle.high))
+          if (nextBottom > gap.remainingBottom) {
+            gap.refills.push({ index, top: nextBottom, bottom: gap.remainingBottom })
+            gap.remainingBottom = nextBottom
+          }
+        }
+        const filled = gap.remainingTop <= gap.remainingBottom
         if (filled) gap.endIndex = index
         return !filled
       })
@@ -316,9 +336,9 @@ export function computeSmartMoney(candles: readonly Candle[], partial: Partial<S
         const threshold = options.fairValueGapAutoThreshold ? (deltaSum / index) * 2 : 0 // "Auto Threshold"
         let gap: SmcFairValueGap | null = null
         if (candle.low > first.high && middle.close > first.high && barDeltaPercent > threshold) {
-          gap = { startIndex: index - 2, top: candle.low, bottom: first.high, bullish: true, endIndex: null }
+          gap = { startIndex: index - 2, top: candle.low, bottom: first.high, remainingTop: candle.low, remainingBottom: first.high, refills: [], bullish: true, endIndex: null }
         } else if (candle.high < first.low && middle.close < first.low && -barDeltaPercent > threshold) {
-          gap = { startIndex: index - 2, top: first.low, bottom: candle.high, bullish: false, endIndex: null }
+          gap = { startIndex: index - 2, top: first.low, bottom: candle.high, remainingTop: first.low, remainingBottom: candle.high, refills: [], bullish: false, endIndex: null }
         }
         if (gap) {
           fairValueGaps.push(gap)
@@ -341,8 +361,9 @@ export function computeSmartMoney(candles: readonly Candle[], partial: Partial<S
     structures: structures.slice(-options.maxLines),
     equals: equals.slice(-options.maxLines),
     orderBlocks: internalOrderBlocks.slice(0, options.internalOrderBlocks),
-    // The script deletes a gap as soon as it is mitigated, so only open gaps are drawn.
+    // Preserve the first fully filled candle separately; never use unrevealed bars.
     fairValueGaps: openGaps,
+    filledFairValueGaps: fairValueGaps.filter(gap => gap.endIndex !== null),
     trailing: finalTrailing,
     swingBias: swingTrend.bias,
     lastIndex: count - 1,

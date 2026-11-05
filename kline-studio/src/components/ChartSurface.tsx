@@ -19,6 +19,7 @@ import {
 import { bollinger, ema, sma, volumeSma } from '../lib/indicators'
 import { attachSmartMoneyOverlay } from '../lib/smartMoneyOverlay'
 import { futureTimeOffset } from '../lib/futureTradingTimeline'
+import { captureChartView, loadChartView, restoredChartRange, saveChartView } from '../lib/chartViewPersistence'
 import {
   centeredLatestLogicalRange,
   initialChartLogicalRange,
@@ -124,6 +125,7 @@ interface Props {
   suppressAutoFocus?: boolean
   centerLatestByDefault?: boolean
   markersHidden?: boolean
+  showFilledGaps?: boolean
   onHover: (candle: Candle | null) => void
   onPriceScaleStateChange: (autoScale: boolean, logarithmic: boolean, percentage: boolean, inverted: boolean) => void
   onViewportChange?: () => void
@@ -139,7 +141,7 @@ interface SeriesState {
   bollMiddle?: any
   bollLower?: any
   markers?: any
-  smc?: { setData: (candles: readonly Candle[]) => void; setFutureTimes: (times: readonly number[]) => void; destroy: () => void }
+  smc?: ReturnType<typeof attachSmartMoneyOverlay>
 }
 
 interface TradeConnectionSegment extends ReplayTradeConnectionSpec {
@@ -500,14 +502,23 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     data, symbol, interval, chartType, theme, blackBarTimes, futureTradingTimes, hiddenTailTimes, indicators, priceScaleAuto, priceScaleLog, priceScalePercent, priceScaleInverted,
     visibleTradeLayerSourceIds = [], visibleResearchSignalSourceIds = [], showAllResearchReviews = true, exerciseSignalMarkers = [], apprenticeActionMarkers = [], apprenticeOnly = false, apprenticeFocusRange = null, decisionSignalSourceIds = [], decisionSignalAfterTime = null,
     visibleRangeLayerSourceIds = [], suppressedRangeObjectIds = [], selectedRangeObjectId = null, onSelectRangeObject,
-    followLatest = false, focusLatestKey = 0, focusHistoryBars = 110, suppressAutoFocus = false, centerLatestByDefault = false, markersHidden = false, onHover, onPriceScaleStateChange, onViewportChange,
+    followLatest = false, focusLatestKey = 0, focusHistoryBars = 110, suppressAutoFocus = false, centerLatestByDefault = false, markersHidden = false, showFilledGaps = false, onHover, onPriceScaleStateChange, onViewportChange,
   },
   forwardedRef,
 ) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<SeriesState | null>(null)
+  const showFilledGapsRef = useRef(showFilledGaps)
+  useEffect(() => {
+    showFilledGapsRef.current = showFilledGaps
+    seriesRef.current?.smc?.setShowFilledGaps(showFilledGaps)
+  }, [showFilledGaps])
   const dataRef = useRef(data)
+  const savedViewRef = useRef(loadChartView(symbol, interval))
+  const hydrationViewRef = useRef(loadChartView(symbol, interval))
+  const savedViewKeyRef = useRef(`${symbol}:${interval}`)
+  const restoringViewRef = useRef(false)
   const futureTradingTimesRef = useRef<readonly number[]>(futureTradingTimes ?? [])
   const hiddenTailRef = useRef<readonly number[]>([])
   useEffect(() => { hiddenTailRef.current = hiddenTailTimes ?? [] }, [hiddenTailTimes])
@@ -786,10 +797,44 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
   }, [syncSignalRanges])
 
   const cacheVisibleViewport = useCallback(() => {
+    if (savedViewRef.current || restoringViewRef.current) return
     const range = chartRef.current?.timeScale().getVisibleLogicalRange()
     if (!range || !Number.isFinite(range.from) || !Number.isFinite(range.to)) return
     viewportRangeCache.set(viewportRangeCacheKey(symbolRef.current, intervalRef.current), { from: range.from, to: range.to })
+    const scale = chartRef.current?.priceScale('right')
+    const priceRange = scale && !scale.options().autoScale ? scale.getVisibleRange() : null
+    const snapshot = captureChartView(dataRef.current.map(candle => candle.time), range, priceRange)
+    if (snapshot) saveChartView(symbolRef.current, intervalRef.current, snapshot)
   }, [])
+
+  const restoreVisibleViewport = useCallback(() => {
+    const snapshot = savedViewRef.current
+    const chart = chartRef.current
+    if (!snapshot || !chart) return false
+    const range = restoredChartRange(dataRef.current.map(candle => candle.time), snapshot)
+    if (!range) return false
+    restoringViewRef.current = true
+    savedViewRef.current = null
+    chart.timeScale().setVisibleLogicalRange(range)
+    if (snapshot.priceRange) chart.priceScale('right').setVisibleRange(snapshot.priceRange)
+    window.requestAnimationFrame(() => {
+      if (chartRef.current !== chart) { restoringViewRef.current = false; return }
+      chart.timeScale().setVisibleLogicalRange(range)
+      if (snapshot.priceRange) chart.priceScale('right').setVisibleRange(snapshot.priceRange)
+      restoringViewRef.current = false
+    })
+    return true
+  }, [])
+
+  useEffect(() => {
+    const flush = () => cacheVisibleViewport()
+    window.addEventListener('pagehide', flush)
+    window.addEventListener('beforeunload', flush)
+    return () => {
+      window.removeEventListener('pagehide', flush)
+      window.removeEventListener('beforeunload', flush)
+    }
+  }, [cacheVisibleViewport])
 
   const flushProjectionRef = useRef(false)
   const requestViewportProjectionSync = useCallback(() => {
@@ -815,6 +860,12 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
 
   useEffect(() => {
     dataRef.current = data
+    const viewKey = `${symbol}:${interval}`
+    if (savedViewKeyRef.current !== viewKey) {
+      savedViewKeyRef.current = viewKey
+      savedViewRef.current = loadChartView(symbol, interval)
+      hydrationViewRef.current = savedViewRef.current
+    }
     symbolRef.current = symbol
     intervalRef.current = interval
     followLatestRef.current = followLatest
@@ -914,8 +965,9 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       if (!chart || !container) return null
       return { width: chart.timeScale().width(), height: Math.max(0, container.clientHeight - chart.timeScale().height()) }
     },
-    fitContent: () => chartRef.current?.timeScale().fitContent(),
+    fitContent: () => { savedViewRef.current = null; hydrationViewRef.current = null; chartRef.current?.timeScale().fitContent() },
     showDuration: (seconds) => {
+      savedViewRef.current = null; hydrationViewRef.current = null
       const currentData = dataRef.current
       if (!chartRef.current || currentData.length === 0) return
       if (seconds === null) {
@@ -926,10 +978,12 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       chartRef.current.timeScale().setVisibleRange({ from: (Number(to) - seconds) as UTCTimestamp, to })
     },
     showTimeRange: (from, to) => {
+      savedViewRef.current = null; hydrationViewRef.current = null
       if (!chartRef.current || !Number.isFinite(from) || !Number.isFinite(to) || from >= to) return
       chartRef.current.timeScale().setVisibleRange({ from: from as UTCTimestamp, to: to as UTCTimestamp })
     },
     zoomToFraction: (from, to) => {
+      savedViewRef.current = null; hydrationViewRef.current = null
       const scale = chartRef.current?.timeScale()
       const range = scale?.getVisibleLogicalRange()
       if (!scale || !range) return
@@ -1018,20 +1072,23 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       return scale.logicalToCoordinate(logical as Logical)
     },
     focusLatest: () => {
+      savedViewRef.current = null; hydrationViewRef.current = null
       const length = dataRef.current.length
       if (!chartRef.current || length === 0) return
       const range = centeredLatestLogicalRange(length)
       const extra = Math.max(0, focusHistoryBars - 110)
       chartRef.current.timeScale().setVisibleLogicalRange({ from: range.from - extra, to: range.to + extra })
     },
-    scrollToRealtime: () => chartRef.current?.timeScale().scrollToRealTime(),
+    scrollToRealtime: () => { savedViewRef.current = null; hydrationViewRef.current = null; chartRef.current?.timeScale().scrollToRealTime() },
     moveVisibleRange: (bars) => {
+      savedViewRef.current = null; hydrationViewRef.current = null
       const scale = chartRef.current?.timeScale()
       const range = scale?.getVisibleLogicalRange()
       if (!scale || !range) return
       scale.setVisibleLogicalRange({ from: range.from + bars, to: range.to + bars })
     },
     zoomVisibleRange: (factor) => {
+      savedViewRef.current = null; hydrationViewRef.current = null
       const scale = chartRef.current?.timeScale()
       const range = scale?.getVisibleLogicalRange()
       if (!scale || !range) return
@@ -1040,6 +1097,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       scale.setVisibleLogicalRange({ from: center - halfSpan, to: center + halfSpan })
     },
     goToTime: (time) => {
+      savedViewRef.current = null; hydrationViewRef.current = null
       const scale = chartRef.current?.timeScale()
       const range = scale?.getVisibleLogicalRange()
       const currentData = dataRef.current
@@ -1191,6 +1249,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     seriesRef.current = series
     if (indicators.smc !== false && chartType !== 'line' && chartType !== 'area') {
       series.smc = attachSmartMoneyOverlay(container, chart, mainSeries, symbolRef.current === 'NQ1!')
+      series.smc.setShowFilledGaps(showFilledGapsRef.current)
       series.smc.setData(dataRef.current)
       series.smc.setFutureTimes(futureTradingTimesRef.current)
     }
@@ -1228,10 +1287,11 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     timeScale.subscribeVisibleLogicalRangeChange(onTimeScaleChange)
     timeScale.subscribeSizeChange(onTimeScaleChange)
     const initialDataLength = dataRef.current.length
+    savedViewRef.current ??= loadChartView(symbol, interval)
     previousLengthRef.current = initialDataLength
     if (initialDataLength > 0) {
       const cachedRange = viewportRangeCache.get(viewportRangeCacheKey(symbol, interval))
-      chart.timeScale().setVisibleLogicalRange(initialChartLogicalRange(initialDataLength, cachedRange, centerLatestByDefault))
+      if (!restoreVisibleViewport()) chart.timeScale().setVisibleLogicalRange(initialChartLogicalRange(initialDataLength, cachedRange, centerLatestByDefault))
       cacheVisibleViewport()
       requestViewportProjectionSync()
     }
@@ -1414,6 +1474,9 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     }
     const handleChartWheel = (event: WheelEvent) => {
       if (event.deltaY === 0 || Math.abs(event.deltaY) < Math.abs(event.deltaX)) return
+      savedViewRef.current = null
+      hydrationViewRef.current = null
+      restoringViewRef.current = false
       // lightweight-charts sets its canvases to pointer-events:none, so wheel
       // events normally target an internal table cell instead of the canvas.
       // This listener is scoped to the chart root; floating replay panels are
@@ -1533,6 +1596,9 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       // axis scales prices and the bottom time axis scales time. Vertical
       // panning is armed only when the actual candle pane is pressed.
       if (localX < 0 || localX > paneWidth || localY < 0 || localY > paneHeight) return
+      savedViewRef.current = null
+      hydrationViewRef.current = null
+      restoringViewRef.current = false
       const priceScale = chart.priceScale('right')
       const autoScaleWasOn = priceScale.options().autoScale
       // lightweight-charts deliberately ignores pane price scrolling while
@@ -1701,7 +1767,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       chartRef.current = null
       seriesRef.current = null
     }
-  }, [apprenticeOnly, cacheVisibleViewport, centerLatestByDefault, chartType, indicators, interval, requestSignalRangeSync, requestTradeConnectionSync, requestViewportProjectionSync, symbol, syncSignalRanges, syncTradeConnections, theme])
+  }, [apprenticeOnly, cacheVisibleViewport, restoreVisibleViewport, centerLatestByDefault, chartType, indicators, interval, requestSignalRangeSync, requestTradeConnectionSync, requestViewportProjectionSync, symbol, syncSignalRanges, syncTradeConnections, theme])
 
   useEffect(() => {
     const scale = chartRef.current?.priceScale('right')
@@ -1749,9 +1815,11 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     const wasAtRealtime = isRealtimeScrollPosition(timeScale.scrollPosition())
     if (dataChanged) {
       blackBarsAppliedRef.current = blackBarTimesRef.current
+      if (hydrationViewRef.current) savedViewRef.current = hydrationViewRef.current
       updateSeries(series, data, chartType, indicators, { times: new Set(blackBarTimesRef.current), border: blackBorderRef.current }, hiddenTailRef.current)
       series.smc?.setData(data)
     }
+    const restoredViewport = restoringViewRef.current || restoreVisibleViewport()
     const revealedMarkers = visibleTradeMarkers(symbol, interval, data, visibleTradeLayerSourceIds, activeTradeRef.current, tradeReferenceMarkers, decisionSignalSourceIds, decisionSignalAfterTime, markersHidden, visibleResearchSignalSourceIds, showAllResearchReviews, apprenticeActionMarkers, apprenticeOnly)
     series.markers?.setMarkers(revealedMarkers)
     if (!markersHidden && selectedTradeMarkerIdRef.current && !revealedMarkers.some((marker) => marker.id === selectedTradeMarkerIdRef.current)) {
@@ -1778,7 +1846,9 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
       previousLength,
       nextLength: data.length,
     })
-    if (viewportAction === 'center') {
+    if (restoredViewport) {
+      // The saved time anchor wins over startup centering or realtime following.
+    } else if (viewportAction === 'center') {
       const range = centeredLatestLogicalRange(data.length)
       const extra = Math.max(0, focusHistoryBars - 110)
       timeScale.setVisibleLogicalRange({ from: range.from - extra, to: range.to + extra })
@@ -1797,7 +1867,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     // session, which compresses the hydrated candles against the left edge.
     // Apply the report's actual timestamps after the new series is committed,
     // then let lightweight-charts auto-scale to those candles.
-    if (apprenticeOnly && dataChanged && apprenticeFocusRange) {
+    if (!restoredViewport && apprenticeOnly && dataChanged && apprenticeFocusRange) {
       const startIndex = data.findIndex((candle) => candle.time >= apprenticeFocusRange.startTime)
       let endIndex = -1
       for (let index = data.length - 1; index >= 0; index -= 1) {
@@ -1823,7 +1893,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     // coordinates. An unchanged visible range does not fire a scale event,
     // so explicitly reproject once the new chart data has been painted.
     if (dataChanged) requestViewportProjectionSync()
-  }, [apprenticeActionMarkers, apprenticeFocusRange, apprenticeOnly, chartType, data, decisionSignalAfterTime, decisionSignalSourceIds, focusLatestKey, focusHistoryBars, indicators, interval, markersHidden, requestSignalRangeSync, requestTradeConnectionSync, requestViewportProjectionSync, suppressAutoFocus, suppressedRangeObjectIds, symbol, tradeReferenceMarkers, visibleRangeLayerSourceIds, visibleResearchSignalSourceIds, visibleTradeLayerSourceIds, showAllResearchReviews])
+  }, [apprenticeActionMarkers, apprenticeFocusRange, apprenticeOnly, chartType, data, decisionSignalAfterTime, decisionSignalSourceIds, focusLatestKey, focusHistoryBars, indicators, interval, markersHidden, requestSignalRangeSync, requestTradeConnectionSync, requestViewportProjectionSync, restoreVisibleViewport, suppressAutoFocus, suppressedRangeObjectIds, symbol, tradeReferenceMarkers, visibleRangeLayerSourceIds, visibleResearchSignalSourceIds, visibleTradeLayerSourceIds, showAllResearchReviews])
 
   useEffect(() => {
     const series = seriesRef.current?.main

@@ -8,6 +8,7 @@ import { computeSmartMoney, emptySmcResult, SMC_COLORS, type SmcResult } from '.
 interface Overlay {
   setData: (candles: readonly Candle[]) => void
   setFutureTimes: (times: readonly number[]) => void
+  setShowFilledGaps: (show: boolean) => void
   destroy: () => void
 }
 
@@ -98,6 +99,7 @@ export function attachSmartMoneyOverlay(container: HTMLElement, chart: IChartApi
   let result: SmcResult = emptySmcResult()
   let lastData: readonly Candle[] | null = null
   let futureTimes: readonly number[] = []
+  let showFilledGaps = false
   let dataVersion = 0
   let signature = ''
   let frame = 0
@@ -209,15 +211,17 @@ export function attachSmartMoneyOverlay(container: HTMLElement, chart: IChartApi
       }
     }
 
-    // Fair value gaps, as in the script: two stacked half boxes from the middle candle of the pattern to the
-    // candle that completed it (the script's "Extend FVG" set to 0, so the box is one bar wide). Orange = bullish gap, red = bearish gap. Filled gaps are not kept.
-    for (const gap of result.fairValueGaps) {
-      if (gap.startIndex + 2 < range.from - 1 || gap.startIndex + 1 > range.to + 1) continue
-      const left = x(gap.startIndex + 1)
-      const right = x(gap.startIndex + 2)
-      const top = y(gap.top)
-      const bottom = y(gap.bottom)
-      if (left === null || right === null || top === null || bottom === null) continue
+    // Only unfilled gaps keep a formation marker to the right of the middle candle.
+    const drawGap = (gap: SmcResult['fairValueGaps'][number]) => {
+      const index = gap.startIndex + 1
+      if (index < range.from - 2 || index > range.to + 1) return
+      const anchor = x(index)
+      if (anchor === null) return
+      const left = anchor
+      const right = anchor + barWidth
+      const top = y(gap.remainingTop)
+      const bottom = y(gap.remainingBottom)
+      if (top === null || bottom === null) return
       const mid = (top + bottom) / 2
       const color = gap.bullish ? SMC_COLORS.bullishFairValueGap : SMC_COLORS.bearishFairValueGap
       context.fillStyle = withAlpha(color, 0.8)
@@ -227,6 +231,28 @@ export function attachSmartMoneyOverlay(container: HTMLElement, chart: IChartApi
         const height = Math.max(to - from, 1)
         context.fillRect(left, from, right - left, height)
         context.strokeRect(left + 0.5, from + 0.5, Math.max(right - left - 1, 0), Math.max(height - 1, 0))
+      }
+    }
+    for (const gap of result.fairValueGaps) drawGap(gap)
+    // Each price layer stops at its own first refill candle. Open, partially
+    // mitigated gaps participate too; never extend the full box to the last fill.
+    if (showFilledGaps) for (const gap of [...result.fairValueGaps, ...result.filledFairValueGaps]) {
+      if (!gap.refills.length || gap.startIndex + 1 > range.to + 1) continue
+      const left = x(gap.startIndex + 1)
+      if (left === null) continue
+      const color = gap.bullish ? SMC_COLORS.bullishFairValueGap : SMC_COLORS.bearishFairValueGap
+      context.fillStyle = withAlpha(color, 0.2)
+      context.strokeStyle = withAlpha(color, 0.2)
+      context.lineWidth = 1
+      for (const refill of gap.refills) {
+        if (refill.index < range.from - 1) continue
+        const right = x(refill.index)
+        const top = y(refill.top), bottom = y(refill.bottom)
+        if (right === null || top === null || bottom === null) continue
+        const width = Math.max(right - left, 1), height = Math.max(Math.abs(bottom - top), 1)
+        const bandTop = Math.min(top, bottom)
+        context.fillRect(left, bandTop, width, height)
+        context.strokeRect(left + .5, bandTop + .5, Math.max(width - 1, 0), Math.max(height - 1, 0))
       }
     }
 
@@ -351,6 +377,12 @@ export function attachSmartMoneyOverlay(container: HTMLElement, chart: IChartApi
   schedule()
 
   return {
+    setShowFilledGaps(show) {
+      if (showFilledGaps === show) return
+      showFilledGaps = show
+      dataVersion += 1
+      schedule()
+    },
     setFutureTimes(times) {
       if (futureTimes === times) return
       futureTimes = times

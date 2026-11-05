@@ -12,6 +12,11 @@ const historyKey = (overrides: Partial<KeyboardEvent>) => resolveHistoryShortcut
 })
 
 describe('TradingView shortcut catalog', () => {
+  it('reserves Alt+G for filled gaps without conflicting with go-to-date', () => {
+    expect(TRADINGVIEW_SHORTCUTS.find(item => item.id === 'filled-gaps')?.keys).toBe('Alt+G')
+    expect(TRADINGVIEW_SHORTCUTS.find(item => item.id === 'go-date')?.keys).toBe('Alt+Shift+G')
+    expect(TRADINGVIEW_SHORTCUTS.filter(item => item.keys === 'Alt+G')).toHaveLength(1)
+  })
   it('parses every interval supported by the chart toolbar', () => {
     expect(parseIntervalShortcut('1')).toBe('1m')
     expect(parseIntervalShortcut('15m')).toBe('15m')

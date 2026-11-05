@@ -10,11 +10,15 @@ import { AlSwingApprenticePanel, type ApprenticeActionMarker } from './component
 import { AlertDialog, DataTableDialog, ObjectTreeDialog, OrderDialog } from './components/ChartActionDialogs'
 import { IndicatorLegend } from './components/IndicatorLegend'
 import { getHoverCandle, setHoverCandle, useHoverCandle } from './lib/hoverStore'
-import { ManualBarPicker, ManualPracticeAnnotations, ManualPracticeCenter, ManualPracticePanel, ManualReplayControls, ManualTimelineDialog, NoteKindSwitch, OpenTradeDialog, ReasonEditor } from './components/ManualPractice'
+import { ManualBarPicker, ManualPracticeAnnotations, ManualPracticeCenter, ManualPracticePanel, ManualReplayControls, ManualTimelineDialog, OpenTradeDialog, ReasonEditor } from './components/ManualPractice'
+import { ManualCandleBiasEditor } from './components/ManualCandleBiasEditor'
+import { ManualReviewCommentEditor } from './components/ManualReviewCommentEditor'
 import { useManualPracticeKeys } from './components/useManualPracticeKeys'
 import {
   advanceManualSession, aggregateMinutes, barTimeFor, cleanReasons, contextStartTime, createManualSession, findManualTradingDays, finishManualSession,
   manualReasonRows,
+  manualReviewCommentKey, saveManualReviewComment,
+  saveCandleBiasNotes,
   manualTimeline,
   lastRevealedMinute, loadManualPracticeStore, lowerBound, mergeManualPracticeStores, MANUAL_PRACTICE_SYMBOL, openTrade as manualOpenTrade, pickRandomTradingDay, saveManualPracticeStore,
   latestBackground, upsertBarNote, MANUAL_MAX_QUANTITY, NQ_POINT_VALUE_USD, tradeQuantity, type ManualPendingOrder, type ManualPracticeSession, type ManualPracticeStore, type ManualSide, type ManualTimelineItem,
@@ -42,6 +46,8 @@ import {
 } from './lib/chartContext'
 import { ALL_DRAWING_TOOLS, getTool, shouldExitDrawingMode } from './lib/toolCatalog'
 import { clearWorkspace, loadWorkspace, saveWorkspace } from './lib/persistence'
+import { usePageState, loadPageValue, savePageValue } from './lib/pageState'
+import { loadChartView } from './lib/chartViewPersistence'
 import { decisionExerciseNavigationDirection, isChartAnnotationVisibilityShortcut, isEditableShortcutTarget, parseIntervalShortcut, resolveHistoryShortcut, TRADINGVIEW_SHORTCUTS } from './lib/shortcuts'
 import { aggregateCandles, formatPrice, generateCandles, INTERVALS, SYMBOLS, type Candle, type IntervalId, type SymbolId } from './lib/market'
 import {
@@ -174,67 +180,69 @@ function App() {
   const requestedResearch = useMemo(() => researchSignalDataset(new URLSearchParams(window.location.search).get('research') ?? ''), [])
   const initialSymbol = apprenticeMode ? 'XAUUSD' : requestedResearch?.symbol ?? saved?.symbol ?? 'XAUUSD'
   // 1 分钟是旧版本的默认值；迁移到 5 分钟，同时继续保留用户明确保存的其它周期。
-  const initialInterval: IntervalId = apprenticeMode ? '5m' : requestedResearch?.interval ?? (saved?.interval && saved.interval !== '1m' ? saved.interval : DEFAULT_INTERVAL)
-  const [symbol, setSymbol] = useState<SymbolId>(initialSymbol)
-  const [interval, setIntervalId] = useState<IntervalId>(initialInterval)
-  const [chartType, setChartType] = useState<ChartType>(saved?.chartType ?? 'candles')
-  const [theme, setTheme] = useState<Theme>(() => initialTheme(saved?.theme))
-  const [priceScaleAuto, setPriceScaleAuto] = useState(saved?.priceScaleAuto ?? true)
-  const [priceScaleLog, setPriceScaleLog] = useState(saved?.priceScaleLog ?? false)
-  const [priceScalePercent, setPriceScalePercent] = useState(saved?.priceScalePercent ?? false)
-  const [priceScaleInverted, setPriceScaleInverted] = useState(saved?.priceScaleInverted ?? false)
-  const [indicators, setIndicators] = useState<IndicatorSettings>(saved?.indicators ?? DEFAULT_INDICATORS)
-  const [indicatorLegendExpanded, setIndicatorLegendExpanded] = useState(saved?.indicatorLegendExpanded ?? true)
+  const initialInterval: IntervalId = apprenticeMode ? '5m' : requestedResearch?.interval ?? saved?.interval ?? DEFAULT_INTERVAL
+  const [symbol, setSymbol] = usePageState<SymbolId>('symbol', initialSymbol)
+  const [interval, setIntervalId] = usePageState<IntervalId>('interval', initialInterval)
+  const initialViewContext = useRef({ symbol, interval, saved: Boolean(loadChartView(symbol, interval)) })
+  const [chartType, setChartType] = usePageState<ChartType>('chartType', saved?.chartType ?? 'candles')
+  const [theme, setTheme] = usePageState<Theme>('theme', () => initialTheme(saved?.theme))
+  const [priceScaleAuto, setPriceScaleAuto] = usePageState('priceScaleAuto', saved?.priceScaleAuto ?? true)
+  const [priceScaleLog, setPriceScaleLog] = usePageState('priceScaleLog', saved?.priceScaleLog ?? false)
+  const [priceScalePercent, setPriceScalePercent] = usePageState('priceScalePercent', saved?.priceScalePercent ?? false)
+  const [priceScaleInverted, setPriceScaleInverted] = usePageState('priceScaleInverted', saved?.priceScaleInverted ?? false)
+  const [indicators, setIndicators] = usePageState<IndicatorSettings>('indicators', saved?.indicators ?? DEFAULT_INDICATORS)
+  const [showFilledGaps, setShowFilledGaps] = usePageState('smcFilledGapsVisible', false)
+  const [indicatorLegendExpanded, setIndicatorLegendExpanded] = usePageState('indicatorLegendExpanded', saved?.indicatorLegendExpanded ?? true)
   const [drawings, dispatchDrawing] = useReducer(drawingReducer, { ...initialDrawingHistory, present: withoutTransientMeasurements(saved?.drawings ?? []) })
-  const [fullReviewDrawings, dispatchFullReviewDrawing] = useReducer(drawingReducer, initialDrawingHistory)
-  const [fullReviewShowUser, setFullReviewShowUser] = useState(true)
+  const [fullReviewDrawings, dispatchFullReviewDrawing] = useReducer(drawingReducer, { ...initialDrawingHistory, present: loadPageValue<Drawing[]>('fullReviewDrawings', []) })
+  const [fullReviewShowUser, setFullReviewShowUser] = usePageState('fullReviewShowUser', true)
   const [decisionDrawings, dispatchDecisionDrawing] = useReducer(drawingReducer, initialDrawingHistory)
-  const [activeTool, setActiveTool] = useState('cursor')
+  const [activeTool, setActiveTool] = usePageState('activeTool', 'cursor')
   const [drawingColor] = useState('#9abfff')
-  const [magnetMode, setMagnetMode] = useState<MagnetMode>('off')
-  const [keepDrawing, setKeepDrawing] = useState(false)
+  const [magnetMode, setMagnetMode] = usePageState<MagnetMode>('magnetMode', 'off')
+  const [keepDrawing, setKeepDrawing] = usePageState('keepDrawing', false)
   const [shiftMeasureActive, setShiftMeasureActive] = useState(false)
   const [quickMeasurement, setQuickMeasurement] = useState<Drawing | null>(null)
   const shiftMeasureActiveRef = useRef(false)
   const [drawingProjectionTick, refreshDrawingProjection] = useReducer((value: number) => value + 1, 0)
-  const [drawingsLocked, setDrawingsLocked] = useState(false)
-  const [drawingsHidden, setDrawingsHidden] = useState(false)
-  const [indicatorsHidden, setIndicatorsHidden] = useState(false)
-  const [syncDrawings, setSyncDrawings] = useState(false)
-  const [chartAnnotationsHidden, setChartAnnotationsHidden] = useState(false)
-  const [symbolPickerOpen, setSymbolPickerOpen] = useState(false)
-  const [symbolQuery, setSymbolQuery] = useState('')
-  const [indicatorPanelOpen, setIndicatorPanelOpen] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const [watchlistOpen, setWatchlistOpen] = useState(false)
-  const [chartMenuOpen, setChartMenuOpen] = useState(false)
-  const [quickSearchOpen, setQuickSearchOpen] = useState(false)
-  const [quickSearchQuery, setQuickSearchQuery] = useState('')
-  const [intervalDialogOpen, setIntervalDialogOpen] = useState(false)
-  const [intervalDraft, setIntervalDraft] = useState('')
-  const [goToDateOpen, setGoToDateOpen] = useState(false)
-  const [shortcutsOpen, setShortcutsOpen] = useState(false)
-  const [drawingSettingsId, setDrawingSettingsId] = useState<string | null>(null)
-  const [drawingSettingsTab, setDrawingSettingsTab] = useState<LineSettingsTab>('style')
+  const [drawingsLocked, setDrawingsLocked] = usePageState('drawingsLocked', false)
+  const [drawingsHidden, setDrawingsHidden] = usePageState('drawingsHidden', false)
+  const [indicatorsHidden, setIndicatorsHidden] = usePageState('indicatorsHidden', false)
+  const [syncDrawings, setSyncDrawings] = usePageState('syncDrawings', false)
+  const [chartAnnotationsHidden, setChartAnnotationsHidden] = usePageState('chartAnnotationsHidden', false)
+  const [symbolPickerOpen, setSymbolPickerOpen] = usePageState('symbolPickerOpen', false)
+  const [symbolQuery, setSymbolQuery] = usePageState('symbolQuery', '')
+  const [indicatorPanelOpen, setIndicatorPanelOpen] = usePageState('indicatorPanelOpen', false)
+  const [settingsOpen, setSettingsOpen] = usePageState('settingsOpen', false)
+  const [watchlistOpen, setWatchlistOpen] = usePageState('watchlistOpen', false)
+  const [chartMenuOpen, setChartMenuOpen] = usePageState('chartMenuOpen', false)
+  const [quickSearchOpen, setQuickSearchOpen] = usePageState('quickSearchOpen', false)
+  const [quickSearchQuery, setQuickSearchQuery] = usePageState('quickSearchQuery', '')
+  const [intervalDialogOpen, setIntervalDialogOpen] = usePageState('intervalDialogOpen', false)
+  const [intervalDraft, setIntervalDraft] = usePageState('intervalDraft', '')
+  const [goToDateOpen, setGoToDateOpen] = usePageState('goToDateOpen', false)
+  const [shortcutsOpen, setShortcutsOpen] = usePageState('shortcutsOpen', false)
+  const [drawingSettingsId, setDrawingSettingsId] = usePageState<string | null>('drawingSettingsId', null)
+  const [drawingSettingsTab, setDrawingSettingsTab] = usePageState<LineSettingsTab>('drawingSettingsTab', 'style')
   const [chartContext, setChartContext] = useState<ChartContextData | null>(null)
-  const [alertDraft, setAlertDraft] = useState<{ price: number } | null>(null)
-  const [orderDraft, setOrderDraft] = useState<{ price: number; side: PaperOrder['side']; type: PaperOrder['type'] } | null>(null)
-  const [dataTableOpen, setDataTableOpen] = useState(false)
-  const [objectTreeOpen, setObjectTreeOpen] = useState(Boolean(requestedResearch))
-  const [collapsedReplayRangeLayerIds, setCollapsedReplayRangeLayerIds] = useState<string[]>(saved?.collapsedReplayRangeLayerIds ?? [])
-  const [lockedCursorTime, setLockedCursorTime] = useState<number | null>(null)
+  const [alertDraft, setAlertDraft] = usePageState<{ price: number } | null>('alertDraft', null)
+  const [orderDraft, setOrderDraft] = usePageState<{ price: number; side: PaperOrder['side']; type: PaperOrder['type'] } | null>('orderDraft', null)
+  const [dataTableOpen, setDataTableOpen] = usePageState('dataTableOpen', false)
+  const [objectTreeOpen, setObjectTreeOpen] = usePageState('objectTreeOpen', Boolean(requestedResearch))
+  const [collapsedReplayRangeLayerIds, setCollapsedReplayRangeLayerIds] = usePageState<string[]>('collapsedReplayRangeLayerIds', saved?.collapsedReplayRangeLayerIds ?? [])
+  const [lockedCursorTime, setLockedCursorTime] = usePageState<number | null>('lockedCursorTime', null)
   const [chartAlerts, setChartAlerts] = useState<ChartAlert[]>(loadChartAlerts)
   const [paperOrders, setPaperOrders] = useState<PaperOrder[]>(loadPaperOrders)
   const [replayTradeLayers, setReplayTradeLayers] = useState<ReplayTradeLayer[]>(loadWeeklyMergedReplayTradeLayers)
   const [replayRangeLayers, setReplayRangeLayers] = useState<ReplayRangeLayer[]>(loadReplayRangeLayers)
-  const [visibleResearchSignalSourceId, setVisibleResearchSignalSourceId] = useState<string | null>(() => (
+  const [visibleResearchSignalSourceId, setVisibleResearchSignalSourceId] = usePageState<string | null>('visibleResearchSignalSourceId', () => (
     requestedResearch?.sourceId ?? researchSignalDatasetInfos().find((layer) => layer.sourceId === 'al-swing-apprentice-v2-fast')?.sourceId
       ?? researchSignalDatasetInfos().find((layer) => layer.sourceId === 'pa-case-filter-old81-reviewed')?.sourceId
       ?? researchSignalDatasetInfos()[0]?.sourceId
       ?? null
   ))
-  const [showAllResearchReviews, setShowAllResearchReviews] = useState(false)
-  const [selectedReplayRangeId, setSelectedReplayRangeId] = useState<string | null>(null)
+  const [showAllResearchReviews, setShowAllResearchReviews] = usePageState('showAllResearchReviews', false)
+  const [selectedReplayRangeId, setSelectedReplayRangeId] = usePageState<string | null>('selectedReplayRangeId', null)
   const [drawingClipboardAvailable, setDrawingClipboardAvailable] = useState(false)
   const [favoriteTools, setFavoriteTools] = useState<string[]>(loadFavoriteTools)
   const [contextOverlayPositions, setContextOverlayPositions] = useState<{
@@ -242,16 +250,16 @@ function App() {
     alertY: Record<string, number | null>
     orderY: Record<string, number | null>
   }>({ lockedCursorX: null, alertY: {}, orderY: {} })
-  const [live, setLive] = useState(false)
+  const [live, setLive] = usePageState('live', false)
   const [liveTick, setLiveTick] = useState(0)
-  const [replayPanelOpen, setReplayPanelOpen] = useState(false)
-  const [replaySelecting, setReplaySelecting] = useState(false)
-  const [replayCursor, setReplayCursor] = useState<number | null>(null)
-  const [replayPlaying, setReplayPlaying] = useState(false)
-  const [replaySpeedValue, setReplaySpeedValue] = useState(10)
-  const [replayResolutionSeconds, setReplayResolutionSeconds] = useState(INTERVALS[initialInterval].seconds)
-  const [replayAutoResolution, setReplayAutoResolution] = useState(true)
-  const [replayStartMode, setReplayStartMode] = useState<ReplayStartMode>('bar')
+  const [replayPanelOpen, setReplayPanelOpen] = usePageState('replayPanelOpen', false)
+  const [replaySelecting, setReplaySelecting] = usePageState('replaySelecting', false)
+  const [replayCursor, setReplayCursor] = usePageState<number | null>('replayCursor', null)
+  const [replayPlaying, setReplayPlaying] = usePageState('replayPlaying', false)
+  const [replaySpeedValue, setReplaySpeedValue] = usePageState('replaySpeedValue', 10)
+  const [replayResolutionSeconds, setReplayResolutionSeconds] = usePageState('replayResolutionSeconds', INTERVALS[initialInterval].seconds)
+  const [replayAutoResolution, setReplayAutoResolution] = usePageState('replayAutoResolution', true)
+  const [replayStartMode, setReplayStartMode] = usePageState<ReplayStartMode>('replayStartMode', 'bar')
   const [replayPointer, setReplayPointer] = useState<{ x: number; time: number } | null>(null)
   const [toast, setToast] = useState('')
   const [privateSyncBusy, setPrivateSyncBusy] = useState(false)
@@ -273,49 +281,53 @@ function App() {
     setRawDecisionStore(current => applyShapeCuration(typeof update === 'function' ? update(current) : update))
   }, [])
   const [decisionFavoriteKeys, setDecisionFavoriteKeys] = useState(loadDecisionReplayFavorites)
-  const [decisionCenterOpen, setDecisionCenterOpen] = useState(false)
-  const [decisionHistoryOpen, setDecisionHistoryOpen] = useState(false)
-  const [fullReviewSession, setFullReviewSession] = useState<DecisionReplaySession | null>(null)
-  const [decisionResultsSessionId, setDecisionResultsSessionId] = useState<string | null>(null)
-  const [decisionOverviewSessionId, setDecisionOverviewSessionId] = useState<string | null>(null)
+  const [decisionCenterOpen, setDecisionCenterOpen] = usePageState('decisionCenterOpen', false)
+  const [decisionHistoryOpen, setDecisionHistoryOpen] = usePageState('decisionHistoryOpen', false)
+  const [fullReviewSession, setFullReviewSession] = usePageState<DecisionReplaySession | null>('fullReviewSession', null)
+  const [decisionResultsSessionId, setDecisionResultsSessionId] = usePageState<string | null>('decisionResultsSessionId', null)
+  const [decisionOverviewSessionId, setDecisionOverviewSessionId] = usePageState<string | null>('decisionOverviewSessionId', null)
+  const initialReviewSessionId = useRef(fullReviewSession?.id ?? null)
+  const initialOverviewSessionId = useRef(decisionOverviewSessionId)
   const overviewReturnRef = useRef<{ symbol: typeof symbol; interval: typeof interval } | null>(null)
   // When an old result is redone, keep the official active exercise resumable
   // underneath the independent review session.
-  const [decisionReviewReturnSessionId, setDecisionReviewReturnSessionId] = useState<string | null>(null)
+  const [decisionReviewReturnSessionId, setDecisionReviewReturnSessionId] = usePageState<string | null>('decisionReviewReturnSessionId', null)
   const [decisionFocusTick, setDecisionFocusTick] = useState(0)
-  const [decisionPriceDraft, setDecisionPriceDraft] = useState<number | null>(null)
-  const [decisionRiskDraft, setDecisionRiskDraft] = useState<{ stopLoss: number; takeProfit: number } | null>(null)
+  const [decisionPriceDraft, setDecisionPriceDraft] = usePageState<number | null>('decisionPriceDraft', null)
+  const [decisionRiskDraft, setDecisionRiskDraft] = usePageState<{ stopLoss: number; takeProfit: number } | null>('decisionRiskDraft', null)
   const [decisionCurrentCandleX, setDecisionCurrentCandleX] = useState<number | null>(null)
   // 自主逐K复盘（NQ1!，无AI信号）. `activeSessionId` is the paper currently on the chart;
   // paused papers keep status "active" and are resumed from the start dialog.
   const [manualStore, setManualStore] = useState<ManualPracticeStore>(loadManualPracticeStore)
-  const [manualCenterOpen, setManualCenterOpen] = useState(false)
-  const [manualReviewId, setManualReviewId] = useState<string | null>(null)
-  const [manualTimelineOpen, setManualTimelineOpen] = useState(false)
+  const [manualCenterOpen, setManualCenterOpen] = usePageState('manualCenterOpen', false)
+  const [manualReviewId, setManualReviewId] = usePageState<string | null>('manualReviewId', null)
+  const [manualTimelineOpen, setManualTimelineOpen] = usePageState('manualTimelineOpen', false)
   // Review look-back: end time (exclusive) of the candles still shown while replaying a finished paper.
-  const [manualReplayEnd, setManualReplayEnd] = useState<number | null>(null)
+  const [manualReplayEnd, setManualReplayEnd] = usePageState<number | null>('manualReplayEnd', null)
   // Auto-scale is frozen while replaying so hiding the later candles does not rescale the chart.
-  const manualReplayAutoScaleRef = useRef<boolean | null>(null)
-  const manualNoteDraftRef = useRef<(() => { reasons: string[]; background: string }) | null>(null)
-  // Drawings that existed when the replay started (only these are clipped at the replay candle).
-  const [manualReplayDrawingIds, setManualReplayDrawingIds] = useState<ReadonlySet<string> | null>(null)
-  const [manualDialog, setManualDialog] = useState<
+  const manualReplayAutoScaleRef = useRef<boolean | null>(loadPageValue('manualReplayAutoScale', null))
+  // Historical drawings reveal only after all anchor candles appear; new replay drawings stay visible.
+  const [manualReplayDrawingIds, setManualReplayDrawingIds] = usePageState<ReadonlySet<string> | null>('manualReplayDrawingIds', null)
+  const [manualDialog, setManualDialog] = usePageState<
     | { type: 'open'; side: ManualSide; price: number }
     | { type: 'close' }
     | { type: 'note'; barTime: number; interval: IntervalId; initial: string[]; background: string; existing: boolean; kind: 'no-trade' | 'should-trade'; side: ManualSide }
     | { type: 'edit'; item: ManualTimelineItem }
+    | { type: 'review-comment'; item: ManualTimelineItem }
     | null
-  >(null)
+  >('manualDialog', null)
   // Live stop / target / contracts for the trade being opened (dragged on the chart, mirrored in the card).
-  const [manualRisk, setManualRisk] = useState<{ entryPrice: number; stopLoss: number; takeProfit: number; quantity: number } | null>(null)
+  const [manualRisk, setManualRisk] = usePageState<{ entryPrice: number; stopLoss: number; takeProfit: number; quantity: number } | null>('manualRisk', null)
   const [manualFocusTick, setManualFocusTick] = useState(0)
   // Look-back mode: the next chart click picks an earlier candle to record reasons for.
-  const [manualPicking, setManualPicking] = useState(false)
-  const [manualHighlightTime, setManualHighlightTime] = useState<number | null>(null)
-  const [manualHighlightPrice, setManualHighlightPrice] = useState<number | null>(null)
+  const [manualPicking, setManualPicking] = usePageState('manualPicking', false)
+  const [manualHighlightTime, setManualHighlightTime] = usePageState<number | null>('manualHighlightTime', null)
+  const [manualHighlightPrice, setManualHighlightPrice] = usePageState<number | null>('manualHighlightPrice', null)
   const [manualLoading, setManualLoading] = useState(false)
   const decisionDrawingContextRef = useRef<string | null>(null)
   const decisionDrawingLoadingRef = useRef(false)
+  const decisionDrawingSnapshotRef = useRef(decisionDrawings.present)
+  useLayoutEffect(() => { decisionDrawingSnapshotRef.current = decisionDrawings.present }, [decisionDrawings.present])
   const decisionStoreRef = useRef(decisionStore)
   const decisionPersistTimerRef = useRef<number | null>(null)
   const decisionSessionStartLockRef = useRef(false)
@@ -430,6 +442,18 @@ function App() {
   const effectiveDrawingTool = activeTool === 'cursor' && shiftMeasureActive ? 'measure' : activeTool
   const activeDefinition = getTool(effectiveDrawingTool)
   const selectedDrawing = uiDrawings.present.find((item) => item.id === uiDrawings.selectedId)
+  const selectionToRestore = useRef(loadPageValue<string | null>('selectedDrawingId', null))
+  const selectionRestored = useRef(false)
+  useEffect(() => {
+    if (!selectionRestored.current) {
+      const id = selectionToRestore.current
+      if (id && !uiDrawings.present.some(drawing => drawing.id === id)) return
+      selectionRestored.current = true
+      if (id) { dispatchUiDrawing({ type: 'select', id }); return }
+    }
+    savePageValue('selectedDrawingId', uiDrawings.selectedId)
+  }, [uiDrawings.present, uiDrawings.selectedId, dispatchUiDrawing])
+  useLayoutEffect(() => { savePageValue('fullReviewDrawings', withoutTransientMeasurements(fullReviewDrawings.present)) }, [fullReviewDrawings.present])
   const drawingSettingsTarget = uiDrawings.present.find((item) => item.id === drawingSettingsId) ?? null
   const selectedDrawingIds = useMemo(
     () => uiDrawings.selectedIds ?? (uiDrawings.selectedId ? [uiDrawings.selectedId] : []),
@@ -440,7 +464,7 @@ function App() {
     { id: 'interval', label: '更改周期', detail: '输入分钟、小时、日或周周期', shortcut: '数字 / ,' },
     { id: 'indicators', label: '技术指标', detail: '打开指标面板', shortcut: '/' },
     { id: 'settings', label: '图表设置', detail: '外观、坐标与工作区设置' },
-    { id: 'go-date', label: '转到日期', detail: '将当前视图居中到指定时间', shortcut: 'Alt+G' },
+    { id: 'go-date', label: '转到日期', detail: '将当前视图居中到指定时间', shortcut: 'Alt+Shift+G' },
     { id: 'replay', label: 'K 线回放', detail: '选择一根 K 线作为回放起点' },
     { id: 'snapshot', label: '图表快照', detail: '下载快照并复制当前地址', shortcut: 'Alt+S' },
     { id: 'reset-chart', label: '重置图表', detail: '适应全部可用数据', shortcut: 'Alt+R' },
@@ -469,7 +493,6 @@ function App() {
   )
   useEffect(() => {
     // Keep the selected research layer valid after a symbol or interval change.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setVisibleResearchSignalSourceId((current) => {
       if (current && researchSignalLayers.some((layer) => layer.sourceId === current)) return current
       return researchSignalLayers.find((layer) => layer.sourceId === 'al-swing-apprentice-v2-fast')?.sourceId
@@ -477,7 +500,7 @@ function App() {
         ?? researchSignalLayers[0]?.sourceId
         ?? null
     })
-  }, [researchSignalLayers])
+  }, [researchSignalLayers, setVisibleResearchSignalSourceId])
   const visibleResearchSignalSourceIds = useMemo(() => (
     !decisionMode && visibleResearchSignalSourceId && researchSignalLayers.some((layer) => layer.sourceId === visibleResearchSignalSourceId)
       ? [visibleResearchSignalSourceId]
@@ -639,9 +662,10 @@ function App() {
   }, [manualData, nqMinutes, interval])
   useEffect(() => {
     if (!fullReviewSession || !fullReviewData.length) return
+    if (initialReviewSessionId.current === fullReviewSession.id && initialViewContext.current.saved && initialViewContext.current.symbol === symbol && initialViewContext.current.interval === interval) return
     const timer = window.setTimeout(() => chartRef.current?.focusLatest(), 0)
     return () => window.clearTimeout(timer)
-  }, [fullReviewSession, fullReviewCandidate, interval, fullReviewData.length])
+  }, [fullReviewSession, fullReviewCandidate, interval, symbol, fullReviewData.length])
   const replayAtEnd = normalizedReplayCursor !== null && normalizedReplayCursor >= baseData.at(-1)!.time + chartSeconds
   // Latest candle. The crosshair candle lives in lib/hoverStore so hovering does not re-render App.
   const candle = data.at(-1) ?? baseData.at(-1)!
@@ -884,7 +908,7 @@ function App() {
     if (!manualMode || symbol === MANUAL_PRACTICE_SYMBOL) return
     const timer = window.setTimeout(() => setSymbol(MANUAL_PRACTICE_SYMBOL), 0)
     return () => window.clearTimeout(timer)
-  }, [manualMode, symbol])
+  }, [manualMode, setSymbol, symbol])
 
   // A crosshair candle from the previous symbol/interval must not linger in the readouts.
   useEffect(() => setHoverCandle(null), [symbol, interval])
@@ -952,7 +976,15 @@ function App() {
         window.clearTimeout(decisionPersistTimerRef.current)
         decisionPersistTimerRef.current = null
       }
-      saveDecisionReplayStoreSnapshot(decisionStoreRef.current)
+      // A tab can close before the drawing debounce commits to the session.
+      const candidateKey = decisionDrawingContextRef.current
+      const current = decisionStoreRef.current
+      const snapshot = candidateKey && !decisionDrawingLoadingRef.current
+        ? { ...current, sessions: current.sessions.map(session => session.id === current.activeSessionId
+          ? updateDecisionSessionDrawings(session, candidateKey, withoutTransientMeasurements(decisionDrawingSnapshotRef.current))
+          : session) }
+        : current
+      saveDecisionReplayStoreSnapshot(snapshot)
       saveDecisionReplayFavorites(decisionFavoriteKeysRef.current)
     }
     const flushWhenHidden = () => { if (document.visibilityState === 'hidden') flushDecisionProgress() }
@@ -1000,7 +1032,7 @@ function App() {
         window.setTimeout(focus, 1000)
       })
     })
-  }, [])
+  }, [setPriceScaleAuto])
 
   const focusDecisionDayChart = useCallback(() => {
     const focus = () => {
@@ -1016,17 +1048,18 @@ function App() {
     window.setTimeout(focus, 300)
     window.setTimeout(focus, 600)
     window.setTimeout(focus, 1000)
-  }, [])
+  }, [setPriceScaleAuto])
 
   useEffect(() => {
     if (!decisionOverviewMode || decisionOverviewData.length === 0) return
+    if (initialOverviewSessionId.current === decisionOverviewSessionId && initialViewContext.current.saved && initialViewContext.current.symbol === symbol && initialViewContext.current.interval === interval) return
     const focus = () => {
       setPriceScaleAuto(true)
       chartRef.current?.fitContent()
     }
     const timers = [0, 120, 300, 600].map((delay) => window.setTimeout(focus, delay))
     return () => timers.forEach(window.clearTimeout)
-  }, [decisionOverviewData.length, decisionOverviewMode, decisionOverviewSessionId])
+  }, [decisionOverviewData.length, decisionOverviewMode, decisionOverviewSessionId, setPriceScaleAuto, symbol, interval])
 
   const focusCurrentDecisionChart = useCallback(() => {
     if (decisionDayMode) focusDecisionDayChart()
@@ -1041,22 +1074,28 @@ function App() {
     : null
   const decisionContextSymbol = decisionSubject?.symbol ?? null
   const decisionContextInterval = decisionSubject?.interval ?? null
+  const initialDecisionContextKey = useRef(decisionContextKey)
+  const initialDecisionContextPending = useRef(true)
 
   useEffect(() => {
     if (!decisionContextKey || !decisionContextSymbol || !decisionContextInterval) return
     const timer = window.setTimeout(() => {
-      setSymbol(decisionContextSymbol)
-      setIntervalId(decisionContextInterval)
-      setReplayPanelOpen(false)
-      setReplaySelecting(false)
-      setReplayCursor(null)
-      setReplayPlaying(false)
-      setReplayPointer(null)
-      setLive(false)
-      setHoverCandle(null)
-      setQuickMeasurement(null)
-      setSelectedReplayRangeId(null)
-      setObjectTreeOpen(false)
+      const restoringPage = initialDecisionContextPending.current && initialDecisionContextKey.current === decisionContextKey
+      initialDecisionContextPending.current = false
+      if (!restoringPage) {
+        setSymbol(decisionContextSymbol)
+        setIntervalId(decisionContextInterval)
+        setReplayPanelOpen(false)
+        setReplaySelecting(false)
+        setReplayCursor(null)
+        setReplayPlaying(false)
+        setReplayPointer(null)
+        setLive(false)
+        setHoverCandle(null)
+        setQuickMeasurement(null)
+        setSelectedReplayRangeId(null)
+        setObjectTreeOpen(false)
+      }
       const store = decisionStoreRef.current
       const activeSession = store.activeSessionId ? store.sessions.find((session) => session.id === store.activeSessionId) : null
       const currentAttempt = currentDecisionAttempt(activeSession)
@@ -1081,11 +1120,11 @@ function App() {
         // A day-sequence session is one continuous chart. Candidate changes
         // only swap the answer/drawing context and must not recenter the
         // viewport. The initial day focus is handled by the mode effect below.
-        if (!decisionDayMode) focusDecisionChartLatest()
+        if (!decisionDayMode && !(restoringPage && initialViewContext.current.saved)) focusDecisionChartLatest()
       }, 0)
     }, 0)
     return () => window.clearTimeout(timer)
-  }, [decisionContextInterval, decisionContextKey, decisionContextSymbol, decisionDayMode, focusDecisionChartLatest])
+  }, [decisionContextInterval, decisionContextKey, decisionContextSymbol, decisionDayMode, focusDecisionChartLatest, setIntervalId, setLive, setObjectTreeOpen, setReplayCursor, setReplayPanelOpen, setReplayPlaying, setReplaySelecting, setSelectedReplayRangeId, setSymbol])
 
   useEffect(() => {
     const candidateKey = decisionDrawingContextRef.current
@@ -1108,9 +1147,10 @@ function App() {
 
   useEffect(() => {
     if (!decisionMode) return
+    if (initialViewContext.current.saved && initialViewContext.current.symbol === symbol && initialViewContext.current.interval === interval && decisionFocusTick === 0) return
     if (decisionDayMode) focusDecisionDayChart()
     else focusDecisionChartLatest()
-  }, [decisionDayMode, decisionMode, focusDecisionChartLatest, focusDecisionDayChart, interval])
+  }, [decisionDayMode, decisionMode, decisionFocusTick, focusDecisionChartLatest, focusDecisionDayChart, interval, symbol])
 
   // Do not focus the day chart when decisionData grows. ChartSurface preserves
   // its visible logical range as key 1 reveals each candle, matching ordinary
@@ -1150,14 +1190,13 @@ function App() {
       if (next.ended) setReplayPlaying(false)
     }, replaySpeed(replaySpeedValue).delay)
     return () => window.clearTimeout(timer)
-  }, [baseData, chartSeconds, effectiveReplayResolution, normalizedReplayCursor, replayPlaying, replaySpeedValue])
+  }, [baseData, chartSeconds, effectiveReplayResolution, normalizedReplayCursor, replayPlaying, replaySpeedValue, setReplayCursor, setReplayPlaying])
 
   useEffect(() => {
-    const timer = window.setTimeout(() => saveWorkspace({
+    saveWorkspace({
       symbol, interval, chartType, theme, priceScaleAuto, priceScaleLog, priceScalePercent, priceScaleInverted,
       indicators, indicatorLegendExpanded, drawings: withoutTransientMeasurements(drawings.present), collapsedReplayRangeLayerIds,
-    }), 120)
-    return () => window.clearTimeout(timer)
+    })
   }, [chartType, collapsedReplayRangeLayerIds, drawings.present, indicatorLegendExpanded, indicators, interval, priceScaleAuto, priceScaleInverted, priceScaleLog, priceScalePercent, symbol, theme])
 
   const notify = useCallback((message: string) => {
@@ -1270,7 +1309,7 @@ function App() {
     notify(sampledDay
       ? `${selectedLossDay ? `已随机抽取AI亏损日 ${selectedLossDay.symbol} ${INTERVALS[selectedLossDay.interval].label} ${formatDecisionDay(selectedLossDay.startTime)} · ` : ''}按时间顺序练习 ${selected.length} 笔`
       : `已随机抽取 ${selected.length} 笔，开始严格因果决策回放`)
-  }, [setDecisionStore, shapeExclusions, allDecisionCandidates, availableDecisionHistoryBySymbol, decisionAiDaySummariesByMode, normalizedDecisionStore.seenTradeKeys, normalizedDecisionStore.sessions, notify])
+  }, [shapeExclusions, allDecisionCandidates, decisionAiDaySummariesByMode, normalizedDecisionStore.sessions, normalizedDecisionStore.seenTradeKeys, setDecisionStore, setDecisionCenterOpen, setDecisionResultsSessionId, setDecisionReviewReturnSessionId, setDecisionPriceDraft, setDecisionRiskDraft, notify, availableDecisionHistoryBySymbol])
 
   const beginAnomalyReview = useCallback((positionSizingModes: DecisionPositionSizingMode[]) => {
     if (decisionSessionStartLockRef.current || replayableDecisionAnomalies.length === 0) return
@@ -1299,7 +1338,7 @@ function App() {
     setDecisionFocusTick((value) => value + 1)
     focusDecisionChartLatest()
     notify(`${unfinished ? '继续' : '已创建'}异常订单独立重做卷，共 ${session.candidates.length} 题；原记录保留`)
-  }, [setDecisionStore, decisionReviewReturnSessionId, focusDecisionChartLatest, normalizedDecisionStore, notify, replayableDecisionAnomalies])
+  }, [replayableDecisionAnomalies, normalizedDecisionStore.sessions, normalizedDecisionStore.activeSessionId, setDecisionStore, setDecisionReviewReturnSessionId, decisionReviewReturnSessionId, setDecisionCenterOpen, setDecisionHistoryOpen, setDecisionResultsSessionId, setDecisionPriceDraft, setDecisionRiskDraft, focusDecisionChartLatest, notify])
 
   const completeDecisionTrade = useCallback((resolvedAttempt: DecisionAttempt, exit: DecisionExit, advanceImmediately = false) => {
     if (!activeDecisionSession || !activeDecisionCandidate) return
@@ -1382,7 +1421,7 @@ function App() {
         focusDecisionChartLatest()
       }
     }
-  }, [setDecisionStore, activeDecisionCandidate, activeDecisionSession, decisionDayMode, decisionDrawings.present, decisionReviewReturnSessionId, focusDecisionChartLatest, notify])
+  }, [activeDecisionSession, activeDecisionCandidate, decisionDrawings.present, setDecisionStore, setDecisionPriceDraft, setDecisionRiskDraft, decisionReviewReturnSessionId, notify, decisionDayMode, setDecisionResultsSessionId, setDecisionReviewReturnSessionId, focusDecisionChartLatest])
 
   const goToNextDecisionTrade = useCallback(() => {
     if (!activeDecisionSession || !activeDecisionCandidate || !activeDecisionAttempt?.result || activeDecisionAttempt.stage !== 'post-exit') return
@@ -1464,7 +1503,7 @@ function App() {
       }
       notify('已进入下一笔交易')
     }
-  }, [setDecisionStore, activeDecisionAttempt, activeDecisionCandidate, activeDecisionDaySequence, activeDecisionSession, decisionDayMode, decisionDrawings.present, decisionReviewReturnSessionId, focusDecisionChartLatest, notify])
+  }, [activeDecisionSession, activeDecisionCandidate, activeDecisionAttempt, activeDecisionDaySequence, decisionDrawings.present, setDecisionStore, decisionReviewReturnSessionId, notify, setDecisionResultsSessionId, setDecisionReviewReturnSessionId, focusDecisionChartLatest, decisionDayMode])
 
   const restartActiveDecisionTrade = useCallback(() => {
     if (!activeDecisionSession || !activeDecisionCandidate || activeDecisionAttempt?.stage !== 'post-exit') return
@@ -1492,7 +1531,7 @@ function App() {
     if (!decisionDayMode) setDecisionFocusTick((value) => value + 1)
     focusCurrentDecisionChart()
     notify('已回到信号 K，重新开始本笔交易')
-  }, [setDecisionStore, activeDecisionAttempt, activeDecisionCandidate, activeDecisionSession, decisionDayMode, focusCurrentDecisionChart, notify])
+  }, [activeDecisionSession, activeDecisionCandidate, activeDecisionAttempt, setDecisionStore, setDecisionResultsSessionId, setDecisionPriceDraft, setDecisionRiskDraft, decisionDayMode, focusCurrentDecisionChart, notify])
 
   const stopDecisionSession = useCallback(() => {
     if (!activeDecisionSession) return
@@ -1510,7 +1549,7 @@ function App() {
     notify(decisionSessionPracticeMode(activeDecisionSession) === 'day-sequence'
       ? '已提前退出：本交易日不计为已练习，之后仍可随机抽到'
       : `已提前退出，保留 ${sessionResults(activeDecisionSession).length} 笔已完成结果`)
-  }, [setDecisionStore, activeDecisionSession, decisionReviewReturnSessionId, notify])
+  }, [activeDecisionSession, decisionReviewReturnSessionId, setDecisionStore, setDecisionResultsSessionId, setDecisionPriceDraft, setDecisionRiskDraft, notify])
 
   const finishDecisionRoundAtMarketEnd = useCallback((marketEndCandle: Candle) => {
     if (!decisionDayMode || !activeDecisionSession || !activeDecisionCandidate || !activeDecisionAttempt) return
@@ -1544,7 +1583,7 @@ function App() {
       : activeDecisionAttempt.stage === 'order-pending'
         ? '已到达本交易日最后一根 K 线：未成交挂单已结束，本轮结算完成'
         : '已到达本交易日最后一根 K 线，本轮结算完成')
-  }, [setDecisionStore, activeDecisionAttempt, activeDecisionCandidate, activeDecisionSession, decisionDayMode, decisionDrawings.present, decisionReviewReturnSessionId, notify])
+  }, [decisionDayMode, activeDecisionSession, activeDecisionCandidate, activeDecisionAttempt, decisionDrawings.present, decisionReviewReturnSessionId, setDecisionStore, setDecisionResultsSessionId, setDecisionPriceDraft, setDecisionRiskDraft, notify])
 
   useEffect(() => {
     if (!decisionDayMode || !activeDecisionAttempt || decisionSourceData.length === 0) return
@@ -1600,7 +1639,7 @@ function App() {
     setDecisionPriceDraft(price)
     setDecisionRiskDraft(levels)
     updateActiveDecisionAttempt((attempt) => ({ ...attempt, stopLossMode: 'close', entryMode: 'signal-extreme', orderKind: 'stop', pendingEntryPrice: price, stage: 'risk-setup' }))
-  }, [activeDecisionAttempt, activeDecisionCandidate, decisionSignalReached, decisionSourceData, updateActiveDecisionAttempt])
+  }, [activeDecisionAttempt, activeDecisionCandidate, decisionSignalReached, decisionSourceData, setDecisionPriceDraft, setDecisionRiskDraft, updateActiveDecisionAttempt])
 
   const chooseFreePriceOrder = useCallback(() => {
     if (!activeDecisionAttempt || !decisionSignalReached) return
@@ -1609,7 +1648,7 @@ function App() {
     setDecisionPriceDraft(current.close)
     setDecisionRiskDraft(null)
     updateActiveDecisionAttempt((attempt) => ({ ...attempt, stopLossMode: 'close', entryMode: 'free-price', orderKind: null, pendingEntryPrice: null, stage: 'entry-price' }))
-  }, [activeDecisionAttempt, decisionSignalReached, decisionSourceData, updateActiveDecisionAttempt])
+  }, [activeDecisionAttempt, decisionSignalReached, decisionSourceData, setDecisionPriceDraft, setDecisionRiskDraft, updateActiveDecisionAttempt])
 
   const chooseDayExtremeOrder = useCallback((side: 'long' | 'short') => {
     if (!decisionDayMode || !activeDecisionAttempt || !activeDecisionCandidate || !['entry-decision', 'post-exit'].includes(activeDecisionAttempt.stage)) return
@@ -1651,7 +1690,7 @@ function App() {
       fill: null,
       stage: 'risk-setup',
     }))
-  }, [setDecisionStore, activeDecisionAttempt, activeDecisionCandidate, activeDecisionSession, decisionDayMode, decisionDrawings.present, decisionSourceData, notify, updateActiveDecisionAttempt])
+  }, [decisionDayMode, activeDecisionAttempt, activeDecisionCandidate, decisionSourceData, setDecisionPriceDraft, setDecisionRiskDraft, updateActiveDecisionAttempt, activeDecisionSession, decisionDrawings.present, setDecisionStore, notify])
 
   useEffect(() => {
     if (!decisionDayMode || !activeDecisionAttempt || !activeDecisionCandidate || activeDecisionAttempt.stage !== 'risk-setup' || activeDecisionAttempt.entryMode !== 'market-close') return
@@ -1672,13 +1711,13 @@ function App() {
       }))
     }, 0)
     return () => window.clearTimeout(migrationTimer)
-  }, [activeDecisionAttempt, activeDecisionCandidate, decisionDayMode, decisionSourceData, updateActiveDecisionAttempt])
+  }, [activeDecisionAttempt, activeDecisionCandidate, decisionDayMode, decisionSourceData, setDecisionPriceDraft, setDecisionRiskDraft, updateActiveDecisionAttempt])
 
   const cancelDecisionSetup = useCallback(() => {
     setDecisionPriceDraft(null)
     setDecisionRiskDraft(null)
     updateActiveDecisionAttempt((attempt) => ({ ...attempt, stage: 'entry-decision', userSide: undefined, stopLossMode: 'close', entryMode: null, orderKind: null, pendingEntryPrice: null, initialStopLoss: null, stopLoss: null, takeProfit: null, positionMultiplier: 1, fill: null }))
-  }, [updateActiveDecisionAttempt])
+  }, [setDecisionPriceDraft, setDecisionRiskDraft, updateActiveDecisionAttempt])
 
   const confirmDecisionPrice = useCallback(() => {
     if (!activeDecisionAttempt || !activeDecisionCandidate || decisionPriceDraft === null) return
@@ -1694,7 +1733,7 @@ function App() {
     const levels = defaultDecisionLevels(side, decisionPriceDraft, suggestedStop)
     setDecisionRiskDraft(levels)
     updateActiveDecisionAttempt((attempt) => ({ ...attempt, orderKind, pendingEntryPrice: decisionPriceDraft, stage: 'risk-setup' }))
-  }, [activeDecisionAttempt, activeDecisionCandidate, decisionPriceDraft, decisionSourceData, updateActiveDecisionAttempt])
+  }, [activeDecisionAttempt, activeDecisionCandidate, decisionPriceDraft, decisionSourceData, setDecisionRiskDraft, updateActiveDecisionAttempt])
 
   const confirmDecisionRisk = useCallback(() => {
     if (!activeDecisionAttempt || !activeDecisionCandidate || activeDecisionAttempt.pendingEntryPrice === null || !effectiveDecisionRiskDraft) return
@@ -1722,7 +1761,7 @@ function App() {
     const evaluation = advanceDecisionAttempt(activeDecisionCandidate, configured, next)
     if (evaluation.exit) completeDecisionTrade(evaluation.attempt, evaluation.exit)
     else updateActiveDecisionAttempt(() => evaluation.attempt)
-  }, [activeDecisionAttempt, activeDecisionCandidate, completeDecisionTrade, decisionDrawings.present, effectiveDecisionRiskDraft, decisionSourceData, notify, updateActiveDecisionAttempt])
+  }, [activeDecisionAttempt, activeDecisionCandidate, effectiveDecisionRiskDraft, decisionDrawings.present, setDecisionRiskDraft, decisionSourceData, completeDecisionTrade, updateActiveDecisionAttempt, notify])
 
   const moveDecisionPendingEntry = useCallback((nextEntryPrice: number) => {
     if (!Number.isFinite(nextEntryPrice) || nextEntryPrice <= 0 || !activeDecisionAttempt || !activeDecisionCandidate || activeDecisionAttempt.stage !== 'risk-setup' || activeDecisionAttempt.pendingEntryPrice === null || !effectiveDecisionRiskDraft) return
@@ -1739,7 +1778,7 @@ function App() {
       pendingEntryPrice: nextEntryPrice,
       fill: null,
     }))
-  }, [activeDecisionAttempt, activeDecisionCandidate, decisionSourceData, effectiveDecisionRiskDraft, updateActiveDecisionAttempt])
+  }, [activeDecisionAttempt, activeDecisionCandidate, decisionSourceData, effectiveDecisionRiskDraft, setDecisionPriceDraft, setDecisionRiskDraft, updateActiveDecisionAttempt])
 
   const updateActiveDecisionRisk = useCallback((field: 'stopLoss' | 'takeProfit', value: number) => {
     if (!Number.isFinite(value)) return
@@ -1809,7 +1848,7 @@ function App() {
       drawings: withoutTransientMeasurements(decisionDrawings.present),
     }))
     notify('已撤单并进入下一根 K 线')
-  }, [activeDecisionAttempt, decisionDrawings.present, decisionSourceData, notify, updateActiveDecisionAttempt])
+  }, [activeDecisionAttempt, decisionDrawings.present, decisionSourceData, notify, setDecisionPriceDraft, setDecisionRiskDraft, updateActiveDecisionAttempt])
 
   const closeActiveDecisionAtMarket = useCallback(() => {
     if (!activeDecisionAttempt?.fill || activeDecisionAttempt.stage !== 'position-open') return
@@ -1853,7 +1892,7 @@ function App() {
     window.setTimeout(() => { decisionDrawingLoadingRef.current = false }, 0)
     setDecisionFocusTick((value) => value + 1)
     notify('已从信号 K 开始独立复盘，可重新进行完整决策')
-  }, [setDecisionStore, decisionReviewReturnSessionId, normalizedDecisionStore, notify])
+  }, [normalizedDecisionStore.activeSessionId, normalizedDecisionStore.sessions, decisionReviewReturnSessionId, setDecisionStore, setDecisionCenterOpen, setDecisionHistoryOpen, setDecisionResultsSessionId, setDecisionReviewReturnSessionId, setDecisionPriceDraft, setDecisionRiskDraft, notify])
 
   const openDecisionOverview = useCallback((sessionId: string) => {
     const target = normalizedDecisionStore.sessions.find((session) => session.id === sessionId)
@@ -1876,7 +1915,7 @@ function App() {
     setSymbol(target.daySequence.symbol)
     setIntervalId(target.daySequence.interval)
     notify('已打开本卷全览：显示收盘前全部 K 线、你的开平仓和绘图')
-  }, [normalizedDecisionStore.sessions, notify, symbol, interval])
+  }, [normalizedDecisionStore.sessions, symbol, interval, setDecisionOverviewSessionId, setDecisionHistoryOpen, setDecisionCenterOpen, setDecisionResultsSessionId, setReplayCursor, setReplayPlaying, setLive, setActiveTool, setDrawingsHidden, setSymbol, setIntervalId, notify])
 
   const closeDecisionOverview = useCallback(() => {
     setDecisionOverviewSessionId(null)
@@ -1887,7 +1926,7 @@ function App() {
     }
     setDecisionFocusTick((value) => value + 1)
     notify('已退出全览')
-  }, [notify])
+  }, [notify, setDecisionOverviewSessionId, setIntervalId, setSymbol])
 
   const navigateDecisionExercise = useCallback((direction: -1 | 1) => {
     const session = activeDecisionSession ?? decisionResultsSession
@@ -1916,7 +1955,7 @@ function App() {
       return
     }
     startDecisionReplayFromResult(session, target.result)
-  }, [activeDecisionSession, decisionResultsSession, focusDecisionChartLatest, focusDecisionDayChart, notify, startDecisionReplayFromResult])
+  }, [activeDecisionSession, decisionResultsSession, focusDecisionChartLatest, focusDecisionDayChart, notify, setDecisionCenterOpen, setDecisionHistoryOpen, setDecisionPriceDraft, setDecisionResultsSessionId, setDecisionRiskDraft, startDecisionReplayFromResult])
   const exportWorkspace = useCallback(() => {
     const snapshot = collectPortableWorkspace()
     downloadPortableWorkspace(snapshot, workspaceBackupFileName('sync'))
@@ -2219,15 +2258,15 @@ function App() {
     setReplayRangeLayers((current) => deleteReplayRangeObjectFromLayers(current, objectId))
     setSelectedReplayRangeId((current) => current === objectId ? null : current)
     notify('已删除震荡区间')
-  }, [notify])
+  }, [notify, setSelectedReplayRangeId])
 
   const toggleReplayRangeObject = useCallback((layerId: string, objectId: string) => {
     setReplayRangeLayers((current) => toggleReplayRangeObjectInLayers(current, layerId, objectId))
     setSelectedReplayRangeId((current) => current === objectId ? null : current)
-  }, [])
+  }, [setSelectedReplayRangeId])
   const toggleResearchSignalLayer = useCallback((sourceId: string) => {
     setVisibleResearchSignalSourceId((current) => current === sourceId ? null : sourceId)
-  }, [])
+  }, [setVisibleResearchSignalSourceId])
   const selectResearchSignal = useCallback((sourceId: string, signalId: string, time: number) => {
     setVisibleResearchSignalSourceId(sourceId)
     const selected = researchSignalDataset(sourceId)?.signals.find((item) => item.id === signalId)
@@ -2238,7 +2277,7 @@ function App() {
       chartRef.current?.goToTime(time)
       chartRef.current?.selectResearchSignal(researchSignalMarkerId(sourceId, signalId))
     }, 0)
-  }, [dispatchUiDrawing])
+  }, [dispatchUiDrawing, setActiveTool, setShowAllResearchReviews, setVisibleResearchSignalSourceId])
   const researchLayerFocused = useRef<string | null>(null)
   useEffect(() => {
     const selectedResearch = visibleResearchSignalSourceId ? researchSignalDataset(visibleResearchSignalSourceId) : null
@@ -2256,18 +2295,18 @@ function App() {
       researchLayerFocused.current = focusKey
     }, 250)
     return () => window.clearTimeout(timer)
-  }, [data, decisionMode, marketHydrationKey, visibleResearchSignalSourceId, symbol, interval])
+  }, [data, decisionMode, marketHydrationKey, visibleResearchSignalSourceId, symbol, interval, setPriceScaleAuto])
   const closeChartContext = useCallback(() => setChartContext(null), [])
 
   const openAlertAt = useCallback((price: number) => {
     setChartContext(null)
     setAlertDraft({ price })
-  }, [])
+  }, [setAlertDraft])
 
   const openOrderAt = useCallback((price: number, side: PaperOrder['side'] = 'buy', type: PaperOrder['type'] = 'limit') => {
     setChartContext(null)
     setOrderDraft({ price, side, type })
-  }, [])
+  }, [setOrderDraft])
 
   const handleChartContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
     event.preventDefault()
@@ -2408,7 +2447,7 @@ function App() {
     setCollapsedReplayRangeLayerIds(layout.collapsedReplayRangeLayerIds ?? [])
     setIndicators(layout.indicators); dispatchDrawing({ type: 'load', drawings: withoutTransientMeasurements(layout.drawings) }); setQuickMeasurement(null)
     notify('已加载本地图表布局')
-  }, [notify])
+  }, [notify, setChartType, setCollapsedReplayRangeLayerIds, setIndicatorLegendExpanded, setIndicators, setIntervalId, setPriceScaleAuto, setPriceScaleInverted, setPriceScaleLog, setPriceScalePercent, setSymbol, setTheme])
 
   const applyIntervalInput = (value: string) => {
     const next = parseIntervalShortcut(value)
@@ -2451,6 +2490,12 @@ function App() {
     const keyHandler = (event: KeyboardEvent) => {
       const mod = event.ctrlKey || event.metaKey
       const key = event.key.toLowerCase()
+
+      if (event.altKey && !mod && !event.shiftKey && (key === 'g' || event.code === 'KeyG') && !isEditableShortcutTarget(event.target)) {
+        event.preventDefault()
+        if (!event.repeat) setShowFilledGaps(value => !value)
+        return
+      }
 
       if (decisionOverviewMode) {
         if (event.key === 'Escape') { event.preventDefault(); closeDecisionOverview() }
@@ -2574,7 +2619,7 @@ function App() {
         event.preventDefault(); chartRef.current?.moveVisibleRange(40); return
       }
 
-      if (event.altKey && key === 'g') {
+      if (event.altKey && !mod && event.shiftKey && (key === 'g' || event.code === 'KeyG')) {
         event.preventDefault(); setGoToDateOpen(true); return
       }
       if (event.altKey && !event.shiftKey && key === 'a') {
@@ -2664,7 +2709,7 @@ function App() {
     }
     window.addEventListener('keydown', keyHandler)
     return () => window.removeEventListener('keydown', keyHandler)
-  }, [decisionOverviewMode, closeDecisionOverview, deleteActiveShapeQuestion, activeDecisionAttempt, activeDecisionSession, activeSelectedReplayRangeId, activeTool, advanceActiveDecision, baseData, candle, cancelDecisionSetup, cancelPendingDecisionAndAdvance, chartSeconds, chooseDayExtremeOrder, chooseFreePriceOrder, chooseSignalExtremeOrder, closeActiveDecisionAtMarket, confirmDecisionRisk, decisionDayMode, decisionResultsSession, deleteReplayRangeObject, dispatchUiDrawing, effectiveReplayResolution, goToNextDecisionTrade, interval, loadSavedLayout, navigateDecisionExercise, normalizedReplayCursor, notify, openAlertAt, openOrderAt, priceScaleAuto, priceScaleInverted, priceScaleLog, priceScalePercent, replayAtEnd, restartActiveDecisionTrade, saveCurrentLayout, selectedDrawing, selectedDrawingIds, skipActiveDecision, symbol, takeSnapshotShortcut, uiDrawings.present, uiDrawings.selectedId, uiDrawings.selectedIds, watchlistOpen])
+  }, [decisionOverviewMode, closeDecisionOverview, deleteActiveShapeQuestion, activeDecisionAttempt, activeDecisionSession, activeSelectedReplayRangeId, activeTool, advanceActiveDecision, baseData, candle, cancelDecisionSetup, cancelPendingDecisionAndAdvance, chartSeconds, chooseDayExtremeOrder, chooseFreePriceOrder, chooseSignalExtremeOrder, closeActiveDecisionAtMarket, confirmDecisionRisk, decisionDayMode, decisionResultsSession, deleteReplayRangeObject, dispatchUiDrawing, effectiveReplayResolution, goToNextDecisionTrade, interval, loadSavedLayout, navigateDecisionExercise, normalizedReplayCursor, notify, openAlertAt, openOrderAt, priceScaleAuto, priceScaleInverted, priceScaleLog, priceScalePercent, replayAtEnd, restartActiveDecisionTrade, saveCurrentLayout, selectedDrawing, selectedDrawingIds, skipActiveDecision, symbol, takeSnapshotShortcut, uiDrawings.present, uiDrawings.selectedId, uiDrawings.selectedIds, watchlistOpen, setChartAnnotationsHidden, setActiveTool, setSymbolPickerOpen, setIndicatorPanelOpen, setSettingsOpen, setChartMenuOpen, setQuickSearchOpen, setIntervalDialogOpen, setGoToDateOpen, setShortcutsOpen, setAlertDraft, setOrderDraft, setDataTableOpen, setObjectTreeOpen, setReplaySelecting, setSelectedReplayRangeId, setReplayPlaying, setReplayCursor, setDrawingsHidden, setQuickSearchQuery, setPriceScaleInverted, setPriceScaleLog, setPriceScalePercent, setWatchlistOpen, setIntervalDraft, setSymbolQuery, setSymbol, setIntervalId, setShowFilledGaps])
 
   useEffect(() => {
     const cancelMeasure = () => {
@@ -2939,8 +2984,12 @@ function App() {
   const pickManualReplayBar = (barTime: number) => {
     if (!manualReviewSession) return
     setManualPicking(false)
+    // A selected future object must not retain editable handles or a properties panel.
+    dispatchUiDrawing({ type: 'select', id: null })
+    setDrawingSettingsId(null)
     if (manualReplayEnd === null) {
       manualReplayAutoScaleRef.current = priceScaleAuto
+      savePageValue('manualReplayAutoScale', priceScaleAuto)
       setManualReplayDrawingIds(new Set(uiDrawings.present.map((drawing) => drawing.id)))
     }
     // Freeze the price range first, then shrink the data on the next tick, so the vertical scale cannot refit.
@@ -2961,6 +3010,7 @@ function App() {
   const exitManualReplay = () => {
     if (manualReplayEnd !== null && manualReplayAutoScaleRef.current !== null) setPriceScaleAuto(manualReplayAutoScaleRef.current)
     manualReplayAutoScaleRef.current = null
+    savePageValue('manualReplayAutoScale', null)
     setManualReplayDrawingIds(null)
     setManualReplayEnd(null)
     setManualPicking(false)
@@ -3000,7 +3050,6 @@ function App() {
     },
     key3: () => { if (!manualReplaying && !manualPosition && !manualActiveSession?.pendingOrder) requestManualOpen('short') },
     note: () => { if (!manualReplaying) requestManualNote() },
-    escape: () => { if (manualReplaying) exitManualReplay() },
   })
   // Newest revealed candle while replaying: drawings / annotations are clipped at its right edge.
   const manualReplayBars = manualReplaying && data.length > 0 ? { last: data[data.length - 1].time, previous: data.length > 1 ? data[data.length - 2].time : null } : null
@@ -3217,6 +3266,7 @@ function App() {
               suppressAutoFocus={decisionDayMode || decisionOverviewMode || Boolean(fullReviewSession) || Boolean(requestedResearch)}
               centerLatestByDefault={decisionMode && !decisionDayMode && !decisionOverviewMode}
               markersHidden={chartAnnotationsHidden || manualReplaying}
+              showFilledGaps={showFilledGaps}
               onHover={setHoverCandle}
               onViewportChange={refreshDrawingProjection}
               onPriceScaleStateChange={(autoScale, logarithmic, percentage, inverted) => {
@@ -3298,7 +3348,7 @@ function App() {
                 onClick={() => { setPriceScaleLog((value) => !value); setPriceScalePercent(false) }}
               >L</button>
             </div>
-            {!decisionOverviewMode && activeDefinition.behavior === 'cursor' && !selectedDrawing && favoriteTools.length > 0 && <QuickDrawingToolbar
+            {!decisionOverviewMode && favoriteTools.length > 0 && <QuickDrawingToolbar
               favoriteTools={favoriteTools}
               onSelectTool={(toolId) => { setQuickMeasurement(null); setActiveTool(toolId) }}
               onOpenSettings={() => setSettingsOpen(true)}
@@ -3589,6 +3639,12 @@ function App() {
               }}
               onOpenSettings={() => setIndicatorPanelOpen(true)}
               onRefresh={() => notify('指标已重新计算')}
+              summaryActions={visibleIndicators.smc !== false && chartType !== 'line' && chartType !== 'area' && <button
+                type="button" className={`smc-filled-gap-toggle${showFilledGaps ? ' active' : ''}`}
+                aria-pressed={showFilledGaps} aria-keyshortcuts="Alt+G"
+                title="已回补缺口（Alt+G）：按实际回补进度显示阶梯区间，透明度20%"
+                onClick={() => setShowFilledGaps(value => !value)}
+              >已回补缺口</button>}
             />
             {selectedDrawing && <DrawingFloatingToolbar
               key={selectedDrawing.id}
@@ -3845,6 +3901,7 @@ function App() {
         onClose={() => setManualCenterOpen(false)}
       />}
       {manualTimelineOpen && manualSession && !manualReplaying && <ManualTimelineDialog
+        key={manualSession.id}
         session={manualSession}
         // In review the timeline is the only window: closing it leaves the review.
         onClose={manualReviewSession ? exitManualView : () => setManualTimelineOpen(false)}
@@ -3856,8 +3913,10 @@ function App() {
           chartRef.current?.goToTime(bar)
         }}
         onEditItem={editManualItem}
+        onReviewItem={manualReviewSession ? (item) => setManualDialog({ type: 'review-comment', item }) : undefined}
       />}
       {manualDialog?.type === 'open' && manualRisk && <OpenTradeDialog
+        persistenceId={`${manualSession?.id}:open:${manualDialog.price}:${manualDialog.side}`}
         side={manualDialog.side}
         price={manualRisk.entryPrice}
         orderKind={manualOpenOrderKind}
@@ -3901,6 +3960,7 @@ function App() {
         }}
       />}
       {manualDialog?.type === 'close' && manualPosition && manualLastMinute && <ReasonEditor
+        persistenceId={`${manualSession?.id}:close:${manualPosition.id}`}
         title={`平仓 @ ${manualLastMinute.close.toFixed(2)} · 平仓理由（可选）`}
         subtitle="可以留空直接平仓；写下来复盘时能看到当时为什么离场。"
         confirmLabel="确认平仓"
@@ -3917,36 +3977,37 @@ function App() {
           }))
         }}
       />}
-      {manualDialog?.type === 'note' && <ReasonEditor
-        key={`${manualDialog.barTime}-${manualDialog.kind}-${manualDialog.side}`}
-        tone={manualDialog.kind === 'should-trade' ? manualDialog.side : 'neutral'}
-        draftRef={manualNoteDraftRef}
-        title={manualDialog.kind === 'should-trade' ? `应该开${manualDialog.side === 'long' ? '多' : '空'}的理由` : manualPosition && manualDialog.barTime === manualCurrentBarTime ? '本根K线理由（持仓中）' : '未开单理由'}
+      {manualDialog?.type === 'note' && <ManualCandleBiasEditor
+        persistenceId={`${manualSession?.id}:note:${manualDialog.barTime}:${manualDialog.interval}`}
+        key={`${manualDialog.barTime}-${manualDialog.interval}`}
         subtitle={`${new Date(manualDialog.barTime * 1000).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })} · ${INTERVALS[manualDialog.interval].label} K线`}
-        initial={manualSession?.notes.find((note) => note.barTime === manualDialog.barTime && note.interval === manualDialog.interval && note.kind === manualDialog.kind)?.reasons ?? (manualDialog.kind === 'no-trade' ? manualDialog.initial : [])}
-        background={{ initial: manualSession?.notes.find((note) => note.barTime === manualDialog.barTime && note.interval === manualDialog.interval && note.kind === manualDialog.kind)?.background ?? manualDialog.background }}
-        allowClear={Boolean(manualSession?.notes.some((note) => note.barTime === manualDialog.barTime && note.interval === manualDialog.interval && note.kind === manualDialog.kind))}
+        notes={manualSession?.notes.filter(note => note.barTime === manualDialog.barTime && note.interval === manualDialog.interval) ?? []}
+        initialBias={manualDialog.kind === 'no-trade' ? 'no-trade' : manualDialog.side}
+        initialBackground={manualDialog.background}
         onCancel={() => setManualDialog(null)}
-        onSave={(reasons, background) => {
+        onSave={(background, entries) => {
           const dialog = manualDialog
           setManualDialog(null)
           if (manualSession) {
-            updateManualSession(manualSession.id, (session) => upsertBarNote(session, dialog.barTime, dialog.interval, reasons, background, dialog.kind, dialog.side))
+            updateManualSession(manualSession.id, session => saveCandleBiasNotes(session, dialog.barTime, dialog.interval, background, entries))
             if (manualReviewSession) setManualTimelineOpen(true)
           }
         }}
-      >
-        <NoteKindSwitch kind={manualDialog.kind} side={manualDialog.side} onChange={(kind, side) => {
-          // Keep what was typed: it is saved under the current type, then the other type's text (if any) is shown.
-          const dialog = manualDialog
-          const draft = manualNoteDraftRef.current?.()
-          if (draft && manualSession && (draft.reasons.length > 0 || manualSession.notes.some((note) => note.barTime === dialog.barTime && note.interval === dialog.interval && note.kind === dialog.kind))) {
-            updateManualSession(manualSession.id, (session) => upsertBarNote(session, dialog.barTime, dialog.interval, draft.reasons, draft.background, dialog.kind, dialog.side))
-          }
-          setManualDialog({ ...dialog, kind, side })
-        }} />
-      </ReasonEditor>}
+      />}
+      {manualDialog?.type === 'review-comment' && manualSession && <ManualReviewCommentEditor
+        key={`${manualSession.id}:${manualReviewCommentKey(manualDialog.item)}`}
+        sessionId={manualSession.id} item={manualDialog.item}
+        initial={manualSession.reviewComments?.[manualReviewCommentKey(manualDialog.item)]?.text ?? ''}
+        onCancel={() => setManualDialog(null)}
+        onSave={text => {
+          const item = manualDialog.item
+          updateManualSession(manualSession.id, session => saveManualReviewComment(session, item, text))
+          setManualDialog(null)
+          notify(text ? '复盘评论已保存，原理由保持不变' : '复盘评论已清除，原理由保持不变')
+        }}
+      />}
       {manualDialog?.type === 'edit' && <ReasonEditor
+        persistenceId={`${manualSession?.id}:edit:${manualDialog.item.kind}:${manualDialog.item.trade?.id ?? manualDialog.item.time}`}
         title={manualDialog.item.kind === 'entry' ? '编辑做单理由' : manualDialog.item.kind === 'exit' ? '编辑平仓理由' : manualDialog.item.kind === 'should-trade' ? '编辑应该开单理由' : '编辑未开单理由'}
         subtitle={manualDialog.item.title}
         initial={manualDialog.item.reasons}
@@ -4173,7 +4234,7 @@ function GoToDateDialog({ initialTime, onSelect, onClose }: { initialTime: numbe
   }
   return <div className="modal-backdrop shortcut-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
     <section className="go-date-dialog" role="dialog" aria-modal="true" aria-label="转到日期">
-      <header><div><b>转到日期</b><small>Alt+G</small></div><button type="button" aria-label="关闭日期选择" onClick={onClose}><X size={17} /></button></header>
+      <header><div><b>转到日期</b><small>Alt+Shift+G</small></div><button type="button" aria-label="关闭日期选择" onClick={onClose}><X size={17} /></button></header>
       <div><label>日期<input autoFocus type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label><label>时间<input type="time" value={time} onChange={(event) => setTime(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') submit() }} /></label></div>
       <footer><button type="button" onClick={onClose}>取消</button><button type="button" className="primary" onClick={submit}>转到</button></footer>
     </section>

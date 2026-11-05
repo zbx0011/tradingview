@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronRight, Eye, EyeOff, RefreshCcw } from 'lucide-react'
 import { bollinger, ema, sma, volumeSma } from '../lib/indicators'
 import { formatPrice, INTERVALS, type Candle, type IntervalId, type SymbolId } from '../lib/market'
@@ -19,6 +19,7 @@ interface Props {
   onExpandedChange: (expanded: boolean) => void
   onOpenSettings: () => void
   onRefresh?: () => void
+  summaryActions?: ReactNode
 }
 
 interface IndicatorRow {
@@ -43,7 +44,7 @@ function valueAt<T extends { time: number }>(points: T[], time: number | undefin
   return points.at(-1)
 }
 
-export function IndicatorLegend({ data, candle, symbol, interval, indicators, indicatorsHidden, expanded, onToggle, onExpandedChange, onOpenSettings, onRefresh }: Props) {
+export function IndicatorLegend({ data, candle, symbol, interval, indicators, indicatorsHidden, expanded, onToggle, onExpandedChange, onOpenSettings, onRefresh, summaryActions }: Props) {
   const [refreshing, setRefreshing] = useState(false)
   const hoverCandle = useHoverCandle()
   const activeCandle = hoverCandle ?? candle ?? data.at(-1) ?? null
@@ -91,6 +92,7 @@ export function IndicatorLegend({ data, candle, symbol, interval, indicators, in
         {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}<span>{total}</span>
       </button>
       <button type="button" className={`indicator-summary-refresh${refreshing ? ' is-refreshing' : ''}`} aria-label="刷新指标" title="重新计算指标" data-testid="indicator-summary-refresh" onClick={toggleRefresh}><RefreshCcw size={17} /></button>
+      {summaryActions}
     </div>
     {expanded && <div className="indicator-legend-list">
       {rows.map((row) => {
