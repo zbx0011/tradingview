@@ -8,6 +8,8 @@ export function useManualPracticeKeys(enabled: boolean, handlers: {
   /** Key 3: open short. */
   key3: () => void
   note: () => void
+  /** Esc: leave the replay (not called while a candle is being picked or a dialog is open). */
+  escape?: () => void
   /** While a reason editor is open the practice keys are swallowed but do nothing. */
   blocked?: boolean
 }) {
@@ -21,6 +23,10 @@ export function useManualPracticeKeys(enabled: boolean, handlers: {
       const target = event.target
       if (target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return
       if (document.querySelector('[role="dialog"][aria-modal="true"]')) return
+      if (event.key === 'Escape') {
+        if (!handlersRef.current.blocked) handlersRef.current.escape?.()
+        return
+      }
       let action: (() => void) | null = null
       if (event.code === 'Backquote' || event.key === '`' || event.key === '·') action = handlersRef.current.note
       else if (!event.shiftKey && (event.code === 'Digit1' || event.code === 'Numpad1')) action = handlersRef.current.advance

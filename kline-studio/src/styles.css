@@ -2039,3 +2039,4 @@ button:disabled { opacity: .32; cursor: not-allowed; }
 .mp-note-badge { pointer-events: auto; cursor: pointer; }
 /* Thin light-grey guide from each number down to its candle. */
 .mp-seq-line { position: absolute; top: 18px; bottom: 0; width: 0; border-left: 1px solid rgba(150,158,176,.45); transform: translateX(-.5px); pointer-events: none; }
+.mp-picker-hint { pointer-events: auto; cursor: pointer; }

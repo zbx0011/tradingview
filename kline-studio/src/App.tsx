@@ -2929,7 +2929,9 @@ function App() {
   }
   // Review look-back: pick any candle, hide everything after it (and all drawings), then walk forward with key 1.
   const toggleManualReplayPicking = () => {
-    if (!manualReviewSession || manualDialog) return
+    if (!manualReviewSession) return
+    // An open reason editor must not block the replay: close it, then start picking a candle.
+    if (manualDialog) { setManualDialog(null); setManualPicking(true); return }
     setManualPicking((current) => !current)
   }
   // Like TradingView's replay: the layout stays exactly where it is, only the later candles
@@ -2998,6 +3000,7 @@ function App() {
     },
     key3: () => { if (!manualReplaying && !manualPosition && !manualActiveSession?.pendingOrder) requestManualOpen('short') },
     note: () => { if (!manualReplaying) requestManualNote() },
+    escape: () => { if (manualReplaying) exitManualReplay() },
   })
   // Newest revealed candle while replaying: drawings / annotations are clipped at its right edge.
   const manualReplayBars = manualReplaying && data.length > 0 ? { last: data[data.length - 1].time, previous: data.length > 1 ? data[data.length - 2].time : null } : null
@@ -3020,7 +3023,7 @@ function App() {
   }
   const openManualBarReasonRef = useRef(openManualBarReason)
   useEffect(() => { openManualBarReasonRef.current = openManualBarReason })
-  const manualClickReady = Boolean(manualReviewSession) && !manualPicking && !manualDialog && activeTool === 'cursor'
+  const manualClickReady = Boolean(manualReviewSession) && !manualPicking && !manualReplaying && !manualDialog && activeTool === 'cursor'
   useEffect(() => {
     if (!manualClickReady) return
     let down: { x: number; y: number } | null = null

@@ -855,7 +855,7 @@ export function ManualBarPicker({ interval, maxBarTime, toTime, toX, onPick, onC
       latest.current.onPick(bar)
     }
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
+      if (event.key !== 'Escape' && event.code !== 'Escape' && event.keyCode !== 27) return
       event.preventDefault()
       event.stopPropagation()
       latest.current.onCancel()
@@ -871,7 +871,7 @@ export function ManualBarPicker({ interval, maxBarTime, toTime, toX, onPick, onC
   }, [])
   const x = hover === null ? null : toX(hover)
   return <div ref={rootRef} className="mp-picker" aria-hidden="true">
-    <div className="mp-picker-hint">{hint}</div>
+    <div className="mp-picker-hint" role="button" title="点击取消选择" onClick={onCancel}>{hint}</div>
     {x !== null && <div className="mp-picker-line" style={{ left: x }}><span>{formatBeijing(hover!)}</span></div>}
   </div>
 }
