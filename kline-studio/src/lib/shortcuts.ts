@@ -43,6 +43,7 @@ export const TRADINGVIEW_SHORTCUTS: ShortcutDefinition[] = [
   { id: 'vertical', section: '绘图', label: '垂直线', keys: 'Alt+V' },
   { id: 'cross', section: '绘图', label: '横线', keys: 'Alt+C' },
   { id: 'fib', section: '绘图', label: '斐波那契回撤', keys: 'Alt+F' },
+  { id: 'ab-equals-cd', section: '绘图', label: 'AB=CD 等幅投射', keys: 'Alt+D' },
   { id: 'rectangle', section: '绘图', label: '矩形', keys: 'Alt+Shift+R' },
   { id: 'square', section: '绘图', label: '绘制正方形', keys: '矩形 + Shift' },
   { id: 'circle', section: '绘图', label: '绘制正圆', keys: '椭圆 + Shift' },

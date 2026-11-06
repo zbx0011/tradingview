@@ -9,6 +9,7 @@ import {
 import { calculateFibLevelGeometry, layoutFibLabels } from '../lib/fibLayout'
 import { formatPrice, INTERVALS, type Candle, type IntervalId, type SymbolId } from '../lib/market'
 import { drawingIsRevealed } from '../lib/drawingReplay'
+import { projectAbCd } from '../lib/abcdProjection'
 import {
   calculatePositionMetrics, calculatePositionMetricsFromLevels, createDefaultPositionPoints, formatPositionNumber,
   resolvePositionGeometry, updatePositionPoints,
@@ -88,6 +89,9 @@ export function DrawingOverlay({
   const placementRef = useRef<{ start: DrawingPoint; pointerId: number; moved: boolean } | null>(null)
   const awaitingSecondPointRef = useRef(false)
   const suppressNextClickRef = useRef(false)
+  const abcAnchorsRef = useRef<DrawingPoint[]>([])
+  const [abcPointCount, setAbcPointCount] = useState(0)
+  const [projectionError, setProjectionError] = useState('')
   const dragRef = useRef<DrawingDrag | null>(null)
   const activeDefinition = getTool(activeTool)
   const selectedDrawingIds = history.selectedIds ?? (history.selectedId ? [history.selectedId] : [])
@@ -166,6 +170,9 @@ export function DrawingOverlay({
     updateDraft(null)
     placementRef.current = null
     awaitingSecondPointRef.current = false
+    abcAnchorsRef.current = []
+    setAbcPointCount(0)
+    setProjectionError('')
     setPlacementPhase('idle')
   }
 
@@ -199,6 +206,13 @@ export function DrawingOverlay({
   }
 
   const commitDraft = (drawing: Drawing) => {
+    if (drawing.behavior === 'abc-projection') {
+      if (!projectAbCd(drawing.points)) return
+      dispatch({ type: 'add', drawing })
+      cancelDraft()
+      onToolComplete(drawing)
+      return
+    }
     const first = drawing.points[0]
     const last = drawing.points.at(-1) ?? first
     if (drawing.behavior === 'zoom') {
@@ -214,7 +228,7 @@ export function DrawingOverlay({
 
   const handlePointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
     const behavior = activeDefinition.behavior
-    if (event.button !== 0 || behavior === 'cursor' || behavior === 'eraser' || oneClickBehaviors.includes(behavior) || positionBehaviors.includes(behavior) || awaitingSecondPointRef.current) return
+    if (event.button !== 0 || behavior === 'cursor' || behavior === 'eraser' || behavior === 'abc-projection' || oneClickBehaviors.includes(behavior) || positionBehaviors.includes(behavior) || awaitingSecondPointRef.current) return
     const point = anchorPoint(normalizedPoint(event))
     if (activeDefinition.id === 'measure') onQuickMeasurementChange(null)
     placementRef.current = { start: point, pointerId: event.pointerId, moved: false }
@@ -385,6 +399,10 @@ export function DrawingOverlay({
     const placement = placementRef.current
     if (!placement) {
       const pending = draftRef.current
+      if (pending?.behavior === 'abc-projection' && abcAnchorsRef.current.length) {
+        updateDraft({ ...pending, points: [...abcAnchorsRef.current, anchorPoint(point)] })
+        return
+      }
       if (pending && awaitingSecondPointRef.current && !freehandBehaviors.includes(pending.behavior)) {
         point = anchorPoint(constrainedPoint(point, projectNormalizedPoint(pending.points[0]), pending.behavior, event.shiftKey))
         updateDraft({ ...pending, points: [pending.points[0], point] })
@@ -448,6 +466,29 @@ export function DrawingOverlay({
     }
     if (behavior === 'eraser' || freehandBehaviors.includes(behavior)) return
     let point = normalizedPoint(event)
+    if (behavior === 'abc-projection') {
+      point = anchorPoint(point)
+      const anchors = abcAnchorsRef.current
+      if (anchors.length === 1 && (Number.isFinite(anchors[0].price) && Number.isFinite(point.price)
+        ? anchors[0].price === point.price : distance(anchors[0], point) <= .003)) {
+        setProjectionError('A、B 需要有价格差，请重新选择 B 点')
+        return
+      }
+      const next = [...anchors, point]
+      const drawing = draftRef.current ?? makeDrawing(activeDefinition, point, color)
+      if (next.length === 3) {
+        if (projectAbCd(next)) commitDraft({ ...drawing, points: next })
+        else setProjectionError('请选择有效的 A、B、C 点')
+        return
+      }
+      abcAnchorsRef.current = next
+      setAbcPointCount(next.length)
+      setProjectionError('')
+      updateDraft({ ...drawing, points: [...next, point] })
+      awaitingSecondPointRef.current = true
+      setPlacementPhase('awaiting-second')
+      return
+    }
     if (positionBehaviors.includes(behavior)) {
       dispatch({ type: 'add', drawing: createDefaultPositionDrawing(point) })
       onToolComplete()
@@ -966,6 +1007,26 @@ export function DrawingOverlay({
       const sectorFill = (drawing.fillEnabled ?? true) ? colorWithAlpha(drawing.fillColor ?? drawing.color, drawing.fillOpacity ?? .2) : 'none'
       const sectorStroke = (drawing.borderEnabled ?? true) ? (drawing.borderColor ?? drawing.color) : 'none'
       content = <g><path d={`M${first.x},${first.y} L${last.x},${last.y} A${Math.abs(dx)},${Math.abs(dy)} 0 0 0 ${last.x},${first.y} Z`} {...common} stroke={sectorStroke} fill={sectorFill} /></g>
+    } else if (behavior === 'abc-projection') {
+      const target = projectAbCd(drawing.points)
+      const c = points[2]
+      const d = target && c ? {
+        x: c.x + points[1].x - first.x,
+        y: Number.isFinite(target.price) && Number.isFinite(drawing.points[2]?.time)
+          ? onProjectPoint({ time: drawing.points[2].time!, price: target.price! })?.y ?? target.y * viewportHeight
+          : target.y * viewportHeight,
+      } : null
+      content = <g data-testid="abcd-projection" data-abcd-target-price={target?.price}>
+        {points[1] && <line data-abcd-leg="AB" x1={first.x} y1={first.y} x2={points[1].x} y2={points[1].y} {...common} />}
+        {c && <line data-abcd-leg="BC" x1={points[1].x} y1={points[1].y} x2={c.x} y2={c.y} {...common} />}
+        {d && c && <>
+          <line data-abcd-leg="CD" x1={c.x} y1={c.y} x2={d.x} y2={d.y} {...common} strokeDasharray="7 4" />
+          <polyline data-testid="abcd-hit-target" points={[first, points[1], c, d].map(p => `${p.x},${p.y}`).join(' ')} fill="none" stroke="transparent" strokeWidth="14" vectorEffect="non-scaling-stroke" pointerEvents={isDraft ? 'none' : 'stroke'} />
+          <circle cx={d.x} cy={d.y} r="4" fill="none" stroke={drawing.color} strokeWidth="1.5" pointerEvents="none" />
+          <text data-abcd-label="D" x={d.x + 8} y={d.y - 9} {...textStyle(12)} pointerEvents="none">D{Number.isFinite(target?.price) ? ` ${formatPrice(target!.price!, symbol)}` : ''} · AB=CD</text>
+        </>}
+        {points.slice(0, 3).map((p, index) => <text key={index} data-abcd-label={['A', 'B', 'C'][index]} x={p.x - 6} y={p.y - 10} textAnchor="middle" {...textStyle(12)} pointerEvents="none">{['A', 'B', 'C'][index]}</text>)}
+      </g>
     } else if (behavior === 'pattern' || behavior === 'wave') {
       const count = behavior === 'wave' ? 6 : 5
       const zig = Array.from({ length: count }, (_, index) => ({ x: first.x + dx * index / (count - 1), y: index % 2 ? last.y : first.y + dy * .28 }))
@@ -1298,7 +1359,11 @@ export function DrawingOverlay({
         />}
         <g opacity={isDraft && !forceSelected ? .78 : 1}>{content}</g>
         {selected && !['measure', 'long-position', 'short-position'].includes(behavior) && <g className="drawing-anchor-points" pointerEvents="all">
-          {['rectangle', 'zoom'].includes(behavior)
+          {behavior === 'abc-projection'
+            ? points.slice(0, 3).map((point, index) => <ellipse key={index} data-drawing-anchor={['A', 'B', 'C'][index]}
+              cx={point.x} cy={point.y} rx={handleRadius.x} ry={handleRadius.y} fill="#131722" stroke="#2962ff" strokeWidth="2" vectorEffect="non-scaling-stroke"
+              onPointerDown={startDrawingPointDrag(drawing, index)} style={{ cursor: 'crosshair' }} />)
+            : ['rectangle', 'zoom'].includes(behavior)
             ? <>
               {rectangleCorners.map(({ corner, x, y }) => <ellipse
                 key={corner} data-drawing-anchor={corner} cx={x} cy={y} rx={handleRadius.x} ry={handleRadius.y}
@@ -1393,6 +1458,9 @@ export function DrawingOverlay({
       {quickMeasurement && renderDrawing(quickMeasurement, false, true)}
       {draft && renderDrawing(draft, true)}
       </svg>
+      {activeDefinition.behavior === 'abc-projection' && <div className="abcd-placement-hint" role="status">
+        {projectionError || (abcPointCount === 0 ? 'AB=CD：点击 A 点' : abcPointCount === 1 ? '点击 B 点，确定 AB 趋势段' : '点击回撤 C 点，自动计算 D 目标价')} · Esc 取消
+      </div>}
       <div className="measurement-result-layer" aria-live="polite">
         {displayedMeasurement && renderMeasurementPanel(displayedMeasurement.drawing, displayedMeasurement.draft, displayedMeasurement.forceSelected)}
       </div>

@@ -20,7 +20,7 @@ const MIN_SESSION_MINUTES = 600
 
 export type ManualSide = 'long' | 'short'
 export type ManualExitKind = 'manual' | 'stop' | 'target' | 'session-end'
-export type ManualNoteKind = 'no-trade' | 'should-trade' | 'entry' | 'exit'
+export type ManualNoteKind = 'no-trade' | 'should-trade' | 'entry' | 'exit' | 'cancelled-order'
 
 export interface ManualTrade {
   id: string
@@ -85,6 +85,18 @@ export interface ManualPendingOrder {
   unsupportedReasons?: string
   /** Minute the order was placed. */
   createdTime: number
+  /** Chart timeframe at submission; absent on older saved orders. */
+  interval?: IntervalId
+}
+
+/** Submitted reasoning retained when a resting order never becomes a trade. */
+export interface ManualCancelledOrder extends ManualPendingOrder {
+  interval: IntervalId
+  /** Chart minute when the order was cancelled or expired. */
+  cancelledTime: number
+  cancellationReason: 'manual' | 'session-end'
+  /** Wall-clock timestamp used for independent cross-computer merges. */
+  updatedAt: number
 }
 
 export interface ManualPracticeSession {
@@ -108,6 +120,7 @@ export interface ManualPracticeSession {
   reviewComments?: Record<string, ManualReviewComment>
   /** At most one resting order, filled by a later minute that trades through its price. */
   pendingOrder?: ManualPendingOrder | null
+  cancelledOrders?: ManualCancelledOrder[]
 }
 
 export interface ManualPracticeStore {
@@ -171,7 +184,26 @@ function parsePendingOrder(value: unknown): ManualPendingOrder | null {
     reasons: stringList(order.reasons),
     unsupportedReasons: typeof order.unsupportedReasons === 'string' ? order.unsupportedReasons.trim() : '',
     createdTime: order.createdTime,
+    ...(typeof order.interval === 'string' && Object.hasOwn(INTERVALS, order.interval) ? { interval: order.interval } : {}),
   }
+}
+
+function parseCancelledOrder(value: unknown): ManualCancelledOrder | null {
+  const order = parsePendingOrder(value)
+  const archived = value as Partial<ManualCancelledOrder> | null
+  if (!order || !order.interval || !archived || !isFiniteNumber(archived.cancelledTime) || archived.cancelledTime < order.createdTime) return null
+  if (!isFiniteNumber(archived.updatedAt) || (archived.cancellationReason !== 'manual' && archived.cancellationReason !== 'session-end')) return null
+  return { ...order, interval: order.interval, cancelledTime: archived.cancelledTime, cancellationReason: archived.cancellationReason, updatedAt: archived.updatedAt }
+}
+
+function mergeCancelledOrders(left: readonly ManualCancelledOrder[] = [], right: readonly ManualCancelledOrder[] = []): ManualCancelledOrder[] {
+  const byId = new Map<string, ManualCancelledOrder>()
+  for (const order of [...left, ...right]) {
+    const current = byId.get(order.id)
+    // Equal clocks still converge independently of synchronization direction.
+    if (!current || order.updatedAt > current.updatedAt || (order.updatedAt === current.updatedAt && JSON.stringify(order) > JSON.stringify(current))) byId.set(order.id, order)
+  }
+  return [...byId.values()].sort((a, b) => a.createdTime - b.createdTime || a.id.localeCompare(b.id))
 }
 
 function parseNote(value: unknown): ManualBarNote | null {
@@ -186,6 +218,8 @@ function parseSession(value: unknown): ManualPracticeSession | null {
   const session = value as Partial<ManualPracticeSession> | null
   if (!session || typeof session.id !== 'string' || typeof session.dayKey !== 'string') return null
   if (!isFiniteNumber(session.startTime) || !isFiniteNumber(session.endTime) || !isFiniteNumber(session.cursorTime)) return null
+  const cancelledOrders = mergeCancelledOrders((Array.isArray(session.cancelledOrders) ? session.cancelledOrders : []).map(parseCancelledOrder).filter((item): item is ManualCancelledOrder => item !== null))
+  const pendingOrder = parsePendingOrder(session.pendingOrder)
   return {
     id: session.id,
     symbol: (session.symbol ?? MANUAL_PRACTICE_SYMBOL) as SymbolId,
@@ -201,7 +235,8 @@ function parseSession(value: unknown): ManualPracticeSession | null {
     trades: (Array.isArray(session.trades) ? session.trades : []).map(parseTrade).filter((item): item is ManualTrade => item !== null),
     notes: (Array.isArray(session.notes) ? session.notes : []).map(parseNote).filter((item): item is ManualBarNote => item !== null),
     ...(session.reviewComments === undefined ? {} : { reviewComments: parseReviewComments(session.reviewComments) }),
-    pendingOrder: parsePendingOrder(session.pendingOrder),
+    pendingOrder: pendingOrder && !cancelledOrders.some((order) => order.id === pendingOrder.id) ? pendingOrder : null,
+    ...(session.cancelledOrders === undefined ? {} : { cancelledOrders }),
   }
 }
 
@@ -264,8 +299,12 @@ export function mergeManualPracticeStores(base: ManualPracticeStore, incoming: M
     if (!current) byId.set(session.id, session)
     else {
       const winner = isNewerSession(session, current) ? session : current
-      byId.set(session.id, current.reviewComments === undefined && session.reviewComments === undefined ? winner : {
-        ...winner, reviewComments: mergeReviewComments(current.reviewComments, session.reviewComments),
+      const cancelledOrders = mergeCancelledOrders(current.cancelledOrders, session.cancelledOrders)
+      byId.set(session.id, {
+        ...winner,
+        ...(current.reviewComments === undefined && session.reviewComments === undefined ? {} : { reviewComments: mergeReviewComments(current.reviewComments, session.reviewComments) }),
+        ...(current.cancelledOrders === undefined && session.cancelledOrders === undefined ? {} : { cancelledOrders }),
+        ...(winner.pendingOrder && cancelledOrders.some((order) => order.id === winner.pendingOrder!.id) ? { pendingOrder: null } : {}),
       })
     }
   }
@@ -507,13 +546,25 @@ export function advanceManualSession(session: ManualPracticeSession, minutes: re
   return { session: next, closedTrade, filledTrade, finished }
 }
 
+/** Archive a submitted resting order without turning it into a trade or a no-trade note. */
+export function cancelManualPendingOrder(session: ManualPracticeSession, interval: IntervalId, cancelledTime = Math.max(session.pendingOrder?.createdTime ?? 0, session.cursorTime - 60), cancellationReason: ManualCancelledOrder['cancellationReason'] = 'manual', now = Date.now()): ManualPracticeSession {
+  const pending = session.pendingOrder
+  if (!pending) return session
+  const archived: ManualCancelledOrder = {
+    ...pending, reasons: [...pending.reasons], interval: pending.interval ?? interval,
+    cancelledTime: Math.max(pending.createdTime, cancelledTime), cancellationReason, updatedAt: now,
+  }
+  return { ...session, pendingOrder: null, cancelledOrders: mergeCancelledOrders(session.cancelledOrders, [archived]), updatedAt: now }
+}
+
 /** Close any open position at the last revealed price and mark the day complete. */
 export function finishManualSession(session: ManualPracticeSession, minutes: readonly Candle[], now = Date.now()): ManualPracticeSession {
   const last = lastRevealedMinute(minutes, session.cursorTime)
   const trades = session.trades.map((trade) => trade.exitTime === null && last
     ? { ...trade, exitTime: last.time, exitPrice: last.close, exitKind: 'session-end' as const }
     : trade)
-  return { ...session, trades, pendingOrder: null, status: 'completed', completedAt: now, updatedAt: now }
+  const retained = cancelManualPendingOrder(session, session.pendingOrder?.interval ?? '1m', Math.max(session.pendingOrder?.createdTime ?? 0, last?.time ?? session.cursorTime - 60), 'session-end', now)
+  return { ...retained, trades, pendingOrder: null, status: 'completed', completedAt: now, updatedAt: now }
 }
 
 export function tradePoints(trade: ManualTrade, markPrice?: number | null) {
@@ -550,8 +601,10 @@ export function sessionSummary(session: ManualPracticeSession) {
     totalUsd: closed.reduce((sum, trade) => sum + (tradeUsd(trade) ?? 0), 0),
     noTradeNotes: new Set(session.notes.filter((note) => note.kind !== 'should-trade').map(note => `${note.barTime}:${note.interval}`)).size,
     shouldTradeNotes: new Set(session.notes.filter((note) => note.kind === 'should-trade').map(note => `${note.barTime}:${note.interval}`)).size,
-    reasonCount: session.trades.reduce((sum, trade) => sum + trade.reasons.length + trade.exitReasons.length, 0)
-      + session.notes.reduce((sum, note) => sum + note.reasons.length, 0),
+    // Multiple reasons/directional alternatives on the same candle count once.
+    reasonCount: new Set(manualTimeline(session)
+      .filter(item => item.reasons.some(reason => reason.trim()) || Boolean(item.background?.trim()))
+      .map(item => item.time)).size,
   }
 }
 
@@ -618,6 +671,7 @@ export interface ManualTimelineItem {
   /** Entry counter-evidence; not used for exits or no-trade notes. */
   unsupportedReasons?: string
   trade?: ManualTrade
+  cancelledOrder?: ManualCancelledOrder
   note?: ManualBarNote
   /** A stop / target / end-of-day exit is triggered by the market, not decided by the user, so it has no 平仓理由. */
   passive?: boolean
@@ -625,6 +679,7 @@ export interface ManualTimelineItem {
 
 /** Stable identities survive timeline filtering, ranking and insertion of other records. */
 export function manualReviewCommentKey(item: ManualTimelineItem): string {
+  if (item.cancelledOrder) return JSON.stringify(['cancelled-order', item.cancelledOrder.id])
   if (item.trade && (item.kind === 'entry' || item.kind === 'exit')) return JSON.stringify(['trade', item.trade.id, item.kind])
   if (item.note) {
     const note = item.note
@@ -655,6 +710,10 @@ export function manualTimeline(session: ManualPracticeSession): ManualTimelineIt
       const label = trade.exitKind === 'stop' ? '止损' : trade.exitKind === 'target' ? '止盈' : trade.exitKind === 'session-end' ? '收盘平仓' : '手动平仓'
       items.push({ time: trade.exitTime, kind: 'exit', title: `${label} @ ${trade.exitPrice?.toFixed(2)}`, background: null, reasons: trade.exitReasons, trade, passive: trade.exitKind !== 'manual' })
     }
+  }
+  for (const order of session.cancelledOrders ?? []) {
+    const label = order.cancellationReason === 'session-end' ? '到期未成交' : '已取消挂单'
+    items.push({ time: order.createdTime, kind: 'cancelled-order', title: `${label} · ${order.side === 'long' ? '开多' : '开空'} @ ${order.entryPrice.toFixed(2)}`, background: order.background, reasons: order.reasons, unsupportedReasons: order.unsupportedReasons ?? '', cancelledOrder: order })
   }
   const timeline = items.sort((a, b) => {
     if (a.time !== b.time) return a.time - b.time

@@ -19,6 +19,7 @@ import {
   advanceManualSession, aggregateMinutes, barTimeFor, cleanReasons, contextStartTime, createManualSession, findManualTradingDays, finishManualSession,
   manualReasonRows,
   manualReviewCommentKey, saveManualReviewComment,
+  cancelManualPendingOrder,
   saveCandleBiasNotes,
   manualTimeline,
   lastRevealedMinute, loadManualPracticeStore, lowerBound, mergeManualPracticeStores, MANUAL_PRACTICE_SYMBOL, openTrade as manualOpenTrade, pickRandomTradingDay, saveManualPracticeStore,
@@ -2651,7 +2652,8 @@ function App() {
         event.preventDefault(); setWatchlistOpen(true); notify(`${symbol} 已在自选列表中`); return
       }
       const drawingShortcut = event.altKey ? (
-        event.shiftKey && key === 'r' ? 'rectangle' :
+        !mod && !event.shiftKey && (key === 'd' || event.code === 'KeyD') ? 'ab-equals-cd' :
+          event.shiftKey && key === 'r' ? 'rectangle' :
           key === 't' ? 'trend' : key === 'h' ? 'horizontal' : key === 'v' ? 'vertical' :
             key === 'c' ? 'cross-line' : key === 'j' ? 'horizontal-ray' : key === 'f' ? 'fib' : null
       ) : null
@@ -2771,18 +2773,20 @@ function App() {
       setManualLoading(false)
     }
   }
-  const startManualPractice = async () => {
+  const startManualPractice = async (date?: string) => {
     if (manualBlockedByDecision()) return
     const minutes = await ensureNqMinutes()
     if (!minutes?.length) { notify('NQ1! 历史数据加载失败，暂时无法出卷'); return }
     const days = findManualTradingDays(minutes)
-    const day = pickRandomTradingDay(days, new Set(manualStore.sessions.map((session) => session.dayKey)))
-    if (!day) { notify('NQ1! 历史里没有完整的交易日'); return }
+    const day = date
+      ? days.find(day => day.key === `${MANUAL_PRACTICE_SYMBOL}:${date}`)
+      : pickRandomTradingDay(days, new Set(manualStore.sessions.map((session) => session.dayKey)))
+    if (!day) { notify(date ? '该日期没有完整交易日数据，请选择其他日期' : 'NQ1! 历史里没有完整的交易日'); return }
     const session = createManualSession(day)
     setManualReviewId(null)
     setManualStore((store) => ({ ...store, activeSessionId: session.id, sessions: [session, ...store.sessions] }))
     enterManualView()
-    notify(`已抽到 ${day.label}，按 1 揭示开盘第一根K线`)
+    notify(`${date ? '已选择' : '已抽到'} ${day.label}，按 1 揭示开盘第一根K线`)
   }
   const continueManualPractice = async (sessionId: string) => {
     if (manualBlockedByDecision()) return
@@ -2920,8 +2924,8 @@ function App() {
   }
   const cancelManualOrder = () => {
     if (!manualActiveSession?.pendingOrder) return
-    updateManualSession(manualActiveSession.id, (session) => ({ ...session, updatedAt: Date.now(), pendingOrder: null }))
-    notify('已取消挂单')
+    updateManualSession(manualActiveSession.id, (session) => cancelManualPendingOrder(session, interval, manualLastMinute?.time))
+    notify('已取消挂单，背景和全部理由已保留在理由时间线')
   }
   const stepManualQuantity = (delta: number) => setManualRisk((current) => current ? { ...current, quantity: Math.max(1, Math.min(MANUAL_MAX_QUANTITY, current.quantity + delta)) } : current)
   // Dragging an open position's line on the chart (clamped instead of rejected, so the drag never spams errors).
@@ -3107,6 +3111,12 @@ function App() {
     const cleaned = cleanReasons(reasons)
     updateManualSession(manualSession.id, (session) => {
       if ((item.kind === 'no-trade' || item.kind === 'should-trade') && item.note) return upsertBarNote(session, item.note.barTime, item.note.interval, cleaned, background, item.note.kind, item.note.side)
+      if (item.cancelledOrder) return {
+        ...session, updatedAt: Date.now(),
+        cancelledOrders: session.cancelledOrders?.map(order => order.id === item.cancelledOrder!.id
+          ? { ...order, background: background.trim(), reasons: cleaned, unsupportedReasons: unsupportedReasons.trim(), updatedAt: Date.now() }
+          : order),
+      }
       if (!item.trade) return session
       return {
         ...session,
@@ -3886,9 +3896,9 @@ function App() {
       />
       {manualCenterOpen && <ManualPracticeCenter
         store={manualStore}
-        dayCount={manualDays?.length ?? null}
+        days={manualDays}
         loading={manualLoading || !nqMinutes?.length}
-        onStart={() => { void startManualPractice() }}
+        onStart={(date) => { void startManualPractice(date) }}
         onContinue={(sessionId) => { void continueManualPractice(sessionId) }}
         onReview={(sessionId) => { void reviewManualPractice(sessionId) }}
         onDelete={(sessionId) => {
@@ -3905,7 +3915,7 @@ function App() {
         onJump={(item) => {
           const bar = barTimeFor(item.time, interval)
           setManualHighlightTime(bar)
-          setManualHighlightPrice(item.trade ? (item.kind === 'entry' ? item.trade.entryPrice : item.trade.exitPrice) : null)
+          setManualHighlightPrice(item.trade ? (item.kind === 'entry' ? item.trade.entryPrice : item.trade.exitPrice) : item.cancelledOrder?.entryPrice ?? null)
           setPriceScaleAuto(true)
           chartRef.current?.goToTime(bar)
         }}
@@ -3942,7 +3952,7 @@ function App() {
               pendingOrder: {
                 id: tradeId, side: dialog.side, orderKind: kind, entryPrice: risk.entryPrice,
                 stopLoss: risk.stopLoss, takeProfit: risk.takeProfit, quantity: risk.quantity,
-                background, reasons, unsupportedReasons, createdTime: manualLastMinute.time,
+                background, reasons, unsupportedReasons, createdTime: manualLastMinute.time, interval,
               },
             }))
             notify(`已挂${dialog.side === 'long' ? '多' : '空'}单${kind === 'stop' ? '（追单）' : '（挂单）'} @ ${risk.entryPrice.toFixed(2)}，价格触到后成交`)
@@ -4007,12 +4017,12 @@ function App() {
         }}
       />}
       {manualDialog?.type === 'edit' && <ReasonEditor
-        persistenceId={`${manualSession?.id}:edit:${manualDialog.item.kind}:${manualDialog.item.trade?.id ?? manualDialog.item.time}`}
-        title={manualDialog.item.kind === 'entry' ? '编辑做单理由' : manualDialog.item.kind === 'exit' ? '编辑平仓理由' : manualDialog.item.kind === 'should-trade' ? '编辑应该开单理由' : '编辑未开单理由'}
+        persistenceId={`${manualSession?.id}:edit:${manualDialog.item.kind}:${manualDialog.item.trade?.id ?? manualDialog.item.cancelledOrder?.id ?? manualDialog.item.time}`}
+        title={manualDialog.item.kind === 'entry' ? '编辑做单理由' : manualDialog.item.kind === 'exit' ? '编辑平仓理由' : manualDialog.item.kind === 'cancelled-order' ? '编辑已取消挂单理由' : manualDialog.item.kind === 'should-trade' ? '编辑应该开单理由' : '编辑未开单理由'}
         subtitle={manualDialog.item.title}
         initial={manualDialog.item.reasons}
-        required={manualDialog.item.kind === 'entry'}
-        unsupportedReasons={manualDialog.item.kind === 'entry' ? { initial: manualDialog.item.unsupportedReasons ?? '' } : null}
+        required={manualDialog.item.kind === 'entry' || manualDialog.item.kind === 'cancelled-order'}
+        unsupportedReasons={manualDialog.item.kind === 'entry' || manualDialog.item.kind === 'cancelled-order' ? { initial: manualDialog.item.unsupportedReasons ?? '' } : null}
         background={manualDialog.item.background !== null ? { initial: manualDialog.item.background } : null}
         allowClear={manualDialog.item.kind === 'no-trade' || manualDialog.item.kind === 'should-trade'}
         onCancel={() => setManualDialog(null)}

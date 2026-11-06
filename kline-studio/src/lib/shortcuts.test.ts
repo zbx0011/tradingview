@@ -12,6 +12,11 @@ const historyKey = (overrides: Partial<KeyboardEvent>) => resolveHistoryShortcut
 })
 
 describe('TradingView shortcut catalog', () => {
+  it('assigns Alt+D uniquely to the automatic AB=CD projection tool', () => {
+    expect(TRADINGVIEW_SHORTCUTS.filter(item => item.keys === 'Alt+D')).toEqual([
+      { id: 'ab-equals-cd', section: '绘图', label: 'AB=CD 等幅投射', keys: 'Alt+D' },
+    ])
+  })
   it('reserves Alt+G for filled gaps without conflicting with go-to-date', () => {
     expect(TRADINGVIEW_SHORTCUTS.find(item => item.id === 'filled-gaps')?.keys).toBe('Alt+G')
     expect(TRADINGVIEW_SHORTCUTS.find(item => item.id === 'go-date')?.keys).toBe('Alt+Shift+G')

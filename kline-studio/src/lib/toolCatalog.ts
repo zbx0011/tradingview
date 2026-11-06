@@ -4,7 +4,7 @@ export type ToolBehavior =
   | 'cursor' | 'eraser' | 'line' | 'ray' | 'extended-line' | 'info-line' | 'angle'
   | 'horizontal' | 'horizontal-ray' | 'vertical' | 'cross' | 'channel' | 'regression' | 'vwap'
   | 'fib' | 'fib-extension' | 'fib-channel' | 'fib-time' | 'fan' | 'pitchfork' | 'gann-box'
-  | 'circles' | 'spiral' | 'arcs' | 'wedge' | 'pattern' | 'wave' | 'cycles' | 'sine'
+  | 'circles' | 'spiral' | 'arcs' | 'wedge' | 'pattern' | 'abc-projection' | 'wave' | 'cycles' | 'sine'
   | 'long-position' | 'short-position' | 'forecast' | 'range' | 'bars-pattern' | 'ghost-feed'
   | 'sector' | 'volume-profile' | 'brush' | 'highlighter' | 'rectangle' | 'rotated-rectangle'
   | 'ellipse' | 'polyline' | 'triangle' | 'arc' | 'curve' | 'double-curve' | 'arrow' | 'arrow-mark'
@@ -96,6 +96,7 @@ export const TOOL_GROUPS: ToolGroup[] = [
       tool('xabcd', 'XABCD 形态', 'patterns', '谐波形态', 'pattern', 'X', '五点谐波形态'),
       tool('cypher', 'Cypher 形态', 'patterns', '谐波形态', 'pattern', 'C', 'Cypher 五点形态'),
       tool('abcd', 'ABCD 形态', 'patterns', '谐波形态', 'pattern', 'A', '四点对称形态'),
+      tool('ab-equals-cd', 'AB=CD 等幅投射', 'patterns', '谐波形态', 'abc-projection', '=', '依次选择 A、B 和回撤点 C，自动投射与 AB 等幅的 D 点', 'Alt+D'),
       tool('triangle-pattern', '三角形形态', 'patterns', '图表形态', 'pattern', '△', '收敛三角形'),
       tool('three-drives', '三驱动形态', 'patterns', '谐波形态', 'pattern', '3', '三个连续驱动腿'),
       tool('head-shoulders', '头肩形态', 'patterns', '图表形态', 'pattern', 'H', '左肩、头部和右肩'),

@@ -177,7 +177,7 @@ export function settingsKindFor(behavior: string, tool = ''): SettingsKind {
   if (behavior === 'arc') return 'arc'
   if (behavior === 'curve' || behavior === 'double-curve') return 'curve'
   if (['rectangle', 'rotated-rectangle', 'triangle'].includes(behavior)) return 'shape'
-  if (behavior === 'pattern' || behavior === 'wave') return 'pattern'
+  if (behavior === 'pattern' || behavior === 'wave' || behavior === 'abc-projection') return 'pattern'
   if (['price-label', 'signpost', 'flag'].includes(behavior)) return 'label'
   if (['text', 'callout', 'comment', 'table', 'media', 'note'].includes(behavior)) return 'textbox'
   if (behavior === 'range') return 'range'

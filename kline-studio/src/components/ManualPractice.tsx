@@ -20,6 +20,7 @@ import {
   type ManualSide,
   type ManualTimelineItem,
   type ManualTrade,
+  type ManualTradingDay,
 } from '../lib/manualPractice'
 
 const beijingFormatter = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })
@@ -244,7 +245,7 @@ const validReasonDraft = (value: unknown): value is ReasonDraft => {
   return Boolean(draft && Array.isArray(draft.rows) && draft.rows.length > 0 && draft.rows.every(row => typeof row === 'string') && typeof draft.unsupported === 'string')
 }
 
-export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initial = [], required = false, background = null, unsupportedReasons = null, allowClear = false, confirmLabel = '保存', tone = 'neutral', draftRef, persistenceId, children, onSave, onCancel }: {
+export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initial = [], required = false, background = null, unsupportedReasons = null, allowClear = false, preserveDraftOnCancel = false, confirmLabel = '保存', tone = 'neutral', draftRef, persistenceId, children, onSave, onCancel }: {
   cardId?: string
   persistenceId?: string
   /** Lets the parent read the unsaved text (e.g. to keep it when the record type is switched). */
@@ -260,6 +261,8 @@ export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initia
   unsupportedReasons?: { initial: string } | null
   /** Saving with every field empty removes the record instead of complaining. */
   allowClear?: boolean
+  /** Cancelling an unsubmitted order keeps its typed reasons for reopening the same setup. */
+  preserveDraftOnCancel?: boolean
   confirmLabel?: string
   tone?: 'neutral' | 'long' | 'short'
   children?: ReactNode
@@ -291,7 +294,7 @@ export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initia
     input?.focus()
     if (input) input.setSelectionRange(input.value.length, input.value.length)
   })
-  const cancel = () => { discardDraft(); onCancel() }
+  const cancel = () => { if (!preserveDraftOnCancel) discardDraft(); onCancel() }
   const [error, setError] = useState('')
   useEffect(() => {
     if (draftRef) draftRef.current = () => ({ reasons: rows.slice(offset).map((row) => row.trim()).filter(Boolean), background: background ? rows[0].trim() : '' })
@@ -463,16 +466,22 @@ export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initia
 /* Start / history dialog                                              */
 /* ------------------------------------------------------------------ */
 
-export function ManualPracticeCenter({ store, dayCount, loading, onStart, onContinue, onReview, onDelete, onClose }: {
+export function ManualPracticeCenter({ store, days, loading, onStart, onContinue, onReview, onDelete, onClose }: {
   store: ManualPracticeStore
-  dayCount: number | null
+  days: readonly ManualTradingDay[] | null
   loading: boolean
-  onStart: () => void
+  onStart: (date?: string) => void
   onContinue: (sessionId: string) => void
   onReview: (sessionId: string) => void
   onDelete: (sessionId: string) => void
   onClose: () => void
 }) {
+  const [startMode, setStartMode] = useState<'random' | 'date'>('random')
+  const [selectedDate, setSelectedDate] = useState('')
+  const dayCount = days?.length ?? null
+  const availableDates = useMemo(() => new Set(days?.map(day => day.key.slice(day.key.lastIndexOf(':') + 1)) ?? []), [days])
+  const sortedDates = useMemo(() => [...availableDates].sort(), [availableDates])
+  const dateAvailable = availableDates.has(selectedDate)
   const history = useMemo(() => [...store.sessions].sort((a, b) => b.updatedAt - a.updatedAt), [store.sessions])
   const completedCount = history.filter((session) => session.status === 'completed').length
   // The most recently touched unfinished paper is the one "continue" resumes.
@@ -483,7 +492,7 @@ export function ManualPracticeCenter({ store, dayCount, loading, onStart, onCont
     <section className="decision-center mp-center" role="dialog" aria-modal="true" aria-label="自主逐K复盘">
       <header>
         <span className="decision-center-icon"><NotebookPen size={26} /></span>
-        <div><h2>自主逐K复盘 · NQ1!</h2><small>不看 AI 信号，随机抽一个交易日逐根K线练习，记录每一次做单和不做单的理由</small></div>
+        <div><h2>自主逐K复盘 · NQ1!</h2><small>不看 AI 信号，随机抽日或指定日期逐根K线练习，记录每一次做单和不做单的理由</small></div>
         <button aria-label="关闭自主逐K复盘" onClick={onClose}><X size={21} /></button>
       </header>
       <div className="decision-center-body">
@@ -492,7 +501,7 @@ export function ManualPracticeCenter({ store, dayCount, loading, onStart, onCont
         </button>}
         <section className="mp-start">
           <div className="mp-start-copy">
-            <h3>随机抽一个交易日</h3>
+            <h3>{startMode === 'random' ? '随机抽一个交易日' : '指定一个交易日'}</h3>
             <p>以 CME 交易时段为一天（北京时间约 06:00 / 07:00 至次日 05:00 / 06:00），图表先显示前几个交易日作为背景，然后从当天开盘逐根揭示。</p>
             <ul className="mp-keys">
               <li><kbd>1</kbd> 下一根K线</li>
@@ -503,9 +512,19 @@ export function ManualPracticeCenter({ store, dayCount, loading, onStart, onCont
             <p className="mp-muted">开仓时必须填写做单理由；不开仓的K线可以随时按 <kbd>·</kbd> 记录理由。一条只写一个理由，<kbd>Tab</kbd> 切到下一条。</p>
           </div>
           <div className="mp-start-action">
+            <div className="mp-start-modes" role="group" aria-label="选择出卷模式">
+              <button type="button" aria-pressed={startMode === 'random'} onClick={() => setStartMode('random')}>随机抽日</button>
+              <button type="button" aria-pressed={startMode === 'date'} onClick={() => setStartMode('date')}>指定日期</button>
+            </div>
+            {startMode === 'date' && <label className="mp-date-picker">
+              <span>选择交易日期</span>
+              <input type="date" value={selectedDate} min={sortedDates[0]} max={sortedDates[sortedDates.length - 1]} disabled={loading} onChange={event => setSelectedDate(event.target.value)} />
+              <small className="mp-muted">按 CME 交易日日期选择（与历史卷子日期一致）。{sortedDates.length > 0 && `可选范围：${sortedDates[0]} 至 ${sortedDates[sortedDates.length - 1]}。`}</small>
+              {selectedDate && !loading && !dateAvailable && <small role="alert" className="mp-editor-error">该日期没有完整交易日数据，请选择其他日期。</small>}
+            </label>}
             <div className="mp-day-count"><CalendarDays size={18} /><span>{dayCount === null ? (loading ? '正在加载 NQ1! 历史…' : 'NQ1! 历史尚未加载') : `共 ${dayCount.toLocaleString('zh-CN')} 个完整交易日 · 已练 ${usedDays} 天`}</span></div>
-            <button type="button" className="mp-primary mp-start-button" disabled={loading} onClick={onStart}>
-              {active ? '放弃当前卷子，重新抽一天' : '随机抽一天开始'}
+            <button type="button" className="mp-primary mp-start-button" disabled={loading || (startMode === 'date' && !dateAvailable)} onClick={() => onStart(startMode === 'date' ? selectedDate : undefined)}>
+              {startMode === 'date' ? '按指定日期开始' : active ? '另抽一天开始' : '随机抽一天开始'}
             </button>
             {active && <small className="mp-muted">未完成的卷子会保留在下面的历史记录里，随时可以继续。</small>}
           </div>
@@ -524,7 +543,7 @@ export function ManualPracticeCenter({ store, dayCount, loading, onStart, onCont
                     : `已到 ${formatBeijing(session.cursorTime)}`}</small></span>
                   <span>{summary.trades} 笔</span>
                   <span className={summary.totalPoints >= 0 ? 'positive' : 'negative'}>{formatPoints(summary.totalPoints)}<small>{formatUsd(summary.totalUsd)}</small></span>
-                  <span>{summary.reasonCount} 条理由</span>
+                  <span>{summary.reasonCount} 根已记录K线</span>
                   <span className="mp-history-actions">
                     {done
                       ? <button type="button" className="mp-secondary" onClick={() => onReview(session.id)}><Eye size={14} />复盘</button>
@@ -624,8 +643,33 @@ export function ManualPracticePanel({ session, review, lastPrice, interval, curr
     <div className="mp-panel-stats">
       <span>交易 <b>{summary.trades}</b></span>
       <span>已实现 <b className={summary.totalPoints >= 0 ? 'positive' : 'negative'}>{formatPoints(summary.totalPoints)}</b></span>
-      <span>理由 <b>{summary.reasonCount}</b></span>
+      <span>已记录K线 <b>{summary.reasonCount}</b></span>
     </div>
+    <section className="mp-trade-results" aria-label="每笔交易盈亏">
+      <div className="mp-trade-results-head"><b>每笔交易盈亏</b><span>已实现 <strong className={summary.totalUsd >= 0 ? 'positive' : 'negative'}>{formatUsd(summary.totalUsd)}</strong></span></div>
+      <p className="mp-muted">胜率 {summary.winRate === null ? '—' : `${(summary.winRate * 100).toFixed(1)}%`} · 胜 {summary.wins} / 负 {summary.losses} / 平 {summary.closed - summary.wins - summary.losses}（仅统计已平仓）</p>
+      {session.trades.length === 0
+        ? <p className="mp-muted">成交后在这里显示每笔盈亏</p>
+        : <ol className="mp-trade-results-list" tabIndex={0} aria-label="交易盈亏明细（最新在前）">
+          {[...session.trades].reverse().map((trade, index) => {
+            const closed = trade.exitPrice !== null
+            const points = tradePoints(trade, lastPrice)
+            const usd = tradeUsd(trade, lastPrice)
+            const exitLabel = !closed ? '持仓中 · 浮盈亏' : trade.exitKind === 'stop' ? '止损平仓' : trade.exitKind === 'target' ? '止盈平仓' : trade.exitKind === 'session-end' ? '收盘平仓' : '手动平仓'
+            return <li key={trade.id}><details className="mp-trade-reasons">
+              <summary aria-label={`第 ${session.trades.length - index} 笔交易详情和理由`}><div className="mp-trade-result-title"><b>第 {session.trades.length - index} 笔 · {trade.side === 'long' ? '多单' : '空单'} ×{tradeQuantity(trade)}</b><span className={usd === null ? 'mp-muted' : usd >= 0 ? 'positive' : 'negative'}>{usd === null ? '待报价' : formatUsd(usd)}</span></div>
+              <div className="mp-trade-result-detail"><span>{formatClock(trade.entryTime)} @ {trade.entryPrice.toFixed(2)} → {closed ? `${trade.exitTime === null ? '' : formatClock(trade.exitTime) + ' @ '}${trade.exitPrice!.toFixed(2)}` : lastPrice === null ? '—' : lastPrice.toFixed(2)}</span><span className={points === null ? 'mp-muted' : points >= 0 ? 'positive' : 'negative'}>{points === null ? '—' : formatPoints(points)}</span></div>
+              <small className="mp-muted">{exitLabel} · 点击查看理由</small></summary>
+              <div className="mp-trade-reasons-body">
+                <b>背景</b><p>{trade.background || '未记录'}</p>
+                <b>做单理由</b>{trade.reasons.length ? <ol>{trade.reasons.map((reason, i) => <li key={i}>{reason}</li>)}</ol> : <p>未记录</p>}
+                {trade.unsupportedReasons && <><b>不支持理由</b><p>{trade.unsupportedReasons}</p></>}
+                <b>平仓理由</b>{trade.exitReasons.length ? <ol>{trade.exitReasons.map((reason, i) => <li key={i}>{reason}</li>)}</ol> : <p>{closed ? `${exitLabel}，未另记理由` : '尚未平仓'}</p>}
+              </div>
+            </details></li>
+          })}
+        </ol>}
+    </section>
     <footer>
       <button type="button" className="mp-secondary" onClick={onOpenTimeline}><BookOpenCheck size={14} />{review ? '理由时间线' : '已记录的理由'}</button>
       {!review && (confirmFinish
@@ -689,6 +733,7 @@ export function OpenTradeDialog({ side, price, orderKind = null, quantity, stopL
     onCancel={onCancel}
     background={{ initial: initialBackground }}
     unsupportedReasons={{ initial: '' }}
+    preserveDraftOnCancel
     onSave={(reasons, background, unsupportedReasons) => {
       if (long ? stopLoss >= price : stopLoss <= price) { setRiskError(`止损必须${long ? '低于' : '高于'}开仓价`); return false }
       if (long ? takeProfit <= price : takeProfit >= price) { setRiskError(`止盈必须${long ? '高于' : '低于'}开仓价`); return false }
@@ -825,7 +870,7 @@ export function ManualTimelineDialog({ session, onClose, onJump, onEditItem, onR
   onReviewItem?: (item: ManualTimelineItem) => void
 }) {
   const summary = sessionSummary(session)
-  const [filter, setFilter] = usePanelDraft<'all' | 'entry' | 'no-trade' | 'should-trade' | 'exit'>(`timeline:${session.id}:filter`, () => 'all', (value): value is 'all' | 'entry' | 'no-trade' | 'should-trade' | 'exit' => typeof value === 'string' && ['all', 'entry', 'no-trade', 'should-trade', 'exit'].includes(value))
+  const [filter, setFilter] = usePanelDraft<'all' | 'entry' | 'no-trade' | 'should-trade' | 'exit' | 'cancelled-order'>(`timeline:${session.id}:filter`, () => 'all', (value): value is 'all' | 'entry' | 'no-trade' | 'should-trade' | 'exit' | 'cancelled-order' => typeof value === 'string' && ['all', 'entry', 'no-trade', 'should-trade', 'exit', 'cancelled-order'].includes(value))
   const [selectedKey, setSelectedKey] = usePanelDraft<string | null>(`timeline:${session.id}:selected`, () => null, (value): value is string | null => value === null || typeof value === 'string')
   // One card per trade: the entry and the exit it ended with belong together. 平仓理由 only exists
   // for exits the user chose to make; stop / target / end-of-day exits are passive.
@@ -857,16 +902,16 @@ export function ManualTimelineDialog({ session, onClose, onJump, onEditItem, onR
           <div><small>胜率</small><b>{summary.winRate === null ? '—' : `${Math.round(summary.winRate * 100)}%`}</b></div>
           <div><small>已实现</small><b className={summary.totalPoints >= 0 ? 'positive' : 'negative'}>{formatPoints(summary.totalPoints)}</b><small>{formatUsd(summary.totalUsd)}</small></div>
           <div><small>未开单 / 应开单</small><b>{summary.noTradeNotes} / {summary.shouldTradeNotes}</b></div>
-          <div><small>理由总数</small><b>{summary.reasonCount}</b></div>
+          <div><small>已记录理由的K线数</small><b>{summary.reasonCount}</b></div>
         </div>
         <div className="mp-filter" role="group" aria-label="筛选理由">
-          {([['all', '全部'], ['entry', '做单理由'], ['no-trade', '未开单理由'], ['should-trade', '应该开单理由'], ['exit', '平仓理由']] as const).map(([key, label]) => <button type="button" key={key} className={filter === key ? 'active' : ''} aria-pressed={filter === key} onClick={() => setFilter(key)}>{label}</button>)}
+          {([['all', '全部'], ['entry', '做单理由'], ['no-trade', '未开单理由'], ['should-trade', '应该开单理由'], ['exit', '平仓理由'], ['cancelled-order', '已取消挂单']] as const).map(([key, label]) => <button type="button" key={key} className={filter === key ? 'active' : ''} aria-pressed={filter === key} onClick={() => setFilter(key)}>{label}</button>)}
         </div>
         {visible.length === 0
           ? <div className="mp-empty">这一类还没有记录。</div>
           : <ol className="mp-timeline-list">
             {visible.map(({ item, exit, seq, biasItems }, index) => {
-              const itemKey = `${item.kind}-${item.time}-${item.trade?.id ?? item.note?.interval ?? ''}`
+              const itemKey = `${item.kind}-${item.time}-${item.trade?.id ?? item.cancelledOrder?.id ?? item.note?.interval ?? ''}`
               const exitKey = exit ? `exit-${exit.time}-${exit.trade?.id ?? ''}` : null
               const select = (target: ManualTimelineItem, key: string) => { setSelectedKey(key); onJump(target) }
               const points = exit && exit.trade ? tradePoints(exit.trade) : null
@@ -882,6 +927,7 @@ export function ManualTimelineDialog({ session, onClose, onJump, onEditItem, onR
                     <button type="button" className="mp-icon" aria-label="编辑理由" title="编辑理由" onClick={(event) => { event.stopPropagation(); onEditItem(item) }}><Pencil size={13} /></button>
                   </div>
                   {item.background !== null && <p className={`mp-timeline-background${item.background ? '' : ' missing'}`}><span>背景</span>{item.background || '未填写'}</p>}
+                  {item.cancelledOrder && <p className="mp-cancelled-order-detail">未成交 · 撤单 {formatBeijing(item.cancelledOrder.cancelledTime)} · {item.cancelledOrder.quantity} 手<br />原计划止损 {item.cancelledOrder.stopLoss.toFixed(2)} · 止盈 {item.cancelledOrder.takeProfit.toFixed(2)}</p>}
                   {biasItems ? biasItems.map((entry, rank) => <div className="mp-timeline-bias" key={entry.kind === 'no-trade' ? 'no-trade' : entry.note?.side}>
                     <div className="mp-bias-heading"><b>{rank + 1}. {entry.kind === 'no-trade' ? '不开单' : entry.note?.side === 'short' ? '做空' : '做多'}{rank === 0 ? ' · 最偏向' : ''}</b>{reviewAction(entry, `${entry.kind === 'no-trade' ? '不开单' : entry.note?.side === 'short' ? '做空' : '做多'}复盘评论`)}</div>
                     {entry.reasons.length > 0 ? <ol className="mp-reason-list">{entry.reasons.map((reason, index) => <li key={index}>{reason}</li>)}</ol> : <p className="mp-muted">未填写理由</p>}
@@ -889,7 +935,7 @@ export function ManualTimelineDialog({ session, onClose, onJump, onEditItem, onR
                   </div>) : item.reasons.length > 0
                     ? <ol className="mp-reason-list">{item.reasons.map((reason, reasonIndex) => <li key={reasonIndex}>{reason}</li>)}</ol>
                     : <p className="mp-muted">{item.kind === 'no-trade' || item.kind === 'should-trade' ? '只写了背景，没有分条理由' : '未填写理由'}</p>}
-                  {item.kind === 'entry' && item.unsupportedReasons?.trim() && <div className="mp-timeline-unsupported"><span>不支持理由</span><ol className="mp-reason-list">{item.unsupportedReasons.split(/\r\n|\r|\n/).map(reason => reason.trim()).filter(Boolean).map((reason, index) => <li key={index}>{reason}</li>)}</ol></div>}
+                  {(item.kind === 'entry' || item.kind === 'cancelled-order') && item.unsupportedReasons?.trim() && <div className="mp-timeline-unsupported"><span>不支持理由</span><ol className="mp-reason-list">{item.unsupportedReasons.split(/\r\n|\r|\n/).map(reason => reason.trim()).filter(Boolean).map((reason, index) => <li key={index}>{reason}</li>)}</ol></div>}
                   {!biasItems && reviewComment(item)}
                   {exit && exitKey && <div className={`mp-timeline-exit${selectedKey === exitKey ? ' selected' : ''}`} onClick={(event) => { event.stopPropagation(); select(exit, exitKey) }} title="点击在图上定位到平仓这根K线并标注">
                     <div className="mp-timeline-title"><b>{exit.title}</b>{points !== null && <span className={points >= 0 ? 'positive' : 'negative'}>{formatPoints(points)} · {formatUsd((exit.trade ? tradeUsd(exit.trade) : null) ?? points * NQ_POINT_VALUE_USD)}</span>}
