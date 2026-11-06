@@ -67,7 +67,7 @@ export async function runGitNetwork(args: readonly string[], options: CommandOpt
         http_proxy: proxy,
         https_proxy: proxy,
       } : undefined
-      return await runFile('git', ['-c', 'http.connectTimeout=20', '-c', 'http.lowSpeedLimit=1', '-c', 'http.lowSpeedTime=45', ...(proxy ? ['-c', `http.proxy=${proxy}`] : []), ...args], { ...options, env: { ...options.env, ...proxyEnvironment } })
+      return await runFile('git', ['-c', 'http.connectTimeout=20', '-c', 'http.lowSpeedLimit=1', '-c', 'http.lowSpeedTime=45', ...(proxy ? ['-c', `http.proxy=${proxy}`, '-c', 'http.version=HTTP/1.1'] : []), ...args], { ...options, env: { ...options.env, ...proxyEnvironment } })
     } catch (error) {
       lastError = error
       if (!transientGitNetworkError(error) || attempt === 2) throw error
