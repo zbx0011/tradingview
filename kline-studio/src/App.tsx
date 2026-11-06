@@ -631,9 +631,6 @@ function App() {
   }, [interval, manualCutoff, manualDays, manualSession, nqMinutes])
   const manualLastMinute = useMemo(() => manualSession && nqMinutes && manualCutoff !== null ? lastRevealedMinute(nqMinutes, manualCutoff) : null, [manualCutoff, manualSession, nqMinutes])
   const manualPosition = manualActiveSession ? manualOpenTrade(manualActiveSession) : null
-  // The candle each manual trade entered on is painted black.
-  const manualEntryBarKey = manualSession ? manualSession.trades.map((trade) => barTimeFor(trade.entryTime, interval)).join(',') : ''
-  const manualEntryBarTimes = useMemo(() => manualEntryBarKey ? manualEntryBarKey.split(',').map(Number) : [], [manualEntryBarKey])
   const manualCurrentBarTime = manualLastMinute ? barTimeFor(manualLastMinute.time, interval) : null
   const manualCurrentBarNote = manualActiveSession && manualCurrentBarTime !== null
     ? manualActiveSession.notes.find((note) => note.barTime === manualCurrentBarTime && note.interval === interval) ?? null
@@ -3238,7 +3235,6 @@ function App() {
               ref={chartRef} data={data} symbol={symbol} interval={interval} chartType={chartType} theme={theme}
               futureTradingTimes={manualMode ? manualFutureTimes : undefined}
               hiddenTailTimes={manualReplaying ? manualReplayTail : undefined}
-              blackBarTimes={manualEntryBarTimes}
               indicators={visibleIndicators} priceScaleAuto={apprenticeMode || priceScaleAuto} priceScaleLog={priceScaleLog}
               priceScalePercent={priceScalePercent} priceScaleInverted={priceScaleInverted}
               visibleTradeLayerSourceIds={manualMode || fullReviewSession || apprenticeMode ? [] : decisionOverviewMode ? decisionOverviewSourceIds : activeDecisionCandidate?.shapePracticeId ? decisionContextSourceIds : decisionDayMode ? decisionDayTradeSourceIds : decisionMode ? [] : visibleTradeLayerSourceIds}
