@@ -1,3 +1,4 @@
+import { runGitNetwork } from './git-network'
 import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { promises as fs } from 'node:fs'
@@ -83,59 +84,6 @@ function runFile(command: string, args: readonly string[], options: CommandOptio
     if (options.input) child.stdin.end(options.input)
     else child.stdin.end()
   })
-}
-
-function transientGitNetworkError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error)
-  return /failed to connect|could not resolve host|connection (?:was )?reset|network is unreachable|operation timed out|http (?:5\d\d|429)|rpc failed/i.test(message)
-}
-
-function normalizeProxyUrl(value: string) {
-  const target = value.trim()
-  if (!target) return null
-  return /^[a-z][a-z0-9+.-]*:\/\//i.test(target) ? target : `http://${target}`
-}
-
-async function windowsSystemProxy() {
-  if (process.platform !== 'win32') return null
-  try {
-    const registryKey = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings'
-    const enabled = await runFile('reg.exe', ['query', registryKey, '/v', 'ProxyEnable'])
-    if (!/REG_DWORD\s+0x1(?:\s|$)/i.test(enabled.stdout)) return null
-    const configured = await runFile('reg.exe', ['query', registryKey, '/v', 'ProxyServer'])
-    const match = configured.stdout.match(/ProxyServer\s+REG_SZ\s+(.+)$/im)
-    if (!match) return null
-    const raw = match[1].trim()
-    const entries = new Map(raw.split(';').flatMap((entry) => {
-      const separator = entry.indexOf('=')
-      return separator > 0 ? [[entry.slice(0, separator).trim().toLowerCase(), entry.slice(separator + 1).trim()] as const] : []
-    }))
-    return normalizeProxyUrl(entries.get('https') ?? entries.get('http') ?? (entries.size === 0 ? raw : ''))
-  } catch {
-    return null
-  }
-}
-
-async function runGitNetwork(args: readonly string[], options: CommandOptions = {}) {
-  let lastError: unknown
-  let proxy: string | null = null
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      const proxyEnvironment = proxy ? {
-        HTTP_PROXY: proxy,
-        HTTPS_PROXY: proxy,
-        http_proxy: proxy,
-        https_proxy: proxy,
-      } : undefined
-      return await runFile('git', args, { ...options, env: { ...options.env, ...proxyEnvironment } })
-    } catch (error) {
-      lastError = error
-      if (!transientGitNetworkError(error) || attempt === 2) throw error
-      if (!proxy) proxy = await windowsSystemProxy()
-      await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)))
-    }
-  }
-  throw lastError
 }
 
 function normalizeRemote(value: string) {

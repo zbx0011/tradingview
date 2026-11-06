@@ -1,3 +1,4 @@
+import { runGitNetwork } from './git-network'
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
@@ -80,7 +81,7 @@ async function runNpm(args: readonly string[], cwd: string) {
 }
 
 async function fetchRemote(repositoryRoot: string) {
-  await runFile('git', ['fetch', 'origin', EXPECTED_BRANCH], { cwd: repositoryRoot })
+  await runGitNetwork(['fetch', 'origin', EXPECTED_BRANCH], { cwd: repositoryRoot })
 }
 
 async function repositoryState(fetchLatest = false): Promise<RepositoryState> {
@@ -211,7 +212,7 @@ async function publishCode() {
   }
   state = await repositoryState(false)
   if (state.diverged || state.updateAvailable) throw new HttpError(409, '推送前发现远程已更新，已停止发布')
-  await runFile('git', ['push', 'origin', `HEAD:${EXPECTED_BRANCH}`], { cwd: state.repositoryRoot })
+  await runGitNetwork(['push', 'origin', `HEAD:${EXPECTED_BRANCH}`], { cwd: state.repositoryRoot })
   await fetchRemote(state.repositoryRoot)
   const verified = await repositoryState(false)
   if (verified.localHead !== verified.remoteHead) throw new HttpError(500, '公开仓库回读提交号不一致，未报告部署成功')
