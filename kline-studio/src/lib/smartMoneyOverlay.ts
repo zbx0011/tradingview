@@ -266,17 +266,26 @@ export function attachSmartMoneyOverlay(container: HTMLElement, chart: IChartApi
     if (trailing) {
       const { top, bottom, pivotIndex } = trailing
       const mid = Math.round(0.5 * (pivotIndex + lastIndex))
-      fillBox(pivotIndex, lastIndex, top, 0.95 * top + 0.05 * bottom, withAlpha(SMC_COLORS.red, 0.2))
-      fillBox(pivotIndex, lastIndex, 0.525 * top + 0.475 * bottom, 0.525 * bottom + 0.475 * top, withAlpha(SMC_COLORS.yellow, 0.2))
-      fillBox(pivotIndex, lastIndex, 0.95 * bottom + 0.05 * top, bottom, withAlpha(SMC_COLORS.green, 0.2))
+      const premiumPrice = 0.95 * top + 0.05 * bottom
+      const equilibriumPrice = (top + bottom) / 2
+      const discountPrice = 0.95 * bottom + 0.05 * top
       const midX = x(mid)
       const topY = y(top)
       const bottomY = y(bottom)
-      const equilibriumY = y((top + bottom) / 2)
+      const premiumY = y(premiumPrice)
+      const discountY = y(discountPrice)
+      const equilibriumY = y(equilibriumPrice)
+      const startX = x(pivotIndex)
       const lastX = x(lastIndex)
-      if (midX !== null && topY !== null) text('Premium', midX, topY, SMC_COLORS.red, 11, 'above')
-      if (midX !== null && bottomY !== null) text('Discount', midX, bottomY, SMC_COLORS.green, 11, 'below')
-      if (lastX !== null && equilibriumY !== null) text('Equilibrium', lastX + half, equilibriumY, SMC_COLORS.yellow, 11, 'left')
+      // Black segments (not bands) so they cannot be confused with the order blocks and gaps.
+      if (startX !== null && lastX !== null) {
+        for (const lineY of [premiumY, equilibriumY, discountY]) {
+          if (lineY !== null) line(startX, lineY, lastX + half, lineY, SMC_COLORS.zoneLine, [])
+        }
+      }
+      if (midX !== null && premiumY !== null) text('Premium', midX, premiumY, SMC_COLORS.zoneLine, 11, 'above')
+      if (midX !== null && discountY !== null) text('Discount', midX, discountY, SMC_COLORS.zoneLine, 11, 'below')
+      if (lastX !== null && equilibriumY !== null) text('Equilibrium', lastX + half, equilibriumY, SMC_COLORS.zoneLine, 11, 'left')
 
       // Strong / weak high and low (extended 20 bars past the last candle).
       const rightX = x(lastIndex + 20)

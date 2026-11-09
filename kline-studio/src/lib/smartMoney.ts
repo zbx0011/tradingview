@@ -25,7 +25,9 @@ export const SMC_COLORS = {
   gray: '#878b94',
   yellow: '#d4b106',
   internalBullishOrderBlock: 'rgba(49, 121, 245, 0.2)',
-  internalBearishOrderBlock: 'rgba(247, 124, 128, 0.2)',
+  internalBearishOrderBlock: 'rgba(255, 0, 0, 0.4)',
+  /** Premium / Equilibrium / Discount are drawn as plain black segments. */
+  zoneLine: '#000000',
   bullishFairValueGap: '#ff9800',
   bearishFairValueGap: '#f0356b',
 } as const
