@@ -671,6 +671,13 @@ function App() {
     : null, [manualActiveSession, manualReviewId, manualStore.sessions])
   // The paper on the chart: the one being played, or a finished one under review.
   const manualSession = manualActiveSession ?? manualReviewSession
+  const manualFocusedItem = useMemo(() => {
+    if (!manualSession) return null
+    const items = manualTimeline(manualSession)
+    const selected = manualDialog?.type === 'edit' ? manualDialog.item : manualHighlightItem
+    if (selected) return items.find(item => manualReviewCommentKey(item) === manualReviewCommentKey(selected)) ?? selected
+    return manualHighlightTime === null ? null : items.find(item => item.kind !== 'exit' && barTimeFor(item.time, interval) === manualHighlightTime) ?? null
+  }, [manualSession, manualDialog, manualHighlightItem, manualHighlightTime, interval])
   const manualMode = manualSession !== null
   const manualLossRef = manualLoss?.queue[manualLoss.index] ?? null
   const manualLossSession = manualLossRef && manualReviewSession?.id === manualLossRef.sessionId ? manualReviewSession : null
@@ -3177,7 +3184,7 @@ function App() {
     setManualHighlightPrice(null)
     if (kind === 'should-trade') {
       const entry = manualTimeline(manualSession).find((item) => item.kind === 'entry' && barTimeFor(item.time, interval) === time)
-      if (entry) { setManualDialog({ type: 'edit', item: entry }); return }
+      if (entry) { editManualItem(entry); return }
     }
     requestManualNote(time, kind)
   }
@@ -3279,7 +3286,32 @@ function App() {
   // Newest revealed candle while replaying: drawings / annotations are clipped at its right edge.
   const manualReplayBars = manualReplaying && data.length > 0 ? { last: data[data.length - 1].time, previous: data.length > 1 ? data[data.length - 2].time : null } : null
   // A 未开单 / 应该开单 card opens the full note editor, so its type (and direction) can be changed there.
+  const focusManualItem = (item: ManualTimelineItem, allowBackfill = true) => {
+    if (!manualSession) return
+    setManualHighlightItem(item)
+    setManualInitialRiskDraft(null)
+    const side = item.trade?.side ?? item.cancelledOrder?.side ?? item.note?.side
+    if (allowBackfill && side && !manualItemRisk(item)) {
+      const targetInterval = item.note?.interval ?? interval
+      const cutoff = item.note ? item.note.barTime + INTERVALS[targetInterval].seconds : item.time + 60
+      const context = aggregateMinutes((nqMinutes ?? []).slice(0, lowerBound(nqMinutes ?? [], cutoff)), INTERVALS[targetInterval].seconds).slice(-5)
+      const entryPrice = item.trade?.entryPrice ?? item.cancelledOrder?.entryPrice ?? context.at(-1)?.close
+      if (entryPrice !== undefined) {
+        const structure = context.length ? (side === 'long' ? Math.min(...context.map(bar => bar.low)) : Math.max(...context.map(bar => bar.high))) : null
+        const suggested = structure !== null && (side === 'long' ? structure < entryPrice : structure > entryPrice) ? structure : null
+        const levels = defaultDecisionLevels(side, entryPrice, suggested)
+        setManualInitialRiskDraft({ sessionId: manualSession.id, item, side, plan: { entryPrice, stopLoss: clampManualLevel('stopLoss', side, entryPrice, levels.stopLoss), takeProfit: clampManualLevel('takeProfit', side, entryPrice, levels.takeProfit) } })
+      } else notify('这根K线的历史行情尚未加载，请稍后重试')
+    }
+    if (item.note && item.note.interval !== interval) setIntervalId(item.note.interval)
+    const bar = barTimeFor(item.time, item.note?.interval ?? interval)
+    setManualHighlightTime(bar)
+    setManualHighlightPrice(item.trade ? (item.kind === 'entry' ? item.trade.entryPrice : item.trade.exitPrice) : item.cancelledOrder?.entryPrice ?? null)
+    setPriceScaleAuto(true)
+    chartRef.current?.goToTime(bar)
+  }
   const editManualItem = (item: ManualTimelineItem) => {
+    focusManualItem(item, !item.note)
     if ((item.kind === 'no-trade' || item.kind === 'should-trade') && item.note) {
       setManualDialog({ type: 'note', barTime: item.note.barTime, interval: item.note.interval, initial: item.note.reasons, background: item.note.background, existing: true, kind: item.note.kind, side: item.note.side ?? 'long' })
       return
@@ -3637,7 +3669,7 @@ function App() {
               interval={interval}
               hidden={chartAnnotationsHidden || manualLossHideDetails}
               clipAfterBar={manualReplayBars}
-              highlightItem={manualInitialRiskDraft || manualDialog?.type === 'note' ? null : manualHighlightItem}
+              highlightItem={manualInitialRiskDraft || manualDialog?.type === 'note' ? null : manualFocusedItem}
               highlightTime={manualHighlightTime}
               highlightPrice={manualHighlightPrice}
               hideLevels={manualDialog?.type === 'note' || Boolean(manualInitialRiskDraft) || Boolean(manualActiveSession && ((manualDialog?.type === 'open' && manualRisk) || (manualPosition && manualPosition.stopLoss !== null && manualPosition.takeProfit !== null)))}
@@ -4223,29 +4255,7 @@ function App() {
         session={manualSession}
         // In review the timeline is the only window: closing it leaves the review.
         onClose={manualReviewSession ? exitManualView : () => setManualTimelineOpen(false)}
-        onJump={(item) => {
-          setManualHighlightItem(item)
-          setManualInitialRiskDraft(null)
-          const side = item.trade?.side ?? item.cancelledOrder?.side ?? item.note?.side
-          if (side && !manualItemRisk(item)) {
-            const targetInterval = item.note?.interval ?? interval
-            const cutoff = item.note ? item.note.barTime + INTERVALS[targetInterval].seconds : item.time + 60
-            const context = aggregateMinutes((nqMinutes ?? []).slice(0, lowerBound(nqMinutes ?? [], cutoff)), INTERVALS[targetInterval].seconds).slice(-5)
-            const entryPrice = item.trade?.entryPrice ?? item.cancelledOrder?.entryPrice ?? context.at(-1)?.close
-            if (entryPrice !== undefined) {
-              const structure = context.length ? (side === 'long' ? Math.min(...context.map(bar => bar.low)) : Math.max(...context.map(bar => bar.high))) : null
-              const suggested = structure !== null && (side === 'long' ? structure < entryPrice : structure > entryPrice) ? structure : null
-              const levels = defaultDecisionLevels(side, entryPrice, suggested)
-              setManualInitialRiskDraft({ sessionId: manualSession.id, item, side, plan: { entryPrice, stopLoss: clampManualLevel('stopLoss', side, entryPrice, levels.stopLoss), takeProfit: clampManualLevel('takeProfit', side, entryPrice, levels.takeProfit) } })
-            } else notify('这根K线的历史行情尚未加载，请稍后重试')
-          }
-          if (item.note && item.note.interval !== interval) setIntervalId(item.note.interval)
-          const bar = barTimeFor(item.time, item.note?.interval ?? interval)
-          setManualHighlightTime(bar)
-          setManualHighlightPrice(item.trade ? (item.kind === 'entry' ? item.trade.entryPrice : item.trade.exitPrice) : item.cancelledOrder?.entryPrice ?? null)
-          setPriceScaleAuto(true)
-          chartRef.current?.goToTime(bar)
-        }}
+        onJump={focusManualItem}
         onEditItem={editManualItem}
         onReviewItem={manualReviewSession ? (item) => {
           bringFloatingCardIdToFront('review-comment-editor')
