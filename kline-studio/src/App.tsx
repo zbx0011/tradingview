@@ -11,22 +11,25 @@ import { AlertDialog, DataTableDialog, ObjectTreeDialog, OrderDialog } from './c
 import { IndicatorLegend } from './components/IndicatorLegend'
 import { getHoverCandle, setHoverCandle, useHoverCandle } from './lib/hoverStore'
 import { ManualBarPicker, ManualPracticeAnnotations, ManualPracticeCenter, ManualPracticePanel, ManualReplayControls, ManualTimelineDialog, OpenTradeDialog, ReasonEditor } from './components/ManualPractice'
+import { ManualInitialRiskEditor } from './components/ManualInitialRiskEditor'
 import { ManualCandleBiasEditor } from './components/ManualCandleBiasEditor'
 import { ManualReviewCommentEditor } from './components/ManualReviewCommentEditor'
 import { bringFloatingCardIdToFront } from './lib/floatingCards'
 import { useManualPracticeKeys } from './components/useManualPracticeKeys'
 import {
   advanceManualSession, aggregateMinutes, barTimeFor, cleanReasons, contextStartTime, createManualSession, findManualTradingDays, finishManualSession,
-  manualReasonRows,
+  manualReasonRows, manualItemRisk, saveManualInitialRisk, type ManualRiskPlan,
   manualReviewCommentKey, saveManualReviewComment,
   cancelManualPendingOrder,
   saveCandleBiasNotes,
   manualTimeline,
-  lastRevealedMinute, loadManualPracticeStore, lowerBound, mergeManualPracticeStores, MANUAL_PRACTICE_SYMBOL, openTrade as manualOpenTrade, pickRandomTradingDay, saveManualPracticeStore,
-  latestBackground, upsertBarNote, MANUAL_MAX_QUANTITY, NQ_POINT_VALUE_USD, tradeQuantity, type ManualPendingOrder, type ManualPracticeSession, type ManualPracticeStore, type ManualSide, type ManualTimelineItem,
+  lastRevealedMinute, loadManualPracticeStore, lowerBound, mergeManualPracticeStores, MANUAL_PRACTICE_SYMBOL, openTrade as manualOpenTrade, pickRandomTradingDay, saveManualPracticeStore, syncManualSessionDrawings,
+  latestBackground, upsertBarNote, MANUAL_MAX_QUANTITY, NQ_POINT_VALUE_USD, tradeQuantity, type ManualLossFilter, type ManualLossMark, type ManualLossRef, type ManualPendingOrder, type ManualPracticeSession, type ManualPracticeStore, type ManualSide, type ManualTimelineItem, type ManualTrade,
 } from './lib/manualPractice'
+import { manualLossQueue, manualTradeCommentKey, setManualLossMark } from './lib/manualPractice'
 import { ChartContextMenu, type ChartContextData } from './components/TradingViewContextMenu'
 import { DrawingOverlay } from './components/DrawingOverlay'
+import { ManualLossPanel } from './components/ManualPractice'
 import { DrawingToolbar, type MagnetMode } from './components/DrawingToolbar'
 import { QuickDrawingToolbar } from './components/QuickDrawingToolbar'
 import { FibSettingsDialog } from './components/FibSettingsDialog'
@@ -41,7 +44,7 @@ import type { DecisionSymbolStats } from './components/DecisionReplay'
 import { applyShapeCuration, loadShapeExclusions, SHAPE_EXCLUSIONS_KEY, removeShapeQuestion, shapeAiMarkers, confirmedShapeQuestionKeys, filterShapeCandidates, shapePatternOptions, shapeDecisionHistory } from './lib/shapeDecisionPractice'
 import { shapePhaseAnnotationFor } from './lib/shapePhaseAnnotations'
 import { futureTradingBarTimes } from './lib/futureTradingTimeline'
-import { drawingReducer, duplicateDrawing, hitTestDrawing, initialDrawingHistory, moveDrawing, withoutTransientMeasurements, type Drawing, type DrawingAction } from './lib/drawings'
+import { drawingReducer, duplicateDrawing, hitTestDrawing, initialDrawingHistory, moveDrawing, withoutTransientMeasurements, type Drawing, type DrawingAction, type DrawingPoint } from './lib/drawings'
 import {
   clampContextMenuPosition, countActiveIndicators, loadChartAlerts, loadPaperOrders, saveChartAlerts, savePaperOrders,
   type ChartAlert, type PaperOrder,
@@ -93,6 +96,45 @@ import {
   saveDecisionReplayStoreSnapshot, sessionResults, updateDecisionSessionDrawings, validDecisionLevels, validOpenPositionLevels,
   type DecisionAttempt, type DecisionExit, type DecisionPositionMultiplier, type DecisionPositionSizingMode, type DecisionPracticeMode, type DecisionReplayInterval, type DecisionReplaySession, type DecisionStopLossMode, type DecisionTradeResult,
 } from './lib/decisionReplay'
+
+/** Cut a drawing off at the last revealed candle; null when it cannot be shown without disclosing hidden candles. */
+function clipDrawingToRevealed(drawing: Drawing, revealedEnd: number): Drawing | null {
+  const times = drawing.points.map((point) => typeof point.time === 'number' && Number.isFinite(point.time) ? point.time : null)
+  if (times.every((time) => time === null || time < revealedEnd)) return drawing
+  if (drawing.points.length !== 2 || times.some((time) => time === null) || (drawing.behavior !== 'line' && drawing.behavior !== 'rectangle')) return null
+  const early = (times[0] as number) <= (times[1] as number) ? 0 : 1
+  const first = drawing.points[early]
+  const last = drawing.points[1 - early]
+  const firstTime = times[early] as number
+  const lastTime = times[1 - early] as number
+  if (firstTime >= revealedEnd) return null
+  const cut = revealedEnd - 1
+  const fraction = lastTime === firstTime ? 0 : (cut - firstTime) / (lastTime - firstTime)
+  const box = drawing.behavior === 'rectangle'
+  const clipped: DrawingPoint = {
+    ...last,
+    time: cut,
+    x: first.x + (last.x - first.x) * fraction,
+    y: box ? last.y : first.y + (last.y - first.y) * fraction,
+    ...(typeof first.price === 'number' && typeof last.price === 'number' ? { price: box ? last.price : first.price + (last.price - first.price) * fraction } : {}),
+  }
+  return { ...drawing, points: early === 0 ? [first, clipped] : [clipped, first] }
+}
+
+/** Where 亏损单复盘 starts: the open of the candle the position was opened in (so its previous candle is the last one shown). */
+function manualLossBaseEnd(entryTime: number, seconds: number, dayStart: number): number {
+  const barStart = Math.floor(entryTime / seconds) * seconds
+  return barStart > dayStart ? barStart : entryTime + 60
+}
+
+// Wall-clock reads inside handlers go through here so the render-purity lint rule does not mistake them for render-time calls.
+const clockNow = () => Date.now()
+
+/** Drawing ids begin with the millisecond they were created (see drawings.ts). */
+function drawingCreatedAt(drawing: Drawing): number | null {
+  const stamp = Number(drawing.id.split('-')[0])
+  return Number.isFinite(stamp) && stamp > 1e12 ? stamp : null
+}
 
 type ChartType = 'candles' | 'hollow' | 'line' | 'area'
 type Theme = 'dark' | 'light'
@@ -324,8 +366,19 @@ function App() {
   const [manualFocusTick, setManualFocusTick] = useState(0)
   // Look-back mode: the next chart click picks an earlier candle to record reasons for.
   const [manualPicking, setManualPicking] = usePageState('manualPicking', false)
+  const [manualInitialRiskDraft, setManualInitialRiskDraft] = useState<{ sessionId: string; item: ManualTimelineItem; side: ManualSide; plan: ManualRiskPlan } | null>(null)
+  const [manualHighlightItem, setManualHighlightItem] = useState<ManualTimelineItem | null>(null)
   const [manualHighlightTime, setManualHighlightTime] = usePageState<number | null>('manualHighlightTime', null)
   const [manualHighlightPrice, setManualHighlightPrice] = usePageState<number | null>('manualHighlightPrice', null)
+  // 亏损单复盘: the losing trades of this round (fixed when it starts) and where we are in them.
+  const [manualLoss, setManualLoss] = usePageState<{ queue: ManualLossRef[]; index: number } | null>('manualLoss', null)
+  // The ` key hides / shows the loss review window so the chart can be seen unobstructed.
+  const [manualLossDetailsHidden, setManualLossDetailsHidden] = useState(false)
+  // 往后一根K线: how far past the entry the candles have been revealed (null = only up to the entry).
+  const [manualLossReveal, setManualLossReveal] = useState<number | null>(null)
+  // Lines drawn while reviewing losing trades stay apart from the lines drawn during the original practice.
+  const [manualLossStartedAt, setManualLossStartedAt] = usePageState<number>('manualLossStartedAt', () => Date.now())
+  const [manualLossDrawingIds, setManualLossDrawingIds] = usePageState<string[]>('manualLossReviewDrawingIds', [])
   const [manualLoading, setManualLoading] = useState(false)
   const decisionDrawingContextRef = useRef<string | null>(null)
   const decisionDrawingLoadingRef = useRef(false)
@@ -619,12 +672,63 @@ function App() {
   // The paper on the chart: the one being played, or a finished one under review.
   const manualSession = manualActiveSession ?? manualReviewSession
   const manualMode = manualSession !== null
+  const manualLossRef = manualLoss?.queue[manualLoss.index] ?? null
+  const manualLossSession = manualLossRef && manualReviewSession?.id === manualLossRef.sessionId ? manualReviewSession : null
+  const manualLossTrade = manualLossSession && manualLossRef ? manualLossSession.trades.find((trade) => trade.id === manualLossRef.tradeId) ?? null : null
+  const manualLossMode = manualLoss !== null && manualLossSession !== null && manualLossTrade !== null
+  // The ` key hides the reasons window together with the drawn lines, only while a loss is being reviewed.
+  const manualLossHideDetails = manualLossMode && manualLossDetailsHidden
+  // 亏损单复盘 starts with the candle before the one the position was opened in; 往后一根K线 reveals more.
+  const manualLossShownEnd = manualLossMode && manualLossSession && manualLossTrade
+    ? manualLossReveal ?? manualLossBaseEnd(manualLossTrade.entryTime, INTERVALS[interval].seconds, manualLossSession.startTime)
+    : null
+  // 亏损单复盘 shows the lines drawn when the paper was practised (locked), plus whatever is drawn during this review.
+  const manualLossHistory = useMemo(() => {
+    if (!manualLossMode || !manualLossSession || !manualLossTrade || manualLossShownEnd === null) return null
+    const reviewIds = new Set(manualLossDrawingIds)
+    const inDay = (drawing: Drawing) => drawing.points.some((point) => typeof point.time === 'number' && point.time >= manualLossSession.startTime && point.time <= manualLossSession.endTime)
+    // Papers practised before lines were recorded per paper: a drawing id starts with the moment it was drawn,
+    // so take the lines of that day drawn while the paper was being done.
+    const until = manualLossSession.completedAt ?? Number.POSITIVE_INFINITY
+    const practice = manualLossSession.drawings ?? drawings.present.filter((drawing) => {
+      const created = drawingCreatedAt(drawing)
+      return created !== null && created >= manualLossSession.createdAt && created <= until && created < manualLossStartedAt && !reviewIds.has(drawing.id) && inDay(drawing)
+    })
+    const practiceIds = new Set(practice.map((drawing) => drawing.id))
+    // What was on the chart back then: lines and boxes are kept up to the last revealed candle (the part
+    // that reaches into candles still hidden is cut off); other structures with an anchor in the hidden
+    // part had not been completed yet, so they stay hidden.
+    const beforeEntry = practice.map((drawing) => clipDrawingToRevealed(drawing, manualLossShownEnd)).filter((drawing): drawing is Drawing => drawing !== null)
+    const made = drawings.present.filter((drawing) => !practiceIds.has(drawing.id) && (reviewIds.has(drawing.id) || (drawingCreatedAt(drawing) ?? 0) >= manualLossStartedAt))
+    // The ` key hides only what was recorded during practice; lines drawn in this review always stay.
+    if (manualLossHideDetails) return { ...drawings, present: made }
+    return { ...drawings, present: [...beforeEntry.map((drawing) => ({ ...drawing, locked: true })), ...made] }
+  }, [manualLossMode, manualLossSession, manualLossTrade, manualLossShownEnd, manualLossHideDetails, manualLossDrawingIds, manualLossStartedAt, drawings])
   const nqMinutes = availableDecisionHistoryBySymbol[MANUAL_PRACTICE_SYMBOL] ?? null
   const manualDays = useMemo(() => nqMinutes?.length && (manualCenterOpen || manualMode) ? findManualTradingDays(nqMinutes) : null, [manualCenterOpen, manualMode, nqMinutes])
-  const manualReplaying = manualReplayEnd !== null && manualReviewSession !== null
+  // 亏损单复盘 shows the market only up to the candle before the entry candle; everything after stays unseen.
+  const manualLossEnd = manualLossShownEnd
+  const manualCoverEnd = manualReplayEnd ?? manualLossEnd
+  const manualReplaying = manualCoverEnd !== null && manualReviewSession !== null
   const manualCutoff = manualSession
-    ? (manualActiveSession ? manualSession.cursorTime : manualReplaying ? Math.min(manualReplayEnd, manualSession.endTime) : manualSession.endTime)
+    ? (manualActiveSession ? manualSession.cursorTime : manualReplaying ? Math.min(manualCoverEnd, manualSession.endTime) : manualSession.endTime)
     : null
+  const manualNoteRiskPlans = useMemo(() => {
+    if (manualDialog?.type !== 'note' || !nqMinutes?.length) return undefined
+    const seconds = INTERVALS[manualDialog.interval].seconds
+    const end = Math.min(manualDialog.barTime + seconds, manualCutoff ?? Infinity)
+    const candles = aggregateMinutes(nqMinutes.slice(lowerBound(nqMinutes, manualDialog.barTime - 6 * seconds), lowerBound(nqMinutes, end)), seconds).slice(-5)
+    const close = candles.at(-1)?.close
+    if (close === undefined) return undefined
+    const entryPrice = Math.round(close / 0.25) * 0.25
+    const planFor = (side: ManualSide): ManualRiskPlan => {
+      const structure = side === 'long' ? Math.min(...candles.map(bar => bar.low)) : Math.max(...candles.map(bar => bar.high))
+      const suggested = (side === 'long' ? structure < entryPrice : structure > entryPrice) ? structure : null
+      const levels = defaultDecisionLevels(side, entryPrice, suggested)
+      return { entryPrice, stopLoss: Math.round(levels.stopLoss / 0.25) * 0.25, takeProfit: Math.round(levels.takeProfit / 0.25) * 0.25 }
+    }
+    return { long: planFor('long'), short: planFor('short') }
+  }, [manualDialog, manualCutoff, nqMinutes])
   const manualData = useMemo(() => {
     if (!manualSession || manualCutoff === null || !nqMinutes?.length) return null
     const from = manualDays ? contextStartTime(manualDays, manualSession) : manualSession.startTime - 3 * 86_400
@@ -1161,7 +1265,7 @@ function App() {
   useLayoutEffect(() => {
     const chart = chartRef.current
     // Manual practice draws its order lines from the same "current candle" x.
-    const overlayCandle = decisionCurrentCandle ?? (manualMode ? data.at(-1) ?? null : null)
+    const overlayCandle = manualDialog?.type === 'note' ? { time: manualDialog.barTime } : manualInitialRiskDraft ? { time: barTimeFor(manualInitialRiskDraft.item.time, interval) } : decisionCurrentCandle ?? (manualMode ? data.at(-1) ?? null : null)
     const nextDecisionCurrentCandleX = chart && overlayCandle !== null
       ? chart.timeToCoordinate(overlayCandle.time)
       : null
@@ -1174,7 +1278,7 @@ function App() {
       alertY,
       orderY,
     })
-  }, [chartAlerts, data, decisionCurrentCandle, decisionMode, drawingProjectionTick, lockedCursorTime, manualMode, paperOrders, symbol])
+  }, [chartAlerts, data, decisionCurrentCandle, decisionMode, drawingProjectionTick, lockedCursorTime, manualMode, manualInitialRiskDraft, manualDialog, interval, paperOrders, symbol])
 
   useEffect(() => {
     if (!live) return
@@ -2744,12 +2848,15 @@ function App() {
     setManualStore((store) => ({ ...store, sessions: store.sessions.map((session) => session.id === sessionId ? update(session) : session) }))
   }
   const enterManualView = () => {
+    setManualLoss(null)
     setManualReplayEnd(null)
     setManualPicking(false)
     setManualCenterOpen(false)
     setDecisionCenterOpen(false)
     setManualTimelineOpen(false)
     setManualHighlightTime(null)
+    setManualHighlightItem(null)
+    setManualInitialRiskDraft(null)
     setManualHighlightPrice(null)
     setReplayCursor(null); setReplayPlaying(false); setReplaySelecting(false)
     if (symbol !== MANUAL_PRACTICE_SYMBOL) setSymbol(MANUAL_PRACTICE_SYMBOL)
@@ -2800,6 +2907,90 @@ function App() {
     setManualStore((store) => ({ ...store, activeSessionId: sessionId }))
     enterManualView()
   }
+  const restartManualPractice = async (sessionId: string) => {
+    if (manualBlockedByDecision()) return
+    const previous = manualStore.sessions.find((session) => session.id === sessionId)
+    if (!previous) return
+    const minutes = await ensureNqMinutes()
+    if (!minutes?.length) { notify('NQ1! 历史数据加载失败，暂时无法重新出卷'); return }
+    const day = findManualTradingDays(minutes).find((item) => item.key === previous.dayKey)
+    if (!day) { notify('找不到这一天的K线数据，无法重新做'); return }
+    const session = createManualSession(day)
+    // An unfinished paper is replaced; a finished one stays in the history with its result.
+    const replacePrevious = previous.status !== 'completed'
+    setManualReviewId(null)
+    setManualStore((store) => ({ ...store, activeSessionId: session.id, sessions: [session, ...store.sessions.filter((item) => !(replacePrevious && item.id === sessionId))] }))
+    enterManualView()
+    notify(`已重新开始 ${day.label}，按 1 揭示开盘第一根K线`)
+  }
+  // 亏损单复盘: frame the entry (history on the left, a little empty room on the right) and mark its candle.
+  const showManualLossTrade = (trade: ManualTrade) => {
+    const seconds = INTERVALS[interval].seconds
+    setManualHighlightTime(barTimeFor(trade.entryTime, interval))
+    setManualHighlightPrice(trade.entryPrice)
+    setPriceScaleAuto(true)
+    const frame = () => chartRef.current?.showTimeRange(trade.entryTime - 60 * seconds, trade.entryTime + 30 * seconds)
+    // A different day swaps the candles first, so frame once more after they have loaded.
+    window.setTimeout(frame, 120)
+    window.setTimeout(frame, 600)
+  }
+  const openManualLossTrade = (queue: ManualLossRef[], index: number) => {
+    const ref = queue[index]
+    const session = ref ? manualStore.sessions.find((item) => item.id === ref.sessionId) : undefined
+    const trade = session?.trades.find((item) => item.id === ref?.tradeId)
+    if (!session || !trade) return false
+    setManualLoss({ queue, index })
+    setManualLossReveal(null)
+    setManualStore((store) => store.activeSessionId ? { ...store, activeSessionId: null } : store)
+    setManualReviewId(session.id)
+    setManualDialog(null)
+    setManualTimelineOpen(false)
+    exitManualReplay()
+    showManualLossTrade(trade)
+    return true
+  }
+  const startManualLossReview = async (filter: ManualLossFilter) => {
+    if (manualBlockedByDecision()) return
+    const queue = manualLossQueue(manualStore.sessions, filter)
+    if (queue.length === 0) { notify('没有符合条件的亏损单'); return }
+    await ensureNqMinutes()
+    setManualLossDetailsHidden(false)
+    setManualLossStartedAt(clockNow())
+    // Resume at the first trade not yet marked as understood / not understood.
+    const first = queue.findIndex((ref) => !manualStore.sessions.find((session) => session.id === ref.sessionId)?.lossMarks?.[ref.tradeId]?.understanding)
+    enterManualView()
+    openManualLossTrade(queue, filter === 'all' && first > 0 ? first : 0)
+  }
+  const advanceManualLoss = () => {
+    if (!manualLossSession || !manualLossTrade) return
+    const end = manualLossShownEnd ?? manualLossBaseEnd(manualLossTrade.entryTime, INTERVALS[interval].seconds, manualLossSession.startTime)
+    if (end >= manualLossSession.endTime) { notify('已经是最后一根K线，按 2 看下一笔'); return }
+    const seconds = INTERVALS[interval].seconds
+    // Reveal up to the close of the next candle of the chart's timeframe.
+    const next = Math.min((Math.floor(end / seconds) + 1) * seconds, manualLossSession.endTime)
+    setManualLossReveal(next)
+    keepManualLatestVisible(barTimeFor(next - 1, interval))
+  }
+  const stepManualLoss = (delta: 1 | -1) => {
+    if (!manualLoss) return
+    // Skip over trades that no longer exist (their paper was deleted).
+    for (let index = manualLoss.index + delta; index >= 0 && index < manualLoss.queue.length; index += delta) {
+      if (openManualLossTrade(manualLoss.queue, index)) return
+    }
+    if (delta > 0) { notify('这一轮亏损单已经全部看完'); exitManualToCenter() } else notify('已经是第一笔')
+  }
+  const markManualLoss = (patch: { understanding?: ManualLossMark['understanding']; favorite?: boolean }, advance: boolean) => {
+    if (!manualLossSession || !manualLossTrade) return
+    updateManualSession(manualLossSession.id, (session) => setManualLossMark(session, manualLossTrade.id, patch))
+    if (advance) stepManualLoss(1)
+  }
+  const commentManualLoss = (kind: 'entry' | 'exit') => {
+    if (!manualLossSession || !manualLossTrade) return
+    const item = manualTimeline(manualLossSession).find((candidate) => candidate.kind === kind && candidate.trade?.id === manualLossTrade.id)
+    if (!item) return
+    bringFloatingCardIdToFront('review-comment-editor')
+    setManualDialog({ type: 'review-comment', item })
+  }
   const reviewManualPractice = async (sessionId: string) => {
     if (manualBlockedByDecision()) return
     await ensureNqMinutes()
@@ -2809,16 +3000,24 @@ function App() {
     setManualTimelineOpen(true)
   }
   const exitManualView = () => {
+    setManualLoss(null)
     exitManualReplay()
     setManualDialog(null)
     setManualTimelineOpen(false)
     setManualHighlightTime(null)
+    setManualHighlightItem(null)
+    setManualInitialRiskDraft(null)
     setManualHighlightPrice(null)
     if (manualActiveSession) {
       setManualStore((store) => ({ ...store, activeSessionId: null }))
       notify('已暂停，进度已保存；在“自主复盘”里可以继续')
     }
     setManualReviewId(null)
+  }
+  // Leave this round and land on the history list: continue later or start the same day over.
+  const exitManualToCenter = () => {
+    exitManualView()
+    setManualCenterOpen(true)
   }
   // Keep the newest candle on screen as the paper advances.
   const keepManualLatestVisible = (barTime: number) => {
@@ -2832,7 +3031,7 @@ function App() {
     }))
   }
   const advanceManual = () => {
-    if (!manualActiveSession || !nqMinutes?.length || manualDialog) return
+    if (!manualActiveSession || !nqMinutes?.length || manualDialog || manualInitialRiskDraft) return
     const outcome = advanceManualSession(manualActiveSession, nqMinutes, INTERVALS[interval].seconds)
     updateManualSession(manualActiveSession.id, () => outcome.session)
     if (outcome.closedTrade) {
@@ -3005,6 +3204,8 @@ function App() {
     if (manualReplayEnd === null) window.setTimeout(() => setManualReplayEnd(end), 60)
     else setManualReplayEnd(end)
     setManualHighlightTime(null)
+    setManualHighlightItem(null)
+    setManualInitialRiskDraft(null)
     setManualHighlightPrice(null)
   }
   const advanceManualReplay = () => {
@@ -3049,7 +3250,7 @@ function App() {
     }))
   }
   useManualPracticeKeys(Boolean(manualActiveSession) || manualLoading || manualReplaying, {
-    blocked: Boolean(manualDialog) || manualPicking || (!manualActiveSession && !manualReplaying),
+    blocked: Boolean(manualDialog) || Boolean(manualInitialRiskDraft) || manualPicking || (!manualActiveSession && !manualReplaying),
     advance: manualReplaying ? advanceManualReplay : advanceManual,
     key2: () => {
       if (manualReplaying) { exitManualReplay(); return }
@@ -3057,6 +3258,16 @@ function App() {
     },
     key3: () => { if (!manualReplaying && !manualPosition && !manualActiveSession?.pendingOrder) requestManualOpen('short') },
     note: () => { if (!manualReplaying) requestManualNote() },
+  })
+  // 亏损单复盘 (it never runs together with a practice session or a replay): 1 next candle, 2 next trade, 3 understood, 4 not understood (both move on to the next trade), 5 favourite (stays on this trade).
+  useManualPracticeKeys(manualLossMode, {
+    blocked: Boolean(manualDialog) || Boolean(manualInitialRiskDraft) || manualPicking,
+    advance: advanceManualLoss,
+    key2: () => stepManualLoss(1),
+    key3: () => markManualLoss({ understanding: 'understood' }, true),
+    key4: () => markManualLoss({ understanding: 'confused' }, true),
+    key5: () => markManualLoss({ favorite: true }, false),
+    note: () => setManualLossDetailsHidden((hidden) => !hidden),
   })
   // Newest revealed candle while replaying: drawings / annotations are clipped at its right edge.
   const manualReplayBars = manualReplaying && data.length > 0 ? { last: data[data.length - 1].time, previous: data.length > 1 ? data[data.length - 2].time : null } : null
@@ -3079,7 +3290,36 @@ function App() {
   }
   const openManualBarReasonRef = useRef(openManualBarReason)
   useEffect(() => { openManualBarReasonRef.current = openManualBarReason })
-  const manualClickReady = Boolean(manualReviewSession) && !manualPicking && !manualReplaying && !manualDialog && activeTool === 'cursor'
+  // Practice lines belong to the paper: record what is drawn (and edited or removed) while it is being practised.
+  const manualDrawingKnownRef = useRef<{ sessionId: string; ids: Set<string> } | null>(null)
+  const manualActiveId = manualActiveSession?.id ?? null
+  useEffect(() => {
+    if (!manualActiveId) { manualDrawingKnownRef.current = null; return }
+    const present = withoutTransientMeasurements(drawings.present)
+    if (manualDrawingKnownRef.current?.sessionId !== manualActiveId) {
+      manualDrawingKnownRef.current = { sessionId: manualActiveId, ids: new Set(present.map((drawing) => drawing.id)) }
+      return
+    }
+    const timer = window.setTimeout(() => {
+      const known = manualDrawingKnownRef.current
+      if (!known || known.sessionId !== manualActiveId) return
+      const previousIds = known.ids
+      known.ids = new Set(present.map((drawing) => drawing.id))
+      const now = Date.now()
+      setManualStore((store) => ({ ...store, sessions: store.sessions.map((session) => session.id === manualActiveId ? syncManualSessionDrawings(session, present, previousIds, now) : session) }))
+    }, 140)
+    return () => window.clearTimeout(timer)
+  }, [manualActiveId, drawings.present, setManualStore])
+  // Remember which lines were drawn while reviewing losing trades, so they are never mistaken for practice lines.
+  useEffect(() => {
+    if (!manualLossMode) return
+    const known = new Set(manualLossDrawingIds)
+    const added = drawings.present.filter((drawing) => (drawingCreatedAt(drawing) ?? 0) >= manualLossStartedAt && !known.has(drawing.id)).map((drawing) => drawing.id)
+    if (added.length === 0) return
+    const timer = window.setTimeout(() => setManualLossDrawingIds((list) => [...new Set([...list, ...added])]), 0)
+    return () => window.clearTimeout(timer)
+  }, [manualLossMode, manualLossStartedAt, manualLossDrawingIds, drawings.present, setManualLossDrawingIds])
+  const manualClickReady = Boolean(manualReviewSession) && !manualLossMode && !manualPicking && !manualReplaying && !manualDialog && activeTool === 'cursor'
   useEffect(() => {
     if (!manualClickReady) return
     let down: { x: number; y: number } | null = null
@@ -3367,9 +3607,10 @@ function App() {
             />}
             <DrawingOverlay
               key={`${decisionContextKey ?? 'normal'}-${decisionOverviewSessionId ?? 'normal'}-${effectiveDrawingTool}-${drawingsLocked}-${drawingsHidden}`}
-              activeTool={decisionOverviewMode ? 'cursor' : effectiveDrawingTool} history={uiDrawings} dispatch={dispatchWithDrawingTemplates} color={drawingColor}
+              activeTool={decisionOverviewMode ? 'cursor' : effectiveDrawingTool} history={manualLossHistory ?? uiDrawings} dispatch={dispatchWithDrawingTemplates} color={drawingColor}
               magnetMode={magnetMode} drawingsLocked={decisionOverviewMode || drawingsLocked} hidden={decisionOverviewMode ? false : drawingsHidden}
-              revealClipIds={manualReplaying ? manualReplayDrawingIds : null}
+              // 亏损单复盘 keeps every drawn line whole; ordinary replay hides lines that lie after the replay point.
+              revealClipIds={manualReplaying && !manualLossMode ? manualReplayDrawingIds : null}
               candles={data} symbol={symbol} interval={interval}
               quickMeasurement={quickMeasurement}
               onPlotSize={() => chartRef.current?.plotSize() ?? null}
@@ -3387,11 +3628,12 @@ function App() {
             {manualSession && <ManualPracticeAnnotations
               session={manualSession}
               interval={interval}
-              hidden={chartAnnotationsHidden}
+              hidden={chartAnnotationsHidden || manualLossHideDetails}
               clipAfterBar={manualReplayBars}
+              highlightItem={manualInitialRiskDraft || manualDialog?.type === 'note' ? null : manualHighlightItem}
               highlightTime={manualHighlightTime}
               highlightPrice={manualHighlightPrice}
-              hideLevels={Boolean(manualActiveSession && ((manualDialog?.type === 'open' && manualRisk) || (manualPosition && manualPosition.stopLoss !== null && manualPosition.takeProfit !== null)))}
+              hideLevels={manualDialog?.type === 'note' || Boolean(manualInitialRiskDraft) || Boolean(manualActiveSession && ((manualDialog?.type === 'open' && manualRisk) || (manualPosition && manualPosition.stopLoss !== null && manualPosition.takeProfit !== null)))}
               toX={(time) => chartRef.current?.timeToCoordinate(time) ?? null}
               toY={(price) => chartRef.current?.priceToCoordinate(price) ?? null}
               onOpenBar={openManualBarReason}
@@ -3414,11 +3656,47 @@ function App() {
               onPick={pickManualReplayBar}
               onCancel={() => setManualPicking(false)}
             />}
-            {manualReviewSession && <ManualReplayControls
+            {manualReviewSession && !manualLossMode && <ManualReplayControls
               picking={manualPicking}
               replayTime={manualReplaying ? data.at(-1)?.time ?? null : null}
               onPick={toggleManualReplayPicking}
               onExit={exitManualReplay}
+            />}
+            {manualDialog?.type === 'note' && <ManualCandleBiasEditor
+              persistenceId={`${manualSession?.id}:note:${manualDialog.barTime}:${manualDialog.interval}`}
+              key={`${manualDialog.barTime}-${manualDialog.interval}`}
+              subtitle={`${new Date(manualDialog.barTime * 1000).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })} · ${INTERVALS[manualDialog.interval].label} K线`}
+              defaultRiskPlans={manualNoteRiskPlans}
+              currentCandleX={decisionCurrentCandleX}
+              toPrice={y => chartRef.current?.coordinateToPrice(y) ?? null}
+              toY={price => chartRef.current?.priceToCoordinate(price) ?? null}
+              notes={manualSession?.notes.filter(note => note.barTime === manualDialog.barTime && note.interval === manualDialog.interval) ?? []}
+              initialBias={manualDialog.kind === 'no-trade' ? 'no-trade' : manualDialog.side}
+              initialBackground={manualDialog.background}
+              onCancel={() => setManualDialog(null)}
+              onSave={(background, entries) => {
+                const dialog = manualDialog
+                setManualDialog(null)
+                if (manualSession) {
+                  updateManualSession(manualSession.id, session => saveCandleBiasNotes(session, dialog.barTime, dialog.interval, background, entries))
+                  if (manualReviewSession) setManualTimelineOpen(true)
+                }
+              }}
+            />}
+            {manualInitialRiskDraft && manualDialog?.type !== 'note' && manualSession?.id === manualInitialRiskDraft.sessionId && <ManualInitialRiskEditor
+              key={`${manualInitialRiskDraft.sessionId}:${manualReviewCommentKey(manualInitialRiskDraft.item)}`}
+              side={manualInitialRiskDraft.side} initial={manualInitialRiskDraft.plan}
+              currentCandleX={decisionCurrentCandleX}
+              toPrice={y => chartRef.current?.coordinateToPrice(y) ?? null}
+              toY={price => chartRef.current?.priceToCoordinate(price) ?? null}
+              onCancel={() => setManualInitialRiskDraft(null)}
+              onSave={plan => {
+                const draft = manualInitialRiskDraft
+                updateManualSession(draft.sessionId, session => saveManualInitialRisk(session, draft.item, plan))
+                setManualHighlightItem({ ...draft.item, ...(draft.item.trade ? { trade: { ...draft.item.trade, initialRisk: plan } } : {}), ...(draft.item.note ? { note: { ...draft.item.note, initialRisk: plan } } : {}), ...(draft.item.cancelledOrder ? { cancelledOrder: { ...draft.item.cancelledOrder, initialRisk: plan } } : {}) })
+                setManualInitialRiskDraft(null)
+                notify('初始止盈止损已保存到这条理由')
+              }}
             />}
             {manualActiveSession && manualDialog?.type === 'open' && manualRisk && <DecisionRiskOverlay
               symbol={MANUAL_PRACTICE_SYMBOL}
@@ -3441,7 +3719,7 @@ function App() {
               editable
               showConfirmControls={false}
             />}
-            {manualActiveSession && manualPending && manualLastMinute && manualDialog?.type !== 'open' && <DecisionRiskOverlay
+            {manualDialog?.type !== 'note' && !manualInitialRiskDraft && manualActiveSession && manualPending && manualLastMinute && manualDialog?.type !== 'open' && <DecisionRiskOverlay
               symbol={MANUAL_PRACTICE_SYMBOL}
               precision={2}
               side={manualPending.side}
@@ -3462,7 +3740,7 @@ function App() {
               editable
               showConfirmControls={false}
             />}
-            {manualActiveSession && manualPosition && manualPosition.stopLoss !== null && manualPosition.takeProfit !== null && manualLastMinute && manualDialog?.type !== 'open' && <DecisionRiskOverlay
+            {manualDialog?.type !== 'note' && !manualInitialRiskDraft && manualActiveSession && manualPosition && manualPosition.stopLoss !== null && manualPosition.takeProfit !== null && manualLastMinute && manualDialog?.type !== 'open' && <DecisionRiskOverlay
               symbol={MANUAL_PRACTICE_SYMBOL}
               precision={2}
               side={manualPosition.side}
@@ -3499,8 +3777,27 @@ function App() {
               picking={manualPicking}
               onRisk={updateManualRisk}
               onFinish={finishManualToday}
-              onExit={exitManualView}
+              onExit={exitManualToCenter}
               onOpenTimeline={() => setManualTimelineOpen(true)}
+            />}
+            {manualLoss && manualLossHideDetails && <button type="button" className="mp-loss-hidden-chip" onClick={() => setManualLossDetailsHidden(false)} title="显示理由窗口和画的线（快捷键 `）">亏损单复盘 {manualLoss.index + 1} / {manualLoss.queue.length} · 按 <kbd>·</kbd> 显示</button>}
+            {manualLoss && manualLossMode && !manualLossHideDetails && manualLossSession && manualLossTrade && <ManualLossPanel
+              session={manualLossSession}
+              trade={manualLossTrade}
+              index={manualLoss.index}
+              total={manualLoss.queue.length}
+              mark={manualLossSession.lossMarks?.[manualLossTrade.id] ?? null}
+              entryComment={manualLossSession.reviewComments?.[manualTradeCommentKey(manualLossTrade.id, 'entry')]?.text ?? ''}
+              exitComment={manualLossSession.reviewComments?.[manualTradeCommentKey(manualLossTrade.id, 'exit')]?.text ?? ''}
+              onAdvance={advanceManualLoss}
+              onNext={() => stepManualLoss(1)}
+              onPrevious={() => stepManualLoss(-1)}
+              onUnderstood={() => markManualLoss({ understanding: 'understood' }, true)}
+              onConfused={() => markManualLoss({ understanding: 'confused' }, true)}
+              onFavorite={() => markManualLoss({ favorite: true }, false)}
+              onToggleFavorite={() => markManualLoss({ favorite: !manualLossSession.lossMarks?.[manualLossTrade.id]?.favorite }, false)}
+              onComment={commentManualLoss}
+              onExit={exitManualToCenter}
             />}
             {fullReviewSession && fullReviewCandidate && <DecisionChartAnnotations
               candidate={fullReviewCandidate} attempt={null} result={null}
@@ -3904,7 +4201,9 @@ function App() {
         days={manualDays}
         loading={manualLoading || !nqMinutes?.length}
         onStart={(date) => { void startManualPractice(date) }}
+        onStartLoss={(filter) => { void startManualLossReview(filter) }}
         onContinue={(sessionId) => { void continueManualPractice(sessionId) }}
+        onRestart={(sessionId) => { void restartManualPractice(sessionId) }}
         onReview={(sessionId) => { void reviewManualPractice(sessionId) }}
         onDelete={(sessionId) => {
           setManualStore((store) => ({ ...store, activeSessionId: store.activeSessionId === sessionId ? null : store.activeSessionId, sessions: store.sessions.filter((session) => session.id !== sessionId) }))
@@ -3918,7 +4217,23 @@ function App() {
         // In review the timeline is the only window: closing it leaves the review.
         onClose={manualReviewSession ? exitManualView : () => setManualTimelineOpen(false)}
         onJump={(item) => {
-          const bar = barTimeFor(item.time, interval)
+          setManualHighlightItem(item)
+          setManualInitialRiskDraft(null)
+          const side = item.trade?.side ?? item.cancelledOrder?.side ?? item.note?.side
+          if (side && !manualItemRisk(item)) {
+            const targetInterval = item.note?.interval ?? interval
+            const cutoff = item.note ? item.note.barTime + INTERVALS[targetInterval].seconds : item.time + 60
+            const context = aggregateMinutes((nqMinutes ?? []).slice(0, lowerBound(nqMinutes ?? [], cutoff)), INTERVALS[targetInterval].seconds).slice(-5)
+            const entryPrice = item.trade?.entryPrice ?? item.cancelledOrder?.entryPrice ?? context.at(-1)?.close
+            if (entryPrice !== undefined) {
+              const structure = context.length ? (side === 'long' ? Math.min(...context.map(bar => bar.low)) : Math.max(...context.map(bar => bar.high))) : null
+              const suggested = structure !== null && (side === 'long' ? structure < entryPrice : structure > entryPrice) ? structure : null
+              const levels = defaultDecisionLevels(side, entryPrice, suggested)
+              setManualInitialRiskDraft({ sessionId: manualSession.id, item, side, plan: { entryPrice, stopLoss: clampManualLevel('stopLoss', side, entryPrice, levels.stopLoss), takeProfit: clampManualLevel('takeProfit', side, entryPrice, levels.takeProfit) } })
+            } else notify('这根K线的历史行情尚未加载，请稍后重试')
+          }
+          if (item.note && item.note.interval !== interval) setIntervalId(item.note.interval)
+          const bar = barTimeFor(item.time, item.note?.interval ?? interval)
           setManualHighlightTime(bar)
           setManualHighlightPrice(item.trade ? (item.kind === 'entry' ? item.trade.entryPrice : item.trade.exitPrice) : item.cancelledOrder?.entryPrice ?? null)
           setPriceScaleAuto(true)
@@ -3956,6 +4271,7 @@ function App() {
               updatedAt: Date.now(),
               pendingOrder: {
                 id: tradeId, side: dialog.side, orderKind: kind, entryPrice: risk.entryPrice,
+                initialRisk: { entryPrice: risk.entryPrice, stopLoss: risk.stopLoss, takeProfit: risk.takeProfit },
                 stopLoss: risk.stopLoss, takeProfit: risk.takeProfit, quantity: risk.quantity,
                 background, reasons, unsupportedReasons, createdTime: manualLastMinute.time, interval,
               },
@@ -3968,7 +4284,8 @@ function App() {
             updatedAt: Date.now(),
             trades: [...session.trades, {
               id: tradeId, side: dialog.side, entryTime: manualLastMinute.time, entryPrice: dialog.price,
-              stopLoss: risk.stopLoss, takeProfit: risk.takeProfit, quantity: risk.quantity,
+              initialRisk: { entryPrice: risk.entryPrice, stopLoss: risk.stopLoss, takeProfit: risk.takeProfit },
+                stopLoss: risk.stopLoss, takeProfit: risk.takeProfit, quantity: risk.quantity,
               exitTime: null, exitPrice: null, exitKind: null, background, reasons, unsupportedReasons, exitReasons: [],
             }],
           }))
@@ -3990,23 +4307,6 @@ function App() {
               ? { ...trade, exitTime: manualLastMinute.time, exitPrice: manualLastMinute.close, exitKind: 'manual' as const, exitReasons: reasons }
               : trade),
           }))
-        }}
-      />}
-      {manualDialog?.type === 'note' && <ManualCandleBiasEditor
-        persistenceId={`${manualSession?.id}:note:${manualDialog.barTime}:${manualDialog.interval}`}
-        key={`${manualDialog.barTime}-${manualDialog.interval}`}
-        subtitle={`${new Date(manualDialog.barTime * 1000).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })} · ${INTERVALS[manualDialog.interval].label} K线`}
-        notes={manualSession?.notes.filter(note => note.barTime === manualDialog.barTime && note.interval === manualDialog.interval) ?? []}
-        initialBias={manualDialog.kind === 'no-trade' ? 'no-trade' : manualDialog.side}
-        initialBackground={manualDialog.background}
-        onCancel={() => setManualDialog(null)}
-        onSave={(background, entries) => {
-          const dialog = manualDialog
-          setManualDialog(null)
-          if (manualSession) {
-            updateManualSession(manualSession.id, session => saveCandleBiasNotes(session, dialog.barTime, dialog.interval, background, entries))
-            if (manualReviewSession) setManualTimelineOpen(true)
-          }
         }}
       />}
       {manualDialog?.type === 'review-comment' && manualSession && <ManualReviewCommentEditor

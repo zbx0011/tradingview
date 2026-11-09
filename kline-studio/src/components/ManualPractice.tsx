@@ -1,11 +1,14 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import { BookOpenCheck, CalendarDays, ChevronRight, ClipboardList, Eye, MessageSquare, NotebookPen, Pencil, Play, Plus, Rewind, Trash2, X } from 'lucide-react'
+import { BookOpenCheck, CalendarDays, ChevronRight, ClipboardList, Eye, LogOut, MessageSquare, NotebookPen, Pencil, Play, Plus, Rewind, RotateCcw, Star, Trash2, TrendingDown, X } from 'lucide-react'
 import { INTERVALS, type IntervalId } from '../lib/market'
 import { loadPanelState, savePanelState, usePanelDraft } from '../lib/panelDraft'
 import { bringFloatingCardToFront, registerFloatingCard } from '../lib/floatingCards'
 import {
   barTimeFor,
+  manualLossStats,
   manualReasonRows,
+  manualItemRisk,
+  manualRiskRatio,
   manualReviewCommentKey,
   NQ_POINT_VALUE_USD,
   openTrade,
@@ -14,6 +17,8 @@ import {
   tradeQuantity,
   tradeUsd,
   type ManualBarNote,
+  type ManualLossFilter,
+  type ManualLossMark,
   type ManualOrderKind,
   type ManualPracticeSession,
   type ManualPracticeStore,
@@ -114,15 +119,24 @@ export function FloatingCard({ id, title, icon, meta, tone = 'neutral', classNam
       if (!current || gestureRef.current) return
       const rect = parent.getBoundingClientRect()
       const width = Math.min(current.width, rect.width)
+      // An old saved size may be larger than the current chart. Bring the
+      // resize corner back on screen instead of only preserving the header.
+      const height = current.height === null ? null : Math.min(current.height, current.height > rect.height && id === 'panel' ? Math.min(460, rect.height) : rect.height)
+      const visibleHeight = height ?? Math.min(card.getBoundingClientRect().height, rect.height)
       const left = Math.max(0, Math.min(rect.width - width, current.left))
-      const top = Math.max(0, Math.min(rect.height - 40, current.top))
-      if (left !== current.left || top !== current.top || width !== current.width) setBox({ ...current, left, top, width })
+      const top = Math.max(0, Math.min(rect.height - visibleHeight, current.top))
+      if (left !== current.left || top !== current.top || width !== current.width || height !== current.height) {
+        const next = { ...current, left, top, width, height }
+        boxRef.current = next
+        setBox(next)
+        saveCardBox(id, next)
+      }
     }
     clamp()
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(clamp)
     observer?.observe(parent)
     return () => observer?.disconnect()
-  }, [])
+  }, [id])
 
   const begin = (event: ReactPointerEvent<HTMLElement>, kind: 'drag' | 'resize') => {
     if (event.pointerType === 'mouse' && event.button !== 0) return
@@ -161,7 +175,7 @@ export function FloatingCard({ id, title, icon, meta, tone = 'neutral', classNam
     const dy = event.clientY - gesture.y
     const { start, parent } = gesture
     gesture.latest = gesture.kind === 'drag'
-      ? { ...start, left: Math.max(0, Math.min(parent.width - start.width, start.left + dx)), top: Math.max(0, Math.min(parent.height - 40, start.top + dy)) }
+      ? { ...start, left: Math.max(0, Math.min(parent.width - start.width, start.left + dx)), top: Math.max(0, Math.min(parent.height - Math.min(start.height ?? ref.current?.getBoundingClientRect().height ?? 40, parent.height), start.top + dy)) }
       : { ...start, width: Math.max(minWidth, Math.min(parent.width - start.left, start.width + dx)), height: Math.max(minHeight, Math.min(parent.height - start.top, (start.height ?? 0) + dy)) }
     if (gesture.frame) return
     gesture.frame = window.requestAnimationFrame(() => {
@@ -466,12 +480,16 @@ export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initia
 /* Start / history dialog                                              */
 /* ------------------------------------------------------------------ */
 
-export function ManualPracticeCenter({ store, days, loading, onStart, onContinue, onReview, onDelete, onClose }: {
+export function ManualPracticeCenter({ store, days, loading, onStart, onStartLoss, onContinue, onRestart, onReview, onDelete, onClose }: {
   store: ManualPracticeStore
   days: readonly ManualTradingDay[] | null
   loading: boolean
   onStart: (date?: string) => void
+  /** Play the losing trades one by one (亏损单汇总). */
+  onStartLoss: (filter: ManualLossFilter) => void
   onContinue: (sessionId: string) => void
+  /** Start the same trading day over (an unfinished paper is replaced, a finished one is kept). */
+  onRestart: (sessionId: string) => void
   onReview: (sessionId: string) => void
   onDelete: (sessionId: string) => void
   onClose: () => void
@@ -488,6 +506,10 @@ export function ManualPracticeCenter({ store, days, loading, onStart, onContinue
   const active = history.find((session) => session.status === 'active') ?? null
   const usedDays = new Set(store.sessions.map((session) => session.dayKey)).size
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [confirmRestartId, setConfirmRestartId] = useState<string | null>(null)
+  const [lossFilter, setLossFilter] = useState<ManualLossFilter>('all')
+  const loss = useMemo(() => manualLossStats(store.sessions), [store.sessions])
+  const lossCounts: Record<ManualLossFilter, number> = { all: loss.total, unseen: loss.unseen, confused: loss.confused, favorite: loss.favorite }
   return <div className="modal-backdrop decision-center-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
     <section className="decision-center mp-center" role="dialog" aria-modal="true" aria-label="自主逐K复盘">
       <header>
@@ -529,6 +551,26 @@ export function ManualPracticeCenter({ store, days, loading, onStart, onContinue
             {active && <small className="mp-muted">未完成的卷子会保留在下面的历史记录里，随时可以继续。</small>}
           </div>
         </section>
+        <section className="mp-loss">
+          <h3><TrendingDown size={17} />亏损单汇总 <span>共 {loss.total} 笔 · {formatPoints(loss.totalPoints)} · {formatUsd(loss.totalUsd)}</span></h3>
+          {loss.total === 0
+            ? <div className="mp-empty">还没有已平仓的亏损单。做完几笔单后，这里可以把所有亏损单轮流再看一遍。</div>
+            : <div className="mp-loss-body">
+              <div className="mp-loss-info">
+                <p className="mp-muted">逐笔回看每一笔亏损单：可以写评论、在图上划线。<kbd>1</kbd> 往后一根K线 · <kbd>2</kbd> 下一笔 · <kbd>3</kbd> 已理解 · <kbd>4</kbd> 不理解 · <kbd>5</kbd> 收藏，已理解/不理解会自动进入下一笔，收藏留在当前这笔。</p>
+                <p className="mp-loss-counts"><span className="positive">已理解 {loss.understood}</span><span className="negative">不理解 {loss.confused}</span><span className="star">收藏 {loss.favorite}</span><span>未看 {loss.unseen}</span></p>
+              </div>
+              <div className="mp-loss-action">
+                <div className="mp-start-modes" role="group" aria-label="选择要复盘的亏损单">
+                  {([['all', '全部'], ['unseen', '未看'], ['confused', '不理解'], ['favorite', '收藏']] as const).map(([key, label]) =>
+                    <button type="button" key={key} aria-pressed={lossFilter === key} onClick={() => setLossFilter(key)}>{label} {lossCounts[key]}</button>)}
+                </div>
+                <button type="button" className="mp-primary mp-start-button" disabled={loading || lossCounts[lossFilter] === 0} onClick={() => onStartLoss(lossFilter)}>
+                  {lossCounts[lossFilter] === 0 ? '这一类暂时没有亏损单' : `开始复盘亏损单（${lossCounts[lossFilter]} 笔）`}
+                </button>
+              </div>
+            </div>}
+        </section>
         <section className="mp-history">
           <h3><ClipboardList size={17} />历史卷子 <span>已完成 {completedCount} · 共 {history.length}</span></h3>
           {history.length === 0
@@ -548,9 +590,14 @@ export function ManualPracticeCenter({ store, days, loading, onStart, onContinue
                     {done
                       ? <button type="button" className="mp-secondary" onClick={() => onReview(session.id)}><Eye size={14} />复盘</button>
                       : <button type="button" className="mp-secondary" onClick={() => onContinue(session.id)}><Play size={14} />继续</button>}
-                    {confirmDeleteId === session.id
-                      ? <><button type="button" className="mp-danger" onClick={() => { onDelete(session.id); setConfirmDeleteId(null) }}>确认删除</button><button type="button" className="mp-secondary" onClick={() => setConfirmDeleteId(null)}>取消</button></>
-                      : <button type="button" className="mp-icon" aria-label={`删除 ${session.dayLabel}`} onClick={() => setConfirmDeleteId(session.id)}><Trash2 size={14} /></button>}
+                    {confirmRestartId === session.id
+                      ? <><button type="button" className="mp-danger" onClick={() => { onRestart(session.id); setConfirmRestartId(null) }}>{done ? '确认重做（原成绩保留）' : '确认清空重做'}</button><button type="button" className="mp-secondary" onClick={() => setConfirmRestartId(null)}>取消</button></>
+                      : confirmDeleteId === session.id
+                        ? <><button type="button" className="mp-danger" onClick={() => { onDelete(session.id); setConfirmDeleteId(null) }}>确认删除</button><button type="button" className="mp-secondary" onClick={() => setConfirmDeleteId(null)}>取消</button></>
+                        : <>
+                          <button type="button" className="mp-secondary" title={done ? '同一天再做一份新卷子（原来的成绩保留）' : '清空这份卷子的进度，从开盘重新开始'} onClick={() => { setConfirmDeleteId(null); setConfirmRestartId(session.id) }}><RotateCcw size={14} />重新做</button>
+                          <button type="button" className="mp-icon" aria-label={`删除 ${session.dayLabel}`} onClick={() => { setConfirmRestartId(null); setConfirmDeleteId(session.id) }}><Trash2 size={14} /></button>
+                        </>}
                   </span>
                 </div>
               })}
@@ -672,9 +719,88 @@ export function ManualPracticePanel({ session, review, lastPrice, interval, curr
     </section>
     <footer>
       <button type="button" className="mp-secondary" onClick={onOpenTimeline}><BookOpenCheck size={14} />{review ? '理由时间线' : '已记录的理由'}</button>
+      <button type="button" className="mp-secondary mp-exit" onClick={onExit} title={review ? '退出复盘，回到历史卷子' : '退出本轮：进度已自动保存，可在历史卷子里继续或重新做'}><LogOut size={14} />{review ? '退出复盘' : '退出本轮'}</button>
       {!review && (confirmFinish
         ? <><button type="button" className="mp-danger" onClick={() => { setConfirmFinish(false); onFinish() }}>确认结束（持仓按现价平）</button><button type="button" className="mp-secondary" onClick={() => setConfirmFinish(false)}>取消</button></>
         : <button type="button" className="mp-secondary" onClick={() => setConfirmFinish(true)}>结束今天</button>)}
+    </footer>
+  </FloatingCard>
+}
+
+/** 亏损单复盘: one losing trade at a time. No way to open a new position from here. */
+export function ManualLossPanel({ session, trade, index, total, mark, entryComment, exitComment, onAdvance, onNext, onPrevious, onUnderstood, onConfused, onFavorite, onToggleFavorite, onComment, onExit }: {
+  session: ManualPracticeSession
+  trade: ManualTrade
+  index: number
+  total: number
+  mark: ManualLossMark | null
+  entryComment: string
+  exitComment: string
+  onAdvance: () => void
+  onNext: () => void
+  onPrevious: () => void
+  onUnderstood: () => void
+  onConfused: () => void
+  onFavorite: () => void
+  onToggleFavorite: () => void
+  onComment: (kind: 'entry' | 'exit') => void
+  onExit: () => void
+}) {
+  const points = tradePoints(trade) ?? 0
+  const usd = tradeUsd(trade) ?? 0
+  const understanding = mark?.understanding ?? null
+  const progress = total > 0 ? (index + 1) / total : 0
+  const reasonList = (items: readonly string[], empty: string) => items.length ? <ol>{items.map((reason, i) => <li key={i}>{reason}</li>)}</ol> : <p className="mp-muted">{empty}</p>
+  return <FloatingCard
+    id="loss-panel"
+    className="mp-panel mp-loss-panel"
+    testId="manual-loss-panel"
+    ariaLabel="亏损单复盘"
+    icon={<TrendingDown size={14} />}
+    title="亏损单复盘"
+    meta={`${index + 1} / ${total} · ${session.dayLabel}`}
+    defaultStyle={{ right: 122, top: 12, width: 330 }}
+    minWidth={280}
+    minHeight={200}
+    onClose={onExit}
+    closeLabel="退出亏损单复盘"
+  >
+    <div className="mp-progress" aria-label={`进度 ${index + 1} / ${total}`}><i style={{ width: `${progress * 100}%` }} /></div>
+    <div className={`mp-position side-${trade.side}`}>
+      <div className="mp-position-head">
+        <b>{trade.side === 'long' ? '多单' : '空单'} ×{tradeQuantity(trade)} · {formatClock(trade.entryTime)} @ {trade.entryPrice.toFixed(2)}</b>
+        <span className="negative">{formatPoints(points)} · {formatUsd(usd)}</span>
+      </div>
+      <div className="mp-muted">{exitLabel(trade)} {trade.exitTime === null ? '' : `${formatClock(trade.exitTime)} `}@ {trade.exitPrice?.toFixed(2)}{trade.stopLoss !== null ? ` · 原定止损 ${trade.stopLoss.toFixed(2)}` : ''}{trade.takeProfit !== null ? ` · 原定止盈 ${trade.takeProfit.toFixed(2)}` : ''}</div>
+    </div>
+    <div className="mp-loss-status" aria-label="当前标记">
+      <span className={`mp-loss-chip ${understanding ?? 'none'}`}>{understanding === 'understood' ? '已理解' : understanding === 'confused' ? '不理解' : '未标记'}</span>
+      <button type="button" className={`mp-loss-chip star${mark?.favorite ? ' on' : ''}`} aria-pressed={Boolean(mark?.favorite)} onClick={onToggleFavorite} title={mark?.favorite ? '取消收藏（不会跳到下一笔）' : '收藏（不会跳到下一笔）'}><Star size={12} />{mark?.favorite ? '已收藏' : '收藏'}</button>
+    </div>
+    <div className="mp-loss-actions">
+      <button type="button" className="mp-primary mp-loss-advance" onClick={onAdvance} title="往后揭示一根K线，看开仓之后怎么走"><kbd>1</kbd>往后一根K线</button>
+      <button type="button" className="mp-secondary" onClick={onNext} title="看下一笔，不做标记"><kbd>2</kbd>下一笔</button>
+      <button type="button" className="mp-long" onClick={onUnderstood}><kbd>3</kbd>已理解</button>
+      <button type="button" className="mp-short" onClick={onConfused}><kbd>4</kbd>不理解</button>
+      <button type="button" className="mp-note" onClick={onFavorite}><kbd>5</kbd>收藏</button>
+    </div>
+    <section className="mp-loss-reasons" aria-label="这笔单的理由">
+      <div className="mp-trade-reasons-body">
+        <b>背景</b><p>{trade.background || '未记录'}</p>
+        <b>做单理由</b>{reasonList(trade.reasons, '未记录')}
+        {trade.unsupportedReasons && <><b>不支持理由</b><p>{trade.unsupportedReasons}</p></>}
+        <b>平仓理由</b>{reasonList(trade.exitReasons, `${exitLabel(trade)}，未另记理由`)}
+      </div>
+      <div className="mp-loss-comments">
+        <button type="button" className="mp-secondary" onClick={() => onComment('entry')}><MessageSquare size={13} />评论开仓{entryComment ? '（已写，点击修改）' : ''}</button>
+        <button type="button" className="mp-secondary" onClick={() => onComment('exit')}><MessageSquare size={13} />评论平仓{exitComment ? '（已写，点击修改）' : ''}</button>
+      </div>
+      {entryComment && <p className="mp-loss-comment"><small>开仓评论</small>{entryComment}</p>}
+      {exitComment && <p className="mp-loss-comment"><small>平仓评论</small>{exitComment}</p>}
+    </section>
+    <footer>
+      <button type="button" className="mp-secondary" disabled={index <= 0} onClick={onPrevious}>上一笔</button>
+      <button type="button" className="mp-secondary mp-exit" onClick={onExit} title="退出亏损单复盘，回到历史卷子"><LogOut size={14} />退出</button>
     </footer>
   </FloatingCard>
 }
@@ -768,7 +894,7 @@ function PriceField({ label, value, hint, onCommit }: { label: string; value: nu
 /* Chart annotations                                                   */
 /* ------------------------------------------------------------------ */
 
-export function ManualPracticeAnnotations({ session, interval, hidden, toX, toY, highlightTime = null, highlightPrice = null, hideLevels = false, clipAfterBar = null, barRange, onOpenBar }: {
+export function ManualPracticeAnnotations({ session, interval, hidden, toX, toY, highlightItem = null, highlightTime = null, highlightPrice = null, hideLevels = false, clipAfterBar = null, barRange, onOpenBar }: {
   session: ManualPracticeSession
   /** Clicking a number opens that candle's reason for editing. */
   onOpenBar?: (barTime: number) => void
@@ -780,6 +906,7 @@ export function ManualPracticeAnnotations({ session, interval, hidden, toX, toY,
   hidden: boolean
   toX: (time: number) => number | null
   toY: (price: number) => number | null
+  highlightItem?: ManualTimelineItem | null
   highlightTime?: number | null
   /** Price to ring on the highlighted candle (entry / exit fills). */
   highlightPrice?: number | null
@@ -812,6 +939,20 @@ export function ManualPracticeAnnotations({ session, interval, hidden, toX, toY,
     clipRightX = lastX === null ? 0 : lastX + (previousX !== null && lastX > previousX ? (lastX - previousX) / 2 : 3)
   }
   return <div className="mp-annotations" aria-hidden="true" style={clipRightX === null ? undefined : { clipPath: `inset(0px calc(100% - ${Math.max(0, clipRightX)}px) 0px 0px)` }}>
+    {highlightItem && isBarRevealed(highlightItem.time) && manualItemRisk(highlightItem) && (() => {
+      const plan = manualItemRisk(highlightItem)!
+      const x = snap(highlightItem.time)
+      const entryY = toY(plan.entryPrice)
+      const short = highlightItem.note?.side === 'short' || highlightItem.trade?.side === 'short' || highlightItem.cancelledOrder?.side === 'short'
+      if (x === null) return null
+      return <>
+        {([[plan.entryPrice, 'entry', '初始入场'], [plan.stopLoss, 'stop', '初始止损'], [plan.takeProfit, 'target', '初始止盈']] as const).map(([price, kind, label]) => {
+          const y = toY(price)
+          return y === null ? null : <div key={kind} className={`mp-initial-risk-line ${kind}`} style={{ top: y, left: Math.max(0, x) }}><span>{label} {price.toFixed(2)}</span></div>
+        })}
+        {entryY !== null && <div className={`mp-initial-risk-summary ${short ? 'is-short' : 'is-long'}`} style={{ top: entryY }}><strong>盈亏比 {manualRiskRatio(plan).toFixed(2)} : 1</strong><span className="negative">风险 {Math.abs(plan.entryPrice - plan.stopLoss).toFixed(2)} 点</span><span className="positive">收益 {Math.abs(plan.takeProfit - plan.entryPrice).toFixed(2)} 点</span></div>}
+      </>
+    })()}
     {position && !hideLevels && <>
       {line(position.entryPrice, 'entry', position.side === 'long' ? '多单' : '空单')}
       {line(position.stopLoss, 'stop', '止损')}
@@ -860,6 +1001,12 @@ export function ManualPracticeAnnotations({ session, interval, hidden, toX, toY,
 /* ------------------------------------------------------------------ */
 /* Review: summary + every reason in time order                        */
 /* ------------------------------------------------------------------ */
+
+function InitialRiskSummary({ item }: { item: ManualTimelineItem }) {
+  const plan = manualItemRisk(item)
+  if (!plan) return item.kind === 'no-trade' ? null : <p className="mp-muted">未记录初始止盈止损</p>
+  return <p className="mp-initial-risk-text">初始入场 {plan.entryPrice.toFixed(2)} · <span className="negative">止损 {plan.stopLoss.toFixed(2)}</span> · <span className="positive">止盈 {plan.takeProfit.toFixed(2)}</span><br /><b>盈亏比 {manualRiskRatio(plan).toFixed(2)} : 1</b></p>
+}
 
 export function ManualTimelineDialog({ session, onClose, onJump, onEditItem, onReviewItem }: {
   session: ManualPracticeSession
@@ -928,9 +1075,11 @@ export function ManualTimelineDialog({ session, onClose, onJump, onEditItem, onR
                   </div>
                   {item.background !== null && <p className={`mp-timeline-background${item.background ? '' : ' missing'}`}><span>背景</span>{item.background || '未填写'}</p>}
                   {item.cancelledOrder && <p className="mp-cancelled-order-detail">未成交 · 撤单 {formatBeijing(item.cancelledOrder.cancelledTime)} · {item.cancelledOrder.quantity} 手<br />原计划止损 {item.cancelledOrder.stopLoss.toFixed(2)} · 止盈 {item.cancelledOrder.takeProfit.toFixed(2)}</p>}
-                  {biasItems ? biasItems.map((entry, rank) => <div className="mp-timeline-bias" key={entry.kind === 'no-trade' ? 'no-trade' : entry.note?.side}>
+                  {!biasItems && <InitialRiskSummary item={item} />}
+                  {biasItems ? biasItems.map((entry, rank) => <div className="mp-timeline-bias" key={entry.kind === 'no-trade' ? 'no-trade' : entry.note?.side} onClick={event => { event.stopPropagation(); select(entry, itemKey) }}>
                     <div className="mp-bias-heading"><b>{rank + 1}. {entry.kind === 'no-trade' ? '不开单' : entry.note?.side === 'short' ? '做空' : '做多'}{rank === 0 ? ' · 最偏向' : ''}</b>{reviewAction(entry, `${entry.kind === 'no-trade' ? '不开单' : entry.note?.side === 'short' ? '做空' : '做多'}复盘评论`)}</div>
                     {entry.reasons.length > 0 ? <ol className="mp-reason-list">{entry.reasons.map((reason, index) => <li key={index}>{reason}</li>)}</ol> : <p className="mp-muted">未填写理由</p>}
+                    <InitialRiskSummary item={entry} />
                     {reviewComment(entry)}
                   </div>) : item.reasons.length > 0
                     ? <ol className="mp-reason-list">{item.reasons.map((reason, reasonIndex) => <li key={reasonIndex}>{reason}</li>)}</ol>

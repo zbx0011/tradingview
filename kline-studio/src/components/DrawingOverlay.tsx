@@ -47,6 +47,8 @@ interface Props {
 }
 
 const distance = (a: DrawingPoint, b: DrawingPoint) => Math.hypot(a.x - b.x, a.y - b.y)
+/** Mouse travel (px) below which a press-and-release counts as a click rather than a drag. */
+const CLICK_SLOP_PX = 8
 const textBehaviors: ToolBehavior[] = ['text', 'note', 'callout', 'comment', 'price-label', 'signpost', 'flag', 'table', 'media', 'icon', 'arrow-mark']
 const freehandBehaviors: ToolBehavior[] = ['brush', 'highlighter', 'polyline']
 const oneClickBehaviors: ToolBehavior[] = [...textBehaviors, 'horizontal', 'horizontal-ray', 'vertical', 'cross']
@@ -86,7 +88,7 @@ export function DrawingOverlay({
   const [draft, setDraft] = useState<Drawing | null>(null)
   const [placementPhase, setPlacementPhase] = useState<'idle' | 'placing' | 'awaiting-second'>('idle')
   const draftRef = useRef<Drawing | null>(null)
-  const placementRef = useRef<{ start: DrawingPoint; pointerId: number; moved: boolean } | null>(null)
+  const placementRef = useRef<{ start: DrawingPoint; client: { x: number; y: number }; pointerId: number; moved: boolean } | null>(null)
   const awaitingSecondPointRef = useRef(false)
   const suppressNextClickRef = useRef(false)
   const abcAnchorsRef = useRef<DrawingPoint[]>([])
@@ -231,7 +233,7 @@ export function DrawingOverlay({
     if (event.button !== 0 || behavior === 'cursor' || behavior === 'eraser' || behavior === 'abc-projection' || oneClickBehaviors.includes(behavior) || positionBehaviors.includes(behavior) || awaitingSecondPointRef.current) return
     const point = anchorPoint(normalizedPoint(event))
     if (activeDefinition.id === 'measure') onQuickMeasurementChange(null)
-    placementRef.current = { start: point, pointerId: event.pointerId, moved: false }
+    placementRef.current = { start: point, client: { x: event.clientX, y: event.clientY }, pointerId: event.pointerId, moved: false }
     setPlacementPhase('placing')
     event.currentTarget.setPointerCapture(event.pointerId)
   }
@@ -409,7 +411,8 @@ export function DrawingOverlay({
       }
       return
     }
-    if (distance(placement.start, point) <= 0.003) return
+    // A hand that trembles during a click must not turn the click into a drag.
+    if (!placement.moved && Math.hypot(event.clientX - placement.client.x, event.clientY - placement.client.y) < CLICK_SLOP_PX) return
     placement.moved = true
     let current = draftRef.current
     if (!current) {
@@ -441,8 +444,18 @@ export function DrawingOverlay({
     const rawEnd = normalizedPoint(event)
     const current = draftRef.current
     const end = anchorPoint(current ? constrainedPoint(rawEnd, projectNormalizedPoint(placement.start), current.behavior, event.shiftKey) : rawEnd)
-    const moved = placement.moved || distance(placement.start, end) > 0.003
+    const travel = Math.hypot(event.clientX - placement.client.x, event.clientY - placement.client.y)
+    const moved = placement.moved && travel >= CLICK_SLOP_PX
     placementRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    // TradingView style: a click (even a slightly wobbly one) fixes the first point; the line then follows
+    // the mouse and the next click fixes the second point. Pressing and dragging still works as before.
+    // The click event that follows starts the line (handleCanvasClick); drop any half-dragged draft first.
+    if (!moved && !freehandBehaviors.includes(activeDefinition.behavior)) {
+      if (current) updateDraft(null)
+      setPlacementPhase('idle')
+      return
+    }
     setPlacementPhase(awaitingSecondPointRef.current ? 'awaiting-second' : 'idle')
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
     if (moved && current) {
@@ -1136,7 +1149,7 @@ export function DrawingOverlay({
       content = <g className="position-drawing" data-position-side={long ? 'long' : 'short'}>
         <rect data-testid="position-upper-zone" x={x} y={top} width={w} height={Math.max(0, entry - top)} fill={colorWithAlpha(upperIsTarget ? green : red, drawing.fillOpacity ?? .2)} stroke={upperIsTarget ? green : red} strokeWidth="1" vectorEffect="non-scaling-stroke" pointerEvents="none" />
         <rect data-testid="position-lower-zone" x={x} y={entry} width={w} height={Math.max(0, bottom - entry)} fill={colorWithAlpha(upperIsTarget ? red : green, drawing.fillOpacity ?? .2)} stroke={upperIsTarget ? red : green} strokeWidth="1" vectorEffect="non-scaling-stroke" pointerEvents="none" />
-        <line data-testid="position-entry-line" x1={x} x2={x + w} y1={entry} y2={entry} stroke="#787b86" strokeWidth="1" vectorEffect="non-scaling-stroke" pointerEvents="none" />
+        <line data-testid="position-entry-line" x1={x} x2={x + w} y1={entry} y2={entry} stroke="#2962ff" strokeDasharray="6 4" strokeWidth="2" vectorEffect="non-scaling-stroke" pointerEvents="none" />
         {/* Keep the large filled zones click-through, while their edges remain easy to grab. */}
         <path data-testid="position-move-hit-target"
           d={`M${x},${top} H${x + w} V${bottom} H${x} Z M${x},${entry} H${x + w}`}
