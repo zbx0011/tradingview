@@ -155,6 +155,12 @@ const ATR_LENGTH = 200
 
 const newPivot = (): Pivot => ({ current: Number.NaN, last: Number.NaN, crossed: false, barIndex: 0 })
 
+/** An internal pivot that no close has broken yet. */
+interface OpenLevel {
+  price: number
+  barIndex: number
+}
+
 export function emptySmcResult(): SmcResult {
   return { structures: [], equals: [], orderBlocks: [], fairValueGaps: [], filledFairValueGaps: [], trailing: null, swingBias: 0, lastIndex: -1 }
 }
@@ -194,6 +200,12 @@ export function computeSmartMoney(candles: readonly Candle[], partial: Partial<S
   const equalLow = newPivot()
   const swingTrend = { bias: 0 }
   const internalTrend = { bias: 0 }
+  // The original script only watches the most recent internal pivot, so an older, more important
+  // high (or low) is forgotten as soon as a smaller pivot forms after it, and its later break gets
+  // no BOS / CHoCH. Every unbroken internal pivot is kept instead (highs strictly falling from old
+  // to new, lows strictly rising); a pivot that a newer one exceeds was already swept and is dropped.
+  const openHighs: OpenLevel[] = []
+  const openLows: OpenLevel[] = []
   const trailing = {
     top: Number.NaN, bottom: Number.NaN, topIndex: 0, bottomIndex: 0, pivotIndex: 0, seen: false,
   }
@@ -241,6 +253,10 @@ export function computeSmartMoney(candles: readonly Candle[], partial: Partial<S
       pivot.current = pivotCandle.low
       pivot.crossed = false
       pivot.barIndex = pivotIndex
+      if (kind === 'internal') {
+        while (openLows.length > 0 && openLows[openLows.length - 1].price >= pivot.current) openLows.pop()
+        openLows.push({ price: pivot.current, barIndex: pivotIndex })
+      }
       if (kind === 'swing') {
         trailing.bottom = pivot.current
         trailing.pivotIndex = pivot.barIndex
@@ -255,6 +271,10 @@ export function computeSmartMoney(candles: readonly Candle[], partial: Partial<S
       pivot.current = pivotCandle.high
       pivot.crossed = false
       pivot.barIndex = pivotIndex
+      if (kind === 'internal') {
+        while (openHighs.length > 0 && openHighs[openHighs.length - 1].price <= pivot.current) openHighs.pop()
+        openHighs.push({ price: pivot.current, barIndex: pivotIndex })
+      }
       if (kind === 'swing') {
         trailing.top = pivot.current
         trailing.pivotIndex = pivot.barIndex
@@ -269,14 +289,37 @@ export function computeSmartMoney(candles: readonly Candle[], partial: Partial<S
     pendingTraps.push({ level, breakIndex: index, extreme: bullish ? candle.low : candle.high, bullish })
   }
 
-  function displayStructure(internal: boolean, index: number) {
+  function displayInternalStructure(index: number) {
+    const candle = candles[index]
+    const trend = internalTrend
+    // One close can clear several stacked levels; label the highest (lowest) one, the most important.
+    let brokenHigh: OpenLevel | null = null
+    while (openHighs.length > 0 && candle.close > openHighs[openHighs.length - 1].price) brokenHigh = openHighs.pop()!
+    if (brokenHigh && !(brokenHigh.price === swingHigh.current && brokenHigh.barIndex === swingHigh.barIndex)) {
+      const tag = trend.bias === BEARISH ? 'CHoCH' : 'BOS'
+      trend.bias = BULLISH
+      structures.push({ fromIndex: brokenHigh.barIndex, toIndex: index, price: brokenHigh.price, tag, bullish: true, internal: true })
+      watchTrap(brokenHigh.price, index, false)
+    }
+
+    let brokenLow: OpenLevel | null = null
+    while (openLows.length > 0 && candle.close < openLows[openLows.length - 1].price) brokenLow = openLows.pop()!
+    if (brokenLow && !(brokenLow.price === swingLow.current && brokenLow.barIndex === swingLow.barIndex)) {
+      const tag = trend.bias === BULLISH ? 'CHoCH' : 'BOS'
+      trend.bias = BEARISH
+      structures.push({ fromIndex: brokenLow.barIndex, toIndex: index, price: brokenLow.price, tag, bullish: false, internal: true })
+      watchTrap(brokenLow.price, index, true)
+    }
+  }
+
+  function displaySwingStructure(index: number) {
+    const internal = false
     const candle = candles[index]
     const previousClose = candles[index - 1].close
-    const trend = internal ? internalTrend : swingTrend
+    const trend = swingTrend
 
-    const highPivot = internal ? internalHigh : swingHigh
-    const bullishExtra = internal ? internalHigh.current !== swingHigh.current : true
-    if (candle.close > highPivot.current && previousClose <= highPivot.current && !highPivot.crossed && bullishExtra) {
+    const highPivot = swingHigh
+    if (candle.close > highPivot.current && previousClose <= highPivot.current && !highPivot.crossed) {
       const tag = trend.bias === BEARISH ? 'CHoCH' : 'BOS'
       highPivot.crossed = true
       trend.bias = BULLISH
@@ -284,9 +327,8 @@ export function computeSmartMoney(candles: readonly Candle[], partial: Partial<S
       watchTrap(highPivot.current, index, false)
     }
 
-    const lowPivot = internal ? internalLow : swingLow
-    const bearishExtra = internal ? internalLow.current !== swingLow.current : true
-    if (candle.close < lowPivot.current && previousClose >= lowPivot.current && !lowPivot.crossed && bearishExtra) {
+    const lowPivot = swingLow
+    if (candle.close < lowPivot.current && previousClose >= lowPivot.current && !lowPivot.crossed) {
       const tag = trend.bias === BULLISH ? 'CHoCH' : 'BOS'
       lowPivot.crossed = true
       trend.bias = BEARISH
@@ -308,8 +350,8 @@ export function computeSmartMoney(candles: readonly Candle[], partial: Partial<S
     structureStep(equalLeg, options.equalLength, index, 'equal')
 
     if (index > 0) {
-      displayStructure(true, index)
-      displayStructure(false, index)
+      displayInternalStructure(index)
+      displaySwingStructure(index)
     }
 
     // Mitigate only the newly touched layer. Recording its first candle gives

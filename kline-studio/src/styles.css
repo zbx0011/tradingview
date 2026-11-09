@@ -788,6 +788,13 @@ button:disabled { opacity: .32; cursor: not-allowed; }
 .decision-risk-confirm button { height: 36px; padding: 0 12px; color: #d3d9e4; border-radius: 6px; background: #2a313d; }
 .decision-risk-confirm .primary { display: flex; align-items: center; gap: 6px; color: white; background: #296cff; }
 .decision-risk-overlay.locked .decision-risk-line { pointer-events: none; cursor: default; }
+/* Planned trade (before it is opened): the lines start at the entry candle, nothing is drawn to its left. */
+.decision-risk-overlay.from-start .decision-risk-line { border-top-color: transparent; }
+.decision-risk-overlay.from-start .decision-risk-line::before { content: ''; position: absolute; left: var(--risk-start, 0px); right: 0; top: -2px; border-top: 2px solid #22ab94; pointer-events: none; }
+.decision-risk-overlay.from-start .decision-risk-line.stop::before { border-top-color: #f7525f; }
+.decision-risk-overlay.from-start .decision-risk-line.entry::before { border-top: 2px dashed #2962ff; }
+.decision-risk-overlay.from-start .decision-risk-hit-area { left: var(--risk-start, 0px); }
+.decision-risk-overlay.from-start .decision-risk-line i { left: calc(var(--risk-start, 0px) + (100% - var(--risk-start, 0px)) * .23); }
 
 .decision-chart-annotations { position: absolute; inset: 0; z-index: 34; overflow: hidden; pointer-events: none; }
 .decision-chart-annotations.is-hidden > :not(.decision-execution-path):not(.shape-phase-annotations):not(.shape-persistent-cursor) { visibility: hidden; }

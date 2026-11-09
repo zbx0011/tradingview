@@ -191,7 +191,7 @@ export function ManualCandleBiasEditor({ subtitle, notes, initialBias, initialBa
     {activeSide && activePlan && <DecisionRiskOverlay
       symbol="NQ1!" precision={2} side={activeSide} entryPrice={activePlan.entryPrice} entryLabel="开仓价" stopLoss={activePlan.stopLoss} takeProfit={activePlan.takeProfit}
       ratioLabel={`盈亏比 ${manualRiskRatio(activePlan).toFixed(2)} : 1`} stopLossMode="touch" hideStopMode showConfirmControls={false}
-      currentCandleX={currentCandleX} amountForExit={price => (price - activePlan.entryPrice) * (activeSide === 'long' ? 1 : -1) * NQ_POINT_VALUE_USD}
+      currentCandleX={currentCandleX} lineStartX={currentCandleX} amountForExit={price => (price - activePlan.entryPrice) * (activeSide === 'long' ? 1 : -1) * NQ_POINT_VALUE_USD}
       toPrice={toPrice} toY={toY} onEntryPrice={price => updatePrice(activeSide, 'entryPrice', price)} onStopLoss={price => updatePrice(activeSide, 'stopLoss', price)} onTakeProfit={price => updatePrice(activeSide, 'takeProfit', price)}
     />}
     <FloatingCard id="candle-bias-editor" title="未开单 K 线 · 偏向与理由" ariaLabel="K线偏向与理由" testId="candle-bias-editor" icon={<NotebookPen size={14} />} className="mp-editor mp-bias-editor" defaultStyle={{ left: 64, top: 12, width: 400, height: 520 }} minWidth={320} minHeight={300} onClose={cancel}

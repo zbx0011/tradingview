@@ -111,6 +111,7 @@ export function ManualInitialRiskEditor({ side, initial, currentCandleX, toPrice
       hideStopMode
       showConfirmControls={false}
       currentCandleX={currentCandleX}
+      lineStartX={currentCandleX}
       amountForExit={(price) => (price - draft.entryPrice) * (side === 'long' ? 1 : -1) * NQ_POINT_VALUE_USD}
       toPrice={toPrice}
       toY={toY}
