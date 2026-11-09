@@ -1885,6 +1885,8 @@ button:disabled { opacity: .32; cursor: not-allowed; }
   position: absolute; z-index: 60; display: flex; flex-direction: column; max-height: calc(100% - 16px); box-sizing: border-box; color: var(--text); font-size: 12px;
   background: rgb(28,33,43); border: 1px solid #3d485c; border-radius: 10px; box-shadow: 0 10px 26px rgba(0,0,0,.3); contain: layout paint; }
 .mp-card.has-height { max-height: 100%; }
+/* Until the person resizes a card, it never takes over a small chart: at most 58% wide and 70% tall. */
+.mp-card.is-default { max-width: 58%; max-height: 70%; }
 .mp-card.mp-panel:not(.has-height) { max-height: min(460px, calc(100% - 24px)); }
 .mp-card.is-drag, .mp-card.is-resize { border-color: #628bdc; box-shadow: 0 14px 34px rgba(0,0,0,.42), 0 0 0 1px rgba(71,122,230,.28); }
 .mp-card.mp-editor { border-top: 3px solid #f0b429; }
@@ -1955,6 +1957,54 @@ button:disabled { opacity: .32; cursor: not-allowed; }
 .mp-card-body::-webkit-scrollbar { width: 8px; }
 .mp-card-body::-webkit-scrollbar-thumb { background: #4a5568; border-radius: 4px; }
 .mp-card-body::-webkit-scrollbar-track { background: transparent; }
+
+/* Compact floating cards: smaller type and tighter spacing so they leave the chart visible. */
+.mp-card { font-size: 11px; }
+.mp-card-head { padding: 5px 8px 4px 10px; }
+.mp-card-head strong { font-size: 11px; }
+.mp-card-meta { font-size: 10px; }
+.mp-card-body { gap: 6px; padding: 0 10px 8px; }
+.mp-card .mp-primary, .mp-card .mp-secondary, .mp-card .mp-danger, .mp-card .mp-long, .mp-card .mp-short, .mp-card .mp-close, .mp-card .mp-note { min-height: 26px; padding: 0 9px; font-size: 11px; }
+.mp-card .mp-editor-subtitle, .mp-card .mp-editor-error, .mp-card .mp-add-row, .mp-card .mp-bias-hint { font-size: 11px; }
+.mp-card .mp-bias-hint { margin: 6px 0 2px; }
+.mp-card .mp-reason-rows { gap: 5px; }
+.mp-card .mp-reason-rows input { height: 28px; padding: 0 8px; font-size: 12px; }
+.mp-card .mp-reason-rows > li { grid-template-columns: 20px minmax(0, 1fr) 24px; gap: 5px; }
+.mp-card .mp-reason-index { width: 18px; height: 18px; font-size: 10px; }
+.mp-card .mp-open-risk { gap: 6px; }
+.mp-card .mp-open-risk label { gap: 2px; font-size: 11px; }
+.mp-card .mp-open-risk input { height: 28px; padding: 0 8px; font-size: 12px; }
+.mp-card .mp-bias-background { gap: 6px; font-size: 12px; }
+.mp-card .mp-bias-background input { padding: 4px 7px; font-size: 12px; }
+.mp-card .mp-bias-option { padding: 6px 0; }
+.mp-card .mp-bias-heading { gap: 5px; margin-bottom: 4px; font-size: 12px; }
+.mp-card .mp-bias-option .mp-add-row { margin-top: 5px; }
+.mp-card .mp-bias-option textarea { min-height: 38px; padding: 5px 7px; font-size: 12px; }
+.mp-card .mp-summary-grid { gap: 5px; margin-bottom: 8px; }
+.mp-card .mp-summary-grid > div { gap: 1px; padding: 5px 7px; border-radius: 6px; }
+.mp-card .mp-summary-grid small { font-size: 10px; }
+.mp-card .mp-summary-grid b { font-size: 13px; }
+.mp-card .mp-filter { flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.mp-card .mp-filter button { height: 22px; padding: 0 9px; font-size: 11px; }
+.mp-card .mp-timeline-list { gap: 5px; }
+.mp-card.mp-timeline .mp-timeline-list > li { grid-template-columns: 70px minmax(0, 1fr); gap: 8px; padding: 6px 8px; }
+.mp-card .mp-timeline-time { padding: 1px 0; font-size: 11px; }
+.mp-card .mp-timeline-title { gap: 6px; font-size: 12px; }
+.mp-card .mp-reason-list { margin-top: 3px; padding-left: 16px; font-size: 12px; line-height: 1.45; }
+.mp-card .mp-timeline-body .mp-muted { margin-top: 3px; font-size: 11px; }
+.mp-card .mp-timeline-background, .mp-card .mp-timeline-unsupported, .mp-card .mp-unsupported-reasons { margin-top: 4px; font-size: 12px; line-height: 1.45; }
+.mp-card .mp-timeline-bias { margin-top: 5px; padding-top: 4px; }
+.mp-card .mp-review-comment { margin-top: 4px; padding: 4px 7px; font-size: 11px; }
+.mp-card .mp-review-action { padding: 2px 4px; font-size: 10px; }
+.mp-card.mp-timeline .mp-timeline-title { flex-wrap: wrap; gap: 2px 8px; line-height: 1.3; }
+.mp-card.mp-timeline .mp-timeline-title > b { white-space: nowrap; }
+.mp-card.mp-timeline .mp-timeline-title > span:not(.mp-seq) { font-size: 11px; white-space: nowrap; }
+.mp-card.mp-timeline .mp-seq { min-width: 16px; height: 16px; padding: 0 4px; font-size: 10px; border-radius: 8px; }
+.mp-card.mp-timeline .mp-timeline-title .mp-icon { padding: 2px; }
+.mp-card.mp-timeline .mp-timeline-title .mp-icon svg { width: 11px; height: 11px; }
+.mp-card.mp-timeline .mp-timeline-exit { margin-top: 5px; padding: 4px 6px; }
+.mp-card.mp-timeline .mp-timeline-exit .mp-reason-list { margin-top: 2px; }
+.mp-card.mp-timeline .mp-timeline-times { gap: 1px; }
 
 /* Compact favourites toolbar (closer to TradingView's size). */
 .reference-quick-tools { top: 38px; height: 40px; gap: 2px; padding: 0 6px; border-radius: 6px; }

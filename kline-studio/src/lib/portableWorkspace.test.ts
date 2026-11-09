@@ -54,6 +54,29 @@ describe('portable workspace', () => {
     })
   })
 
+  it('keeps window layout on each computer instead of syncing it', () => {
+    const layout = {
+      'kline-studio-manual-card-v1:timeline': '{"left":0,"top":0,"width":900,"height":1200}',
+      'kline-studio-floating-card-order-v1': '["timeline"]',
+      'kline-studio-trade-marker-panel-v1': '{"position":null,"size":null,"fontSize":"large"}',
+      'kline-studio-quick-drawing-toolbar-position-v1': '{"x":1,"y":2}',
+      'kline-studio-chart-view-v1:NQ1!:5m': '{"from":1,"to":2}',
+      'kline-studio-page-state-v1:card-scroll:timeline:x': '120',
+    }
+    const storage = createStorage({ 'kline-studio-workspace-v1': 'local', ...layout })
+    expect(collectPortableWorkspace(storage).entries).toEqual({ 'kline-studio-workspace-v1': 'local' })
+
+    // A backup from another computer (or an older version) may still carry layout: it is ignored on import.
+    const imported = parsePortableWorkspace(JSON.stringify({
+      app: 'kline-studio', version: 1, exportedAt: '2026-11-09T00:00:00.000Z',
+      entries: { 'kline-studio-workspace-v1': 'remote', 'kline-studio-manual-card-v1:timeline': '{"left":9,"top":9,"width":999,"height":999}' },
+    }))!
+    expect(Object.keys(imported.entries)).toEqual(['kline-studio-workspace-v1'])
+    restorePortableWorkspace(imported, storage)
+    expect(storage.getItem('kline-studio-workspace-v1')).toBe('remote')
+    for (const [key, value] of Object.entries(layout)) expect(storage.getItem(key)).toBe(value)
+  })
+
   it('keeps internal recovery data out of exported backups', () => {
     const storage = createStorage({
       'kline-studio-workspace-v1': 'current',

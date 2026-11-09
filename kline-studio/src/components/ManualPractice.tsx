@@ -43,8 +43,17 @@ const exitLabel = (trade: ManualTrade) => trade.exitKind === 'stop' ? '止损' :
 interface CardBox { left: number; top: number; width: number; height: number | null }
 const CARD_STORAGE_PREFIX = 'kline-studio-manual-card-v1:'
 const TIMELINE_COMPACT_FLAG = 'kline-studio-manual-card-timeline-compact-v1'
+// Card sizes used to be synced between computers, so a remembered size may come from another screen.
+// Forget every remembered card box once (the default sizes were also made smaller); from now on each computer keeps its own.
+const CARD_LAYOUT_LOCAL_FLAG = 'kline-studio-manual-card-layout-local-v2'
+function forgetSyncedCardBoxesOnce() {
+  if (localStorage.getItem(CARD_LAYOUT_LOCAL_FLAG) === '1') return
+  localStorage.setItem(CARD_LAYOUT_LOCAL_FLAG, '1')
+  for (const key of Object.keys(localStorage)) if (key.startsWith(CARD_STORAGE_PREFIX)) localStorage.removeItem(key)
+}
 function loadCardBox(id: string): CardBox | null {
   try {
+    forgetSyncedCardBoxesOnce()
     // The timeline window was redesigned smaller: forget its old remembered size once.
     if (id === 'timeline' && localStorage.getItem(TIMELINE_COMPACT_FLAG) !== '1') {
       localStorage.setItem(TIMELINE_COMPACT_FLAG, '1')
@@ -214,7 +223,7 @@ export function FloatingCard({ id, title, icon, meta, tone = 'neutral', classNam
     : defaultStyle
   return <section
     ref={ref}
-    className={`mp-card tone-${tone}${box?.height ? ' has-height' : ''} ${className}`}
+    className={`mp-card tone-${tone}${box?.height ? ' has-height' : ''}${box ? '' : ' is-default'} ${className}`}
     style={{ ...style, zIndex: 70 }}
     role="dialog"
     aria-label={ariaLabel}
@@ -1038,8 +1047,8 @@ export function ManualTimelineDialog({ session, onClose, onJump, onEditItem, onR
     icon={<BookOpenCheck size={14} />}
     title="理由时间线"
     meta={`${session.dayLabel} · ${session.status === 'completed' ? '已完成' : '进行中'}`}
-    defaultStyle={{ left: 64, top: 70, width: 400, height: 420 }}
-    minWidth={300}
+    defaultStyle={{ left: 64, top: 70, width: 340, height: 360 }}
+    minWidth={280}
     minHeight={200}
     onClose={onClose}
   >

@@ -704,6 +704,13 @@ function App() {
     if (manualLossHideDetails) return { ...drawings, present: made }
     return { ...drawings, present: [...beforeEntry.map((drawing) => ({ ...drawing, locked: true })), ...made] }
   }, [manualLossMode, manualLossSession, manualLossTrade, manualLossShownEnd, manualLossHideDetails, manualLossDrawingIds, manualLossStartedAt, drawings])
+  // Reviewing a finished paper (not 亏损单复盘): its own practice-time lines show too, locked, next to anything drawn since.
+  const manualReviewHistory = useMemo(() => {
+    const recorded = manualReviewSession?.drawings
+    if (manualLossMode || !recorded || recorded.length === 0) return null
+    const recordedIds = new Set(recorded.map((drawing) => drawing.id))
+    return { ...drawings, present: [...recorded.map((drawing) => ({ ...drawing, locked: true })), ...drawings.present.filter((drawing) => !recordedIds.has(drawing.id))] }
+  }, [manualLossMode, manualReviewSession, drawings])
   const nqMinutes = availableDecisionHistoryBySymbol[MANUAL_PRACTICE_SYMBOL] ?? null
   const manualDays = useMemo(() => nqMinutes?.length && (manualCenterOpen || manualMode) ? findManualTradingDays(nqMinutes) : null, [manualCenterOpen, manualMode, nqMinutes])
   // 亏损单复盘 shows the market only up to the candle before the entry candle; everything after stays unseen.
@@ -3607,7 +3614,7 @@ function App() {
             />}
             <DrawingOverlay
               key={`${decisionContextKey ?? 'normal'}-${decisionOverviewSessionId ?? 'normal'}-${effectiveDrawingTool}-${drawingsLocked}-${drawingsHidden}`}
-              activeTool={decisionOverviewMode ? 'cursor' : effectiveDrawingTool} history={manualLossHistory ?? uiDrawings} dispatch={dispatchWithDrawingTemplates} color={drawingColor}
+              activeTool={decisionOverviewMode ? 'cursor' : effectiveDrawingTool} history={manualLossHistory ?? manualReviewHistory ?? uiDrawings} dispatch={dispatchWithDrawingTemplates} color={drawingColor}
               magnetMode={magnetMode} drawingsLocked={decisionOverviewMode || drawingsLocked} hidden={decisionOverviewMode ? false : drawingsHidden}
               // 亏损单复盘 keeps every drawn line whole; ordinary replay hides lines that lie after the replay point.
               revealClipIds={manualReplaying && !manualLossMode ? manualReplayDrawingIds : null}

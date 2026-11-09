@@ -18,8 +18,29 @@ export interface StorageLike {
   removeItem: (key: string) => void
 }
 
+/**
+ * Window layout belongs to one screen: card / panel / toolbar positions and sizes, their stacking order,
+ * the chart's zoom / visible range and window scroll offsets.
+ * Syncing them would stamp the other computer's window sizes onto this one, so they stay local.
+ */
+const DEVICE_LOCAL_KEY_PREFIXES = [
+  'kline-studio-manual-card-',
+  'kline-studio-floating-card-order-',
+  'kline-studio-trade-marker-panel-',
+  'kline-studio-decision-replay-panel-',
+  'kline-studio-decision-replay-menu-',
+  'kline-studio-decision-chart-status-',
+  'kline-studio-quick-drawing-toolbar-position-',
+  'kline-studio-chart-view-v1:',
+  'kline-studio-page-state-v1:card-scroll:',
+]
+
+function isDeviceLocalKey(key: string) {
+  return DEVICE_LOCAL_KEY_PREFIXES.some((prefix) => key.startsWith(prefix))
+}
+
 function isPortableDataKey(key: string) {
-  return key.startsWith(PORTABLE_STORAGE_PREFIX) && key !== PORTABLE_WORKSPACE_RECOVERY_STORAGE_KEY
+  return key.startsWith(PORTABLE_STORAGE_PREFIX) && key !== PORTABLE_WORKSPACE_RECOVERY_STORAGE_KEY && !isDeviceLocalKey(key)
 }
 
 function browserStorage(): StorageLike | undefined {
@@ -59,7 +80,7 @@ export function parsePortableWorkspace(raw: string): PortableWorkspace | null {
     const entries: Record<string, string> = {}
     for (const [key, item] of Object.entries(value.entries)) {
       if (!key.startsWith(PORTABLE_STORAGE_PREFIX) || typeof item !== 'string') return null
-      if (key === PORTABLE_WORKSPACE_RECOVERY_STORAGE_KEY) continue
+      if (!isPortableDataKey(key)) continue
       entries[key] = item
     }
     return {

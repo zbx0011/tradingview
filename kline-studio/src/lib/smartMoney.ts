@@ -3,10 +3,16 @@
 // This is a TypeScript port of the "Smart Money Concepts [LuxAlgo]" Pine script
 // (© LuxAlgo, licensed under CC BY-NC-SA 4.0 — https://creativecommons.org/licenses/by-nc-sa/4.0/).
 // The port keeps the original defaults: Historical mode, Colored style, internal
-// + swing structure, internal order blocks, EQH/EQL, strong/weak high & low and
+// + swing structure, EQH/EQL, strong/weak high & low and
 // premium/discount zones. Fair value gaps follow the script's detection logic; filled
 // gaps retain each first-filled price layer for stepped historical refill bands. MTF levels and
 // swing order blocks, off by default in the script, are not ported.
+//
+// The script's order blocks are replaced by trapped-trader zones: when a candle closes through a
+// BOS / CHoCH level and one of the next TRAP_REVERSAL_BARS candles closes back on the other side,
+// the band between the broken level and the extreme of that false break is where the breakout
+// traders are trapped. A failed break down (trapped shorts) is a blue support band, a failed break
+// up (trapped longs) a pink resistance band. A band stays until price comes back through all of it.
 //
 // All positions are expressed as candle indexes so the overlay can map them to
 // chart coordinates with the time scale's logical index.
@@ -31,7 +37,7 @@ export interface SmcOptions {
   equalLength: number
   /** Sensitivity (0..0.5) of equal highs / lows, relative to ATR(200). */
   equalThreshold: number
-  /** How many unmitigated internal order blocks are kept for drawing. */
+  /** How many not-yet-refilled trapped-trader zones are kept for drawing (newest first). */
   internalOrderBlocks: number
   /** Maximum retained structure lines / equal lines (the script caps lines at 500). */
   maxLines: number
@@ -47,7 +53,7 @@ export const DEFAULT_SMC_OPTIONS: SmcOptions = {
   swingLength: 50,
   equalLength: 3,
   equalThreshold: 0.1,
-  internalOrderBlocks: 5,
+  internalOrderBlocks: 10,
   maxLines: 500,
   fairValueGapAutoThreshold: false,
 }
@@ -72,12 +78,26 @@ export interface SmcEqual {
   high: boolean
 }
 
+/** Trapped-trader zone (drawn where the script drew order blocks). */
 export interface SmcOrderBlock {
+  /** Candle whose close broke the structure level. */
   startIndex: number
   top: number
   bottom: number
+  /** true: failed break down, shorts trapped below the level (support); false: longs trapped above (resistance). */
   bullish: boolean
 }
+
+interface PendingTrap {
+  level: number
+  breakIndex: number
+  /** Lowest low (failed break down) or highest high (failed break up) since the break. */
+  extreme: number
+  bullish: boolean
+}
+
+/** A break only counts as a trap when price closes back across the level within this many candles. */
+export const TRAP_REVERSAL_BARS = 3
 
 export interface SmcFairValueGap {
   /** Index of the first candle of the three-candle pattern. */
@@ -166,9 +186,6 @@ export function computeSmartMoney(candles: readonly Candle[], partial: Partial<S
     }
   }
 
-  const parsedHighs = new Float64Array(count)
-  const parsedLows = new Float64Array(count)
-
   const swingHigh = newPivot()
   const swingLow = newPivot()
   const internalHigh = newPivot()
@@ -188,6 +205,7 @@ export function computeSmartMoney(candles: readonly Candle[], partial: Partial<S
   const structures: SmcStructure[] = []
   const equals: SmcEqual[] = []
   let internalOrderBlocks: SmcOrderBlock[] = []
+  let pendingTraps: PendingTrap[] = []
   const fairValueGaps: SmcFairValueGap[] = []
   let openGaps: SmcFairValueGap[] = []
   let deltaSum = 0
@@ -245,16 +263,10 @@ export function computeSmartMoney(candles: readonly Candle[], partial: Partial<S
     }
   }
 
-  function storeOrderBlock(pivot: Pivot, bias: number, index: number) {
-    if (index <= pivot.barIndex) return
-    let best = pivot.barIndex
-    if (bias === BEARISH) {
-      for (let cursor = pivot.barIndex; cursor < index; cursor += 1) if (parsedHighs[cursor] > parsedHighs[best]) best = cursor
-    } else {
-      for (let cursor = pivot.barIndex; cursor < index; cursor += 1) if (parsedLows[cursor] < parsedLows[best]) best = cursor
-    }
-    if (internalOrderBlocks.length >= 100) internalOrderBlocks.pop()
-    internalOrderBlocks.unshift({ startIndex: best, top: parsedHighs[best], bottom: parsedLows[best], bullish: bias === BULLISH })
+  function watchTrap(level: number, index: number, bullish: boolean) {
+    if (pendingTraps.some((trap) => trap.level === level && trap.breakIndex === index)) return
+    const candle = candles[index]
+    pendingTraps.push({ level, breakIndex: index, extreme: bullish ? candle.low : candle.high, bullish })
   }
 
   function displayStructure(internal: boolean, index: number) {
@@ -269,7 +281,7 @@ export function computeSmartMoney(candles: readonly Candle[], partial: Partial<S
       highPivot.crossed = true
       trend.bias = BULLISH
       structures.push({ fromIndex: highPivot.barIndex, toIndex: index, price: highPivot.current, tag, bullish: true, internal })
-      if (internal) storeOrderBlock(highPivot, BULLISH, index)
+      watchTrap(highPivot.current, index, false)
     }
 
     const lowPivot = internal ? internalLow : swingLow
@@ -279,16 +291,12 @@ export function computeSmartMoney(candles: readonly Candle[], partial: Partial<S
       lowPivot.crossed = true
       trend.bias = BEARISH
       structures.push({ fromIndex: lowPivot.barIndex, toIndex: index, price: lowPivot.current, tag, bullish: false, internal })
-      if (internal) storeOrderBlock(lowPivot, BEARISH, index)
+      watchTrap(lowPivot.current, index, true)
     }
   }
 
   for (let index = 0; index < count; index += 1) {
     const candle = candles[index]
-    const highVolatility = candle.high - candle.low >= 2 * atr[index]
-    parsedHighs[index] = highVolatility ? candle.low : candle.high
-    parsedLows[index] = highVolatility ? candle.high : candle.low
-
     // updateTrailingExtremes(): math.max(high, na) stays na until the first swing pivot.
     trailing.top = Math.max(candle.high, trailing.top)
     if (trailing.top === candle.high) trailing.topIndex = index
@@ -347,9 +355,31 @@ export function computeSmartMoney(candles: readonly Candle[], partial: Partial<S
       }
     }
 
-    // deleteOrderBlocks(): mitigated order blocks disappear.
+    // A zone disappears once price has come back through all of it (the trapped side can get out).
     if (internalOrderBlocks.length > 0) {
-      internalOrderBlocks = internalOrderBlocks.filter((block) => block.bullish ? !(candle.low < block.bottom) : !(candle.high > block.top))
+      internalOrderBlocks = internalOrderBlocks.filter((block) => block.bullish ? !(candle.low <= block.bottom) : !(candle.high >= block.top))
+    }
+
+    // Failed breaks: a close back across the broken level within TRAP_REVERSAL_BARS candles makes a zone.
+    if (pendingTraps.length > 0) {
+      pendingTraps = pendingTraps.filter((trap) => {
+        if (index === trap.breakIndex) return true
+        if (trap.bullish) {
+          trap.extreme = Math.min(trap.extreme, candle.low)
+          if (candle.close > trap.level) {
+            internalOrderBlocks.unshift({ startIndex: trap.breakIndex, top: trap.level, bottom: trap.extreme, bullish: true })
+            return false
+          }
+        } else {
+          trap.extreme = Math.max(trap.extreme, candle.high)
+          if (candle.close < trap.level) {
+            internalOrderBlocks.unshift({ startIndex: trap.breakIndex, top: trap.extreme, bottom: trap.level, bullish: false })
+            return false
+          }
+        }
+        return index - trap.breakIndex < TRAP_REVERSAL_BARS
+      })
+      if (internalOrderBlocks.length > 100) internalOrderBlocks.length = 100
     }
   }
 
