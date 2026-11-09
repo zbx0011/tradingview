@@ -11,13 +11,14 @@ import { AlertDialog, DataTableDialog, ObjectTreeDialog, OrderDialog } from './c
 import { IndicatorLegend } from './components/IndicatorLegend'
 import { getHoverCandle, setHoverCandle, useHoverCandle } from './lib/hoverStore'
 import { ManualBarPicker, ManualPracticeAnnotations, ManualPracticeCenter, ManualPracticePanel, ManualReplayControls, ManualTimelineDialog, OpenTradeDialog, ReasonEditor } from './components/ManualPractice'
+import { ManualInitialRiskEditor } from './components/ManualInitialRiskEditor'
 import { ManualCandleBiasEditor } from './components/ManualCandleBiasEditor'
 import { ManualReviewCommentEditor } from './components/ManualReviewCommentEditor'
 import { bringFloatingCardIdToFront } from './lib/floatingCards'
 import { useManualPracticeKeys } from './components/useManualPracticeKeys'
 import {
   advanceManualSession, aggregateMinutes, barTimeFor, cleanReasons, contextStartTime, createManualSession, findManualTradingDays, finishManualSession,
-  manualReasonRows,
+  manualReasonRows, manualItemRisk, saveManualInitialRisk, type ManualRiskPlan,
   manualReviewCommentKey, saveManualReviewComment,
   cancelManualPendingOrder,
   saveCandleBiasNotes,
@@ -324,6 +325,8 @@ function App() {
   const [manualFocusTick, setManualFocusTick] = useState(0)
   // Look-back mode: the next chart click picks an earlier candle to record reasons for.
   const [manualPicking, setManualPicking] = usePageState('manualPicking', false)
+  const [manualInitialRiskDraft, setManualInitialRiskDraft] = useState<{ sessionId: string; item: ManualTimelineItem; side: ManualSide; plan: ManualRiskPlan } | null>(null)
+  const [manualHighlightItem, setManualHighlightItem] = useState<ManualTimelineItem | null>(null)
   const [manualHighlightTime, setManualHighlightTime] = usePageState<number | null>('manualHighlightTime', null)
   const [manualHighlightPrice, setManualHighlightPrice] = usePageState<number | null>('manualHighlightPrice', null)
   const [manualLoading, setManualLoading] = useState(false)
@@ -625,6 +628,22 @@ function App() {
   const manualCutoff = manualSession
     ? (manualActiveSession ? manualSession.cursorTime : manualReplaying ? Math.min(manualReplayEnd, manualSession.endTime) : manualSession.endTime)
     : null
+  const manualNoteRiskPlans = useMemo(() => {
+    if (manualDialog?.type !== 'note' || !nqMinutes?.length) return undefined
+    const seconds = INTERVALS[manualDialog.interval].seconds
+    const end = Math.min(manualDialog.barTime + seconds, manualCutoff ?? Infinity)
+    const candles = aggregateMinutes(nqMinutes.slice(lowerBound(nqMinutes, manualDialog.barTime - 6 * seconds), lowerBound(nqMinutes, end)), seconds).slice(-5)
+    const close = candles.at(-1)?.close
+    if (close === undefined) return undefined
+    const entryPrice = Math.round(close / 0.25) * 0.25
+    const planFor = (side: ManualSide): ManualRiskPlan => {
+      const structure = side === 'long' ? Math.min(...candles.map(bar => bar.low)) : Math.max(...candles.map(bar => bar.high))
+      const suggested = (side === 'long' ? structure < entryPrice : structure > entryPrice) ? structure : null
+      const levels = defaultDecisionLevels(side, entryPrice, suggested)
+      return { entryPrice, stopLoss: Math.round(levels.stopLoss / 0.25) * 0.25, takeProfit: Math.round(levels.takeProfit / 0.25) * 0.25 }
+    }
+    return { long: planFor('long'), short: planFor('short') }
+  }, [manualDialog, manualCutoff, nqMinutes])
   const manualData = useMemo(() => {
     if (!manualSession || manualCutoff === null || !nqMinutes?.length) return null
     const from = manualDays ? contextStartTime(manualDays, manualSession) : manualSession.startTime - 3 * 86_400
@@ -1161,7 +1180,7 @@ function App() {
   useLayoutEffect(() => {
     const chart = chartRef.current
     // Manual practice draws its order lines from the same "current candle" x.
-    const overlayCandle = decisionCurrentCandle ?? (manualMode ? data.at(-1) ?? null : null)
+    const overlayCandle = manualDialog?.type === 'note' ? { time: manualDialog.barTime } : manualInitialRiskDraft ? { time: barTimeFor(manualInitialRiskDraft.item.time, interval) } : decisionCurrentCandle ?? (manualMode ? data.at(-1) ?? null : null)
     const nextDecisionCurrentCandleX = chart && overlayCandle !== null
       ? chart.timeToCoordinate(overlayCandle.time)
       : null
@@ -1174,7 +1193,7 @@ function App() {
       alertY,
       orderY,
     })
-  }, [chartAlerts, data, decisionCurrentCandle, decisionMode, drawingProjectionTick, lockedCursorTime, manualMode, paperOrders, symbol])
+  }, [chartAlerts, data, decisionCurrentCandle, decisionMode, drawingProjectionTick, lockedCursorTime, manualMode, manualInitialRiskDraft, manualDialog, interval, paperOrders, symbol])
 
   useEffect(() => {
     if (!live) return
@@ -2750,6 +2769,8 @@ function App() {
     setDecisionCenterOpen(false)
     setManualTimelineOpen(false)
     setManualHighlightTime(null)
+    setManualHighlightItem(null)
+    setManualInitialRiskDraft(null)
     setManualHighlightPrice(null)
     setReplayCursor(null); setReplayPlaying(false); setReplaySelecting(false)
     if (symbol !== MANUAL_PRACTICE_SYMBOL) setSymbol(MANUAL_PRACTICE_SYMBOL)
@@ -2813,6 +2834,8 @@ function App() {
     setManualDialog(null)
     setManualTimelineOpen(false)
     setManualHighlightTime(null)
+    setManualHighlightItem(null)
+    setManualInitialRiskDraft(null)
     setManualHighlightPrice(null)
     if (manualActiveSession) {
       setManualStore((store) => ({ ...store, activeSessionId: null }))
@@ -2832,7 +2855,7 @@ function App() {
     }))
   }
   const advanceManual = () => {
-    if (!manualActiveSession || !nqMinutes?.length || manualDialog) return
+    if (!manualActiveSession || !nqMinutes?.length || manualDialog || manualInitialRiskDraft) return
     const outcome = advanceManualSession(manualActiveSession, nqMinutes, INTERVALS[interval].seconds)
     updateManualSession(manualActiveSession.id, () => outcome.session)
     if (outcome.closedTrade) {
@@ -3005,6 +3028,8 @@ function App() {
     if (manualReplayEnd === null) window.setTimeout(() => setManualReplayEnd(end), 60)
     else setManualReplayEnd(end)
     setManualHighlightTime(null)
+    setManualHighlightItem(null)
+    setManualInitialRiskDraft(null)
     setManualHighlightPrice(null)
   }
   const advanceManualReplay = () => {
@@ -3049,7 +3074,7 @@ function App() {
     }))
   }
   useManualPracticeKeys(Boolean(manualActiveSession) || manualLoading || manualReplaying, {
-    blocked: Boolean(manualDialog) || manualPicking || (!manualActiveSession && !manualReplaying),
+    blocked: Boolean(manualDialog) || Boolean(manualInitialRiskDraft) || manualPicking || (!manualActiveSession && !manualReplaying),
     advance: manualReplaying ? advanceManualReplay : advanceManual,
     key2: () => {
       if (manualReplaying) { exitManualReplay(); return }
@@ -3389,9 +3414,10 @@ function App() {
               interval={interval}
               hidden={chartAnnotationsHidden}
               clipAfterBar={manualReplayBars}
+              highlightItem={manualInitialRiskDraft || manualDialog?.type === 'note' ? null : manualHighlightItem}
               highlightTime={manualHighlightTime}
               highlightPrice={manualHighlightPrice}
-              hideLevels={Boolean(manualActiveSession && ((manualDialog?.type === 'open' && manualRisk) || (manualPosition && manualPosition.stopLoss !== null && manualPosition.takeProfit !== null)))}
+              hideLevels={manualDialog?.type === 'note' || Boolean(manualInitialRiskDraft) || Boolean(manualActiveSession && ((manualDialog?.type === 'open' && manualRisk) || (manualPosition && manualPosition.stopLoss !== null && manualPosition.takeProfit !== null)))}
               toX={(time) => chartRef.current?.timeToCoordinate(time) ?? null}
               toY={(price) => chartRef.current?.priceToCoordinate(price) ?? null}
               onOpenBar={openManualBarReason}
@@ -3420,6 +3446,42 @@ function App() {
               onPick={toggleManualReplayPicking}
               onExit={exitManualReplay}
             />}
+            {manualDialog?.type === 'note' && <ManualCandleBiasEditor
+              persistenceId={`${manualSession?.id}:note:${manualDialog.barTime}:${manualDialog.interval}`}
+              key={`${manualDialog.barTime}-${manualDialog.interval}`}
+              subtitle={`${new Date(manualDialog.barTime * 1000).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })} · ${INTERVALS[manualDialog.interval].label} K线`}
+              defaultRiskPlans={manualNoteRiskPlans}
+              currentCandleX={decisionCurrentCandleX}
+              toPrice={y => chartRef.current?.coordinateToPrice(y) ?? null}
+              toY={price => chartRef.current?.priceToCoordinate(price) ?? null}
+              notes={manualSession?.notes.filter(note => note.barTime === manualDialog.barTime && note.interval === manualDialog.interval) ?? []}
+              initialBias={manualDialog.kind === 'no-trade' ? 'no-trade' : manualDialog.side}
+              initialBackground={manualDialog.background}
+              onCancel={() => setManualDialog(null)}
+              onSave={(background, entries) => {
+                const dialog = manualDialog
+                setManualDialog(null)
+                if (manualSession) {
+                  updateManualSession(manualSession.id, session => saveCandleBiasNotes(session, dialog.barTime, dialog.interval, background, entries))
+                  if (manualReviewSession) setManualTimelineOpen(true)
+                }
+              }}
+            />}
+            {manualInitialRiskDraft && manualDialog?.type !== 'note' && manualSession?.id === manualInitialRiskDraft.sessionId && <ManualInitialRiskEditor
+              key={`${manualInitialRiskDraft.sessionId}:${manualReviewCommentKey(manualInitialRiskDraft.item)}`}
+              side={manualInitialRiskDraft.side} initial={manualInitialRiskDraft.plan}
+              currentCandleX={decisionCurrentCandleX}
+              toPrice={y => chartRef.current?.coordinateToPrice(y) ?? null}
+              toY={price => chartRef.current?.priceToCoordinate(price) ?? null}
+              onCancel={() => setManualInitialRiskDraft(null)}
+              onSave={plan => {
+                const draft = manualInitialRiskDraft
+                updateManualSession(draft.sessionId, session => saveManualInitialRisk(session, draft.item, plan))
+                setManualHighlightItem({ ...draft.item, ...(draft.item.trade ? { trade: { ...draft.item.trade, initialRisk: plan } } : {}), ...(draft.item.note ? { note: { ...draft.item.note, initialRisk: plan } } : {}), ...(draft.item.cancelledOrder ? { cancelledOrder: { ...draft.item.cancelledOrder, initialRisk: plan } } : {}) })
+                setManualInitialRiskDraft(null)
+                notify('初始止盈止损已保存到这条理由')
+              }}
+            />}
             {manualActiveSession && manualDialog?.type === 'open' && manualRisk && <DecisionRiskOverlay
               symbol={MANUAL_PRACTICE_SYMBOL}
               precision={2}
@@ -3441,7 +3503,7 @@ function App() {
               editable
               showConfirmControls={false}
             />}
-            {manualActiveSession && manualPending && manualLastMinute && manualDialog?.type !== 'open' && <DecisionRiskOverlay
+            {manualDialog?.type !== 'note' && !manualInitialRiskDraft && manualActiveSession && manualPending && manualLastMinute && manualDialog?.type !== 'open' && <DecisionRiskOverlay
               symbol={MANUAL_PRACTICE_SYMBOL}
               precision={2}
               side={manualPending.side}
@@ -3462,7 +3524,7 @@ function App() {
               editable
               showConfirmControls={false}
             />}
-            {manualActiveSession && manualPosition && manualPosition.stopLoss !== null && manualPosition.takeProfit !== null && manualLastMinute && manualDialog?.type !== 'open' && <DecisionRiskOverlay
+            {manualDialog?.type !== 'note' && !manualInitialRiskDraft && manualActiveSession && manualPosition && manualPosition.stopLoss !== null && manualPosition.takeProfit !== null && manualLastMinute && manualDialog?.type !== 'open' && <DecisionRiskOverlay
               symbol={MANUAL_PRACTICE_SYMBOL}
               precision={2}
               side={manualPosition.side}
@@ -3918,7 +3980,23 @@ function App() {
         // In review the timeline is the only window: closing it leaves the review.
         onClose={manualReviewSession ? exitManualView : () => setManualTimelineOpen(false)}
         onJump={(item) => {
-          const bar = barTimeFor(item.time, interval)
+          setManualHighlightItem(item)
+          setManualInitialRiskDraft(null)
+          const side = item.trade?.side ?? item.cancelledOrder?.side ?? item.note?.side
+          if (side && !manualItemRisk(item)) {
+            const targetInterval = item.note?.interval ?? interval
+            const cutoff = item.note ? item.note.barTime + INTERVALS[targetInterval].seconds : item.time + 60
+            const context = aggregateMinutes((nqMinutes ?? []).slice(0, lowerBound(nqMinutes ?? [], cutoff)), INTERVALS[targetInterval].seconds).slice(-5)
+            const entryPrice = item.trade?.entryPrice ?? item.cancelledOrder?.entryPrice ?? context.at(-1)?.close
+            if (entryPrice !== undefined) {
+              const structure = context.length ? (side === 'long' ? Math.min(...context.map(bar => bar.low)) : Math.max(...context.map(bar => bar.high))) : null
+              const suggested = structure !== null && (side === 'long' ? structure < entryPrice : structure > entryPrice) ? structure : null
+              const levels = defaultDecisionLevels(side, entryPrice, suggested)
+              setManualInitialRiskDraft({ sessionId: manualSession.id, item, side, plan: { entryPrice, stopLoss: clampManualLevel('stopLoss', side, entryPrice, levels.stopLoss), takeProfit: clampManualLevel('takeProfit', side, entryPrice, levels.takeProfit) } })
+            } else notify('这根K线的历史行情尚未加载，请稍后重试')
+          }
+          if (item.note && item.note.interval !== interval) setIntervalId(item.note.interval)
+          const bar = barTimeFor(item.time, item.note?.interval ?? interval)
           setManualHighlightTime(bar)
           setManualHighlightPrice(item.trade ? (item.kind === 'entry' ? item.trade.entryPrice : item.trade.exitPrice) : item.cancelledOrder?.entryPrice ?? null)
           setPriceScaleAuto(true)
@@ -3956,6 +4034,7 @@ function App() {
               updatedAt: Date.now(),
               pendingOrder: {
                 id: tradeId, side: dialog.side, orderKind: kind, entryPrice: risk.entryPrice,
+                initialRisk: { entryPrice: risk.entryPrice, stopLoss: risk.stopLoss, takeProfit: risk.takeProfit },
                 stopLoss: risk.stopLoss, takeProfit: risk.takeProfit, quantity: risk.quantity,
                 background, reasons, unsupportedReasons, createdTime: manualLastMinute.time, interval,
               },
@@ -3968,7 +4047,8 @@ function App() {
             updatedAt: Date.now(),
             trades: [...session.trades, {
               id: tradeId, side: dialog.side, entryTime: manualLastMinute.time, entryPrice: dialog.price,
-              stopLoss: risk.stopLoss, takeProfit: risk.takeProfit, quantity: risk.quantity,
+              initialRisk: { entryPrice: risk.entryPrice, stopLoss: risk.stopLoss, takeProfit: risk.takeProfit },
+                stopLoss: risk.stopLoss, takeProfit: risk.takeProfit, quantity: risk.quantity,
               exitTime: null, exitPrice: null, exitKind: null, background, reasons, unsupportedReasons, exitReasons: [],
             }],
           }))
@@ -3990,23 +4070,6 @@ function App() {
               ? { ...trade, exitTime: manualLastMinute.time, exitPrice: manualLastMinute.close, exitKind: 'manual' as const, exitReasons: reasons }
               : trade),
           }))
-        }}
-      />}
-      {manualDialog?.type === 'note' && <ManualCandleBiasEditor
-        persistenceId={`${manualSession?.id}:note:${manualDialog.barTime}:${manualDialog.interval}`}
-        key={`${manualDialog.barTime}-${manualDialog.interval}`}
-        subtitle={`${new Date(manualDialog.barTime * 1000).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })} · ${INTERVALS[manualDialog.interval].label} K线`}
-        notes={manualSession?.notes.filter(note => note.barTime === manualDialog.barTime && note.interval === manualDialog.interval) ?? []}
-        initialBias={manualDialog.kind === 'no-trade' ? 'no-trade' : manualDialog.side}
-        initialBackground={manualDialog.background}
-        onCancel={() => setManualDialog(null)}
-        onSave={(background, entries) => {
-          const dialog = manualDialog
-          setManualDialog(null)
-          if (manualSession) {
-            updateManualSession(manualSession.id, session => saveCandleBiasNotes(session, dialog.barTime, dialog.interval, background, entries))
-            if (manualReviewSession) setManualTimelineOpen(true)
-          }
         }}
       />}
       {manualDialog?.type === 'review-comment' && manualSession && <ManualReviewCommentEditor

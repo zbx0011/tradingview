@@ -635,7 +635,7 @@ describe('decision replay components', () => {
     expect(markup).toContain('data-testid="decision-entry-price-line"')
     expect(markup).toContain('entry draggable has-position-controls')
     expect(markup.match(/decision-risk-hit-area/g)).toHaveLength(3)
-    expect(markup).toContain('title="拖动白色虚线调整挂单价或追单价"')
+    expect(markup).toContain('title="拖动蓝色虚线调整挂单价或追单价"')
     expect(markup).toContain('title="拖动调整止盈"')
     expect(markup).toContain('title="拖动调整止损；按钮只切换本笔模式，不移动价格"')
     expect(markup).toContain('拖动入场、止盈和止损线')

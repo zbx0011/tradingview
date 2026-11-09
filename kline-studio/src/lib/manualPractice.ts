@@ -22,7 +22,10 @@ export type ManualSide = 'long' | 'short'
 export type ManualExitKind = 'manual' | 'stop' | 'target' | 'session-end'
 export type ManualNoteKind = 'no-trade' | 'should-trade' | 'entry' | 'exit' | 'cancelled-order'
 
+export interface ManualRiskPlan { entryPrice: number; stopLoss: number; takeProfit: number }
+
 export interface ManualTrade {
+  initialRisk?: ManualRiskPlan
   id: string
   side: ManualSide
   /** Time of the minute whose close filled the order. */
@@ -48,6 +51,7 @@ export interface ManualTrade {
 export type ManualCandleBias = 'no-trade' | 'long' | 'short'
 
 export interface ManualBarNote {
+  initialRisk?: ManualRiskPlan
   /** Chart bar the note belongs to (bar open time). */
   barTime: number
   interval: IntervalId
@@ -73,6 +77,7 @@ export interface ManualReviewComment {
 
 /** A resting order waiting for price: 追单 (stop, beyond price) or 挂单 (limit, back at price). */
 export interface ManualPendingOrder {
+  initialRisk?: ManualRiskPlan
   id: string
   side: ManualSide
   orderKind: ManualOrderKind
@@ -145,6 +150,43 @@ export function emptyManualPracticeStore(): ManualPracticeStore {
 const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
 const stringList = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
 
+export function parseManualRiskPlan(value: unknown): ManualRiskPlan | undefined {
+  const plan = value as ManualRiskPlan | null
+  if (!plan || ![plan.entryPrice, plan.stopLoss, plan.takeProfit].every(n => typeof n === 'number' && Number.isFinite(n) && n > 0)) return undefined
+  if (!((plan.stopLoss < plan.entryPrice && plan.entryPrice < plan.takeProfit) || (plan.takeProfit < plan.entryPrice && plan.entryPrice < plan.stopLoss))) return undefined
+  return { entryPrice: plan.entryPrice, stopLoss: plan.stopLoss, takeProfit: plan.takeProfit }
+}
+/** Explicitly backfill a missing plan without changing fills, live levels, notes, or PnL. */
+export function saveManualInitialRisk(session: ManualPracticeSession, item: ManualTimelineItem, plan: ManualRiskPlan, now = Date.now()): ManualPracticeSession {
+  const checked = parseManualRiskPlan(plan)
+  const side = item.trade?.side ?? item.cancelledOrder?.side ?? item.note?.side
+  if (!checked || !side || (side === 'long' ? checked.stopLoss >= checked.entryPrice : checked.stopLoss <= checked.entryPrice)) return session
+  let changed = false
+  const trades = session.trades.map(trade => {
+    if (trade.id !== item.trade?.id || trade.initialRisk) return trade
+    changed = true
+    return { ...trade, initialRisk: checked }
+  })
+  const notes = session.notes.map(note => {
+    if (!item.note || note.barTime !== item.note.barTime || note.interval !== item.note.interval || note.kind !== item.note.kind || note.side !== item.note.side || note.initialRisk) return note
+    changed = true
+    return { ...note, initialRisk: checked, updatedAt: now }
+  })
+  const cancelledOrders = session.cancelledOrders?.map(order => {
+    if (order.id !== item.cancelledOrder?.id || order.initialRisk) return order
+    changed = true
+    return { ...order, initialRisk: checked, updatedAt: now }
+  })
+  return changed ? { ...session, trades, notes, ...(cancelledOrders ? { cancelledOrders } : {}), updatedAt: now } : session
+}
+
+export function manualRiskRatio(plan: ManualRiskPlan) {
+  return Math.abs(plan.takeProfit - plan.entryPrice) / Math.abs(plan.entryPrice - plan.stopLoss)
+}
+export function manualItemRisk(item: ManualTimelineItem): ManualRiskPlan | undefined {
+  return item.note?.initialRisk ?? item.trade?.initialRisk ?? item.cancelledOrder?.initialRisk
+}
+
 function parseTrade(value: unknown): ManualTrade | null {
   const trade = value as Partial<ManualTrade> | null
   if (!trade || typeof trade.id !== 'string' || (trade.side !== 'long' && trade.side !== 'short')) return null
@@ -154,6 +196,7 @@ function parseTrade(value: unknown): ManualTrade | null {
     side: trade.side,
     entryTime: trade.entryTime,
     entryPrice: trade.entryPrice,
+    initialRisk: parseManualRiskPlan(trade.initialRisk),
     stopLoss: isFiniteNumber(trade.stopLoss) ? trade.stopLoss : null,
     takeProfit: isFiniteNumber(trade.takeProfit) ? trade.takeProfit : null,
     exitTime: isFiniteNumber(trade.exitTime) ? trade.exitTime : null,
@@ -177,6 +220,7 @@ function parsePendingOrder(value: unknown): ManualPendingOrder | null {
     side: order.side,
     orderKind: order.orderKind,
     entryPrice: order.entryPrice,
+    initialRisk: parseManualRiskPlan(order.initialRisk),
     stopLoss: order.stopLoss,
     takeProfit: order.takeProfit,
     quantity: isFiniteNumber(order.quantity) && order.quantity >= 1 ? Math.floor(order.quantity) : 1,
@@ -211,7 +255,7 @@ function parseNote(value: unknown): ManualBarNote | null {
   if (!note || !isFiniteNumber(note.barTime) || typeof note.interval !== 'string' || !(note.interval in INTERVALS)) return null
   const kind = note.kind === 'should-trade' ? 'should-trade' : 'no-trade'
   const biasRank = Number.isInteger(note.biasRank) && note.biasRank! >= 0 && note.biasRank! <= 2 ? note.biasRank : undefined
-  return { barTime: note.barTime, interval: note.interval as IntervalId, kind, ...(kind === 'should-trade' ? { side: note.side === 'short' ? 'short' as const : 'long' as const } : {}), ...(biasRank === undefined ? {} : { biasRank }), background: typeof note.background === 'string' ? note.background : '', reasons: stringList(note.reasons), updatedAt: isFiniteNumber(note.updatedAt) ? note.updatedAt : 0 }
+  return { initialRisk: parseManualRiskPlan(note.initialRisk), barTime: note.barTime, interval: note.interval as IntervalId, kind, ...(kind === 'should-trade' ? { side: note.side === 'short' ? 'short' as const : 'long' as const } : {}), ...(biasRank === undefined ? {} : { biasRank }), background: typeof note.background === 'string' ? note.background : '', reasons: stringList(note.reasons), updatedAt: isFiniteNumber(note.updatedAt) ? note.updatedAt : 0 }
 }
 
 function parseSession(value: unknown): ManualPracticeSession | null {
@@ -519,6 +563,7 @@ export function advanceManualSession(session: ManualPracticeSession, minutes: re
         // Stop / target are judged from the next minute on, so a fill bar never exits on its own wick.
         filledTrade = {
           id: pending.id, side: pending.side, entryTime: minute.time, entryPrice: price,
+          initialRisk: pending.initialRisk,
           stopLoss: pending.stopLoss, takeProfit: pending.takeProfit, quantity: pending.quantity,
           exitTime: null, exitPrice: null, exitKind: null,
           background: pending.background, reasons: pending.reasons, exitReasons: [],
@@ -621,27 +666,27 @@ export function upsertBarNote(session: ManualPracticeSession, barTime: number, i
   const previous = session.notes.find(matches)
   const others = session.notes.filter((note) => !matches(note))
   const notes = cleaned.length > 0 || context
-    ? [...others, { barTime, interval, kind, ...(kind === 'should-trade' ? { side: side ?? 'long' } : {}), ...(previous?.biasRank === undefined ? {} : { biasRank: previous.biasRank }), background: context, reasons: cleaned, updatedAt: now } as ManualBarNote].sort((a, b) => a.barTime - b.barTime)
+    ? [...others, { barTime, interval, kind, ...(kind === 'should-trade' ? { side: side ?? 'long' } : {}), ...(previous?.initialRisk ? { initialRisk: previous.initialRisk } : {}), ...(previous?.biasRank === undefined ? {} : { biasRank: previous.biasRank }), background: context, reasons: cleaned, updatedAt: now } as ManualBarNote].sort((a, b) => a.barTime - b.barTime)
     : others
   return { ...session, notes, updatedAt: now }
 }
 
 /** Atomically save the three alternatives for one candle in strongest-first order. */
-export function saveCandleBiasNotes(session: ManualPracticeSession, barTime: number, interval: IntervalId, background: string, entries: readonly { bias: ManualCandleBias; reasons: readonly string[] }[], now = Date.now()): ManualPracticeSession {
-  const alternatives: { bias: ManualCandleBias; reasons: string[] }[] = []
+export function saveCandleBiasNotes(session: ManualPracticeSession, barTime: number, interval: IntervalId, background: string, entries: readonly { bias: ManualCandleBias; reasons: readonly string[]; initialRisk?: ManualRiskPlan }[], now = Date.now()): ManualPracticeSession {
+  const alternatives: { bias: ManualCandleBias; reasons: string[]; initialRisk?: ManualRiskPlan }[] = []
   for (const entry of entries) {
     if (!['no-trade', 'long', 'short'].includes(entry.bias) || alternatives.some((item) => item.bias === entry.bias)) continue
-    alternatives.push({ bias: entry.bias, reasons: cleanReasons(entry.reasons) })
+    alternatives.push({ bias: entry.bias, reasons: cleanReasons(entry.reasons), initialRisk: entry.bias === 'no-trade' ? undefined : parseManualRiskPlan(entry.initialRisk) })
   }
   for (const bias of ['no-trade', 'long', 'short'] as const) {
     if (!alternatives.some((item) => item.bias === bias)) alternatives.push({ bias, reasons: [] })
   }
   const context = background.trim()
   const others = session.notes.filter((note) => note.barTime !== barTime || note.interval !== interval)
-  const notes: ManualBarNote[] = !context && alternatives.every((entry) => entry.reasons.length === 0) ? [] : alternatives.map((entry, biasRank) => ({
+  const notes: ManualBarNote[] = !context && alternatives.every((entry) => entry.reasons.length === 0 && !entry.initialRisk) ? [] : alternatives.map((entry, biasRank) => ({
     barTime, interval, kind: entry.bias === 'no-trade' ? 'no-trade' : 'should-trade',
     ...(entry.bias === 'no-trade' ? {} : { side: entry.bias }),
-    background: context, reasons: entry.reasons, biasRank, updatedAt: now,
+    initialRisk: entry.initialRisk, background: context, reasons: entry.reasons, biasRank, updatedAt: now,
   }))
   return { ...session, notes: [...others, ...notes].sort((a, b) => a.barTime - b.barTime), updatedAt: now }
 }

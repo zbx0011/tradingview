@@ -1136,7 +1136,7 @@ export function DrawingOverlay({
       content = <g className="position-drawing" data-position-side={long ? 'long' : 'short'}>
         <rect data-testid="position-upper-zone" x={x} y={top} width={w} height={Math.max(0, entry - top)} fill={colorWithAlpha(upperIsTarget ? green : red, drawing.fillOpacity ?? .2)} stroke={upperIsTarget ? green : red} strokeWidth="1" vectorEffect="non-scaling-stroke" pointerEvents="none" />
         <rect data-testid="position-lower-zone" x={x} y={entry} width={w} height={Math.max(0, bottom - entry)} fill={colorWithAlpha(upperIsTarget ? red : green, drawing.fillOpacity ?? .2)} stroke={upperIsTarget ? red : green} strokeWidth="1" vectorEffect="non-scaling-stroke" pointerEvents="none" />
-        <line data-testid="position-entry-line" x1={x} x2={x + w} y1={entry} y2={entry} stroke="#787b86" strokeWidth="1" vectorEffect="non-scaling-stroke" pointerEvents="none" />
+        <line data-testid="position-entry-line" x1={x} x2={x + w} y1={entry} y2={entry} stroke="#2962ff" strokeDasharray="6 4" strokeWidth="2" vectorEffect="non-scaling-stroke" pointerEvents="none" />
         {/* Keep the large filled zones click-through, while their edges remain easy to grab. */}
         <path data-testid="position-move-hit-target"
           d={`M${x},${top} H${x + w} V${bottom} H${x} Z M${x},${entry} H${x + w}`}

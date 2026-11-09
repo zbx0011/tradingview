@@ -748,10 +748,10 @@ button:disabled { opacity: .32; cursor: not-allowed; }
 .decision-stop-mode button[aria-pressed="true"] { color: #a22232; background: #fff2f3; border-color: #fff2f3; }
 .decision-stop-mode button:focus-visible { outline: 2px solid white; outline-offset: 2px; }
 .decision-stop-mode button:disabled { cursor: default; }
-.decision-risk-line.entry { border-color: #d1d4dc; border-top-style: dashed; pointer-events: none; }
+.decision-risk-line.entry { border-color: #2962ff; border-top-style: dashed; pointer-events: none; }
 .decision-risk-line.entry.draggable { pointer-events: auto; cursor: ns-resize; }
-.decision-risk-line.entry.draggable:hover { border-color: #fff; filter: drop-shadow(0 0 4px rgba(255,255,255,.65)); }
-.decision-risk-line.entry > span { right: 50%; transform: translateX(50%); color: #151923; background: #f0f3fa; }
+.decision-risk-line.entry.draggable:hover { border-color: #5e8cff; filter: drop-shadow(0 0 4px rgba(41,98,255,.65)); }
+.decision-risk-line.entry > span { right: 50%; transform: translateX(50%); color: #fff; background: #2962ff; }
 .decision-risk-line.entry.has-position-controls > span { display: flex; align-items: center; gap: 7px; padding: 3px 4px 3px 9px; }
 .decision-position-size { display: inline-flex; align-items: center; gap: 4px; padding-left: 5px; border-left: 1px solid rgba(21,25,35,.24); pointer-events: auto; }
 .decision-position-size button { width: 24px; height: 24px; display: grid; place-items: center; color: #fff; background: #296cff; border-radius: 4px; font-size: 17px; font-weight: 800; line-height: 1; cursor: pointer; }
@@ -759,8 +759,8 @@ button:disabled { opacity: .32; cursor: not-allowed; }
 .decision-position-size button:hover:not(:disabled) { background: #1555e8; }
 .decision-position-size button:focus-visible { outline: 2px solid #296cff; outline-offset: 2px; }
 .decision-position-size button:disabled { opacity: .35; cursor: default; }
-.decision-risk-line.entry.filled { border-color: #38bdf8; border-top-style: solid; }
-.decision-risk-line.entry.filled > span { color: #e8f5ff; background: #176b9e; }
+.decision-risk-line.entry.filled { border-color: #2962ff; border-top-style: dashed; }
+.decision-risk-line.entry.filled > span { color: #fff; background: #2962ff; }
 .decision-risk-line.entry.filled .decision-position-size { border-left-color: rgba(255,255,255,.3); }
 .decision-risk-line.entry.filled .decision-position-size button { color: #e8f5ff; background: rgba(9,34,55,.42); border: 1px solid rgba(255,255,255,.35); }
 .decision-risk-amount { position: absolute; right: 12px; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; padding: 4px 7px; color: #f5f7fb; border: 1px solid rgba(255,255,255,.16); border-radius: 5px; box-shadow: 0 4px 14px rgba(0,0,0,.28); font-size: 10px; font-weight: 650; line-height: 1.2; white-space: nowrap; pointer-events: none; opacity: .5; }
@@ -2105,3 +2105,16 @@ button:disabled { opacity: .32; cursor: not-allowed; }
 .mp-trade-reasons-body p { margin: 4px 0 10px; white-space: pre-wrap; }
 .mp-trade-reasons-body ol { padding-left: 20px; margin: 4px 0 10px; }
 .mp-trade-reasons-body ol li { border: 0; padding: 2px 0; white-space: pre-wrap; }
+
+.mp-initial-risk-line { position: absolute; right: 0; border-top: 2px dashed #7c8eaa; pointer-events: none; z-index: 8; }
+.mp-initial-risk-line.entry { border-color: #2962ff; }
+.mp-initial-risk-line.entry span { color: #fff; background: #2962ff; }
+.mp-initial-risk-line.stop { border-color: #f23645; }
+.mp-initial-risk-line.target { border-color: #089981; }
+.mp-initial-risk-line span { position: absolute; right: 4px; bottom: 3px; padding: 3px 6px; border-radius: 3px; background: var(--surface); color: var(--text); font-size: 12px; font-weight: 700; }
+.mp-initial-risk-summary { position: absolute; right: 168px; display: flex; flex-direction: row; flex-wrap: nowrap; gap: 8px; padding: 6px 10px; width: max-content; max-width: calc(100% - 180px); white-space: nowrap; background: var(--surface); color: var(--text); border: 1px solid var(--border-strong); border-radius: 7px; box-shadow: 0 3px 12px #0003; z-index: 9; font-size: 12px; }
+.mp-initial-risk-text { font-size: 12px; line-height: 1.7; }
+.mp-timeline-bias { cursor: pointer; }
+
+.mp-initial-risk-summary.is-long { transform: translateY(calc(-100% - 10px)); }
+.mp-initial-risk-summary.is-short { transform: translateY(10px); }

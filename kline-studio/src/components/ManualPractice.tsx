@@ -6,6 +6,8 @@ import { bringFloatingCardToFront, registerFloatingCard } from '../lib/floatingC
 import {
   barTimeFor,
   manualReasonRows,
+  manualItemRisk,
+  manualRiskRatio,
   manualReviewCommentKey,
   NQ_POINT_VALUE_USD,
   openTrade,
@@ -768,7 +770,7 @@ function PriceField({ label, value, hint, onCommit }: { label: string; value: nu
 /* Chart annotations                                                   */
 /* ------------------------------------------------------------------ */
 
-export function ManualPracticeAnnotations({ session, interval, hidden, toX, toY, highlightTime = null, highlightPrice = null, hideLevels = false, clipAfterBar = null, barRange, onOpenBar }: {
+export function ManualPracticeAnnotations({ session, interval, hidden, toX, toY, highlightItem = null, highlightTime = null, highlightPrice = null, hideLevels = false, clipAfterBar = null, barRange, onOpenBar }: {
   session: ManualPracticeSession
   /** Clicking a number opens that candle's reason for editing. */
   onOpenBar?: (barTime: number) => void
@@ -780,6 +782,7 @@ export function ManualPracticeAnnotations({ session, interval, hidden, toX, toY,
   hidden: boolean
   toX: (time: number) => number | null
   toY: (price: number) => number | null
+  highlightItem?: ManualTimelineItem | null
   highlightTime?: number | null
   /** Price to ring on the highlighted candle (entry / exit fills). */
   highlightPrice?: number | null
@@ -812,6 +815,20 @@ export function ManualPracticeAnnotations({ session, interval, hidden, toX, toY,
     clipRightX = lastX === null ? 0 : lastX + (previousX !== null && lastX > previousX ? (lastX - previousX) / 2 : 3)
   }
   return <div className="mp-annotations" aria-hidden="true" style={clipRightX === null ? undefined : { clipPath: `inset(0px calc(100% - ${Math.max(0, clipRightX)}px) 0px 0px)` }}>
+    {highlightItem && isBarRevealed(highlightItem.time) && manualItemRisk(highlightItem) && (() => {
+      const plan = manualItemRisk(highlightItem)!
+      const x = snap(highlightItem.time)
+      const entryY = toY(plan.entryPrice)
+      const short = highlightItem.note?.side === 'short' || highlightItem.trade?.side === 'short' || highlightItem.cancelledOrder?.side === 'short'
+      if (x === null) return null
+      return <>
+        {([[plan.entryPrice, 'entry', '初始入场'], [plan.stopLoss, 'stop', '初始止损'], [plan.takeProfit, 'target', '初始止盈']] as const).map(([price, kind, label]) => {
+          const y = toY(price)
+          return y === null ? null : <div key={kind} className={`mp-initial-risk-line ${kind}`} style={{ top: y, left: Math.max(0, x) }}><span>{label} {price.toFixed(2)}</span></div>
+        })}
+        {entryY !== null && <div className={`mp-initial-risk-summary ${short ? 'is-short' : 'is-long'}`} style={{ top: entryY }}><strong>盈亏比 {manualRiskRatio(plan).toFixed(2)} : 1</strong><span className="negative">风险 {Math.abs(plan.entryPrice - plan.stopLoss).toFixed(2)} 点</span><span className="positive">收益 {Math.abs(plan.takeProfit - plan.entryPrice).toFixed(2)} 点</span></div>}
+      </>
+    })()}
     {position && !hideLevels && <>
       {line(position.entryPrice, 'entry', position.side === 'long' ? '多单' : '空单')}
       {line(position.stopLoss, 'stop', '止损')}
@@ -860,6 +877,12 @@ export function ManualPracticeAnnotations({ session, interval, hidden, toX, toY,
 /* ------------------------------------------------------------------ */
 /* Review: summary + every reason in time order                        */
 /* ------------------------------------------------------------------ */
+
+function InitialRiskSummary({ item }: { item: ManualTimelineItem }) {
+  const plan = manualItemRisk(item)
+  if (!plan) return item.kind === 'no-trade' ? null : <p className="mp-muted">未记录初始止盈止损</p>
+  return <p className="mp-initial-risk-text">初始入场 {plan.entryPrice.toFixed(2)} · <span className="negative">止损 {plan.stopLoss.toFixed(2)}</span> · <span className="positive">止盈 {plan.takeProfit.toFixed(2)}</span><br /><b>盈亏比 {manualRiskRatio(plan).toFixed(2)} : 1</b></p>
+}
 
 export function ManualTimelineDialog({ session, onClose, onJump, onEditItem, onReviewItem }: {
   session: ManualPracticeSession
@@ -928,9 +951,11 @@ export function ManualTimelineDialog({ session, onClose, onJump, onEditItem, onR
                   </div>
                   {item.background !== null && <p className={`mp-timeline-background${item.background ? '' : ' missing'}`}><span>背景</span>{item.background || '未填写'}</p>}
                   {item.cancelledOrder && <p className="mp-cancelled-order-detail">未成交 · 撤单 {formatBeijing(item.cancelledOrder.cancelledTime)} · {item.cancelledOrder.quantity} 手<br />原计划止损 {item.cancelledOrder.stopLoss.toFixed(2)} · 止盈 {item.cancelledOrder.takeProfit.toFixed(2)}</p>}
-                  {biasItems ? biasItems.map((entry, rank) => <div className="mp-timeline-bias" key={entry.kind === 'no-trade' ? 'no-trade' : entry.note?.side}>
+                  {!biasItems && <InitialRiskSummary item={item} />}
+                  {biasItems ? biasItems.map((entry, rank) => <div className="mp-timeline-bias" key={entry.kind === 'no-trade' ? 'no-trade' : entry.note?.side} onClick={event => { event.stopPropagation(); select(entry, itemKey) }}>
                     <div className="mp-bias-heading"><b>{rank + 1}. {entry.kind === 'no-trade' ? '不开单' : entry.note?.side === 'short' ? '做空' : '做多'}{rank === 0 ? ' · 最偏向' : ''}</b>{reviewAction(entry, `${entry.kind === 'no-trade' ? '不开单' : entry.note?.side === 'short' ? '做空' : '做多'}复盘评论`)}</div>
                     {entry.reasons.length > 0 ? <ol className="mp-reason-list">{entry.reasons.map((reason, index) => <li key={index}>{reason}</li>)}</ol> : <p className="mp-muted">未填写理由</p>}
+                    <InitialRiskSummary item={entry} />
                     {reviewComment(entry)}
                   </div>) : item.reasons.length > 0
                     ? <ol className="mp-reason-list">{item.reasons.map((reason, reasonIndex) => <li key={reasonIndex}>{reason}</li>)}</ol>
