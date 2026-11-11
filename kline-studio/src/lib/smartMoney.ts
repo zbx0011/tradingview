@@ -443,3 +443,187 @@ export function computeSmartMoney(candles: readonly Candle[], partial: Partial<S
     lastIndex: count - 1,
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Higher-timeframe fair value gaps on a lower-timeframe chart          */
+/* ------------------------------------------------------------------ */
+
+export interface SmcTimeframe {
+  /** Short label drawn on the chart, e.g. "15m". */
+  label: string
+  seconds: number
+}
+
+/** Gap timeframes shown on intraday charts; only those longer than the chart's own bars are used. */
+export const HIGHER_TIMEFRAME_GAPS: readonly SmcTimeframe[] = [
+  { label: '15m', seconds: 15 * 60 },
+  { label: '30m', seconds: 30 * 60 },
+  { label: '1H', seconds: 60 * 60 },
+]
+
+export interface SmcTimeframeGap extends SmcFairValueGap {
+  timeframe: string
+  /**
+   * Chart index of the chart candle that actually ran through the gap: inside the higher-timeframe middle candle,
+   * the one covering most of the gap's price range (the earliest on a tie). The marker sits right of it.
+   */
+  anchorIndex: number
+  /** Chart index of the last chart candle inside that middle candle (where the box ends). */
+  anchorEndIndex: number
+  /** Chart index of the last chart candle of the third higher-timeframe candle: the gap exists from here on. */
+  createdIndex: number
+}
+
+/** Typical spacing of the chart's candles in seconds (median of the gaps between neighbours). */
+export function chartBarSeconds(candles: readonly Candle[]): number {
+  const steps: number[] = []
+  for (let index = Math.max(1, candles.length - 200); index < candles.length; index += 1) {
+    const step = candles[index].time - candles[index - 1].time
+    if (step > 0) steps.push(step)
+  }
+  if (!steps.length) return 0
+  steps.sort((a, b) => a - b)
+  return steps[Math.floor(steps.length / 2)]
+}
+
+interface Bucket {
+  open: number
+  high: number
+  low: number
+  close: number
+  first: number
+  last: number
+}
+
+/**
+ * Fair value gaps of a higher timeframe, built from the chart's own candles and expressed in chart indices.
+ * A higher-timeframe candle only counts once it has closed (the next one has started, or the chart reached its
+ * end time), so a replay never shows a gap before it really exists. Fills are tracked candle by candle on the chart.
+ */
+export function computeTimeframeGaps(candles: readonly Candle[], timeframe: SmcTimeframe, barSeconds = chartBarSeconds(candles)): SmcTimeframeGap[] {
+  if (candles.length < 3 || barSeconds <= 0 || timeframe.seconds <= barSeconds) return []
+  const size = timeframe.seconds
+  const buckets: Bucket[] = []
+  let currentKey = Number.NaN
+  for (let index = 0; index < candles.length; index += 1) {
+    const candle = candles[index]
+    const key = Math.floor(candle.time / size)
+    const bucket = buckets[buckets.length - 1]
+    if (key !== currentKey || !bucket) {
+      currentKey = key
+      buckets.push({ open: candle.open, high: candle.high, low: candle.low, close: candle.close, first: index, last: index })
+    } else {
+      bucket.high = Math.max(bucket.high, candle.high)
+      bucket.low = Math.min(bucket.low, candle.low)
+      bucket.close = candle.close
+      bucket.last = index
+    }
+  }
+  const lastCandle = candles[candles.length - 1]
+  const lastClosed = Math.floor(lastCandle.time / size) * size + size <= lastCandle.time + barSeconds
+  const closedCount = lastClosed ? buckets.length : buckets.length - 1
+
+  const gaps: SmcTimeframeGap[] = []
+  for (let index = 2; index < closedCount; index += 1) {
+    const first = buckets[index - 2]
+    const middle = buckets[index - 1]
+    const third = buckets[index]
+    let top: number, bottom: number, bullish: boolean
+    if (third.low > first.high && middle.close > first.high) {
+      top = third.low; bottom = first.high; bullish = true
+    } else if (third.high < first.low && middle.close < first.low) {
+      top = first.low; bottom = third.high; bullish = false
+    } else continue
+    // Price only crossed the gap during the middle candle (the first and third stay outside it).
+    let anchor = middle.first
+    let bestOverlap = -1
+    for (let chartIndex = middle.first; chartIndex <= middle.last; chartIndex += 1) {
+      const overlap = Math.min(top, candles[chartIndex].high) - Math.max(bottom, candles[chartIndex].low)
+      if (overlap > bestOverlap) { bestOverlap = overlap; anchor = chartIndex }
+    }
+    gaps.push({ timeframe: timeframe.label, startIndex: anchor - 1, anchorIndex: anchor, anchorEndIndex: middle.last, createdIndex: third.last, refills: [], endIndex: null, top, bottom, remainingTop: top, remainingBottom: bottom, bullish })
+  }
+
+  // Same layered mitigation as the chart's own gaps, starting with the candle after the gap was confirmed.
+  for (const gap of gaps) {
+    for (let index = gap.createdIndex + 1; index < candles.length; index += 1) {
+      const candle = candles[index]
+      if (gap.bullish) {
+        const nextTop = Math.max(gap.bottom, Math.min(gap.remainingTop, candle.low))
+        if (nextTop < gap.remainingTop) {
+          gap.refills.push({ index, top: gap.remainingTop, bottom: nextTop })
+          gap.remainingTop = nextTop
+        }
+      } else {
+        const nextBottom = Math.min(gap.top, Math.max(gap.remainingBottom, candle.high))
+        if (nextBottom > gap.remainingBottom) {
+          gap.refills.push({ index, top: nextBottom, bottom: gap.remainingBottom })
+          gap.remainingBottom = nextBottom
+        }
+      }
+      if (gap.remainingTop <= gap.remainingBottom) {
+        gap.endIndex = index
+        break
+      }
+    }
+  }
+  return gaps
+}
+
+/** Higher-timeframe gaps for every timeframe longer than the chart's candles. */
+export function computeHigherTimeframeGaps(candles: readonly Candle[], timeframes: readonly SmcTimeframe[] = HIGHER_TIMEFRAME_GAPS): SmcTimeframeGap[] {
+  const barSeconds = chartBarSeconds(candles)
+  return timeframes.flatMap((timeframe) => computeTimeframeGaps(candles, timeframe, barSeconds))
+}
+
+/** One marker on the chart: every unfilled gap (any timeframe) of one direction that shares a price area. */
+export interface SmcGapZone {
+  bullish: boolean
+  /** Chart candle the marker sits next to: the earliest candle among the merged gaps. */
+  anchorIndex: number
+  top: number
+  bottom: number
+  /** Price layers from top to bottom; `count` is how many gaps cover that layer (more = deeper colour). */
+  layers: { top: number; bottom: number; count: number }[]
+}
+
+/**
+ * Merges unfilled gaps whose remaining price ranges overlap (same direction, formed within `maxBarsApart` chart
+ * candles of each other) into single zones, so one price area gets one marker instead of several side by side.
+ */
+export function mergeGapZones(gaps: readonly { gap: SmcFairValueGap; anchorIndex: number }[], maxBarsApart: number): SmcGapZone[] {
+  const open = gaps.filter(({ gap }) => gap.endIndex === null && gap.remainingTop > gap.remainingBottom)
+  const parent = open.map((_, index) => index)
+  const find = (index: number): number => parent[index] === index ? index : (parent[index] = find(parent[index]))
+  for (let i = 0; i < open.length; i += 1) {
+    for (let j = i + 1; j < open.length; j += 1) {
+      const a = open[i], b = open[j]
+      if (a.gap.bullish !== b.gap.bullish || Math.abs(a.anchorIndex - b.anchorIndex) > maxBarsApart) continue
+      if (Math.min(a.gap.remainingTop, b.gap.remainingTop) >= Math.max(a.gap.remainingBottom, b.gap.remainingBottom)) parent[find(i)] = find(j)
+    }
+  }
+  const groups = new Map<number, typeof open>()
+  open.forEach((item, index) => {
+    const root = find(index)
+    const group = groups.get(root)
+    if (group) group.push(item); else groups.set(root, [item])
+  })
+  const zones: SmcGapZone[] = []
+  for (const group of groups.values()) {
+    const prices = [...new Set(group.flatMap(({ gap }) => [gap.remainingTop, gap.remainingBottom]))].sort((a, b) => b - a)
+    const layers: SmcGapZone['layers'] = []
+    for (let index = 0; index + 1 < prices.length; index += 1) {
+      const top = prices[index], bottom = prices[index + 1]
+      const count = group.filter(({ gap }) => gap.remainingTop >= top && gap.remainingBottom <= bottom).length
+      if (count > 0) layers.push({ top, bottom, count })
+    }
+    zones.push({
+      bullish: group[0].gap.bullish,
+      anchorIndex: Math.min(...group.map((item) => item.anchorIndex)),
+      top: prices[0],
+      bottom: prices[prices.length - 1],
+      layers,
+    })
+  }
+  return zones.sort((a, b) => a.anchorIndex - b.anchorIndex)
+}

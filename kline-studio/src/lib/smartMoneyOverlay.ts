@@ -1,9 +1,9 @@
 // Canvas overlay that renders the Smart Money Concepts layer on top of a
 // lightweight-charts instance. Adapted from "Smart Money Concepts [LuxAlgo]"
 // (© LuxAlgo, CC BY-NC-SA 4.0).
-import type { IChartApi, Logical } from 'lightweight-charts'
+import type { IChartApi, IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesPrimitive, Logical } from 'lightweight-charts'
 import type { Candle } from './market'
-import { computeSmartMoney, emptySmcResult, SMC_COLORS, type SmcResult } from './smartMoney'
+import { chartBarSeconds, computeHigherTimeframeGaps, computeSmartMoney, emptySmcResult, mergeGapZones, SMC_COLORS, type SmcGapZone, type SmcResult, type SmcTimeframeGap } from './smartMoney'
 
 interface Overlay {
   setData: (candles: readonly Candle[]) => void
@@ -13,6 +13,9 @@ interface Overlay {
 }
 
 const FONT_FAMILY = '-apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, sans-serif'
+
+// Refilled (mitigated) gap bands are history, keep them faint.
+const REFILL_BAND_ALPHA = 0.08
 
 function withAlpha(hex: string, alpha: number) {
   const value = hex.replace('#', '')
@@ -89,29 +92,20 @@ export function attachSmartMoneyOverlay(container: HTMLElement, chart: IChartApi
       }
     : rawDayKey
   let levelsCache: PreviousDayLevels | null = null
-  const canvas = document.createElement('canvas')
-  canvas.setAttribute('data-testid', 'smc-overlay')
-  canvas.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:2;'
-  container.appendChild(canvas)
-  const context = canvas.getContext('2d')
   const timeScale = chart.timeScale()
 
   let result: SmcResult = emptySmcResult()
+  let timeframeGaps: SmcTimeframeGap[] = []
+  let gapZones: SmcGapZone[] = []
   let lastData: readonly Candle[] | null = null
   let futureTimes: readonly number[] = []
   let showFilledGaps = false
-  let dataVersion = 0
-  let signature = ''
-  let frame = 0
-  let destroyed = false
+  let requestUpdate = () => {}
 
   const x = (index: number) => timeScale.logicalToCoordinate(index as Logical)
   const y = (price: number) => series.priceToCoordinate(price) as number | null
 
-  function draw(paneWidth: number, paneHeight: number, dpr: number) {
-    if (!context) return
-    context.setTransform(dpr, 0, 0, dpr, 0, 0)
-    context.clearRect(0, 0, canvas.width, canvas.height)
+  function draw(context: CanvasRenderingContext2D, paneWidth: number, paneHeight: number) {
     const range = timeScale.getVisibleLogicalRange()
     if (!range || result.lastIndex < 0) return
     context.save()
@@ -211,38 +205,46 @@ export function attachSmartMoneyOverlay(container: HTMLElement, chart: IChartApi
       }
     }
 
-    // Only unfilled gaps keep a formation marker to the right of the middle candle.
-    const drawGap = (gap: SmcResult['fairValueGaps'][number]) => {
-      const index = gap.startIndex + 1
-      if (index < range.from - 2 || index > range.to + 1) return
-      const anchor = x(index)
-      if (anchor === null) return
-      const left = anchor
-      const right = anchor + barWidth
-      const top = y(gap.remainingTop)
-      const bottom = y(gap.remainingBottom)
-      if (top === null || bottom === null) return
-      const mid = (top + bottom) / 2
-      const color = gap.bullish ? SMC_COLORS.bullishFairValueGap : SMC_COLORS.bearishFairValueGap
-      context.fillStyle = withAlpha(color, 0.8)
-      context.strokeStyle = withAlpha(color, 0.8)
-      context.lineWidth = 1
-      for (const [from, to] of [[Math.min(top, bottom), mid], [mid, Math.max(top, bottom)]]) {
-        const height = Math.max(to - from, 1)
-        context.fillRect(left, from, right - left, height)
-        context.strokeRect(left + 0.5, from + 0.5, Math.max(right - left - 1, 0), Math.max(height - 1, 0))
+    // Unfilled gaps: one small marker right of the candle where the zone began. Gaps of the chart's own timeframe
+    // and of 15m / 30m / 1H that share a price area are merged into that one marker; the more gaps cover a price
+    // layer, the deeper its colour.
+    for (const zone of gapZones) {
+      if (zone.anchorIndex < range.from - 2 || zone.anchorIndex > range.to + 1) continue
+      const left = x(zone.anchorIndex)
+      const zoneTop = y(zone.top)
+      const zoneBottom = y(zone.bottom)
+      if (left === null || zoneTop === null || zoneBottom === null) continue
+      const color = zone.bullish ? SMC_COLORS.bullishFairValueGap : SMC_COLORS.bearishFairValueGap
+      for (const layer of zone.layers) {
+        const top = y(layer.top), bottom = y(layer.bottom)
+        if (top === null || bottom === null) continue
+        const from = Math.min(top, bottom)
+        const height = Math.max(Math.abs(bottom - top), 1)
+        context.fillStyle = withAlpha(color, 0.8)
+        context.fillRect(left, from, barWidth, height)
+        if (layer.count > 1) {
+          context.fillStyle = `rgba(0, 0, 0, ${Math.min(0.2 * (layer.count - 1), 0.5)})`
+          context.fillRect(left, from, barWidth, height)
+        }
       }
+      const boxTop = Math.min(zoneTop, zoneBottom)
+      context.strokeStyle = withAlpha(color, 0.9)
+      context.lineWidth = 1
+      context.strokeRect(left + 0.5, boxTop + 0.5, Math.max(barWidth - 1, 0), Math.max(Math.abs(zoneBottom - zoneTop) - 1, 0))
     }
-    for (const gap of result.fairValueGaps) drawGap(gap)
     // Each price layer stops at its own first refill candle. Open, partially
     // mitigated gaps participate too; never extend the full box to the last fill.
-    if (showFilledGaps) for (const gap of [...result.fairValueGaps, ...result.filledFairValueGaps]) {
-      if (!gap.refills.length || gap.startIndex + 1 > range.to + 1) continue
-      const left = x(gap.startIndex + 1)
+    const refillBands: { gap: SmcResult['fairValueGaps'][number]; from: number }[] = [
+      ...[...result.fairValueGaps, ...result.filledFairValueGaps].map((gap) => ({ gap, from: gap.startIndex + 1 })),
+      ...timeframeGaps.map((gap) => ({ gap, from: gap.anchorIndex })),
+    ]
+    if (showFilledGaps) for (const { gap, from } of refillBands) {
+      if (!gap.refills.length || from > range.to + 1) continue
+      const left = x(from)
       if (left === null) continue
       const color = gap.bullish ? SMC_COLORS.bullishFairValueGap : SMC_COLORS.bearishFairValueGap
-      context.fillStyle = withAlpha(color, 0.2)
-      context.strokeStyle = withAlpha(color, 0.2)
+      context.fillStyle = withAlpha(color, REFILL_BAND_ALPHA)
+      context.strokeStyle = withAlpha(color, REFILL_BAND_ALPHA)
       context.lineWidth = 1
       for (const refill of gap.refills) {
         if (refill.index < range.from - 1) continue
@@ -328,69 +330,52 @@ export function attachSmartMoneyOverlay(container: HTMLElement, chart: IChartApi
     context.restore()
   }
 
-  function render() {
-    frame = 0
-    if (destroyed) return
-    const dpr = window.devicePixelRatio || 1
-    const width = container.clientWidth
-    const height = container.clientHeight
-    if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
-      canvas.width = Math.round(width * dpr)
-      canvas.height = Math.round(height * dpr)
-      signature = ''
-    }
-    const range = timeScale.getVisibleLogicalRange()
-    const probeA = series.priceToCoordinate(0)
-    const probeB = series.priceToCoordinate(1000)
-    const next = `${dataVersion}|${range?.from}|${range?.to}|${probeA}|${probeB}|${width}|${height}|${dpr}`
-    if (next !== signature) {
-      signature = next
-      let paneWidth = width
-      let paneHeight = height
-      try {
-        const size = chart.paneSize()
-        paneWidth = size.width
-        paneHeight = size.height
-      } catch {
-        // paneSize is unavailable before the first layout; fall back to the container.
-      }
-      draw(paneWidth, paneHeight, dpr)
-    }
-    schedule()
+  // Drawn as a series primitive in the 'bottom' layer: every zone, gap and line sits behind the candles,
+  // so the candles always stay readable. The chart repaints it together with the candles.
+  const renderer: IPrimitivePaneRenderer = {
+    draw(target) {
+      target.useMediaCoordinateSpace(({ context, mediaSize }) => draw(context, mediaSize.width, mediaSize.height))
+    },
   }
-
-  function schedule() {
-    if (destroyed || frame) return
-    frame = window.requestAnimationFrame(render)
+  const views: readonly IPrimitivePaneView[] = [{ zOrder: () => 'bottom', renderer: () => renderer }]
+  const primitive: ISeriesPrimitive = {
+    attached(param) { requestUpdate = param.requestUpdate },
+    detached() { requestUpdate = () => {} },
+    paneViews: () => views,
   }
-
-  schedule()
+  series.attachPrimitive(primitive)
 
   return {
     setShowFilledGaps(show) {
       if (showFilledGaps === show) return
       showFilledGaps = show
-      dataVersion += 1
-      schedule()
+      requestUpdate()
     },
     setFutureTimes(times) {
       if (futureTimes === times) return
       futureTimes = times
-      dataVersion += 1
-      schedule()
+      requestUpdate()
     },
     setData(candles) {
       if (candles === lastData) return
       lastData = candles
       result = computeSmartMoney(candles)
+      timeframeGaps = computeHigherTimeframeGaps(candles)
+      // Gaps of every timeframe that share a price area (and formed within three hours) become one marker.
+      const barSeconds = chartBarSeconds(candles)
+      gapZones = mergeGapZones([
+        ...result.fairValueGaps.map((gap) => ({ gap, anchorIndex: gap.startIndex + 1 })),
+        ...timeframeGaps.map((gap) => ({ gap, anchorIndex: gap.anchorIndex })),
+      ], barSeconds > 0 ? Math.ceil(10_800 / barSeconds) : 36)
       levelsCache = previousDayLevels(candles, dayKey)
-      dataVersion += 1
-      schedule()
+      requestUpdate()
     },
     destroy() {
-      destroyed = true
-      if (frame) window.cancelAnimationFrame(frame)
-      canvas.remove()
+      try {
+        series.detachPrimitive(primitive)
+      } catch {
+        // The series may already have been removed together with the chart.
+      }
     },
   }
 }
