@@ -948,7 +948,7 @@ export function ManualPracticeAnnotations({ session, interval, hidden, toX, toY,
     clipRightX = lastX === null ? 0 : lastX + (previousX !== null && lastX > previousX ? (lastX - previousX) / 2 : 3)
   }
   return <div className="mp-annotations" aria-hidden="true" style={clipRightX === null ? undefined : { clipPath: `inset(0px calc(100% - ${Math.max(0, clipRightX)}px) 0px 0px)` }}>
-    {highlightItem && isBarRevealed(highlightItem.time) && manualItemRisk(highlightItem) && (() => {
+    {!position && !hideLevels && highlightItem && isBarRevealed(highlightItem.time) && manualItemRisk(highlightItem) && (() => {
       const plan = manualItemRisk(highlightItem)!
       const x = snap(highlightItem.time)
       const entryY = toY(plan.entryPrice)
@@ -982,8 +982,10 @@ export function ManualPracticeAnnotations({ session, interval, hidden, toX, toY,
       const exitY = exitRevealed && trade.exitPrice !== null ? toY(trade.exitPrice) : null
       const points = exitRevealed ? tradePoints(trade) : null
       return <div key={trade.id}>
-        {entryX !== null && arrowTop !== null && <span className={`mp-marker entry side-${trade.side}`} style={{ left: entryX, top: arrowTop }} title={trade.reasons.join('\n')}>{trade.side === 'long' ? '▲' : '▼'}</span>}
-        {exitX !== null && exitY !== null && <span className={`mp-marker exit${points !== null && points < 0 ? ' loss' : ''}`} style={{ left: exitX, top: exitY }} title={`${exitLabel(trade)} ${points !== null ? formatPoints(points) : ''}`}>✕</span>}
+        {entryX !== null && arrowTop !== null && <span className={`mp-marker entry side-${trade.side}`} style={{ left: entryX, top: arrowTop }} title={trade.reasons.join('\n')}>{trade.side === 'long' ? '▲' : '▼'}<b className="mp-execution-label">{trade.side === 'long' ? '开多' : '开空'}</b></span>}
+        {exitX !== null && exitY !== null && <>
+          <span className={`mp-marker exit${points !== null && points < 0 ? ' loss' : ''}`} style={{ left: exitX, top: exitY }} title={exitLabel(trade)}>●<b className="mp-execution-label">{trade.side === 'long' ? '平多' : '平空'}</b></span>
+        </>}
         {entryX !== null && entryY !== null && exitX !== null && exitY !== null && <svg className="mp-trade-path"><line x1={entryX} y1={entryY} x2={exitX} y2={exitY} className={points !== null && points < 0 ? 'loss' : 'win'} /></svg>}
       </div>
     })}

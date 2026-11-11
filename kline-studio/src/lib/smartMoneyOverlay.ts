@@ -261,31 +261,12 @@ export function attachSmartMoneyOverlay(container: HTMLElement, chart: IChartApi
       fillBox(block.startIndex, 'edge', block.top, block.bottom, block.bullish ? SMC_COLORS.internalBullishOrderBlock : SMC_COLORS.internalBearishOrderBlock)
     }
 
-    // Premium / equilibrium / discount zones.
+    // Keep swing extremes, but hide premium / equilibrium / discount overlays.
     const trailing = result.trailing
     if (trailing) {
-      const { top, bottom, pivotIndex } = trailing
-      const mid = Math.round(0.5 * (pivotIndex + lastIndex))
-      const premiumPrice = 0.95 * top + 0.05 * bottom
-      const equilibriumPrice = (top + bottom) / 2
-      const discountPrice = 0.95 * bottom + 0.05 * top
-      const midX = x(mid)
+      const { top, bottom } = trailing
       const topY = y(top)
       const bottomY = y(bottom)
-      const premiumY = y(premiumPrice)
-      const discountY = y(discountPrice)
-      const equilibriumY = y(equilibriumPrice)
-      const startX = x(pivotIndex)
-      const lastX = x(lastIndex)
-      // Black segments (not bands) so they cannot be confused with the order blocks and gaps.
-      if (startX !== null && lastX !== null) {
-        for (const lineY of [premiumY, equilibriumY, discountY]) {
-          if (lineY !== null) line(startX, lineY, lastX + half, lineY, SMC_COLORS.zoneLine, [])
-        }
-      }
-      if (midX !== null && premiumY !== null) text('Premium', midX, premiumY, SMC_COLORS.zoneLine, 11, 'above')
-      if (midX !== null && discountY !== null) text('Discount', midX, discountY, SMC_COLORS.zoneLine, 11, 'below')
-      if (lastX !== null && equilibriumY !== null) text('Equilibrium', lastX + half, equilibriumY, SMC_COLORS.zoneLine, 11, 'left')
 
       // Strong / weak high and low (extended 20 bars past the last candle).
       const rightX = x(lastIndex + 20)

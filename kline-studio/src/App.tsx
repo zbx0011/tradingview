@@ -3498,6 +3498,11 @@ function App() {
             onPointerDownCapture={(event) => {
               if (decisionOverviewMode) return
               const target = event.target instanceof Element ? event.target : null
+              if (!target?.closest('button, input, select, textarea, .mp-note-badge, .mp-card, .popover, .floating-tool-options, .reference-quick-tools')) {
+                setManualHighlightItem(null)
+                setManualHighlightTime(null)
+                setManualHighlightPrice(null)
+              }
               setSelectedReplayRangeId(null)
               if (activeDefinition.behavior !== 'cursor' || target?.closest('.drawing-overlay')) return
               setQuickMeasurement(null)
