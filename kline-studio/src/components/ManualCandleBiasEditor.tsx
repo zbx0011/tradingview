@@ -262,8 +262,11 @@ export function ManualCandleBiasEditor({ subtitle, notes, initialBias, initialBa
       <div><button type="button" className="mp-secondary" onClick={() => setDeleteConfirm(false)}>取消删除</button><button type="button" className="mp-danger" onClick={deleteNotes}><Trash2 size={14} />确认删除</button></div>
     </div>}
     {!deleteConfirm && <footer>
-      {canDelete && <button type="button" className="mp-bias-delete-button" onClick={() => setDeleteConfirm(true)}><Trash2 size={14} />删除本根K线理由</button>}
-      <span className="mp-editor-hint">Ctrl+Enter 保存 · Esc 取消</span><button type="button" className="mp-secondary" onClick={cancel}>取消</button><button type="button" className="mp-primary" onClick={save}>保存</button>
+      <span className="mp-editor-hint">Ctrl+Enter 保存 · Esc 取消</span>
+      <div className="mp-bias-actions" role="group" aria-label="理由操作">
+        {canDelete && <button type="button" className="mp-bias-delete-button" onClick={() => setDeleteConfirm(true)}><Trash2 size={14} />删除本根K线理由</button>}
+        <button type="button" className="mp-secondary" onClick={cancel}>取消</button><button type="button" className="mp-primary" onClick={save}>保存</button>
+      </div>
     </footer>}
   </FloatingCard>
   </>

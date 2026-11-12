@@ -1836,6 +1836,7 @@ button:disabled { opacity: .32; cursor: not-allowed; }
 .mp-bias-form { display: flex; flex-direction: column; gap: 8px; }
 .mp-bias-delete-button { display: inline-flex; align-items: center; gap: 5px; padding: 5px 0; color: #ff7985; border: 0; background: transparent; font-size: 11px; cursor: pointer; }
 .mp-bias-delete-button:hover { color: #ffb0b7; }
+.mp-editor .mp-card-body > footer > .mp-bias-actions { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; margin-left: auto; }
 .mp-bias-delete-confirm { padding: 9px; border: 1px solid #9a4650; border-radius: 6px; background: #6c26302b; font-size: 12px; line-height: 1.5; }
 .mp-bias-delete-confirm p { margin: 0 0 9px; }
 .mp-bias-delete-confirm > div { display: flex; justify-content: flex-end; gap: 8px; }
