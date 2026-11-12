@@ -2490,6 +2490,16 @@ function App() {
   }
 
   const selectReplayBar = () => {
+    // The manual chart is sourced from manualCutoff, so a generic replay cursor
+    // cannot move it. Route the shared replay entry to that chart's own picker.
+    if (manualReviewSession && !manualLossMode) { toggleManualReplayPicking(); return }
+    if (manualMode) { notify(manualLossMode ? '亏损单复盘请使用“往后一根K线”逐根揭示' : '请先结束或退出当前练习，再选择回放起点'); return }
+    setActiveTool('cursor')
+    setShiftMeasureActive(false)
+    shiftMeasureActiveRef.current = false
+    setQuickMeasurement(null)
+    dispatchUiDrawing({ type: 'select', id: null })
+    setDrawingSettingsId(null)
     setReplayPanelOpen(true)
     setReplayStartMode('bar')
     setReplayPlaying(false)
@@ -2872,7 +2882,7 @@ function App() {
     setManualHighlightItem(null)
     setManualInitialRiskDraft(null)
     setManualHighlightPrice(null)
-    setReplayCursor(null); setReplayPlaying(false); setReplaySelecting(false)
+    setReplayCursor(null); setReplayPlaying(false); setReplaySelecting(false); setReplayPanelOpen(false); setReplayPointer(null)
     if (symbol !== MANUAL_PRACTICE_SYMBOL) setSymbol(MANUAL_PRACTICE_SYMBOL)
     if (INTERVALS[interval].seconds > 3600) setIntervalId('5m')
     // The remembered price range belongs to whatever was on screen before: always refit to the paper.
@@ -3195,6 +3205,17 @@ function App() {
   // Review look-back: pick any candle, hide everything after it (and all drawings), then walk forward with key 1.
   const toggleManualReplayPicking = () => {
     if (!manualReviewSession) return
+    setReplaySelecting(false)
+    setReplayPlaying(false)
+    setReplayPointer(null)
+    setReplayPanelOpen(false)
+    setActiveTool('cursor')
+    setShiftMeasureActive(false)
+    shiftMeasureActiveRef.current = false
+    setQuickMeasurement(null)
+    dispatchUiDrawing({ type: 'select', id: null })
+    setDrawingSettingsId(null)
+    setManualInitialRiskDraft(null)
     // An open reason editor must not block the replay: close it, then start picking a candle.
     if (manualDialog) { setManualDialog(null); setManualPicking(true); return }
     setManualPicking((current) => !current)
@@ -3210,7 +3231,7 @@ function App() {
     if (manualReplayEnd === null) {
       manualReplayAutoScaleRef.current = priceScaleAuto
       savePageValue('manualReplayAutoScale', priceScaleAuto)
-      setManualReplayDrawingIds(new Set(uiDrawings.present.map((drawing) => drawing.id)))
+      setManualReplayDrawingIds(new Set((manualReviewHistory ?? uiDrawings).present.map((drawing) => drawing.id)))
     }
     // Freeze the price range first, then shrink the data on the next tick, so the vertical scale cannot refit.
     setPriceScaleAuto(false)
@@ -3448,7 +3469,7 @@ function App() {
         <button type="button" className="text-tool-button" onClick={() => setIndicatorPanelOpen(true)}><BarChart3 size={19} /><span>指标</span></button>
         <IconButton label="多图布局" className="layout-button" onClick={() => notify('当前使用单图布局')}><Grid2X2 size={20} /></IconButton>
         <div className={`replay-entry-group ${replayPanelOpen || replayCursor !== null ? 'active' : ''}`} role="group" aria-label="K线回放">
-          <button type="button" disabled={decisionMode} className="replay-entry-button replay-launch-button" aria-label="选择K线回放起点" aria-pressed={replaySelecting} title="选择K线回放起点" onClick={selectReplayBar}><AlarmClockPlus size={23} /></button>
+          <button type="button" disabled={decisionMode} className="replay-entry-button replay-launch-button" aria-label="选择K线回放起点" aria-pressed={manualReviewSession ? manualPicking : replaySelecting} title="选择K线回放起点" onClick={selectReplayBar}><AlarmClockPlus size={23} /></button>
           <button type="button" disabled={decisionMode} className="replay-entry-button replay-rewind-button" aria-label="回放上一格" title="回退一格并进入回放" onClick={stepReplayBack}><Rewind size={24} /></button>
         </div>
         <button type="button" className={`decision-entry-button ${decisionMode ? 'active' : ''}`} onClick={() => { setDecisionOverviewSessionId(null); setDecisionCenterOpen(true) }} title="随机交易决策回放"><BrainCircuit size={20} /><span>决策回放</span>{activeDecisionSession && <b>{activeDecisionSession.currentIndex + 1}/{activeDecisionSession.candidates.length}</b>}</button>
@@ -3497,6 +3518,9 @@ function App() {
             onContextMenu={decisionOverviewMode ? (event) => event.preventDefault() : handleChartContextMenu}
             onPointerDownCapture={(event) => {
               if (decisionOverviewMode) return
+              // Candle picking owns the gesture; chart-level drawing hit tests
+              // must not select an object before the picker receives the click.
+              if (replaySelecting || manualPicking) return
               const target = event.target instanceof Element ? event.target : null
               if (!target?.closest('button, input, select, textarea, .mp-note-badge, .mp-card, .popover, .floating-tool-options, .reference-quick-tools')) {
                 setManualHighlightItem(null)
@@ -3649,6 +3673,7 @@ function App() {
               onSelectTool={(toolId) => { setQuickMeasurement(null); setActiveTool(toolId) }}
               onOpenSettings={() => setSettingsOpen(true)}
             />}
+            <div inert={replaySelecting || manualPicking} style={{ display: 'contents' }}>
             <DrawingOverlay
               key={`${decisionContextKey ?? 'normal'}-${decisionOverviewSessionId ?? 'normal'}-${effectiveDrawingTool}-${drawingsLocked}-${drawingsHidden}`}
               activeTool={decisionOverviewMode ? 'cursor' : effectiveDrawingTool} history={manualLossHistory ?? manualReviewHistory ?? uiDrawings} dispatch={dispatchWithDrawingTemplates} color={drawingColor}
@@ -3669,6 +3694,7 @@ function App() {
               onZoomSelection={(from, to) => chartRef.current?.zoomToFraction(from, to)}
               onOpenProperties={(drawing) => { dispatchUiDrawing({ type: 'checkpoint' }); setDrawingSettingsTab('style'); setDrawingSettingsId(drawing.id) }}
             />
+            </div>
             {manualSession && <ManualPracticeAnnotations
               session={manualSession}
               interval={interval}
@@ -3959,7 +3985,7 @@ function App() {
               editable
               showConfirmControls={false}
             />}
-            {!decisionMode && !decisionOverviewMode && replaySelecting && <div
+            {!manualMode && !decisionMode && !decisionOverviewMode && replaySelecting && <div
               className="replay-selection-overlay"
               data-testid="replay-selection-overlay"
               onMouseMove={(event) => {
@@ -3969,7 +3995,11 @@ function App() {
                 if (time !== null && time !== undefined) setReplayPointer({ x, time: nearestReplayTime(baseData, time) })
               }}
               onMouseLeave={() => setReplayPointer(null)}
-              onClick={() => { if (replayPointer) startReplayAt(replayPointer.time, 'bar') }}
+              onClick={(event) => {
+                const bounds = event.currentTarget.getBoundingClientRect()
+                const time = chartRef.current?.coordinateToTime(event.clientX - bounds.left)
+                if (time !== null && time !== undefined) startReplayAt(nearestReplayTime(baseData, time), 'bar')
+              }}
             >
               <div className="replay-select-hint"><Scissors size={16} />点击一根 K 线作为回放起点 <kbd>Esc</kbd> 取消</div>
               {replayPointer && <div className="replay-cut-line" style={{ left: replayPointer.x }}>
@@ -3999,7 +4029,7 @@ function App() {
                 onClick={() => setShowFilledGaps(value => !value)}
               >已回补缺口</button>}
             />
-            {selectedDrawing && <DrawingFloatingToolbar
+            {!replaySelecting && !manualPicking && selectedDrawing && <DrawingFloatingToolbar
               key={selectedDrawing.id}
               drawing={selectedDrawing}
               syncDrawings={syncDrawings}
@@ -4031,7 +4061,7 @@ function App() {
             {watchlistOpen && <Watchlist active={symbol} onSelect={(id) => { if (apprenticeMode) { notify('Al 学徒校验固定使用 XAUUSD 5 分钟'); return }; setQuickMeasurement(null); setSymbol(id); setIntervalId(DEFAULT_INTERVAL); setLiveTick(0) }} onClose={() => setWatchlistOpen(false)} />}
           </div>
 
-          {!decisionMode && replayPanelOpen && <ReplayToolbar
+          {!manualMode && !decisionMode && replayPanelOpen && <ReplayToolbar
             active={replayCursor !== null}
             selecting={replaySelecting}
             playing={replayPlaying}

@@ -27,6 +27,7 @@ function runFile(command: string, args: readonly string[], options: CommandOptio
 
 export function transientGitNetworkError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error)
+  if (/certificate problem|certificate verify|untrusted.root|CERT_E_|expired certificate/i.test(message)) return false
   return /failed to connect|could not resolve host|connection (?:was )?reset|network is unreachable|operation timed out|http (?:5\d\d|429)|rpc failed|schannel|handshake|SSL\/TLS|SSL_connect|TLS connection|empty reply|could not read from remote/i.test(message)
 }
 
@@ -56,24 +57,56 @@ async function windowsSystemProxy() {
   }
 }
 
-export async function runGitNetwork(args: readonly string[], options: CommandOptions = {}) {
-  let lastError: unknown
-  let proxy: string | null = null
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      const proxyEnvironment = proxy ? {
-        HTTP_PROXY: proxy,
-        HTTPS_PROXY: proxy,
-        http_proxy: proxy,
-        https_proxy: proxy,
-      } : undefined
-      return await runFile('git', ['-c', 'http.connectTimeout=20', '-c', 'http.lowSpeedLimit=1', '-c', 'http.lowSpeedTime=45', ...(proxy ? ['-c', `http.proxy=${proxy}`, '-c', 'http.version=HTTP/1.1'] : []), ...args], { ...options, env: { ...options.env, ...proxyEnvironment } })
-    } catch (error) {
-      lastError = error
-      if (!transientGitNetworkError(error) || attempt === 2) throw error
-      if (!proxy) proxy = await windowsSystemProxy()
-      await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)))
-    }
-  }
-  throw lastError
+interface NetworkDependencies {
+  run: typeof runFile
+  proxy: () => Promise<string | null>
+  delay: (ms: number) => Promise<void>
 }
+
+/** Per-command fallbacks only: no changes to Git/global proxy or certificate verification. */
+export function createGitNetworkRunner(dependencies: NetworkDependencies) {
+  let lastGoodRoute: string | null = null
+  return async (args: readonly string[], options: CommandOptions = {}) => {
+    const proxy = await dependencies.proxy()
+    const routes: { id: string; proxy?: string; tls12?: boolean }[] = proxy
+      ? [{ id: 'system', proxy }, { id: 'system-tls12', proxy, tls12: true }]
+      : []
+    if (proxy) {
+      const url = new URL(proxy)
+      // Local mixed-port proxies can also tunnel via SOCKS, independently of HTTP CONNECT.
+      if (['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) && ['http:', 'https:'].includes(url.protocol)) {
+        routes.push({ id: 'local-socks', proxy: `socks5h://${url.host}` })
+      }
+    }
+    routes.push({ id: 'configured' }, { id: 'direct', proxy: '' })
+    const preferred = routes.findIndex(route => route.id === lastGoodRoute)
+    if (preferred > 0) routes.unshift(...routes.splice(preferred, 1))
+    let lastError: unknown
+    for (let index = 0; index < routes.length; index += 1) {
+      const route = routes[index]
+      const config = ['-c', 'http.version=HTTP/1.1', '-c', 'http.lowSpeedLimit=1', '-c', 'http.lowSpeedTime=45']
+      if (route.proxy !== undefined) config.push('-c', `http.proxy=${route.proxy}`)
+      if (route.tls12) config.push('-c', 'http.sslVersion=tlsv1.2')
+      const env = route.proxy === undefined ? options.env : {
+        ...options.env, HTTP_PROXY: route.proxy, HTTPS_PROXY: route.proxy,
+        http_proxy: route.proxy, https_proxy: route.proxy, ALL_PROXY: '', all_proxy: '', NO_PROXY: '', no_proxy: '',
+      }
+      try {
+        const result = await dependencies.run('git', [...config, ...args], { ...options, env })
+        lastGoodRoute = route.id
+        return result
+      } catch (error) {
+        lastError = error
+        if (!transientGitNetworkError(error)) throw error
+        if (index < routes.length - 1) await dependencies.delay(500)
+      }
+    }
+    throw lastError
+  }
+}
+
+export const runGitNetwork = createGitNetworkRunner({
+  run: runFile,
+  proxy: windowsSystemProxy,
+  delay: ms => new Promise(resolve => setTimeout(resolve, ms)),
+})
