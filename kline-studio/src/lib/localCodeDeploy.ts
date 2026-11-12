@@ -41,11 +41,11 @@ function isIsoDate(value: unknown): value is string {
 }
 
 export function loadLocalCodeDeployActivity(
-  storage: Pick<Storage, 'getItem'> | undefined = typeof localStorage === 'undefined' ? undefined : localStorage,
+  storage?: Pick<Storage, 'getItem'>,
 ): LocalCodeDeployActivity {
-  if (!storage) return {}
   try {
-    const parsed = JSON.parse(storage.getItem(LOCAL_CODE_DEPLOY_ACTIVITY_KEY) ?? 'null') as Record<string, unknown> | null
+    const target = storage ?? (typeof localStorage === 'undefined' ? undefined : localStorage)
+    const parsed = JSON.parse(target?.getItem(LOCAL_CODE_DEPLOY_ACTIVITY_KEY) ?? 'null') as Record<string, unknown> | null
     if (!parsed || typeof parsed !== 'object') return {}
     const lastSuccessfulSync = parsed.lastSuccessfulSync as Record<string, unknown> | undefined
     return {
@@ -65,9 +65,12 @@ export function loadLocalCodeDeployActivity(
 
 export function saveLocalCodeDeployActivity(
   activity: LocalCodeDeployActivity,
-  storage: Pick<Storage, 'setItem'> | undefined = typeof localStorage === 'undefined' ? undefined : localStorage,
+  storage?: Pick<Storage, 'setItem'>,
 ) {
-  storage?.setItem(LOCAL_CODE_DEPLOY_ACTIVITY_KEY, JSON.stringify(activity))
+  try {
+    const target = storage ?? (typeof localStorage === 'undefined' ? undefined : localStorage)
+    target?.setItem(LOCAL_CODE_DEPLOY_ACTIVITY_KEY, JSON.stringify(activity))
+  } catch { /* Browser storage must not turn a verified deployment into a failure. */ }
 }
 
 export interface LocalCodePublishResult {
@@ -92,23 +95,51 @@ export interface LocalCodeUpdateResult {
 }
 
 async function request<T>(action: 'status' | 'health' | 'publish-code' | 'update-code'): Promise<T> {
-  let response: Response
+  const timeoutMs = action === 'health' ? 10_000 : action === 'status' ? 60_000 : 600_000
+  const controller = new AbortController()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let result: { response: Response; text: string }
   try {
-    response = await fetch(LOCAL_CODE_DEPLOY_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Kline-Studio-Deploy': '1' },
-      body: JSON.stringify({ action }),
-    })
-  } catch {
+    // Bound both connection and body reads, even if a transport ignores abort.
+    result = await Promise.race([
+      (async () => {
+        const response = await fetch(LOCAL_CODE_DEPLOY_ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Kline-Studio-Deploy': '1' },
+          body: JSON.stringify({ action }),
+          signal: controller.signal,
+        })
+        return { response, text: await response.text() }
+      })(),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          reject(new LocalCodeDeployUnavailableError(`本机代码部署服务响应超时（${timeoutMs / 1000} 秒）`))
+          controller.abort()
+        }, timeoutMs)
+      }),
+    ])
+  } catch (error) {
+    if (error instanceof LocalCodeDeployUnavailableError) throw error
     throw new LocalCodeDeployUnavailableError('暂时无法连接本机代码部署服务')
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
   }
-  let payload: Record<string, unknown>
+  const { response, text } = result
+  let parsed: unknown
   try {
-    payload = await response.json() as Record<string, unknown>
+    parsed = JSON.parse(text)
   } catch {
-    throw new LocalCodeDeployUnavailableError(`本机代码部署服务返回了无效响应（HTTP ${response.status}）`)
+    const reason = /^\s*</.test(text) ? '返回了网页内容，服务可能正在重启或尚未加载' : '返回了无效 JSON 响应'
+    throw new LocalCodeDeployUnavailableError(`本机代码部署接口${reason}（HTTP ${response.status}）`)
   }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new LocalCodeDeployUnavailableError(`本机代码部署服务返回了无效响应对象（HTTP ${response.status}）`)
+  }
+  const payload = parsed as Record<string, unknown>
   if (!response.ok || payload.ok !== true) {
+    if (response.ok && payload.ok !== false) {
+      throw new LocalCodeDeployUnavailableError(`本机代码部署响应缺少结果标识（HTTP ${response.status}）`)
+    }
     const details = Array.isArray(payload.dirtyFiles) ? `：${payload.dirtyFiles.join('；')}` : ''
     throw new Error(`${typeof payload.error === 'string' ? payload.error : `代码部署失败（HTTP ${response.status}）`}${details}`)
   }
@@ -151,21 +182,32 @@ export function isUpdatedCodeServerReady(status: Pick<LocalCodeStatus, 'localHea
 }
 
 export async function loadLocalCodeHealth() {
-  return request<LocalCodeHealth>('health')
+  const result = await request<LocalCodeHealth>('health')
+  if (typeof result.localHead !== 'string' || !result.localHead || typeof result.serverInstanceId !== 'string' || !result.serverInstanceId) {
+    throw new LocalCodeDeployUnavailableError('本机代码部署健康响应缺少提交号或服务实例标识')
+  }
+  return result
 }
 
-export function savePendingLocalCodeUpdate(result: LocalCodeUpdateResult, storage: Pick<Storage, 'setItem'> | undefined = typeof localStorage === 'undefined' ? undefined : localStorage) {
+export function savePendingLocalCodeUpdate(result: LocalCodeUpdateResult, storage?: Pick<Storage, 'setItem'>) {
   if (!result.restartRequired || !result.previousServerInstanceId) return
-  storage?.setItem(LOCAL_CODE_PENDING_UPDATE_KEY, JSON.stringify(result))
+  try {
+    const target = storage ?? (typeof localStorage === 'undefined' ? undefined : localStorage)
+    target?.setItem(LOCAL_CODE_PENDING_UPDATE_KEY, JSON.stringify(result))
+  } catch { /* Keep polling the accepted restart even when its ticket cannot be persisted. */ }
 }
 
-export function loadPendingLocalCodeUpdate(storage: Pick<Storage, 'getItem'> | undefined = typeof localStorage === 'undefined' ? undefined : localStorage): LocalCodeUpdateResult | null {
+export function loadPendingLocalCodeUpdate(storage?: Pick<Storage, 'getItem'>): LocalCodeUpdateResult | null {
   try {
-    const value = JSON.parse(storage?.getItem(LOCAL_CODE_PENDING_UPDATE_KEY) ?? 'null') as LocalCodeUpdateResult | null
+    const target = storage ?? (typeof localStorage === 'undefined' ? undefined : localStorage)
+    const value = JSON.parse(target?.getItem(LOCAL_CODE_PENDING_UPDATE_KEY) ?? 'null') as LocalCodeUpdateResult | null
     return value?.restartRequired === true && typeof value.commit === 'string' && typeof value.previousServerInstanceId === 'string' && value.previousServerInstanceId.length > 0 ? value : null
   } catch { return null }
 }
 
-export function clearPendingLocalCodeUpdate(storage: Pick<Storage, 'removeItem'> | undefined = typeof localStorage === 'undefined' ? undefined : localStorage) {
-  storage?.removeItem(LOCAL_CODE_PENDING_UPDATE_KEY)
+export function clearPendingLocalCodeUpdate(storage?: Pick<Storage, 'removeItem'>) {
+  try {
+    const target = storage ?? (typeof localStorage === 'undefined' ? undefined : localStorage)
+    target?.removeItem(LOCAL_CODE_PENDING_UPDATE_KEY)
+  } catch { /* Completion and page reload must still proceed if storage is blocked. */ }
 }

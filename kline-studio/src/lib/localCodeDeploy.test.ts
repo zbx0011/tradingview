@@ -6,7 +6,10 @@ import {
   type LocalCodeStatus, type LocalCodeUpdateResult,
 } from './localCodeDeploy'
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.useRealTimers()
+})
 
 describe('local code deployment client', () => {
   it('uses the local-only health action to check a restarting service', async () => {
@@ -139,6 +142,61 @@ describe('local code deployment client', () => {
     await expect(loadLocalCodeStatus()).rejects.toBeInstanceOf(LocalCodeDeployUnavailableError)
   })
 
+  it('reports an HTML health response clearly and allows the next health check to recover', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(new Response('<!doctype html><html>Vite</html>', { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, localHead: 'updated-sha', serverInstanceId: 'new-service' }))))
+    await expect(loadLocalCodeHealth()).rejects.toThrow('本机代码部署接口返回了网页内容，服务可能正在重启或尚未加载（HTTP 200）')
+    await expect(loadLocalCodeHealth()).resolves.toEqual({ ok: true, localHead: 'updated-sha', serverInstanceId: 'new-service' })
+  })
+
+  it.each(['null', '[]', '"not an object"', '0', '{}'])(
+    'rejects malformed deployment payload %s without a property access error', async (body) => {
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(body)))
+      await expect(loadLocalCodeHealth()).rejects.toBeInstanceOf(LocalCodeDeployUnavailableError)
+    },
+  )
+
+  it('rejects incomplete health identity instead of treating it as a ready server', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ ok: true, localHead: 'updated-sha' }))))
+    await expect(loadLocalCodeHealth()).rejects.toThrow('健康响应缺少提交号或服务实例标识')
+  })
+
+  it('does not accept an HTTP error just because its JSON claims success', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ ok: true, localHead: 'updated-sha', serverInstanceId: 'new-service' }), { status: 503 })))
+    await expect(loadLocalCodeHealth()).rejects.toThrow('代码部署失败（HTTP 503）')
+  })
+
+  it('bounds a hung health fetch and aborts it so the caller can retry', async () => {
+    vi.useFakeTimers()
+    let signal: AbortSignal | undefined
+    vi.stubGlobal('fetch', vi.fn((_input, init) => {
+      signal = init?.signal
+      return new Promise<Response>(() => {})
+    }))
+    const rejected = expect(loadLocalCodeHealth()).rejects.toThrow('本机代码部署服务响应超时（10 秒）')
+    await vi.advanceTimersByTimeAsync(10_000)
+    await rejected
+    expect(signal?.aborted).toBe(true)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('also bounds a response body that never finishes', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(new ReadableStream())))
+    const rejected = expect(loadLocalCodeHealth()).rejects.toBeInstanceOf(LocalCodeDeployUnavailableError)
+    await vi.advanceTimersByTimeAsync(10_000)
+    await rejected
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('clears the request deadline after successful responses', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ ok: true, localHead: 'updated-sha', serverInstanceId: 'new-service' }))))
+    await loadLocalCodeHealth()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
   it('persists the latest successful local code sync audit separately from workspace history', () => {
     let saved = ''
     const storage = {
@@ -183,5 +241,24 @@ describe('local code deployment client', () => {
     }
     expect(loadPendingLocalCodeUpdate({ getItem: () => JSON.stringify(result) })).toBeNull()
     expect(loadPendingLocalCodeUpdate({ getItem: () => '{broken-json' })).toBeNull()
+  })
+
+  it('keeps restart verification and completion usable when browser storage throws', async () => {
+    const ticket: LocalCodeUpdateResult = {
+      ok: true, action: 'update-code', commit: 'updated-sha', updated: true, restartRequired: true,
+      previousServerInstanceId: 'old-service',
+    }
+    const storage = {
+      getItem: () => { throw new Error('Storage denied') },
+      setItem: () => { throw new Error('Storage full') },
+      removeItem: () => { throw new Error('Storage denied') },
+    }
+    vi.stubGlobal('localStorage', storage)
+    expect(() => savePendingLocalCodeUpdate(ticket)).not.toThrow()
+    expect(loadPendingLocalCodeUpdate()).toBeNull()
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ ok: true, localHead: ticket.commit, serverInstanceId: 'new-service' }))))
+    expect(isUpdatedCodeServerReady(await loadLocalCodeHealth(), ticket)).toBe(true)
+    expect(() => saveLocalCodeDeployActivity({ lastSuccessfulSync: { action: 'update', at: '2026-11-12T10:00:00Z', commit: ticket.commit } })).not.toThrow()
+    expect(() => clearPendingLocalCodeUpdate()).not.toThrow()
   })
 })
