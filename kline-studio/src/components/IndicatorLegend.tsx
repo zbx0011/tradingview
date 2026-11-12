@@ -4,6 +4,7 @@ import { bollinger, ema, sma, volumeSma } from '../lib/indicators'
 import { formatPrice, INTERVALS, type Candle, type IntervalId, type SymbolId } from '../lib/market'
 import type { IndicatorSettings } from './ChartSurface'
 import { useHoverCandle } from '../lib/hoverStore'
+import { historyIndexAtTime, MAX_CHART_BARS } from '../lib/chartHistoryWindow'
 
 type IndicatorKey = 'ma' | 'ema' | 'boll' | 'volume' | 'smc'
 
@@ -48,12 +49,18 @@ export function IndicatorLegend({ data, candle, symbol, interval, indicators, in
   const [refreshing, setRefreshing] = useState(false)
   const hoverCandle = useHoverCandle()
   const activeCandle = hoverCandle ?? candle ?? data.at(-1) ?? null
-  // Full indicator series depend only on the data and periods; hovering just
-  // looks values up in them.
-  const maSeries = useMemo(() => sma(data, indicators.maPeriod), [data, indicators.maPeriod])
-  const emaSeries = useMemo(() => ema(data, indicators.emaPeriod), [data, indicators.emaPeriod])
-  const bollSeries = useMemo(() => bollinger(data, indicators.bollPeriod, indicators.bollDeviation), [data, indicators.bollDeviation, indicators.bollPeriod])
-  const volumeSeries = useMemo(() => volumeSma(data, 20), [data])
+  // The legend needs values at one candle, not four full multi-million-row
+  // indicator arrays. Keep ample warmup for EMA convergence at that candle.
+  const indicatorData = useMemo(() => {
+    if (data.length <= MAX_CHART_BARS) return data
+    const index = Math.max(0, Math.min(data.length - 1, Math.floor(historyIndexAtTime(data, activeCandle?.time ?? data[data.length - 1].time, INTERVALS[interval].seconds))))
+    const warmup = Math.max(1000, 40 * Math.max(indicators.maPeriod, indicators.emaPeriod, indicators.bollPeriod))
+    return data.slice(Math.max(0, index - warmup), index + 1)
+  }, [activeCandle?.time, data, indicators.bollPeriod, indicators.emaPeriod, indicators.maPeriod, interval])
+  const maSeries = useMemo(() => sma(indicatorData, indicators.maPeriod), [indicatorData, indicators.maPeriod])
+  const emaSeries = useMemo(() => ema(indicatorData, indicators.emaPeriod), [indicatorData, indicators.emaPeriod])
+  const bollSeries = useMemo(() => bollinger(indicatorData, indicators.bollPeriod, indicators.bollDeviation), [indicatorData, indicators.bollDeviation, indicators.bollPeriod])
+  const volumeSeries = useMemo(() => volumeSma(indicatorData, 20), [indicatorData])
   const values = useMemo(() => {
     const time = activeCandle?.time
     return {

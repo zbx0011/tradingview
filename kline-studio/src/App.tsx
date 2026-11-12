@@ -5,19 +5,22 @@ import {
   ChevronDown, CircleHelp, Database, Download, Grid2X2, History, Layers3, List, Maximize2, Moon,
   BrainCircuit, MessageSquare, NotebookPen, PanelRightClose, Plus, Radio, Redo2, RefreshCcw, Rewind, Scissors, Search, Settings2, Square, Sun, TrendingUp, Undo2, Upload, X,
 } from 'lucide-react'
-import { ChartSurface, type ChartSurfaceHandle, type IndicatorSettings } from './components/ChartSurface'
+import { type ChartSurfaceHandle, type IndicatorSettings } from './components/ChartSurface'
+import { WindowedChartSurface as ChartSurface } from './components/WindowedChartSurface'
 import { AlSwingApprenticePanel, type ApprenticeActionMarker } from './components/AlSwingApprenticePanel'
 import { AlertDialog, DataTableDialog, ObjectTreeDialog, OrderDialog } from './components/ChartActionDialogs'
 import { IndicatorLegend } from './components/IndicatorLegend'
 import { getHoverCandle, setHoverCandle, useHoverCandle } from './lib/hoverStore'
 import { ManualBarPicker, ManualPracticeAnnotations, ManualPracticeCenter, ManualPracticePanel, ManualReplayControls, ManualTimelineDialog, OpenTradeDialog, ReasonEditor } from './components/ManualPractice'
 import { ManualInitialRiskEditor } from './components/ManualInitialRiskEditor'
+import { TopicPracticeSection } from './components/TopicPractice'
+import { buildTopicQueue, doneTopicIds, loadTopicProgress, saveTopicProgress, TOPIC_DATA_PATH, TOPIC_KINDS, topicOutcomeLabel, topicSessionLabel, validateTopicCases, type TopicCase, type TopicKind, type TopicProgress } from './lib/topicPractice'
 import { ManualCandleBiasEditor } from './components/ManualCandleBiasEditor'
 import { ManualReviewCommentEditor } from './components/ManualReviewCommentEditor'
 import { bringFloatingCardIdToFront } from './lib/floatingCards'
 import { useManualPracticeKeys } from './components/useManualPracticeKeys'
 import {
-  advanceManualSession, aggregateMinutes, barTimeFor, cleanReasons, contextStartTime, createManualSession, findManualTradingDays, finishManualSession,
+  advanceManualSession, aggregateMinutes, barTimeFor, cleanReasons, contextStartTime, createManualSession, createManualTopicSession, findManualTradingDays, finishManualSession,
   manualReasonRows, manualItemRisk, saveManualInitialRisk, type ManualRiskPlan,
   manualReviewCommentKey, saveManualReviewComment,
   cancelManualPendingOrder,
@@ -345,6 +348,18 @@ function App() {
   // paused papers keep status "active" and are resumed from the start dialog.
   const [manualStore, setManualStore] = useState<ManualPracticeStore>(loadManualPracticeStore)
   const [manualCenterOpen, setManualCenterOpen] = usePageState('manualCenterOpen', false)
+  // 专题练习: the question bank (small, loaded once) and the current question order.
+  const [topicCases, setTopicCases] = useState<TopicCase[] | null>(null)
+  const [topicProgress, setTopicProgress] = useState<TopicProgress>(() => loadTopicProgress())
+  useEffect(() => { saveTopicProgress(topicProgress) }, [topicProgress])
+  useEffect(() => {
+    let cancelled = false
+    fetch(`${import.meta.env.BASE_URL}${TOPIC_DATA_PATH}`)
+      .then((response) => response.ok ? response.json() : null)
+      .then((value) => { if (!cancelled) setTopicCases(validateTopicCases(value) ?? []) })
+      .catch(() => { if (!cancelled) setTopicCases([]) })
+    return () => { cancelled = true }
+  }, [])
   const [manualReviewId, setManualReviewId] = usePageState<string | null>('manualReviewId', null)
   const [manualTimelineOpen, setManualTimelineOpen] = usePageState('manualTimelineOpen', false)
   // Review look-back: end time (exclusive) of the candles still shown while replaying a finished paper.
@@ -759,6 +774,12 @@ function App() {
     ? decisionData
     : replaySelecting ? baseData : (normalizedReplayCursor === null ? liveData : replayCandles(baseData, normalizedReplayCursor, chartSeconds)),
   [baseData, chartSeconds, decisionData, decisionMode, decisionOverviewData, decisionOverviewMode, liveData, manualData, normalizedReplayCursor, replaySelecting, fullReviewSession, fullReviewData])
+  const returningToLatestRef = useRef(false)
+  useEffect(() => {
+    if (!returningToLatestRef.current || replayCursor !== null) return
+    returningToLatestRef.current = false
+    chartRef.current?.scrollToRealtime()
+  }, [data, replayCursor, replayPanelOpen])
   // Candles after the replay point stay on the time axis as empty slots, so picking a candle never shifts the view.
   const manualReplayTail = useMemo(() => {
     if (!manualReplaying || !manualReviewSession || !nqMinutes?.length || manualCutoff === null) return []
@@ -2528,6 +2549,7 @@ function App() {
   }
 
   const jumpToRealtime = (closePanel = false) => {
+    returningToLatestRef.current = true
     if (closePanel) setReplayPanelOpen(false)
     setReplayCursor(null)
     setReplayPlaying(false)
@@ -2536,7 +2558,6 @@ function App() {
     setLive(true)
     setLiveTick(0)
     saveReplaySession(null)
-    window.setTimeout(() => chartRef.current?.scrollToRealtime(), 0)
     notify('已跳转到实时图表')
   }
 
@@ -2947,6 +2968,60 @@ function App() {
     enterManualView()
     notify(`已重新开始 ${day.label}，按 1 揭示开盘第一根K线`)
   }
+  // 专题练习: open the next question of the round as an ordinary 自主复盘 paper (finishing the current one first).
+  const openNextTopicQuestion = (queue: readonly string[], finishing: ManualPracticeSession | null, minutes: readonly Candle[]) => {
+    const casesById = new Map((topicCases ?? []).map((item) => [item.id, item]))
+    const remaining = queue.filter((id) => casesById.has(id))
+    const nextCase = remaining.length ? casesById.get(remaining[0])! : null
+    const finished = finishing && finishing.status === 'active' ? finishManualSession(finishing, minutes) : finishing
+    const session = nextCase ? createManualTopicSession({ caseId: nextCase.id, kind: nextCase.kind }, nextCase.breakTime, topicSessionLabel(nextCase)) : null
+    setTopicProgress((progress) => ({ ...progress, queue: remaining.slice(1) }))
+    setManualReviewId(null)
+    setManualStore((store) => ({
+      ...store,
+      activeSessionId: session?.id ?? null,
+      sessions: [...(session ? [session] : []), ...store.sessions.map((item) => finished && item.id === finished.id ? finished : item)],
+    }))
+    const previousCase = finishing?.topic ? casesById.get(finishing.topic.caseId) : undefined
+    const previous = previousCase && finished ? (() => {
+      const closed = finished.trades.filter((trade) => trade.exitPrice !== null)
+      const points = closed.reduce((sum, trade) => sum + ((trade.exitPrice ?? trade.entryPrice) - trade.entryPrice) * (trade.side === 'long' ? 1 : -1), 0)
+      return `上一题统计结局：${topicOutcomeLabel(previousCase)}；你 ${closed.length ? `${closed.length} 笔 ${points >= 0 ? '+' : ''}${points.toFixed(2)} 点` : '没有出手'}`
+    })() : ''
+    if (!session) {
+      exitManualView()
+      setManualCenterOpen(true)
+      notify(`${previous ? previous + '。' : ''}这一组专题题已经做完`)
+      return
+    }
+    enterManualView()
+    notify(previous || `专题练习：${session.dayLabel}，按 1 揭示下一根K线`)
+  }
+  const startTopicPractice = async () => {
+    if (manualBlockedByDecision() || !topicCases?.length) return
+    const minutes = await ensureNqMinutes()
+    if (!minutes?.length) { notify('NQ1! 历史数据加载失败，暂时无法出题'); return }
+    const excluded = new Set(topicProgress.excluded)
+    const queue = buildTopicQueue(topicCases.filter((item) => !excluded.has(item.id)), topicProgress.kinds, doneTopicIds(manualStore.sessions))
+    if (!queue.length) { notify('请先选择专题'); return }
+    // An unfinished question of an earlier round is dropped; finished ones keep their results.
+    setManualStore((store) => ({ ...store, sessions: store.sessions.filter((session) => !(session.topic && session.status === 'active')) }))
+    openNextTopicQuestion(queue, null, minutes)
+  }
+  // Key 5: drop this question from the bank (no result is kept) and go on.
+  const deleteTopicQuestion = () => {
+    if (!manualActiveSession?.topic || !topicCases?.length || !nqMinutes?.length || manualDialog || manualInitialRiskDraft) return
+    const current = manualActiveSession
+    const caseId = current.topic!.caseId
+    setTopicProgress((progress) => ({ ...progress, excluded: progress.excluded.includes(caseId) ? progress.excluded : [...progress.excluded, caseId] }))
+    setManualStore((store) => ({ ...store, sessions: store.sessions.filter((session) => session.id !== current.id) }))
+    openNextTopicQuestion(topicProgress.queue.filter((id) => id !== caseId), null, nqMinutes)
+    notify(`已从专题题库删除 ${current.dayLabel}，不计成绩`)
+  }
+  const nextTopicQuestion = () => {
+    if (!manualActiveSession?.topic || !topicCases?.length || !nqMinutes?.length || manualDialog || manualInitialRiskDraft) return
+    openNextTopicQuestion(topicProgress.queue, manualActiveSession, nqMinutes)
+  }
   // 亏损单复盘: frame the entry (history on the left, a little empty room on the right) and mark its candle.
   const showManualLossTrade = (trade: ManualTrade) => {
     const seconds = INTERVALS[interval].seconds
@@ -3067,6 +3142,11 @@ function App() {
       const filled = outcome.filledTrade
       notify(`${filled.side === 'long' ? '多单' : '空单'}已成交 @ ${filled.entryPrice.toFixed(2)}`)
     }
+    if (outcome.finished && outcome.session.topic && topicCases?.length) {
+      // 专题练习: the day after the breakout is over, go straight on to the next question.
+      openNextTopicQuestion(topicProgress.queue, outcome.session, nqMinutes)
+      return
+    }
     if (outcome.finished) {
       setManualStore((store) => ({ ...store, activeSessionId: null }))
       setManualReviewId(outcome.session.id)
@@ -3168,6 +3248,20 @@ function App() {
   }
   const requestManualClose = () => {
     if (!manualActiveSession || !manualPosition) return
+    // 专题练习: no reasons, close at the close of the newest candle right away.
+    if (manualActiveSession.topic) {
+      if (!manualLastMinute) return
+      const position = manualPosition
+      const exit = manualLastMinute
+      updateManualSession(manualActiveSession.id, (session) => ({
+        ...session,
+        updatedAt: Date.now(),
+        trades: session.trades.map((trade) => trade.id === position.id ? { ...trade, exitTime: exit.time, exitPrice: exit.close, exitKind: 'manual' as const, exitReasons: [] } : trade),
+      }))
+      const points = (exit.close - position.entryPrice) * (position.side === 'long' ? 1 : -1)
+      notify(`已平仓 @ ${exit.close.toFixed(2)}（${points >= 0 ? '+' : ''}${points.toFixed(2)} 点）`)
+      return
+    }
     setManualDialog({ type: 'close' })
   }
   const requestManualNote = (barTime: number | null = manualCurrentBarTime, requestedKind?: 'no-trade' | 'should-trade') => {
@@ -3293,6 +3387,9 @@ function App() {
     },
     key3: () => { if (!manualReplaying && !manualPosition && !manualActiveSession?.pendingOrder) requestManualOpen('short') },
     note: () => { if (!manualReplaying) requestManualNote() },
+    key4: manualActiveSession?.topic && !manualReplaying ? nextTopicQuestion : undefined,
+    key5: manualActiveSession?.topic && !manualReplaying ? deleteTopicQuestion : undefined,
+    toggleHidden: () => setChartAnnotationsHidden((hidden) => !hidden),
   })
   // 亏损单复盘 (it never runs together with a practice session or a replay): 1 next candle, 2 next trade, 3 understood, 4 not understood (both move on to the next trade), 5 favourite (stays on this trade).
   useManualPracticeKeys(manualLossMode, {
@@ -3303,6 +3400,7 @@ function App() {
     key4: () => markManualLoss({ understanding: 'confused' }, true),
     key5: () => markManualLoss({ favorite: true }, false),
     note: () => setManualLossDetailsHidden((hidden) => !hidden),
+    toggleHidden: () => setChartAnnotationsHidden((hidden) => !hidden),
   })
   // Newest revealed candle while replaying: drawings / annotations are clipped at its right edge.
   const manualReplayBars = manualReplaying && data.length > 0 ? { last: data[data.length - 1].time, previous: data.length > 1 ? data[data.length - 2].time : null } : null
@@ -3849,6 +3947,8 @@ function App() {
               onFinish={finishManualToday}
               onExit={exitManualToCenter}
               onOpenTimeline={() => setManualTimelineOpen(true)}
+              onNextTopic={manualActiveSession.topic ? nextTopicQuestion : undefined}
+              onDeleteTopic={manualActiveSession.topic ? deleteTopicQuestion : undefined}
             />}
             {manualLoss && manualLossHideDetails && <button type="button" className="mp-loss-hidden-chip" onClick={() => setManualLossDetailsHidden(false)} title="显示理由窗口和画的线（快捷键 `）">亏损单复盘 {manualLoss.index + 1} / {manualLoss.queue.length} · 按 <kbd>·</kbd> 显示</button>}
             {manualLoss && manualLossMode && !manualLossHideDetails && manualLossSession && manualLossTrade && <ManualLossPanel
@@ -4284,6 +4384,20 @@ function App() {
           if (manualReviewId === sessionId) setManualReviewId(null)
         }}
         onClose={() => setManualCenterOpen(false)}
+        topicSection={<TopicPracticeSection
+          cases={topicCases && topicProgress.excluded.length ? topicCases.filter((item) => !topicProgress.excluded.includes(item.id)) : topicCases}
+          sessions={manualStore.sessions}
+          excludedCount={topicProgress.excluded.length}
+          onRestoreExcluded={() => setTopicProgress((progress) => ({ ...progress, excluded: [] }))}
+          kinds={topicProgress.kinds}
+          loading={manualLoading}
+          onToggleKind={(kind: TopicKind) => setTopicProgress((progress) => ({
+            ...progress,
+            kinds: progress.kinds.includes(kind) ? progress.kinds.filter((item) => item !== kind) : TOPIC_KINDS.filter((item) => item === kind || progress.kinds.includes(item)),
+          }))}
+          onStart={() => { void startTopicPractice() }}
+          onContinue={(sessionId) => { void continueManualPractice(sessionId) }}
+        />}
       />}
       {manualTimelineOpen && manualSession && !manualReplaying && <ManualTimelineDialog
         key={manualSession.id}
@@ -4299,6 +4413,7 @@ function App() {
       />}
       {manualDialog?.type === 'open' && manualRisk && <OpenTradeDialog
         persistenceId={`${manualSession?.id}:open:${manualDialog.price}:${manualDialog.side}`}
+        withoutReasons={Boolean(manualActiveSession?.topic)}
         side={manualDialog.side}
         price={manualRisk.entryPrice}
         orderKind={manualOpenOrderKind}

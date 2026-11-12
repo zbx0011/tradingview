@@ -127,13 +127,14 @@ export function FloatingCard({ id, title, icon, meta, tone = 'neutral', classNam
       const current = boxRef.current
       if (!current || gestureRef.current) return
       const rect = parent.getBoundingClientRect()
-      const width = Math.min(current.width, rect.width)
+      // A remembered box can also be degenerate (zero size or off the chart): never let it hide the card.
+      const width = Math.min(Math.max(minWidth, current.width), rect.width)
       // An old saved size may be larger than the current chart. Bring the
       // resize corner back on screen instead of only preserving the header.
-      const height = current.height === null ? null : Math.min(current.height, current.height > rect.height && id === 'panel' ? Math.min(460, rect.height) : rect.height)
+      const height = current.height === null ? null : Math.min(Math.max(minHeight, current.height), current.height > rect.height && id === 'panel' ? Math.min(460, rect.height) : rect.height)
       const visibleHeight = height ?? Math.min(card.getBoundingClientRect().height, rect.height)
-      const left = Math.max(0, Math.min(rect.width - width, current.left))
-      const top = Math.max(0, Math.min(rect.height - visibleHeight, current.top))
+      const left = Number.isFinite(current.left) ? Math.max(0, Math.min(rect.width - width, current.left)) : 0
+      const top = Number.isFinite(current.top) ? Math.max(0, Math.min(rect.height - visibleHeight, current.top)) : 0
       if (left !== current.left || top !== current.top || width !== current.width || height !== current.height) {
         const next = { ...current, left, top, width, height }
         boxRef.current = next
@@ -145,7 +146,7 @@ export function FloatingCard({ id, title, icon, meta, tone = 'neutral', classNam
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(clamp)
     observer?.observe(parent)
     return () => observer?.disconnect()
-  }, [id])
+  }, [id, minWidth, minHeight])
 
   const begin = (event: ReactPointerEvent<HTMLElement>, kind: 'drag' | 'resize') => {
     if (event.pointerType === 'mouse' && event.button !== 0) return
@@ -489,7 +490,7 @@ export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initia
 /* Start / history dialog                                              */
 /* ------------------------------------------------------------------ */
 
-export function ManualPracticeCenter({ store, days, loading, onStart, onStartLoss, onContinue, onRestart, onReview, onDelete, onClose }: {
+export function ManualPracticeCenter({ store, days, loading, onStart, onStartLoss, onContinue, onRestart, onReview, onDelete, onClose, topicSection }: {
   store: ManualPracticeStore
   days: readonly ManualTradingDay[] | null
   loading: boolean
@@ -502,6 +503,8 @@ export function ManualPracticeCenter({ store, days, loading, onStart, onStartLos
   onReview: (sessionId: string) => void
   onDelete: (sessionId: string) => void
   onClose: () => void
+  /** 专题练习 card (逆势 / 顺势突破题库), shown under the day picker. */
+  topicSection?: ReactNode
 }) {
   const [startMode, setStartMode] = useState<'random' | 'date'>('random')
   const [selectedDate, setSelectedDate] = useState('')
@@ -509,11 +512,12 @@ export function ManualPracticeCenter({ store, days, loading, onStart, onStartLos
   const availableDates = useMemo(() => new Set(days?.map(day => day.key.slice(day.key.lastIndexOf(':') + 1)) ?? []), [days])
   const sortedDates = useMemo(() => [...availableDates].sort(), [availableDates])
   const dateAvailable = availableDates.has(selectedDate)
-  const history = useMemo(() => [...store.sessions].sort((a, b) => b.updatedAt - a.updatedAt), [store.sessions])
+  // 专题练习 papers are listed in their own card, not among the trading days.
+  const history = useMemo(() => store.sessions.filter((session) => !session.topic).sort((a, b) => b.updatedAt - a.updatedAt), [store.sessions])
   const completedCount = history.filter((session) => session.status === 'completed').length
   // The most recently touched unfinished paper is the one "continue" resumes.
   const active = history.find((session) => session.status === 'active') ?? null
-  const usedDays = new Set(store.sessions.map((session) => session.dayKey)).size
+  const usedDays = new Set(history.map((session) => session.dayKey)).size
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [confirmRestartId, setConfirmRestartId] = useState<string | null>(null)
   const [lossFilter, setLossFilter] = useState<ManualLossFilter>('all')
@@ -539,8 +543,9 @@ export function ManualPracticeCenter({ store, days, loading, onStart, onStartLos
               <li><kbd>2</kbd> 做多 / 持仓时平仓</li>
               <li><kbd>3</kbd> 做空</li>
               <li><kbd>`</kbd> 记录本根K线不做单理由（中文输入法下是 <kbd>·</kbd> 键）</li>
+              <li><kbd>Tab</kbd> 隐藏 / 显示开平仓标记和画线</li>
             </ul>
-            <p className="mp-muted">开仓时必须填写做单理由；不开仓的K线可以随时按 <kbd>·</kbd> 记录理由。一条只写一个理由，<kbd>Tab</kbd> 切到下一条。</p>
+            <p className="mp-muted">开仓时必须填写做单理由；不开仓的K线可以随时按 <kbd>·</kbd> 记录理由。一条只写一个理由，在输入框里按 <kbd>Tab</kbd> 切到下一条。</p>
           </div>
           <div className="mp-start-action">
             <div className="mp-start-modes" role="group" aria-label="选择出卷模式">
@@ -560,6 +565,7 @@ export function ManualPracticeCenter({ store, days, loading, onStart, onStartLos
             {active && <small className="mp-muted">未完成的卷子会保留在下面的历史记录里，随时可以继续。</small>}
           </div>
         </section>
+        {topicSection}
         <section className="mp-loss">
           <h3><TrendingDown size={17} />亏损单汇总 <span>共 {loss.total} 笔 · {formatPoints(loss.totalPoints)} · {formatUsd(loss.totalUsd)}</span></h3>
           {loss.total === 0
@@ -621,7 +627,7 @@ export function ManualPracticeCenter({ store, days, loading, onStart, onStartLos
 /* In-chart control panel                                              */
 /* ------------------------------------------------------------------ */
 
-export function ManualPracticePanel({ session, review, lastPrice, interval, currentBarNote, onAdvance, onOpen, onClose, onCancelOrder, onNote, onPickBack, picking = false, onRisk, onFinish, onExit, onOpenTimeline }: {
+export function ManualPracticePanel({ session, review, lastPrice, interval, currentBarNote, onAdvance, onOpen, onClose, onCancelOrder, onNote, onPickBack, picking = false, onRisk, onFinish, onExit, onOpenTimeline, onNextTopic, onDeleteTopic }: {
   session: ManualPracticeSession
   review: boolean
   lastPrice: number | null
@@ -639,6 +645,10 @@ export function ManualPracticePanel({ session, review, lastPrice, interval, curr
   onFinish: () => void
   onExit: () => void
   onOpenTimeline: () => void
+  /** 专题练习: key 4, leave this question and start the next one. */
+  onNextTopic?: () => void
+  /** 专题练习: key 5, delete this question from the bank and start the next one. */
+  onDeleteTopic?: () => void
 }) {
   const [confirmFinish, setConfirmFinish] = useState(false)
   const position = openTrade(session)
@@ -652,7 +662,7 @@ export function ManualPracticePanel({ session, review, lastPrice, interval, curr
     testId="manual-practice-panel"
     ariaLabel="自主逐K复盘"
     icon={<NotebookPen size={14} />}
-    title={review ? '复盘 · NQ1!' : '自主复盘 · NQ1!'}
+    title={review ? '复盘 · NQ1!' : session.topic ? '专题练习 · NQ1!' : '自主复盘 · NQ1!'}
     meta={session.dayLabel}
     defaultStyle={{ right: 122, top: 12, width: 300 }}
     minWidth={260}
@@ -694,6 +704,8 @@ export function ManualPracticePanel({ session, review, lastPrice, interval, curr
           <button type="button" className="mp-short" disabled={!started} onClick={() => onOpen('short')}><kbd>3</kbd>做空</button>
         </>}
       <button type="button" className={`mp-note${currentBarNote ? ' has-note' : ''}`} disabled={!started} onClick={onNote} title="记录本根K线的理由"><kbd>·</kbd>{position ? '记录理由' : '不做单理由'}{currentBarNote ? `（${currentBarNote.reasons.length}）` : ''}</button>
+      {onNextTopic && <button type="button" className="mp-secondary" onClick={onNextTopic} title="结束这道题（持仓按现价平仓），进入下一题"><kbd>4</kbd>下一题</button>}
+      {onDeleteTopic && <button type="button" className="mp-secondary" onClick={onDeleteTopic} title="把这道题从专题题库里删除（不计成绩），进入下一题"><kbd>5</kbd>删除本题</button>}
       <button type="button" className={`mp-note mp-back${picking ? ' has-note' : ''}`} disabled={!started} onClick={onPickBack} title="往前选一根K线，补记应该开单 / 未开单的理由">{picking ? '点图上的K线…（Esc 取消）' : '往前选K线记录理由'}</button>
     </div>}
     <div className="mp-panel-stats">
@@ -731,7 +743,7 @@ export function ManualPracticePanel({ session, review, lastPrice, interval, curr
       <button type="button" className="mp-secondary mp-exit" onClick={onExit} title={review ? '退出复盘，回到历史卷子' : '退出本轮：进度已自动保存，可在历史卷子里继续或重新做'}><LogOut size={14} />{review ? '退出复盘' : '退出本轮'}</button>
       {!review && (confirmFinish
         ? <><button type="button" className="mp-danger" onClick={() => { setConfirmFinish(false); onFinish() }}>确认结束（持仓按现价平）</button><button type="button" className="mp-secondary" onClick={() => setConfirmFinish(false)}>取消</button></>
-        : <button type="button" className="mp-secondary" onClick={() => setConfirmFinish(true)}>结束今天</button>)}
+        : <button type="button" className="mp-secondary" onClick={() => setConfirmFinish(true)}>{session.topic ? '结束本题' : '结束今天'}</button>)}
     </footer>
   </FloatingCard>
 }
@@ -836,8 +848,10 @@ function RiskInput({ label, value, onCommit }: { label: string; value: number | 
 /* Open-position dialog: side, optional stop/target, mandatory reasons */
 /* ------------------------------------------------------------------ */
 
-export function OpenTradeDialog({ side, price, orderKind = null, quantity, stopLoss, takeProfit, initialBackground = '', persistenceId, onStopLoss, onTakeProfit, onConfirm, onCancel }: {
+export function OpenTradeDialog({ side, price, orderKind = null, quantity, stopLoss, takeProfit, initialBackground = '', persistenceId, withoutReasons = false, onStopLoss, onTakeProfit, onConfirm, onCancel }: {
   persistenceId?: string
+  /** 专题练习: just confirm the order, no reasons to write. */
+  withoutReasons?: boolean
   initialBackground?: string
   side: ManualSide
   /** Entry price: the close for a market fill, or the dragged order price. */
@@ -857,6 +871,45 @@ export function OpenTradeDialog({ side, price, orderKind = null, quantity, stopL
   const long = side === 'long'
   const usdAt = (exit: number) => (exit - price) * (long ? 1 : -1) * NQ_POINT_VALUE_USD * quantity
   const usdText = (exit: number) => `${usdAt(exit) >= 0 ? '+' : '-'}$${Math.abs(usdAt(exit)).toLocaleString('zh-CN', { maximumFractionDigits: 0 })}`
+  const validRisk = () => {
+    if (long ? stopLoss >= price : stopLoss <= price) { setRiskError(`止损必须${long ? '低于' : '高于'}开仓价`); return false }
+    if (long ? takeProfit <= price : takeProfit >= price) { setRiskError(`止盈必须${long ? '高于' : '低于'}开仓价`); return false }
+    return true
+  }
+  const confirmLabel = orderKind ? (long ? '确认多单挂单' : '确认空单挂单') : (long ? '确认做多' : '确认做空')
+  if (withoutReasons) {
+    const confirm = () => { if (validRisk()) onConfirm([], '', '') }
+    return <FloatingCard
+      id="open-trade"
+      className="mp-editor"
+      tone={long ? 'long' : 'short'}
+      ariaLabel="确认开单"
+      title={`${long ? '做多' : '做空'}${orderKind === 'stop' ? '追单' : orderKind === 'limit' ? '挂单' : ''} ${quantity} 手 @ ${price.toFixed(2)}`}
+      icon={<NotebookPen size={14} />}
+      defaultStyle={{ left: 64, bottom: 56, width: 440 }}
+      minWidth={320}
+      minHeight={150}
+      onClose={onCancel}
+      closeLabel="取消"
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onCancel() }
+        else if (event.key === 'Enter' && !(event.target instanceof HTMLInputElement)) { event.preventDefault(); event.stopPropagation(); confirm() }
+      }}
+    >
+      <p className="mp-editor-subtitle">{orderKind ? '追单（stop 入场）：价格突破开仓线才成交。' : '按当前K线收盘价成交。'}拖动图上的开仓、止损、止盈线调整（每点 $20）。专题练习不用写理由。</p>
+      <div className="mp-open-risk">
+        <PriceField label="止损价" value={stopLoss} hint={usdText(stopLoss)} onCommit={(value) => { setRiskError(''); onStopLoss(value) }} />
+        <PriceField label="止盈价" value={takeProfit} hint={usdText(takeProfit)} onCommit={(value) => { setRiskError(''); onTakeProfit(value) }} />
+        {riskError && <p className="mp-editor-error" role="alert">{riskError}</p>}
+      </div>
+      <footer>
+        <span className="mp-editor-hint"><kbd>Enter</kbd> 确认 · <kbd>Esc</kbd> 取消</span>
+        <button type="button" className="mp-secondary" onClick={onCancel}>取消</button>
+        {/* Focused so Enter confirms right away. */}
+        <button type="button" className="mp-primary" autoFocus onClick={confirm}>{confirmLabel}</button>
+      </footer>
+    </FloatingCard>
+  }
   return <ReasonEditor
     cardId="open-trade"
     persistenceId={persistenceId}
@@ -864,14 +917,13 @@ export function OpenTradeDialog({ side, price, orderKind = null, quantity, stopL
     subtitle={orderKind ? '追单（stop 入场）：价格突破开仓线才成交，成交后才开始判断止损 / 止盈（每点 $20）。拖动图上的开仓、止损、止盈线调整；手数在开仓线上加减。' : '按当前K线收盘价成交（每点 $20）。拖动止损 / 止盈线调整风险，手数在开仓线上加减。'}
     required
     tone={long ? 'long' : 'short'}
-    confirmLabel={orderKind ? (long ? '确认多单挂单' : '确认空单挂单') : (long ? '确认做多' : '确认做空')}
+    confirmLabel={confirmLabel}
     onCancel={onCancel}
     background={{ initial: initialBackground }}
     unsupportedReasons={{ initial: '' }}
     preserveDraftOnCancel
     onSave={(reasons, background, unsupportedReasons) => {
-      if (long ? stopLoss >= price : stopLoss <= price) { setRiskError(`止损必须${long ? '低于' : '高于'}开仓价`); return false }
-      if (long ? takeProfit <= price : takeProfit >= price) { setRiskError(`止盈必须${long ? '高于' : '低于'}开仓价`); return false }
+      if (!validRisk()) return false
       onConfirm(reasons, background, unsupportedReasons)
     }}
   >

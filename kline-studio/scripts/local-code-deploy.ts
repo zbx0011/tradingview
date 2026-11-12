@@ -11,6 +11,8 @@ const API_PATH = '/__kline_studio_code_deploy'
 const EXPECTED_REMOTE = 'https://github.com/zbx0011/tradingview'
 const EXPECTED_BRANCH = 'master'
 const MAX_OUTPUT_CHARS = 2_000_000
+/** GitHub refuses any file over 100 MB; such files (e.g. the 6-year NQ history) stay on this computer only. */
+const GITHUB_FILE_LIMIT_BYTES = 95 * 1024 * 1024
 
 interface CommandResult {
   stdout: string
@@ -192,17 +194,50 @@ async function createCandidateCommit(state: RepositoryState, message: string) {
   }
 }
 
+/** Files added or changed between `base` and `commit` that are too large for GitHub. */
+async function oversizedFiles(repositoryRoot: string, base: string, commit: string) {
+  const files = (await runFile('git', ['diff', '--name-only', '--diff-filter=AM', base, commit], { cwd: repositoryRoot })).stdout
+    .split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+  const tooLarge: string[] = []
+  for (const file of files) {
+    const size = Number((await runFile('git', ['cat-file', '-s', `${commit}:${file}`], { cwd: repositoryRoot }).catch(() => ({ stdout: '0', stderr: '' }))).stdout.trim())
+    if (size > GITHUB_FILE_LIMIT_BYTES) tooLarge.push(file)
+  }
+  return tooLarge
+}
+
+/**
+ * A publish that committed a file GitHub refuses (> 100 MB) and then failed to push leaves an unpushed
+ * commit that can never be pushed. Undo those unpushed commits (every change stays in the working tree)
+ * and stop tracking the oversized files, so the normal publish below commits everything else again.
+ */
+async function dropUnpushableCommits(state: RepositoryState) {
+  if (!state.aheadOfRemote) return false
+  const tooLarge = await oversizedFiles(state.repositoryRoot, state.remoteHead, state.localHead)
+  if (tooLarge.length === 0) return false
+  await runFile('git', ['reset', '--soft', state.remoteHead], { cwd: state.repositoryRoot })
+  await runFile('git', ['rm', '--cached', '--quiet', '--ignore-unmatch', '--', ...tooLarge], { cwd: state.repositoryRoot })
+  return true
+}
+
+function assertNotOversized(files: readonly string[]) {
+  if (files.length === 0) return
+  throw new HttpError(409, `以下文件超过 GitHub 单文件 100 MB 上限，不能上传：${files.join('、')}。请把它们加入 kline-studio/.gitignore（只留在本机）后再发布；未修改或推送任何文件`, { files })
+}
+
 async function publishCode() {
   let state = await repositoryState(true)
   if (state.diverged || state.updateAvailable) {
     throw new HttpError(409, '远程 master 已更新，当前仓库不能安全快进发布；未修改或推送任何文件')
   }
+  if (await dropUnpushableCommits(state)) state = await repositoryState(false)
   assertOnlyProjectChanges(state)
   await runFile('git', ['diff', '--check'], { cwd: state.repositoryRoot })
   if (!state.clean) {
     const stamp = new Date().toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, ' UTC')
     const message = `deploy: publish Kline Studio ${stamp}`
     const candidateCommit = await createCandidateCommit(state, message)
+    assertNotOversized(await oversizedFiles(state.repositoryRoot, state.localHead, candidateCommit))
     await validateCommitInTemporaryWorktree(state, candidateCommit)
     await runFile('git', ['add', '--all', '--', state.projectRelativePath], { cwd: state.repositoryRoot })
     await runFile('git', ['diff', '--cached', '--check'], { cwd: state.repositoryRoot })

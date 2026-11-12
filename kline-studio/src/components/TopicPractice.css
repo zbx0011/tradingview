@@ -1,0 +1,8 @@
+/* 专题练习 card in the 自主复盘 center (reuses the .mp-start layout). */
+.mp-topic h3 { display: flex; align-items: center; gap: 6px; }
+.mp-topic-table { width: 100%; border-collapse: collapse; font-size: 12px; color: #d1d6e0; }
+.mp-topic-table th, .mp-topic-table td { padding: 5px 4px; text-align: left; border-bottom: 1px solid #2a3140; }
+.mp-topic-table th { color: #8f9ab0; font-weight: 500; }
+.mp-topic-table .positive { color: #26a69a; }
+.mp-topic-table .negative { color: #ef5350; }
+.mp-topic-continue { height: 36px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

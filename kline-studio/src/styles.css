@@ -2213,3 +2213,4 @@ button.mp-loss-chip { cursor: pointer; }
 
 .mp-initial-risk-summary.is-long { transform: translateY(calc(-100% - 10px)); }
 .mp-initial-risk-summary.is-short { transform: translateY(10px); }
+.history-overview-badge { position: absolute; right: 130px; top: 48px; z-index: 15; padding: 4px 8px; border-radius: 5px; color: var(--text); background: var(--surface); border: 1px solid var(--border); font-size: 11px; pointer-events: none; }

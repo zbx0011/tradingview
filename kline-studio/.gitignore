@@ -6,3 +6,5 @@ dist/
 coverage/
 _replay-layer-backup-*/
 .replay-layer-backups/
+# GitHub refuses files over 100 MB: the 6-year NQ 1m history stays on this computer only.
+public/data/market-snapshots/nq-c0-1m-2020-2026.json

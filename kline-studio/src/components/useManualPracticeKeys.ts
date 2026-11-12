@@ -8,6 +8,8 @@ export function useManualPracticeKeys(enabled: boolean, handlers: {
   /** Key 3: open short. */
   key3: () => void
   note: () => void
+  /** Tab: hide / show the trade markers, orders and drawings on the chart (the backquote key is taken by `note`). */
+  toggleHidden?: () => void
   /** Key 4 (亏损单复盘: mark as not understood). */
   key4?: () => void
   /** Key 5 (亏损单复盘: favourite the trade). */
@@ -35,13 +37,14 @@ export function useManualPracticeKeys(enabled: boolean, handlers: {
       }
       let action: (() => void) | null = null
       if (event.code === 'Backquote' || event.key === '`' || event.key === '·') action = handlersRef.current.note
+      else if (!event.shiftKey && event.key === 'Tab' && handlersRef.current.toggleHidden) action = handlersRef.current.toggleHidden
       else if (!event.shiftKey && (event.code === 'Digit1' || event.code === 'Numpad1')) action = handlersRef.current.advance
       else if (!event.shiftKey && (event.code === 'Digit2' || event.code === 'Numpad2')) action = handlersRef.current.key2
       else if (!event.shiftKey && (event.code === 'Digit3' || event.code === 'Numpad3')) action = handlersRef.current.key3
       else if (!event.shiftKey && (event.code === 'Digit4' || event.code === 'Numpad4') && handlersRef.current.key4) action = handlersRef.current.key4
       else if (!event.shiftKey && (event.code === 'Digit5' || event.code === 'Numpad5') && handlersRef.current.key5) action = handlersRef.current.key5
       if (!action) return
-      // Keep the number keys away from the timeframe dialog while practising.
+      // Keep the number keys away from the timeframe dialog while practising (and Tab from moving focus).
       event.preventDefault()
       event.stopImmediatePropagation()
       if (handlersRef.current.blocked) return

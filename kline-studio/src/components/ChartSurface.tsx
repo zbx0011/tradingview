@@ -70,6 +70,8 @@ export interface IndicatorSettings {
 }
 
 export interface ChartSurfaceHandle {
+  getVisibleLogicalRange: () => { from: number; to: number } | null
+  setVisibleLogicalRange: (range: { from: number; to: number }) => void
   fitContent: () => void
   plotSize: () => { width: number; height: number } | null
   showDuration: (seconds: number | null) => void
@@ -89,7 +91,7 @@ export interface ChartSurfaceHandle {
   downloadScreenshot: () => void
 }
 
-interface Props {
+export interface ChartSurfaceProps {
   data: Candle[]
   symbol: SymbolId
   interval: IntervalId
@@ -329,7 +331,7 @@ const blackBarPoint = (candle: Candle, border: string) => ({
   color: '#000000', borderColor: border, wickColor: border,
 })
 
-function updateSeries(series: SeriesState, data: Candle[], chartType: Props['chartType'], indicators: IndicatorSettings, black?: { times: ReadonlySet<number>; border: string }, hiddenTail: readonly number[] = []) {
+function updateSeries(series: SeriesState, data: Candle[], chartType: ChartSurfaceProps['chartType'], indicators: IndicatorSettings, black?: { times: ReadonlySet<number>; border: string }, hiddenTail: readonly number[] = []) {
   // Hidden replay candles stay in the series as fully transparent flat bars: the time scale keeps the same
   // last bar, so nothing slides or rescales when later candles are hidden (empty slots would move the base index).
   const hold = data.at(-1)?.close ?? 0
@@ -464,7 +466,7 @@ function visibleTradeMarkers(
 
 // lightweight-charts only lets update() touch the newest bar, so repainting an older bar means re-setting the
 // main series. That only happens when a trade is entered or removed, and manual-practice data is small.
-function paintBlackBars(series: SeriesState | null, data: readonly Candle[], times: readonly number[], border: string, chartType: Props['chartType']) {
+function paintBlackBars(series: SeriesState | null, data: readonly Candle[], times: readonly number[], border: string, chartType: ChartSurfaceProps['chartType']) {
   if (!series || chartType === 'line' || chartType === 'area') return
   const black = new Set(times)
   series.main.setData(data.map((candle) => black.has(candle.time)
@@ -497,7 +499,7 @@ function apprenticeActionSeriesMarkers(markers: readonly ApprenticeActionMarker[
     })
 }
 
-export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function ChartSurface(
+export const ChartSurface = forwardRef<ChartSurfaceHandle, ChartSurfaceProps>(function ChartSurface(
   {
     data, symbol, interval, chartType, theme, blackBarTimes, futureTradingTimes, hiddenTailTimes, indicators, priceScaleAuto, priceScaleLog, priceScalePercent, priceScaleInverted,
     visibleTradeLayerSourceIds = [], visibleResearchSignalSourceIds = [], showAllResearchReviews = true, exerciseSignalMarkers = [], apprenticeActionMarkers = [], apprenticeOnly = false, apprenticeFocusRange = null, decisionSignalSourceIds = [], decisionSignalAfterTime = null,
@@ -959,6 +961,12 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
   }, [activeTrade, apprenticeActionMarkers, apprenticeOnly, decisionSignalAfterTime, decisionSignalSourceIds, interval, markersHidden, requestTradeConnectionSync, symbol, tradeReferenceMarkers, visibleResearchSignalSourceIds, visibleTradeLayerSourceIds, showAllResearchReviews])
 
   useImperativeHandle(forwardedRef, () => ({
+    getVisibleLogicalRange: () => chartRef.current?.timeScale().getVisibleLogicalRange() ?? null,
+    setVisibleLogicalRange: (range) => {
+      savedViewRef.current = null; hydrationViewRef.current = null
+      pendingRangeRef.current = { range, expires: performance.now() + 600 }
+      chartRef.current?.timeScale().setVisibleLogicalRange(range)
+    },
     plotSize: () => {
       const chart = chartRef.current
       const container = containerRef.current
@@ -1955,6 +1963,9 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, Props>(function Chart
     ref={containerRef}
     className="chart-canvas"
     data-testid="chart-canvas"
+    data-history-first-time={data[0]?.time}
+    data-history-last-time={data.at(-1)?.time}
+    data-history-bar-count={data.length}
     data-wheel-zoom="accumulated"
     data-vertical-pan="always"
     data-active-trade-number={activeTradeNumber ?? undefined}

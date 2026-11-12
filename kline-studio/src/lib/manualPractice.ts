@@ -14,6 +14,8 @@ export const MANUAL_PRACTICE_SYMBOL: SymbolId = 'NQ1!'
 export const NQ_POINT_VALUE_USD = 20
 /** Trading sessions shown before the practice day so the chart has context. */
 const CONTEXT_SESSIONS = 3
+/** 专题练习 papers start mid-session, so they show the rest of that session plus five full sessions before it. */
+const TOPIC_CONTEXT_SESSIONS = 5
 /** CME halts NQ for an hour each day; any gap this long separates two sessions. */
 const SESSION_GAP_SECONDS = 30 * 60
 /** Ignore holiday / early-close fragments; a full NQ session has ~1380 minutes. */
@@ -114,8 +116,12 @@ export interface ManualCancelledOrder extends ManualPendingOrder {
   updatedAt: number
 }
 
+/** 专题练习: the paper is one breakout case from the topic question bank instead of a whole trading day. */
+export interface ManualTopicRef { caseId: string; kind: 'counter' | 'with' }
+
 export interface ManualPracticeSession {
   id: string
+  topic?: ManualTopicRef
   symbol: SymbolId
   /** Trading day key, e.g. `NQ1!:2025-03-12`. */
   dayKey: string
@@ -297,6 +303,8 @@ function parseSession(value: unknown): ManualPracticeSession | null {
     ...(session.drawings === undefined ? {} : { drawings: parseSessionDrawings(session.drawings) }),
     pendingOrder: pendingOrder && !cancelledOrders.some((order) => order.id === pendingOrder.id) ? pendingOrder : null,
     ...(session.cancelledOrders === undefined ? {} : { cancelledOrders }),
+    ...(session.topic && typeof session.topic.caseId === 'string' && (session.topic.kind === 'counter' || session.topic.kind === 'with')
+      ? { topic: { caseId: session.topic.caseId, kind: session.topic.kind } } : {}),
   }
 }
 
@@ -531,8 +539,37 @@ export function createManualSession(day: ManualTradingDay, now = Date.now()): Ma
   }
 }
 
+/**
+ * 专题练习 paper: starts with the 5m breakout candle already on the chart and runs one trading day
+ * (288 five-minute candles) after it. The context before it is the usual three days.
+ */
+export function createManualTopicSession(topic: ManualTopicRef, breakTime: number, label: string, now = Date.now()): ManualPracticeSession {
+  const revealed = breakTime + 300
+  return {
+    id: newId(),
+    topic,
+    symbol: MANUAL_PRACTICE_SYMBOL,
+    dayKey: `topic:${topic.caseId}`,
+    dayLabel: label,
+    startTime: breakTime,
+    endTime: revealed + 288 * 300,
+    cursorTime: revealed,
+    status: 'active',
+    createdAt: now,
+    updatedAt: now,
+    completedAt: null,
+    trades: [],
+    notes: [],
+  }
+}
+
 /** Start of the context window: CONTEXT_SESSIONS sessions before the practice day. */
-export function contextStartTime(days: readonly ManualTradingDay[], session: Pick<ManualPracticeSession, 'startTime'>) {
+export function contextStartTime(days: readonly ManualTradingDay[], session: Pick<ManualPracticeSession, 'startTime' | 'topic'>) {
+  if (session.topic) {
+    const containing = days.findIndex((day) => day.startTime <= session.startTime && session.startTime < day.endTime)
+    if (containing < 0) return session.startTime - 7 * 86_400
+    return days[Math.max(0, containing - TOPIC_CONTEXT_SESSIONS)].startTime
+  }
   const index = days.findIndex((day) => day.startTime === session.startTime)
   if (index <= 0) return session.startTime - 3 * 86_400
   return days[Math.max(0, index - CONTEXT_SESSIONS)].startTime
