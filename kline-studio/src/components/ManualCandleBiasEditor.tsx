@@ -84,7 +84,7 @@ const validBiasDraft = (value: unknown): value is BiasDraft => {
     })))
 }
 
-export function ManualCandleBiasEditor({ subtitle, notes, initialBias, initialBackground, defaultRiskPlans, currentCandleX = null, toPrice, toY, persistenceId, onSave, onCancel }: {
+export function ManualCandleBiasEditor({ subtitle, notes, initialBias, initialBackground, defaultRiskPlans, currentCandleX = null, toPrice, toY, persistenceId, onSave, onCancel, onDelete }: {
   subtitle: string
   notes: readonly ManualBarNote[]
   initialBias: ManualCandleBias
@@ -97,6 +97,7 @@ export function ManualCandleBiasEditor({ subtitle, notes, initialBias, initialBa
   persistenceId?: string
   onSave: (background: string, entries: { bias: ManualCandleBias; reasons: string[]; initialRisk?: ManualRiskPlan }[]) => void
   onCancel: () => void
+  onDelete?: () => void
 }) {
   const [draft, setDraft, discardDraft] = usePanelDraft<BiasDraft>(`bias:${persistenceId ?? JSON.stringify([subtitle, notes])}`, () => {
     const ranked = [...notes].sort((a, b) => (a.biasRank ?? 99) - (b.biasRank ?? 99)).map(biasOf)
@@ -112,6 +113,7 @@ export function ManualCandleBiasEditor({ subtitle, notes, initialBias, initialBa
   }, validBiasDraft)
   const { background, order, reasons } = draft
   const [error, setError] = useState('')
+  const [deleteConfirm, setDeleteConfirm] = useState(false)
   const riskPlans = useMemo(() => ({
     long: seedRisk(draft.riskPlans?.long ?? riskFromNotes(notes, 'long'), defaultRiskPlans?.long),
     short: seedRisk(draft.riskPlans?.short ?? riskFromNotes(notes, 'short'), defaultRiskPlans?.short),
@@ -151,6 +153,15 @@ export function ManualCandleBiasEditor({ subtitle, notes, initialBias, initialBa
   }, [activeSide, riskPlans, setRisk])
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (deleteConfirm) {
+        if (event.isComposing || event.keyCode === 229) return
+        if (event.key === 'Escape' || event.key === 'Enter') {
+          event.preventDefault()
+          event.stopImmediatePropagation()
+          if (event.key === 'Escape') setDeleteConfirm(false)
+        }
+        return
+      }
       if (!activeSide || event.key !== 'Enter' || event.isComposing || event.keyCode === 229 || event.repeat || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
       const focused = document.activeElement
       const input = focused instanceof HTMLInputElement && focused.closest('[data-testid="candle-bias-editor"]') && focused.dataset.riskField ? focused : null
@@ -162,7 +173,7 @@ export function ManualCandleBiasEditor({ subtitle, notes, initialBias, initialBa
     }
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [activeSide, confirmPricePlan])
+  }, [activeSide, confirmPricePlan, deleteConfirm])
   const setBackground = (value: string) => setDraft(current => ({ ...current, background: value }))
   const setOrder = (update: (value: ManualCandleBias[]) => ManualCandleBias[]) => setDraft(current => ({ ...current, order: update(current.order) }))
   const setReasons = (update: (value: Record<ManualCandleBias, string[]>) => Record<ManualCandleBias, string[]>) => setDraft(current => ({ ...current, reasons: update(current.reasons) }))
@@ -173,6 +184,7 @@ export function ManualCandleBiasEditor({ subtitle, notes, initialBias, initialBa
     return next
   })
   const save = () => {
+    if (deleteConfirm) return
     const entries: { bias: ManualCandleBias; reasons: string[]; initialRisk?: ManualRiskPlan }[] = []
     for (const bias of order) {
       const rows = reasons[bias].map(s => s.trim()).filter(Boolean)
@@ -187,19 +199,33 @@ export function ManualCandleBiasEditor({ subtitle, notes, initialBias, initialBa
     onSave(background.trim(), entries)
   }
   const activePlan = activeSide ? readRisk(riskPlans[activeSide], activeSide) : undefined
+  const canDelete = notes.length > 0 && Boolean(onDelete)
+  const deleteNotes = () => {
+    if (!deleteConfirm || !canDelete) return
+    discardDraft()
+    onDelete?.()
+  }
   return <>
-    {activeSide && activePlan && <DecisionRiskOverlay
+    {!deleteConfirm && activeSide && activePlan && <DecisionRiskOverlay
       symbol="NQ1!" precision={2} side={activeSide} entryPrice={activePlan.entryPrice} entryLabel="开仓价" stopLoss={activePlan.stopLoss} takeProfit={activePlan.takeProfit}
       ratioLabel={`盈亏比 ${manualRiskRatio(activePlan).toFixed(2)} : 1`} stopLossMode="touch" hideStopMode showConfirmControls={false}
       currentCandleX={currentCandleX} lineStartX={currentCandleX} amountForExit={price => (price - activePlan.entryPrice) * (activeSide === 'long' ? 1 : -1) * NQ_POINT_VALUE_USD}
       toPrice={toPrice} toY={toY} onEntryPrice={price => updatePrice(activeSide, 'entryPrice', price)} onStopLoss={price => updatePrice(activeSide, 'stopLoss', price)} onTakeProfit={price => updatePrice(activeSide, 'takeProfit', price)}
     />}
-    <FloatingCard id="candle-bias-editor" title="未开单 K 线 · 偏向与理由" ariaLabel="K线偏向与理由" testId="candle-bias-editor" icon={<NotebookPen size={14} />} className="mp-editor mp-bias-editor" defaultStyle={{ left: 64, top: 12, width: 400, height: 520 }} minWidth={320} minHeight={300} onClose={cancel}
+    <FloatingCard id="candle-bias-editor" title="未开单 K 线 · 偏向与理由" ariaLabel="K线偏向与理由" testId="candle-bias-editor" icon={<NotebookPen size={14} />} className="mp-editor mp-bias-editor" defaultStyle={{ left: 64, top: 12, width: 400, height: 520 }} minWidth={320} minHeight={300} onClose={deleteConfirm ? () => setDeleteConfirm(false) : cancel}
     onKeyDown={event => {
       if (event.nativeEvent.isComposing) return
+      if (deleteConfirm) {
+        if (event.key === 'Escape' || event.key === 'Enter') {
+          event.preventDefault(); event.stopPropagation()
+          if (event.key === 'Escape') setDeleteConfirm(false)
+        }
+        return
+      }
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancel() }
       if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); save() }
     }}>
+    <div className="mp-bias-form" inert={deleteConfirm}>
     <p className="mp-editor-subtitle">{subtitle}</p>
     <label className="mp-bias-background">背景<input aria-label="背景（必填）" value={background} onChange={e => { setBackground(e.target.value); setError('') }} /></label>
     <p className="mp-bias-hint">越靠上越偏向；每条理由独立编号，Enter / Tab 添加下一条。</p>
@@ -230,7 +256,15 @@ export function ManualCandleBiasEditor({ subtitle, notes, initialBias, initialBa
       </div>}
     </div>)}</div>
     {error && <p className="mp-editor-error" role="alert">{error}</p>}
-    <footer><span className="mp-editor-hint">Ctrl+Enter 保存 · Esc 取消</span><button type="button" className="mp-secondary" onClick={cancel}>取消</button><button type="button" className="mp-primary" onClick={save}>保存</button></footer>
+    </div>
+    {deleteConfirm && <div className="mp-bias-delete-confirm" role="alertdialog" aria-label="删除本根K线理由确认" aria-describedby="candle-bias-delete-message">
+      <p id="candle-bias-delete-message">删除本根K线的做多、做空、不开单理由及初始交易计划？不会删除实际交易。</p>
+      <div><button type="button" className="mp-secondary" onClick={() => setDeleteConfirm(false)}>取消删除</button><button type="button" className="mp-danger" onClick={deleteNotes}><Trash2 size={14} />确认删除</button></div>
+    </div>}
+    {!deleteConfirm && <footer>
+      {canDelete && <button type="button" className="mp-bias-delete-button" onClick={() => setDeleteConfirm(true)}><Trash2 size={14} />删除本根K线理由</button>}
+      <span className="mp-editor-hint">Ctrl+Enter 保存 · Esc 取消</span><button type="button" className="mp-secondary" onClick={cancel}>取消</button><button type="button" className="mp-primary" onClick={save}>保存</button>
+    </footer>}
   </FloatingCard>
   </>
 }

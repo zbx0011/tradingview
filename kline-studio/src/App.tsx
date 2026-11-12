@@ -24,7 +24,7 @@ import {
   manualReasonRows, manualItemRisk, saveManualInitialRisk, type ManualRiskPlan,
   manualReviewCommentKey, saveManualReviewComment, recordManualReview, recordManualReasonTimes, manualItemReasonTimes,
   cancelManualPendingOrder,
-  saveCandleBiasNotes,
+  saveCandleBiasNotes, deleteManualCandleReasons,
   manualTimeline,
   lastRevealedMinute, loadManualPracticeStore, lowerBound, mergeManualPracticeStores, MANUAL_PRACTICE_SYMBOL, openTrade as manualOpenTrade, pickRandomTradingDay, saveManualPracticeStore, syncManualSessionDrawings,
   latestBackground, upsertBarNote, MANUAL_MAX_QUANTITY, NQ_POINT_VALUE_USD, tradeQuantity, type ManualLossFilter, type ManualLossMark, type ManualLossRef, type ManualPendingOrder, type ManualPracticeSession, type ManualPracticeStore, type ManualSide, type ManualTimelineItem, type ManualTrade,
@@ -3863,6 +3863,18 @@ function App() {
               initialBias={manualDialog.kind === 'no-trade' ? 'no-trade' : manualDialog.side}
               initialBackground={manualDialog.background}
               onCancel={() => setManualDialog(null)}
+              onDelete={manualSession ? () => {
+                const dialog = manualDialog
+                const deletedAt = clockNow()
+                updateManualSession(manualSession.id, session => deleteManualCandleReasons(session, dialog.barTime, dialog.interval, deletedAt))
+                setManualDialog(null)
+                setManualInitialRiskDraft(null)
+                setManualHighlightItem(null)
+                setManualHighlightTime(null)
+                setManualHighlightPrice(null)
+                if (manualReviewSession) setManualTimelineOpen(true)
+                notify('本根K线的偏向、理由和初始计划已删除，交易记录保留')
+              } : undefined}
               onSave={(background, entries) => {
                 const dialog = manualDialog
                 setManualDialog(null)

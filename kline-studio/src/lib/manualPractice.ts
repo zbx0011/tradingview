@@ -148,6 +148,8 @@ export interface ManualPracticeSession {
   lastReviewedAt?: number
   trades: ManualTrade[]
   notes: ManualBarNote[]
+  /** Note deletion clocks, keyed like the note's review comment, retained across computers. */
+  deletedNotes?: Record<string, number>
   /** Empty text is a deletion tombstone, retained for cross-computer synchronization. */
   reviewComments?: Record<string, ManualReviewComment>
   /** 亏损单复盘 marks, keyed by trade id. */
@@ -324,12 +326,32 @@ function parseNote(value: unknown): ManualBarNote | null {
   return { initialRisk: parseManualRiskPlan(note.initialRisk), ...(parseManualReasonTimes(note.reasonTimes) ? { reasonTimes: parseManualReasonTimes(note.reasonTimes) } : {}), barTime: note.barTime, interval: note.interval as IntervalId, kind, ...(kind === 'should-trade' ? { side: note.side === 'short' ? 'short' as const : 'long' as const } : {}), ...(biasRank === undefined ? {} : { biasRank }), background: typeof note.background === 'string' ? note.background : '', reasons: stringList(note.reasons), updatedAt: isFiniteNumber(note.updatedAt) ? note.updatedAt : 0 }
 }
 
+function manualNoteKey(note: Pick<ManualBarNote, 'kind' | 'barTime' | 'interval' | 'side'>): string {
+  return JSON.stringify(['note', note.kind, note.barTime, note.interval, note.kind === 'should-trade' ? note.side ?? 'long' : null])
+}
+
+function parseDeletedNotes(value: unknown): Record<string, number> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, number] => isReviewTimestamp(entry[1])))
+}
+
+function mergeDeletedNotes(left: Record<string, number> = {}, right: Record<string, number> = {}): Record<string, number> {
+  const result = { ...left }
+  for (const [key, clock] of Object.entries(right)) if (isReviewTimestamp(clock)) result[key] = Math.max(result[key] ?? 0, clock)
+  return result
+}
+
+const noteSurvivesDeletion = (note: ManualBarNote, deleted: Record<string, number>) => !Object.hasOwn(deleted, manualNoteKey(note)) || note.updatedAt > deleted[manualNoteKey(note)]
+const noteDeletionComments = (deleted: Record<string, number>): Record<string, ManualReviewComment> =>
+  Object.fromEntries(Object.entries(deleted).map(([key, updatedAt]) => [key, { text: '', updatedAt }]))
+
 function parseSession(value: unknown): ManualPracticeSession | null {
   const session = value as Partial<ManualPracticeSession> | null
   if (!session || typeof session.id !== 'string' || typeof session.dayKey !== 'string') return null
   if (!isFiniteNumber(session.startTime) || !isFiniteNumber(session.endTime) || !isFiniteNumber(session.cursorTime)) return null
   const cancelledOrders = mergeCancelledOrders((Array.isArray(session.cancelledOrders) ? session.cancelledOrders : []).map(parseCancelledOrder).filter((item): item is ManualCancelledOrder => item !== null))
   const pendingOrder = parsePendingOrder(session.pendingOrder)
+  const deletedNotes = parseDeletedNotes(session.deletedNotes)
   return {
     id: session.id,
     symbol: (session.symbol ?? MANUAL_PRACTICE_SYMBOL) as SymbolId,
@@ -345,8 +367,9 @@ function parseSession(value: unknown): ManualPracticeSession | null {
     ...(isReviewTimestamp(session.reviewStartedAt) ? { reviewStartedAt: session.reviewStartedAt } : {}),
     ...(isReviewTimestamp(session.lastReviewedAt) ? { lastReviewedAt: session.lastReviewedAt } : {}),
     trades: (Array.isArray(session.trades) ? session.trades : []).map(parseTrade).filter((item): item is ManualTrade => item !== null),
-    notes: (Array.isArray(session.notes) ? session.notes : []).map(parseNote).filter((item): item is ManualBarNote => item !== null),
-    ...(session.reviewComments === undefined ? {} : { reviewComments: parseReviewComments(session.reviewComments) }),
+    notes: (Array.isArray(session.notes) ? session.notes : []).map(parseNote).filter((item): item is ManualBarNote => item !== null && noteSurvivesDeletion(item, deletedNotes)),
+    ...(session.deletedNotes === undefined ? {} : { deletedNotes }),
+    ...(session.reviewComments === undefined && !Object.keys(deletedNotes).length ? {} : { reviewComments: mergeReviewComments(parseReviewComments(session.reviewComments), noteDeletionComments(deletedNotes)) }),
     ...(session.lossMarks === undefined ? {} : { lossMarks: parseLossMarks(session.lossMarks) }),
     ...(session.drawings === undefined ? {} : { drawings: parseSessionDrawings(session.drawings) }),
     pendingOrder: pendingOrder && !cancelledOrders.some((order) => order.id === pendingOrder.id) ? pendingOrder : null,
@@ -481,6 +504,7 @@ export function mergeManualPracticeStores(base: ManualPracticeStore, incoming: M
     if (!current) byId.set(session.id, session)
     else {
       const winner = isNewerSession(session, current) ? session : current
+      const deletedNotes = mergeDeletedNotes(current.deletedNotes, session.deletedNotes)
       const cancelledOrders = mergeCancelledOrders(current.cancelledOrders, session.cancelledOrders)
       // The newer paper wins, but a paper that never recorded its practice lines borrows them from the other copy.
       const loser = winner === session ? current : session
@@ -492,18 +516,19 @@ export function mergeManualPracticeStores(base: ManualPracticeStore, incoming: M
           && withEntry.exitTime === other.exitTime && JSON.stringify(withEntry.exitReasons) === JSON.stringify(other.exitReasons)
           ? { ...withEntry, exitReasonTimes: other.exitReasonTimes } : withEntry
       })
-      const notes = winner.notes.map((note) => borrowReasonTimes(note, loser.notes.find((other) =>
+      const notes = winner.notes.filter((note) => noteSurvivesDeletion(note, deletedNotes)).map((note) => borrowReasonTimes(note, loser.notes.find((other) =>
         other.barTime === note.barTime && other.interval === note.interval && other.kind === note.kind
         && (note.kind !== 'should-trade' || (other.side ?? 'long') === (note.side ?? 'long')))))
       const pendingOrder = winner.pendingOrder && borrowReasonTimes(winner.pendingOrder, loser.pendingOrder?.id === winner.pendingOrder.id ? loser.pendingOrder : undefined)
       byId.set(session.id, {
         ...winner,
         ...(trades.some((trade, index) => trade !== winner.trades[index]) ? { trades } : {}),
-        ...(notes.some((note, index) => note !== winner.notes[index]) ? { notes } : {}),
+        ...(notes.length !== winner.notes.length || notes.some((note, index) => note !== winner.notes[index]) ? { notes } : {}),
         ...(pendingOrder && pendingOrder !== winner.pendingOrder ? { pendingOrder } : {}),
         ...mergeReviewTimes(current, session),
         ...(drawings === undefined ? {} : { drawings }),
-        ...(current.reviewComments === undefined && session.reviewComments === undefined ? {} : { reviewComments: mergeReviewComments(current.reviewComments, session.reviewComments) }),
+        ...(current.deletedNotes === undefined && session.deletedNotes === undefined ? {} : { deletedNotes }),
+        ...(current.reviewComments === undefined && session.reviewComments === undefined && !Object.keys(deletedNotes).length ? {} : { reviewComments: mergeReviewComments(mergeReviewComments(current.reviewComments, session.reviewComments), noteDeletionComments(deletedNotes)) }),
         ...(current.lossMarks === undefined && session.lossMarks === undefined ? {} : { lossMarks: mergeLossMarks(current.lossMarks, session.lossMarks) }),
         ...(current.cancelledOrders === undefined && session.cancelledOrders === undefined ? {} : { cancelledOrders }),
         ...(winner.pendingOrder && cancelledOrders.some((order) => order.id === winner.pendingOrder!.id) ? { pendingOrder: null } : {}),
@@ -845,6 +870,28 @@ export function cleanReasons(reasons: readonly string[]) {
   return reasons.map((reason) => reason.trim()).filter(Boolean)
 }
 
+/** Delete this candle/timeframe's three alternatives without altering trades or other records. */
+export function deleteManualCandleReasons(session: ManualPracticeSession, barTime: number, interval: IntervalId, now = Date.now()): ManualPracticeSession {
+  const targets = session.notes.filter((note) => note.barTime === barTime && note.interval === interval)
+  if (!targets.length) return session
+  if (!isReviewTimestamp(now)) throw new RangeError('理由删除时间无效')
+  const keys = [
+    manualNoteKey({ barTime, interval, kind: 'no-trade' }),
+    manualNoteKey({ barTime, interval, kind: 'should-trade', side: 'long' }),
+    manualNoteKey({ barTime, interval, kind: 'should-trade', side: 'short' }),
+  ]
+  const clock = Math.max(now, ...targets.map((note) => note.updatedAt).filter(isReviewTimestamp),
+    ...keys.flatMap((key) => [session.deletedNotes?.[key], session.reviewComments?.[key]?.updatedAt].filter(isReviewTimestamp)))
+  const deletions = Object.fromEntries(keys.map((key) => [key, clock]))
+  return {
+    ...session,
+    notes: session.notes.filter((note) => note.barTime !== barTime || note.interval !== interval),
+    deletedNotes: mergeDeletedNotes(session.deletedNotes, deletions),
+    reviewComments: mergeReviewComments(session.reviewComments, noteDeletionComments(deletions)),
+    updatedAt: now,
+  }
+}
+
 /** Save a candle's note; an empty background and no reasons removes it. */
 export function upsertBarNote(session: ManualPracticeSession, barTime: number, interval: IntervalId, reasons: readonly string[], background: string, kind: ManualBarNote['kind'] = 'no-trade', side?: ManualSide, now = Date.now()): ManualPracticeSession {
   const cleaned = cleanReasons(reasons)
@@ -938,8 +985,7 @@ export function manualReviewCommentKey(item: ManualTimelineItem): string {
   if (item.cancelledOrder) return JSON.stringify(['cancelled-order', item.cancelledOrder.id])
   if (item.trade && (item.kind === 'entry' || item.kind === 'exit')) return manualTradeCommentKey(item.trade.id, item.kind)
   if (item.note) {
-    const note = item.note
-    return JSON.stringify(['note', note.kind, note.barTime, note.interval, note.kind === 'should-trade' ? note.side ?? 'long' : null])
+    return manualNoteKey(item.note)
   }
   return JSON.stringify(['timeline', item.kind, item.time])
 }
