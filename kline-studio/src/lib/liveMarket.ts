@@ -7,6 +7,8 @@ interface SnapshotManifestSeries {
   vendor: string
   resolution: string
   file: string
+  /** Optional locally installed extension; the shipped file remains the fallback. */
+  preferredFile?: string
   count: number
   firstTime: number
   lastTime: number
@@ -58,6 +60,7 @@ const oandaXagusdReplay = oandaXagusdReplayJson as { symbol: string; vendor: str
 const snapshotSourceCache = new Map<SymbolId, Candle[]>()
 const snapshotCandleCache = new Map<string, Candle[]>()
 const snapshotLoadCache = new Map<SymbolId, Promise<Candle[] | null>>()
+const resolvedSnapshotSeries = new Map<SymbolId, SnapshotManifestSeries>()
 const BYBIT_KLINE_ENDPOINT = 'https://api.bybit.com/v5/market/kline'
 const XAU_MONTH_URL = `${import.meta.env.BASE_URL}data/xauusd-1m-30d.json`
 const CACHE_DB_NAME = 'kline-studio-market-v1'
@@ -104,12 +107,26 @@ export async function loadSnapshotCandles(symbol: SymbolId, interval: IntervalId
       // by the second mount or by decision-history hydration.
       // Version the URL with the manifest endpoint so a refreshed snapshot
       // cannot be masked by the browser's cache for the same compact file.
-      const response = await fetch(`${import.meta.env.BASE_URL}${series.file}?v=${series.lastTime}`, { cache: 'force-cache' })
-      if (!response.ok) throw new Error(`${symbol} 历史数据 HTTP ${response.status}`)
-      const bars = parseCompactHistory(await response.json())
-      snapshotSourceCache.set(symbol, bars)
-      snapshotCandleCache.set(`${symbol}:1m`, bars)
-      return bars
+      const files = [...new Set([series.preferredFile, series.file].filter((file): file is string => Boolean(file)))]
+      const failures: string[] = []
+      for (const file of files) {
+        try {
+          const response = await fetch(`${import.meta.env.BASE_URL}${file}?v=${series.lastTime}`, { cache: 'force-cache' })
+          if (!response.ok) throw new Error(`HTTP ${response.status}`)
+          if (response.headers?.get('content-type')?.toLowerCase().includes('text/html')) throw new Error('返回了网页，历史数据文件不存在或尚未加载')
+          let payload: unknown
+          try { payload = await response.json() } catch { throw new Error('历史数据文件不是有效 JSON') }
+          const bars = parseCompactHistory(payload)
+          // Commit caches and metadata together, only after a complete valid load.
+          resolvedSnapshotSeries.set(symbol, { ...series, file, count: bars.length, firstTime: bars[0].time, lastTime: bars[bars.length - 1].time })
+          snapshotSourceCache.set(symbol, bars)
+          snapshotCandleCache.set(`${symbol}:1m`, bars)
+          return bars
+        } catch (error) {
+          failures.push(`${file}: ${error instanceof Error ? error.message : '请求失败'}`)
+        }
+      }
+      throw new Error(`${symbol} 历史数据加载失败：${failures.join('；')}`)
     })().finally(() => snapshotLoadCache.delete(symbol))
     snapshotLoadCache.set(symbol, pending)
   }
@@ -119,7 +136,7 @@ export async function loadSnapshotCandles(symbol: SymbolId, interval: IntervalId
 }
 
 export function getSnapshotStatus(symbol: SymbolId): MarketDataStatus {
-  const series = snapshotManifest.series[symbol]
+  const series = resolvedSnapshotSeries.get(symbol) ?? snapshotManifest.series[symbol]
   if (!series) return { kind: 'simulated', label: '模拟数据', vendor: 'LOCAL', fetchedAt: null, detail: '本地确定性模拟行情' }
   return {
     kind: 'snapshot',

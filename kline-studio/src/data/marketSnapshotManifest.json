@@ -51,10 +51,11 @@
       "symbol": "CME:NQ.c.0",
       "vendor": "DATABENTO",
       "resolution": "1",
-      "file": "data/market-snapshots/nq-c0-1m-2020-2026.json",
-      "count": 2103683,
-      "firstTime": 1604361600,
-      "lastTime": 1793650380
+      "file": "data/market-snapshots/nq-c0-1m.json",
+      "count": 1049284,
+      "firstTime": 1698969600,
+      "lastTime": 1793650380,
+      "preferredFile": "data/market-snapshots/nq-c0-1m-2020-2026.json"
     }
   }
 }
