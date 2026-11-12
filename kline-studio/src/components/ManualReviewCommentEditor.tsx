@@ -1,6 +1,6 @@
 import { MessageSquare } from 'lucide-react'
-import { FloatingCard, ManualReviewCommentTimes } from './ManualPractice'
-import { manualReviewCommentKey, type ManualReviewComment, type ManualTimelineItem } from '../lib/manualPractice'
+import { FloatingCard, ManualReasonTimesDisplay, ManualReviewCommentTimes } from './ManualPractice'
+import { manualItemReasonTimes, manualReviewCommentKey, type ManualReviewComment, type ManualTimelineItem } from '../lib/manualPractice'
 import { formatManualPracticeTime, manualPracticeTimeIso } from '../lib/manualPracticeTime'
 import { usePanelDraft } from '../lib/panelDraft'
 
@@ -24,6 +24,7 @@ export function ManualReviewCommentEditor({ sessionId, item, initial, comment, o
     }}>
     <p className="mp-editor-subtitle">行情时间 <time dateTime={manualPracticeTimeIso(item.time * 1000)}>{formatManualPracticeTime(item.time * 1000)}</time> · {item.title}</p>
     <div className="mp-review-original"><small>原理由（保留不改）</small>
+      <ManualReasonTimesDisplay times={manualItemReasonTimes(item)} />
       {item.background !== null && <p>背景：{item.background || '未填写'}</p>}
       {item.reasons.length > 0 ? <ol className="mp-reason-list">{item.reasons.map((reason, index) => <li key={index}>{reason}</li>)}</ol> : <p>未填写理由</p>}
       {item.unsupportedReasons && <><small>不支持理由</small><ol className="mp-reason-list">{item.unsupportedReasons.split(/\r\n|\r|\n/).map(reason => reason.trim()).filter(Boolean).map((reason, index) => <li key={index}>{reason}</li>)}</ol></>}

@@ -11,7 +11,7 @@ import { AlSwingApprenticePanel, type ApprenticeActionMarker } from './component
 import { AlertDialog, DataTableDialog, ObjectTreeDialog, OrderDialog } from './components/ChartActionDialogs'
 import { IndicatorLegend } from './components/IndicatorLegend'
 import { getHoverCandle, setHoverCandle, useHoverCandle } from './lib/hoverStore'
-import { ManualBarPicker, ManualPracticeAnnotations, ManualPracticeCenter, ManualPracticePanel, ManualReplayControls, ManualTimelineDialog, OpenTradeDialog, ReasonEditor } from './components/ManualPractice'
+import { ManualBarPicker, ManualPracticeAnnotations, ManualPracticeCenter, ManualPracticePanel, ManualReasonTimesDisplay, ManualReplayControls, ManualTimelineDialog, OpenTradeDialog, ReasonEditor } from './components/ManualPractice'
 import { ManualInitialRiskEditor } from './components/ManualInitialRiskEditor'
 import { TopicPracticeSection } from './components/TopicPractice'
 import { buildTopicQueue, doneTopicIds, loadTopicProgress, saveTopicProgress, TOPIC_DATA_PATH, TOPIC_KINDS, topicOutcomeLabel, topicSessionLabel, validateTopicCases, type TopicCase, type TopicKind, type TopicProgress } from './lib/topicPractice'
@@ -22,7 +22,7 @@ import { useManualPracticeKeys } from './components/useManualPracticeKeys'
 import {
   advanceManualSession, aggregateMinutes, barTimeFor, cleanReasons, contextStartTime, createManualSession, createManualTopicSession, findManualTradingDays, finishManualSession,
   manualReasonRows, manualItemRisk, saveManualInitialRisk, type ManualRiskPlan,
-  manualReviewCommentKey, saveManualReviewComment, recordManualReview,
+  manualReviewCommentKey, saveManualReviewComment, recordManualReview, recordManualReasonTimes, manualItemReasonTimes,
   cancelManualPendingOrder,
   saveCandleBiasNotes,
   manualTimeline,
@@ -3521,19 +3521,31 @@ function App() {
   const saveManualEdit = (item: ManualTimelineItem, reasons: string[], background: string, unsupportedReasons: string) => {
     if (!manualSession) return
     const cleaned = cleanReasons(reasons)
+    const savedAt = clockNow()
+    const context = background.trim()
+    const counterEvidence = unsupportedReasons.trim()
     updateManualSession(manualSession.id, (session) => {
-      if ((item.kind === 'no-trade' || item.kind === 'should-trade') && item.note) return upsertBarNote(session, item.note.barTime, item.note.interval, cleaned, background, item.note.kind, item.note.side)
+      if ((item.kind === 'no-trade' || item.kind === 'should-trade') && item.note) return upsertBarNote(session, item.note.barTime, item.note.interval, cleaned, context, item.note.kind, item.note.side, savedAt)
       if (item.cancelledOrder) return {
-        ...session, updatedAt: Date.now(),
-        cancelledOrders: session.cancelledOrders?.map(order => order.id === item.cancelledOrder!.id
-          ? { ...order, background: background.trim(), reasons: cleaned, unsupportedReasons: unsupportedReasons.trim(), updatedAt: Date.now() }
-          : order),
+        ...session, updatedAt: savedAt,
+        cancelledOrders: session.cancelledOrders?.map(order => {
+          if (order.id !== item.cancelledOrder!.id) return order
+          const changed = context !== order.background || counterEvidence !== (order.unsupportedReasons ?? '') || JSON.stringify(cleaned) !== JSON.stringify(order.reasons)
+          return changed ? { ...order, background: context, reasons: cleaned, unsupportedReasons: counterEvidence, updatedAt: savedAt, reasonTimes: recordManualReasonTimes(order.reasonTimes, savedAt) } : order
+        }),
       }
       if (!item.trade) return session
       return {
         ...session,
-        updatedAt: Date.now(),
-        trades: session.trades.map((trade) => trade.id !== item.trade!.id ? trade : item.kind === 'entry' ? { ...trade, reasons: cleaned, background: background.trim(), unsupportedReasons: unsupportedReasons.trim() } : { ...trade, exitReasons: cleaned }),
+        updatedAt: savedAt,
+        trades: session.trades.map((trade) => {
+          if (trade.id !== item.trade!.id) return trade
+          if (item.kind === 'entry') {
+            const changed = context !== trade.background || counterEvidence !== (trade.unsupportedReasons ?? '') || JSON.stringify(cleaned) !== JSON.stringify(trade.reasons)
+            return changed ? { ...trade, reasons: cleaned, background: context, unsupportedReasons: counterEvidence, reasonTimes: recordManualReasonTimes(trade.reasonTimes, savedAt, !trade.background && trade.reasons.length === 0 && !trade.unsupportedReasons) } : trade
+          }
+          return JSON.stringify(cleaned) === JSON.stringify(trade.exitReasons) ? trade : { ...trade, exitReasons: cleaned, exitReasonTimes: recordManualReasonTimes(trade.exitReasonTimes, savedAt, trade.exitReasons.length === 0 && !trade.exitReasonTimes) }
+        }),
       }
     })
   }
@@ -4440,16 +4452,18 @@ function App() {
           setManualDialog(null)
           setManualRisk(null)
           if (!manualActiveSession || !manualLastMinute || manualPosition || manualActiveSession.pendingOrder) return
+          const savedAt = clockNow()
           const tradeId = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}`
           if (kind) {
             updateManualSession(manualActiveSession.id, (session) => ({
               ...session,
-              updatedAt: Date.now(),
+              updatedAt: savedAt,
               pendingOrder: {
                 id: tradeId, side: dialog.side, orderKind: kind, entryPrice: risk.entryPrice,
                 initialRisk: { entryPrice: risk.entryPrice, stopLoss: risk.stopLoss, takeProfit: risk.takeProfit },
                 stopLoss: risk.stopLoss, takeProfit: risk.takeProfit, quantity: risk.quantity,
                 background, reasons, unsupportedReasons, createdTime: manualLastMinute.time, interval,
+                reasonTimes: recordManualReasonTimes(undefined, savedAt, true),
               },
             }))
             notify(`已挂${dialog.side === 'long' ? '多' : '空'}单${kind === 'stop' ? '（追单）' : '（挂单）'} @ ${risk.entryPrice.toFixed(2)}，价格触到后成交`)
@@ -4457,12 +4471,13 @@ function App() {
           }
           updateManualSession(manualActiveSession.id, (session) => ({
             ...session,
-            updatedAt: Date.now(),
+            updatedAt: savedAt,
             trades: [...session.trades, {
               id: tradeId, side: dialog.side, entryTime: manualLastMinute.time, entryPrice: dialog.price,
               initialRisk: { entryPrice: risk.entryPrice, stopLoss: risk.stopLoss, takeProfit: risk.takeProfit },
                 stopLoss: risk.stopLoss, takeProfit: risk.takeProfit, quantity: risk.quantity,
               exitTime: null, exitPrice: null, exitKind: null, background, reasons, unsupportedReasons, exitReasons: [],
+              reasonTimes: recordManualReasonTimes(undefined, savedAt, true),
             }],
           }))
         }}
@@ -4476,11 +4491,12 @@ function App() {
         onSave={(reasons) => {
           setManualDialog(null)
           if (!manualActiveSession) return
+          const savedAt = clockNow()
           updateManualSession(manualActiveSession.id, (session) => ({
             ...session,
-            updatedAt: Date.now(),
+            updatedAt: savedAt,
             trades: session.trades.map((trade) => trade.id === manualPosition.id
-              ? { ...trade, exitTime: manualLastMinute.time, exitPrice: manualLastMinute.close, exitKind: 'manual' as const, exitReasons: reasons }
+              ? { ...trade, exitTime: manualLastMinute.time, exitPrice: manualLastMinute.close, exitKind: 'manual' as const, exitReasons: reasons, ...(reasons.length ? { exitReasonTimes: recordManualReasonTimes(undefined, savedAt, true) } : {}) }
               : trade),
           }))
         }}
@@ -4509,7 +4525,7 @@ function App() {
         allowClear={manualDialog.item.kind === 'no-trade' || manualDialog.item.kind === 'should-trade'}
         onCancel={() => setManualDialog(null)}
         onSave={(reasons, background, unsupportedReasons) => { const item = manualDialog.item; setManualDialog(null); saveManualEdit(item, reasons, background, unsupportedReasons) }}
-      />}
+      ><ManualReasonTimesDisplay times={manualItemReasonTimes(manualDialog.item)} /></ReasonEditor>}
       <DecisionHistoryDialog
         key={`${symbol}-${decisionHistoryOpen ? 'open' : 'closed'}`}
         open={decisionHistoryOpen}

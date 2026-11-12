@@ -24,6 +24,8 @@ const paper = (): ManualPracticeSession => ({
     interval: '5m', kind: 'no-trade', background: '震荡背景', reasons: ['等待确认'], updatedAt: started }],
 })
 const textOf = (markup: string) => markup.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+const commentTimesText = (markup: string) => [...markup.matchAll(/<div\b[^>]*class="mp-review-comment-times"[^>]*>([\s\S]*?)<\/div>/g)]
+  .map(match => textOf(match[1])).join(' ')
 const renderHistory = (session: ManualPracticeSession) => renderToStaticMarkup(<ManualPracticeCenter
   store={{ version: 1, activeSessionId: session.status === 'active' ? session.id : null, sessions: [session] }}
   days={[]} loading={false} onStart={noop} onStartLoss={noop} onContinue={noop}
@@ -105,7 +107,7 @@ describe('saved comment creation and edit times', () => {
   it('shows only the creation time when a comment has been saved once', () => {
     const comment = { text: '首次判断', createdAt: firstComment, updatedAt: firstComment }
     for (const markup of [renderEditor(comment), renderTimeline(withComment(comment))]) {
-      const text = textOf(markup)
+      const text = commentTimesText(markup)
       expect(text).toContain('记录时间 2026/11/12 10:03:04')
       expect(text).not.toContain('修改时间')
       expect(text).not.toContain('最后保存时间')
@@ -116,7 +118,7 @@ describe('saved comment creation and edit times', () => {
   it('shows the original recording time and a separate latest modification time after an edit', () => {
     const comment = { text: '修改后的判断', createdAt: firstComment, updatedAt: editedComment }
     for (const markup of [renderEditor(comment), renderTimeline(withComment(comment))]) {
-      const text = textOf(markup)
+      const text = commentTimesText(markup)
       expect(text).toContain('记录时间 2026/11/12 10:03:04')
       expect(text).toContain('修改时间 2026/11/13 11:04:05')
       expect(markup).toMatch(/datetime="2026-11-13T03:04:05\.000Z"/i)
@@ -126,7 +128,7 @@ describe('saved comment creation and edit times', () => {
   it('labels a legacy updatedAt as last saved without inventing a creation time', () => {
     const comment = { text: '旧版评论', updatedAt: editedComment }
     for (const markup of [renderEditor(comment), renderTimeline(withComment(comment))]) {
-      const text = textOf(markup)
+      const text = commentTimesText(markup)
       expect(text).toContain('最后保存时间 2026/11/13 11:04:05')
       expect(text).not.toContain('记录时间')
       expect(text).not.toContain('修改时间')
@@ -134,16 +136,16 @@ describe('saved comment creation and edit times', () => {
   })
 
   it('does not give an unsaved editor draft a recording or modification timestamp', () => {
-    const text = textOf(renderEditor(undefined, '还没保存的评论'))
+    const text = commentTimesText(renderEditor(undefined, '还没保存的评论'))
     expect(text).toContain('记录时间 未记录')
     expect(text).not.toContain('修改时间')
     expect(text).not.toContain('最后保存时间')
   })
 
   it('does not display a deleted comment or its tombstone time in the timeline', () => {
-    const text = textOf(renderTimeline(withComment({ text: '', updatedAt: editedComment })))
-    expect(text).not.toContain('2026/11/13 11:04:05')
-    expect(text).not.toContain('最后保存时间')
+    const markup = renderTimeline(withComment({ text: '', updatedAt: editedComment }))
+    expect(commentTimesText(markup)).toBe('')
+    expect(textOf(markup)).not.toContain('2026/11/13 11:04:05')
   })
 })
 
@@ -182,9 +184,7 @@ describe('loss review comment times', () => {
   it('adds no comment timestamps when the loss has no saved comments', () => {
     const markup = renderLossPanel()
     expect(markup).not.toContain('mp-review-comment-times')
-    const text = textOf(markup)
-    expect(text).not.toContain('记录时间')
-    expect(text).not.toContain('最后保存时间')
+    expect(commentTimesText(markup)).toBe('')
   })
 })
 

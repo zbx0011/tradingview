@@ -9,6 +9,7 @@ import {
   manualLossStats,
   manualReasonRows,
   manualItemRisk,
+  manualItemReasonTimes,
   manualRiskRatio,
   manualReviewCommentKey,
   manualTradeCommentKey,
@@ -25,6 +26,7 @@ import {
   type ManualPracticeSession,
   type ManualPracticeStore,
   type ManualReviewComment,
+  type ManualReasonTimes,
   type ManualSide,
   type ManualTimelineItem,
   type ManualTrade,
@@ -50,15 +52,23 @@ function SessionTimes({ session, compact = false }: { session: ManualPracticeSes
   </div>
 }
 
-export function ManualReviewCommentTimes({ comment }: { comment?: ManualReviewComment }) {
-  const hasCreated = manualPracticeTimeIso(comment?.createdAt) !== undefined
-  const edited = hasCreated && manualPracticeTimeIso(comment?.updatedAt) !== undefined && comment!.updatedAt > comment!.createdAt!
-  return <div className="mp-review-comment-times" aria-label="评论保存时间（北京时间）">
+function SavedTextTimes({ times, className, ariaLabel }: { times?: ManualReasonTimes; className: string; ariaLabel: string }) {
+  const hasCreated = manualPracticeTimeIso(times?.createdAt) !== undefined
+  const edited = hasCreated && manualPracticeTimeIso(times?.updatedAt) !== undefined && times!.updatedAt > times!.createdAt!
+  return <div className={className} aria-label={ariaLabel}>
     {hasCreated ? <>
-      <span>记录时间 <SavedEventTime value={comment?.createdAt} /></span>
-      {edited && <span>修改时间 <SavedEventTime value={comment?.updatedAt} /></span>}
-    </> : <span>{comment ? '最后保存时间' : '记录时间'} <SavedEventTime value={comment?.updatedAt} /></span>}
+      <span>记录时间 <SavedEventTime value={times?.createdAt} /></span>
+      {edited && <span>修改时间 <SavedEventTime value={times?.updatedAt} /></span>}
+    </> : <span>{times ? '最后保存时间' : '记录时间'} <SavedEventTime value={times?.updatedAt} /></span>}
   </div>
+}
+
+export function ManualReviewCommentTimes({ comment }: { comment?: ManualReviewComment }) {
+  return <SavedTextTimes times={comment} className="mp-review-comment-times" ariaLabel="评论保存时间（北京时间）" />
+}
+
+export function ManualReasonTimesDisplay({ times }: { times?: ManualReasonTimes }) {
+  return <SavedTextTimes times={times} className="mp-reason-times" ariaLabel="理由保存时间（北京时间）" />
 }
 const formatPoints = (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(2)} 点`
 const formatUsd = (value: number) => `${value >= 0 ? '+' : '-'}$${Math.abs(value).toLocaleString('zh-CN', { maximumFractionDigits: 0 })}`
@@ -756,9 +766,9 @@ export function ManualPracticePanel({ session, review, lastPrice, interval, curr
               <small className="mp-muted">{exitLabel} · 点击查看理由</small></summary>
               <div className="mp-trade-reasons-body">
                 <b>背景</b><p>{trade.background || '未记录'}</p>
-                <b>做单理由</b>{trade.reasons.length ? <ol>{trade.reasons.map((reason, i) => <li key={i}>{reason}</li>)}</ol> : <p>未记录</p>}
+                <b>做单理由</b><ManualReasonTimesDisplay times={trade.reasonTimes} />{trade.reasons.length ? <ol>{trade.reasons.map((reason, i) => <li key={i}>{reason}</li>)}</ol> : <p>未记录</p>}
                 {trade.unsupportedReasons && <><b>不支持理由</b><p>{trade.unsupportedReasons}</p></>}
-                <b>平仓理由</b>{trade.exitReasons.length ? <ol>{trade.exitReasons.map((reason, i) => <li key={i}>{reason}</li>)}</ol> : <p>{closed ? `${exitLabel}，未另记理由` : '尚未平仓'}</p>}
+                <b>平仓理由</b>{(trade.exitKind === 'manual' || trade.exitReasons.length > 0) && <ManualReasonTimesDisplay times={trade.exitReasonTimes} />}{trade.exitReasons.length ? <ol>{trade.exitReasons.map((reason, i) => <li key={i}>{reason}</li>)}</ol> : <p>{closed ? `${exitLabel}，未另记理由` : '尚未平仓'}</p>}
               </div>
             </details></li>
           })}
@@ -835,9 +845,9 @@ export function ManualLossPanel({ session, trade, index, total, mark, entryComme
     <section className="mp-loss-reasons" aria-label="这笔单的理由">
       <div className="mp-trade-reasons-body">
         <b>背景</b><p>{trade.background || '未记录'}</p>
-        <b>做单理由</b>{reasonList(trade.reasons, '未记录')}
+        <b>做单理由</b><ManualReasonTimesDisplay times={trade.reasonTimes} />{reasonList(trade.reasons, '未记录')}
         {trade.unsupportedReasons && <><b>不支持理由</b><p>{trade.unsupportedReasons}</p></>}
-        <b>平仓理由</b>{reasonList(trade.exitReasons, `${exitLabel(trade)}，未另记理由`)}
+        <b>平仓理由</b>{(trade.exitKind === 'manual' || trade.exitReasons.length > 0) && <ManualReasonTimesDisplay times={trade.exitReasonTimes} />}{reasonList(trade.exitReasons, `${exitLabel(trade)}，未另记理由`)}
       </div>
       <div className="mp-loss-comments">
         <button type="button" className="mp-secondary" onClick={() => onComment('entry')}><MessageSquare size={13} />评论开仓{entryComment ? '（已写，点击修改）' : ''}</button>
@@ -1164,11 +1174,13 @@ export function ManualTimelineDialog({ session, onClose, onJump, onEditItem, onR
                     {!biasItems && reviewAction(item)}
                     <button type="button" className="mp-icon" aria-label="编辑理由" title="编辑理由" onClick={(event) => { event.stopPropagation(); onEditItem(item) }}><Pencil size={13} /></button>
                   </div>
+                  {!biasItems && <ManualReasonTimesDisplay times={manualItemReasonTimes(item)} />}
                   {item.background !== null && <p className={`mp-timeline-background${item.background ? '' : ' missing'}`}><span>背景</span>{item.background || '未填写'}</p>}
                   {item.cancelledOrder && <p className="mp-cancelled-order-detail">未成交 · 撤单 {formatBeijing(item.cancelledOrder.cancelledTime)} · {item.cancelledOrder.quantity} 手<br />原计划止损 {item.cancelledOrder.stopLoss.toFixed(2)} · 止盈 {item.cancelledOrder.takeProfit.toFixed(2)}</p>}
                   {!biasItems && <InitialRiskSummary item={item} />}
                   {biasItems ? biasItems.map((entry, rank) => <div className="mp-timeline-bias" key={entry.kind === 'no-trade' ? 'no-trade' : entry.note?.side} onClick={event => { event.stopPropagation(); select(entry, itemKey) }}>
                     <div className="mp-bias-heading"><b>{rank + 1}. {entry.kind === 'no-trade' ? '不开单' : entry.note?.side === 'short' ? '做空' : '做多'}{rank === 0 ? ' · 最偏向' : ''}</b>{reviewAction(entry, `${entry.kind === 'no-trade' ? '不开单' : entry.note?.side === 'short' ? '做空' : '做多'}复盘评论`)}</div>
+                    <ManualReasonTimesDisplay times={manualItemReasonTimes(entry)} />
                     {entry.reasons.length > 0 ? <ol className="mp-reason-list">{entry.reasons.map((reason, index) => <li key={index}>{reason}</li>)}</ol> : <p className="mp-muted">未填写理由</p>}
                     <InitialRiskSummary item={entry} />
                     {reviewComment(entry)}
@@ -1182,6 +1194,7 @@ export function ManualTimelineDialog({ session, onClose, onJump, onEditItem, onR
                       {reviewAction(exit, '平仓复盘评论')}
                       {!exit.passive && <button type="button" className="mp-icon" aria-label="编辑平仓理由" title="编辑平仓理由" onClick={(event) => { event.stopPropagation(); onEditItem(exit) }}><Pencil size={13} /></button>}
                     </div>
+                    {(!exit.passive || exit.reasons.length > 0) && <ManualReasonTimesDisplay times={manualItemReasonTimes(exit)} />}
                     {exit.reasons.length > 0
                       ? <ol className="mp-reason-list">{exit.reasons.map((reason, reasonIndex) => <li key={reasonIndex}>{reason}</li>)}</ol>
                       : exit.passive ? null : <p className="mp-muted">未填写平仓理由</p>}
