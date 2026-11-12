@@ -22,7 +22,7 @@ import { useManualPracticeKeys } from './components/useManualPracticeKeys'
 import {
   advanceManualSession, aggregateMinutes, barTimeFor, cleanReasons, contextStartTime, createManualSession, createManualTopicSession, findManualTradingDays, finishManualSession,
   manualReasonRows, manualItemRisk, saveManualInitialRisk, type ManualRiskPlan,
-  manualReviewCommentKey, saveManualReviewComment,
+  manualReviewCommentKey, saveManualReviewComment, recordManualReview,
   cancelManualPendingOrder,
   saveCandleBiasNotes,
   manualTimeline,
@@ -3040,7 +3040,8 @@ function App() {
     if (!session || !trade) return false
     setManualLoss({ queue, index })
     setManualLossReveal(null)
-    setManualStore((store) => store.activeSessionId ? { ...store, activeSessionId: null } : store)
+    const reviewedAt = clockNow()
+    setManualStore((store) => ({ ...store, activeSessionId: null, sessions: store.sessions.map((item) => item.id === session.id ? recordManualReview(item, reviewedAt) : item) }))
     setManualReviewId(session.id)
     setManualDialog(null)
     setManualTimelineOpen(false)
@@ -3080,7 +3081,8 @@ function App() {
   }
   const markManualLoss = (patch: { understanding?: ManualLossMark['understanding']; favorite?: boolean }, advance: boolean) => {
     if (!manualLossSession || !manualLossTrade) return
-    updateManualSession(manualLossSession.id, (session) => setManualLossMark(session, manualLossTrade.id, patch))
+    const reviewedAt = clockNow()
+    updateManualSession(manualLossSession.id, (session) => recordManualReview(setManualLossMark(session, manualLossTrade.id, patch, reviewedAt), reviewedAt))
     if (advance) stepManualLoss(1)
   }
   const commentManualLoss = (kind: 'entry' | 'exit') => {
@@ -3093,12 +3095,17 @@ function App() {
   const reviewManualPractice = async (sessionId: string) => {
     if (manualBlockedByDecision()) return
     await ensureNqMinutes()
-    setManualStore((store) => ({ ...store, activeSessionId: null }))
+    const reviewedAt = clockNow()
+    setManualStore((store) => ({ ...store, activeSessionId: null, sessions: store.sessions.map((session) => session.id === sessionId ? recordManualReview(session, reviewedAt) : session) }))
     setManualReviewId(sessionId)
     enterManualView()
     setManualTimelineOpen(true)
   }
   const exitManualView = () => {
+    if (manualReviewSession) {
+      const reviewedAt = clockNow()
+      updateManualSession(manualReviewSession.id, session => recordManualReview(session, reviewedAt))
+    }
     setManualLoss(null)
     exitManualReplay()
     setManualDialog(null)
@@ -3148,6 +3155,8 @@ function App() {
       return
     }
     if (outcome.finished) {
+      const reviewedAt = clockNow()
+      updateManualSession(outcome.session.id, session => recordManualReview(session, reviewedAt))
       setManualStore((store) => ({ ...store, activeSessionId: null }))
       setManualReviewId(outcome.session.id)
       setManualTimelineOpen(true)
@@ -3354,7 +3363,7 @@ function App() {
   }
   const finishManualToday = () => {
     if (!manualActiveSession || !nqMinutes?.length) return
-    const finished = finishManualSession(manualActiveSession, nqMinutes)
+    const finished = recordManualReview(finishManualSession(manualActiveSession, nqMinutes))
     updateManualSession(manualActiveSession.id, () => finished)
     setManualStore((store) => ({ ...store, activeSessionId: null }))
     setManualReviewId(finished.id)
@@ -4480,6 +4489,7 @@ function App() {
         key={`${manualSession.id}:${manualReviewCommentKey(manualDialog.item)}`}
         sessionId={manualSession.id} item={manualDialog.item}
         initial={manualSession.reviewComments?.[manualReviewCommentKey(manualDialog.item)]?.text ?? ''}
+        comment={manualSession.reviewComments?.[manualReviewCommentKey(manualDialog.item)]}
         onCancel={() => setManualDialog(null)}
         onSave={text => {
           const item = manualDialog.item

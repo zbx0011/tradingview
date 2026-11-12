@@ -76,6 +76,8 @@ export type ManualOrderKind = 'stop' | 'limit'
 export interface ManualReviewComment {
   text: string
   updatedAt: number
+  /** Wall-clock creation time; absent for comments saved before it was recorded. */
+  createdAt?: number
 }
 
 /** 亏损单复盘: how well a losing trade is understood, and whether it is saved for later. */
@@ -135,6 +137,9 @@ export interface ManualPracticeSession {
   createdAt: number
   updatedAt: number
   completedAt: number | null
+  /** Wall-clock review visits, independent of the original practice progress. */
+  reviewStartedAt?: number
+  lastReviewedAt?: number
   trades: ManualTrade[]
   notes: ManualBarNote[]
   /** Empty text is a deletion tombstone, retained for cross-computer synchronization. */
@@ -168,6 +173,9 @@ export function emptyManualPracticeStore(): ManualPracticeStore {
 }
 
 const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
+const isReviewTimestamp = (value: unknown): value is number => isFiniteNumber(value) && value > 0 && value <= 8.64e15
+const hasCommentCreationTime = (comment: Partial<ManualReviewComment>): comment is Partial<ManualReviewComment> & { createdAt: number } =>
+  isReviewTimestamp(comment.createdAt) && isFiniteNumber(comment.updatedAt) && comment.createdAt <= comment.updatedAt
 const stringList = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
 
 export function parseManualRiskPlan(value: unknown): ManualRiskPlan | undefined {
@@ -296,6 +304,8 @@ function parseSession(value: unknown): ManualPracticeSession | null {
     createdAt: isFiniteNumber(session.createdAt) ? session.createdAt : 0,
     updatedAt: isFiniteNumber(session.updatedAt) ? session.updatedAt : 0,
     completedAt: isFiniteNumber(session.completedAt) ? session.completedAt : null,
+    ...(isReviewTimestamp(session.reviewStartedAt) ? { reviewStartedAt: session.reviewStartedAt } : {}),
+    ...(isReviewTimestamp(session.lastReviewedAt) ? { lastReviewedAt: session.lastReviewedAt } : {}),
     trades: (Array.isArray(session.trades) ? session.trades : []).map(parseTrade).filter((item): item is ManualTrade => item !== null),
     notes: (Array.isArray(session.notes) ? session.notes : []).map(parseNote).filter((item): item is ManualBarNote => item !== null),
     ...(session.reviewComments === undefined ? {} : { reviewComments: parseReviewComments(session.reviewComments) }),
@@ -345,7 +355,7 @@ function parseReviewComments(value: unknown): Record<string, ManualReviewComment
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return []
     const comment = entry as Partial<ManualReviewComment>
     return typeof comment.text === 'string' && isFiniteNumber(comment.updatedAt)
-      ? [[key, { text: comment.text, updatedAt: comment.updatedAt }]]
+      ? [[key, { text: comment.text, updatedAt: comment.updatedAt, ...(comment.text.trim() && hasCommentCreationTime(comment) ? { createdAt: comment.createdAt } : {}) }]]
       : []
   }))
 }
@@ -381,8 +391,20 @@ function mergeReviewComments(left: Record<string, ManualReviewComment> = {}, rig
     const winner = !a ? b! : !b ? a : a.updatedAt !== b.updatedAt
       ? (a.updatedAt > b.updatedAt ? a : b)
       : a.text === '' ? a : b.text === '' ? b : a.text >= b.text ? a : b
-    return [key, winner]
+    const creationTimes = [a, b].flatMap((comment) => comment?.text.trim() && hasCommentCreationTime(comment) ? [comment.createdAt] : [])
+    // Creation evidence survives an older client's newer edit, but never revives a deletion.
+    const createdAt = winner.text.trim() && creationTimes.length ? Math.min(...creationTimes) : undefined
+    return [key, { text: winner.text, updatedAt: winner.updatedAt, ...(createdAt === undefined ? {} : { createdAt }) }]
   }))
+}
+
+function mergeReviewTimes(left: ManualPracticeSession, right: ManualPracticeSession) {
+  const starts = [left.reviewStartedAt, right.reviewStartedAt].filter(isReviewTimestamp)
+  const visits = [left.lastReviewedAt, right.lastReviewedAt].filter(isReviewTimestamp)
+  return {
+    ...(starts.length ? { reviewStartedAt: Math.min(...starts) } : {}),
+    ...(visits.length ? { lastReviewedAt: Math.max(...visits) } : {}),
+  }
 }
 
 export function parseManualPracticeStore(raw: string | null): ManualPracticeStore {
@@ -427,6 +449,7 @@ export function mergeManualPracticeStores(base: ManualPracticeStore, incoming: M
       const drawings = winner.drawings ?? loser.drawings
       byId.set(session.id, {
         ...winner,
+        ...mergeReviewTimes(current, session),
         ...(drawings === undefined ? {} : { drawings }),
         ...(current.reviewComments === undefined && session.reviewComments === undefined ? {} : { reviewComments: mergeReviewComments(current.reviewComments, session.reviewComments) }),
         ...(current.lossMarks === undefined && session.lossMarks === undefined ? {} : { lossMarks: mergeLossMarks(current.lossMarks, session.lossMarks) }),
@@ -852,10 +875,25 @@ export function manualReviewCommentKey(item: ManualTimelineItem): string {
 
 /** Save hindsight only; never mutate the original decision or advance/reopen its session. */
 export function saveManualReviewComment(session: ManualPracticeSession, item: ManualTimelineItem, text: string, now = Date.now()): ManualPracticeSession {
+  const key = manualReviewCommentKey(item)
+  const previous = session.reviewComments?.[key]
+  const trimmed = text.trim()
+  const createdAt = !trimmed ? undefined : previous?.text.trim()
+    ? (hasCommentCreationTime(previous) ? previous.createdAt : undefined)
+    : (isReviewTimestamp(now) ? now : undefined)
   return {
-    ...session,
-    reviewComments: { ...session.reviewComments, [manualReviewCommentKey(item)]: { text: text.trim(), updatedAt: now } },
+    ...recordManualReview(session, now),
+    reviewComments: { ...session.reviewComments, [key]: { text: trimmed, updatedAt: now, ...(createdAt === undefined ? {} : { createdAt }) } },
   }
+}
+
+/** Record a real review visit without changing the paper's practice rank or chart progress. */
+export function recordManualReview(session: ManualPracticeSession, now = Date.now()): ManualPracticeSession {
+  if (!isReviewTimestamp(now)) return session
+  const reviewStartedAt = isReviewTimestamp(session.reviewStartedAt) ? session.reviewStartedAt : now
+  const lastReviewedAt = Math.max(reviewStartedAt, now, isReviewTimestamp(session.lastReviewedAt) ? session.lastReviewedAt : now)
+  if (session.reviewStartedAt === reviewStartedAt && session.lastReviewedAt === lastReviewedAt) return session
+  return { ...session, reviewStartedAt, lastReviewedAt }
 }
 
 /** Every reason in time order, for the review screen. */

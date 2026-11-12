@@ -3,6 +3,7 @@ import { BookOpenCheck, CalendarDays, ChevronRight, ClipboardList, Eye, LogOut, 
 import { INTERVALS, type IntervalId } from '../lib/market'
 import { loadPanelState, savePanelState, usePanelDraft } from '../lib/panelDraft'
 import { bringFloatingCardToFront, registerFloatingCard } from '../lib/floatingCards'
+import { formatManualPracticeTime, manualPracticeTimeIso } from '../lib/manualPracticeTime'
 import {
   barTimeFor,
   manualLossStats,
@@ -10,6 +11,7 @@ import {
   manualItemRisk,
   manualRiskRatio,
   manualReviewCommentKey,
+  manualTradeCommentKey,
   NQ_POINT_VALUE_USD,
   openTrade,
   sessionSummary,
@@ -22,6 +24,7 @@ import {
   type ManualOrderKind,
   type ManualPracticeSession,
   type ManualPracticeStore,
+  type ManualReviewComment,
   type ManualSide,
   type ManualTimelineItem,
   type ManualTrade,
@@ -32,6 +35,31 @@ const beijingFormatter = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shan
 const beijingTimeFormatter = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false })
 const formatBeijing = (time: number) => beijingFormatter.format(new Date(time * 1000))
 const formatClock = (time: number) => beijingTimeFormatter.format(new Date(time * 1000))
+
+function SavedEventTime({ value }: { value: number | null | undefined }) {
+  const iso = manualPracticeTimeIso(value)
+  return iso ? <time dateTime={iso}>{formatManualPracticeTime(value)}</time> : <span>未记录</span>
+}
+
+function SessionTimes({ session, compact = false }: { session: ManualPracticeSession; compact?: boolean }) {
+  return <div className={`mp-session-times${compact ? ' is-compact' : ''}`} aria-label="练习与复盘时间（北京时间）">
+    <span><span>练习开始</span><SavedEventTime value={session.createdAt} /></span>
+    <span><span>练习完成</span>{session.status === 'completed' ? <SavedEventTime value={session.completedAt} /> : <span>进行中</span>}</span>
+    {!compact && <span><span>首次复盘</span><SavedEventTime value={session.reviewStartedAt} /></span>}
+    <span><span>最近复盘</span><SavedEventTime value={session.lastReviewedAt} /></span>
+  </div>
+}
+
+export function ManualReviewCommentTimes({ comment }: { comment?: ManualReviewComment }) {
+  const hasCreated = manualPracticeTimeIso(comment?.createdAt) !== undefined
+  const edited = hasCreated && manualPracticeTimeIso(comment?.updatedAt) !== undefined && comment!.updatedAt > comment!.createdAt!
+  return <div className="mp-review-comment-times" aria-label="评论保存时间（北京时间）">
+    {hasCreated ? <>
+      <span>记录时间 <SavedEventTime value={comment?.createdAt} /></span>
+      {edited && <span>修改时间 <SavedEventTime value={comment?.updatedAt} /></span>}
+    </> : <span>{comment ? '最后保存时间' : '记录时间'} <SavedEventTime value={comment?.updatedAt} /></span>}
+  </div>
+}
 const formatPoints = (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(2)} 点`
 const formatUsd = (value: number) => `${value >= 0 ? '+' : '-'}$${Math.abs(value).toLocaleString('zh-CN', { maximumFractionDigits: 0 })}`
 const exitLabel = (trade: ManualTrade) => trade.exitKind === 'stop' ? '止损' : trade.exitKind === 'target' ? '止盈' : trade.exitKind === 'session-end' ? '收盘平仓' : '手动平仓'
@@ -595,9 +623,7 @@ export function ManualPracticeCenter({ store, days, loading, onStart, onStartLos
                 const summary = sessionSummary(session)
                 const done = session.status === 'completed'
                 return <div className={`mp-history-row${done ? '' : ' unfinished'}`} key={session.id}>
-                  <span className="mp-history-day"><b>{session.dayLabel}{!done && <em>未完成</em>}</b><small>{done
-                    ? `完成于 ${session.completedAt ? new Date(session.completedAt).toLocaleString('zh-CN', { hour12: false }) : '—'}`
-                    : `已到 ${formatBeijing(session.cursorTime)}`}</small></span>
+                  <div className="mp-history-day"><b>{session.dayLabel}{!done && <em>未完成</em>}</b>{!done && <small>已到 {formatBeijing(session.cursorTime)}</small>}<SessionTimes session={session} compact /></div>
                   <span>{summary.trades} 笔</span>
                   <span className={summary.totalPoints >= 0 ? 'positive' : 'negative'}>{formatPoints(summary.totalPoints)}<small>{formatUsd(summary.totalUsd)}</small></span>
                   <span>{summary.reasonCount} 根已记录K线</span>
@@ -786,6 +812,7 @@ export function ManualLossPanel({ session, trade, index, total, mark, entryComme
     onClose={onExit}
     closeLabel="退出亏损单复盘"
   >
+    <div className="mp-session-times" aria-label="复盘时间（北京时间）"><span><span>最近复盘</span><SavedEventTime value={session.lastReviewedAt} /></span></div>
     <div className="mp-progress" aria-label={`进度 ${index + 1} / ${total}`}><i style={{ width: `${progress * 100}%` }} /></div>
     <div className={`mp-position side-${trade.side}`}>
       <div className="mp-position-head">
@@ -816,8 +843,8 @@ export function ManualLossPanel({ session, trade, index, total, mark, entryComme
         <button type="button" className="mp-secondary" onClick={() => onComment('entry')}><MessageSquare size={13} />评论开仓{entryComment ? '（已写，点击修改）' : ''}</button>
         <button type="button" className="mp-secondary" onClick={() => onComment('exit')}><MessageSquare size={13} />评论平仓{exitComment ? '（已写，点击修改）' : ''}</button>
       </div>
-      {entryComment && <p className="mp-loss-comment"><small>开仓评论</small>{entryComment}</p>}
-      {exitComment && <p className="mp-loss-comment"><small>平仓评论</small>{exitComment}</p>}
+      {entryComment && <div className="mp-loss-comment"><small>开仓评论</small><ManualReviewCommentTimes comment={session.reviewComments?.[manualTradeCommentKey(trade.id, 'entry')]} /><p>{entryComment}</p></div>}
+      {exitComment && <div className="mp-loss-comment"><small>平仓评论</small><ManualReviewCommentTimes comment={session.reviewComments?.[manualTradeCommentKey(trade.id, 'exit')]} /><p>{exitComment}</p></div>}
     </section>
     <footer>
       <button type="button" className="mp-secondary" disabled={index <= 0} onClick={onPrevious}>上一笔</button>
@@ -1092,7 +1119,7 @@ export function ManualTimelineDialog({ session, onClose, onJump, onEditItem, onR
     aria-label={`${commentFor(item) ? '编辑' : '添加'}${label}`} title={label}
     onClick={event => { event.stopPropagation(); onReviewItem(item) }}><MessageSquare size={12} />评论</button>
   const reviewComment = (item: ManualTimelineItem) => commentFor(item) && <div className="mp-review-comment" onClick={event => event.stopPropagation()}>
-    <b>复盘评论</b><p>{commentFor(item)}</p>
+    <b>复盘评论</b><ManualReviewCommentTimes comment={session.reviewComments?.[manualReviewCommentKey(item)]} /><p>{commentFor(item)}</p>
   </div>
   return <FloatingCard
     id="timeline"
@@ -1106,6 +1133,7 @@ export function ManualTimelineDialog({ session, onClose, onJump, onEditItem, onR
     minHeight={200}
     onClose={onClose}
   >
+        <SessionTimes session={session} />
         <div className="mp-summary-grid">
           <div><small>交易</small><b>{summary.trades}</b></div>
           <div><small>胜 / 负</small><b>{summary.wins} / {summary.losses}</b></div>
