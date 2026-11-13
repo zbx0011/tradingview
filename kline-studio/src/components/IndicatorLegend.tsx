@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronRight, Eye, EyeOff, RefreshCcw } from 'lucide-react'
 import { bollinger, ema, sma, volumeSma } from '../lib/indicators'
 import { formatPrice, INTERVALS, type Candle, type IntervalId, type SymbolId } from '../lib/market'
@@ -93,7 +93,43 @@ export function IndicatorLegend({ data, candle, symbol, interval, indicators, in
     setRefreshing(true)
     window.setTimeout(() => setRefreshing(false), 420)
   }
-  return <section className={`indicator-legend${expanded ? ' is-expanded' : ' is-collapsed'}${indicatorsHidden ? ' all-hidden' : ''}`} data-testid="indicator-legend" aria-label="图表指标">
+  const legendRef = useRef<HTMLElement>(null)
+  useLayoutEffect(() => {
+    const legend = legendRef.current
+    const parent = legend?.parentElement
+    if (!legend || !parent) return
+    const place = () => {
+      const toolbar = parent.querySelector<HTMLElement>('.reference-quick-tools')
+      const base = parseFloat(getComputedStyle(legend).getPropertyValue('--indicator-legend-top')) || 53
+      const root = parent.getBoundingClientRect()
+      const rect = legend.getBoundingClientRect()
+      const tools = toolbar?.getBoundingClientRect()
+      const baseTop = root.top + base
+      const overlaps = tools && tools.width > 0 && tools.height > 0
+        && rect.left < tools.right + 8 && rect.right > tools.left - 8
+        && baseTop < tools.bottom + 8 && baseTop + rect.height > tools.top - 8
+      const top = overlaps ? tools.bottom - root.top + 8 : base
+      const value = `${top}px`
+      if (legend.style.top !== value) legend.style.top = value
+    }
+    const toolbarChanges = new MutationObserver(place)
+    const resize = new ResizeObserver(place)
+    const connect = () => {
+      toolbarChanges.disconnect()
+      resize.disconnect()
+      resize.observe(parent)
+      resize.observe(legend)
+      const toolbar = parent.querySelector<HTMLElement>('.reference-quick-tools')
+      if (toolbar) { toolbarChanges.observe(toolbar, { attributes: true, attributeFilter: ['style', 'class'] }); resize.observe(toolbar) }
+      place()
+    }
+    const children = new MutationObserver(connect)
+    children.observe(parent, { childList: true })
+    window.addEventListener('resize', place)
+    connect()
+    return () => { children.disconnect(); toolbarChanges.disconnect(); resize.disconnect(); window.removeEventListener('resize', place) }
+  }, [])
+  return <section ref={legendRef} className={`indicator-legend${expanded ? ' is-expanded' : ' is-collapsed'}${indicatorsHidden ? ' all-hidden' : ''}`} data-testid="indicator-legend" aria-label="图表指标">
     <div className="indicator-legend-summary">
       <button type="button" className="indicator-summary-toggle" aria-label={`${expanded ? '隐藏' : '显示'}图表指标列表`} aria-expanded={expanded} data-testid="indicator-summary-toggle" title={`${expanded ? '隐藏' : '显示'}图表指标列表`} onClick={() => onExpandedChange(!expanded)}>
         {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}<span>{total}</span>

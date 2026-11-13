@@ -390,7 +390,7 @@ button:disabled { opacity: .32; cursor: not-allowed; }
 .measurement-result-card strong { font-size: 18px; font-weight: 600; line-height: 1.25; }
 .measurement-result-card span { font-size: 15px; font-weight: 600; line-height: 1.2; }
 .measurement-time-card { position: absolute; bottom: 2px; min-height: 38px; padding: 0 18px; display: flex; align-items: center; justify-content: center; gap: 20px; transform: translateX(-50%); border-radius: 5px 5px 0 0; color: white; background: #2962ff; box-shadow: 0 5px 16px rgba(0,0,0,.25); font-size: 14px; font-weight: 600; white-space: nowrap; }
-.indicator-legend { position: absolute; left: 14px; top: 53px; z-index: 14; width: min(520px, calc(100% - 150px)); color: var(--text); font-size: 11px; pointer-events: auto; }
+.indicator-legend { --indicator-legend-top: 53px; position: absolute; left: 14px; top: var(--indicator-legend-top); z-index: 14; width: min(520px, calc(100% - 150px)); color: var(--text); font-size: 11px; pointer-events: auto; }
 .indicator-legend-summary { display: flex; align-items: center; gap: 7px; height: 32px; }
 .indicator-summary-toggle { min-width: 70px; height: 32px; display: inline-flex; align-items: center; gap: 5px; padding: 0 9px; color: var(--text); background: rgba(37,40,50,.92); border: 1px solid var(--border-strong); border-radius: 6px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .indicator-summary-toggle:hover { color: white; background: var(--surface-hover); }
@@ -1356,7 +1356,7 @@ button:disabled { opacity: .32; cursor: not-allowed; }
   .ohlc-line { gap: 10px; font-size: 16px; }
   .ohlc-line b { color: #4285f4; }
   .ohlc-line .positive, .ohlc-line .negative { color: #4285f4 !important; }
-  .indicator-legend { left: 16px; top: 61px; width: min(620px, calc(100% - 180px)); font-size: 13px; }
+  .indicator-legend { --indicator-legend-top: 61px; left: 16px; top: var(--indicator-legend-top); width: min(620px, calc(100% - 180px)); font-size: 13px; }
   .currency-selector { top: 7px; right: 6px; width: 105px; height: 45px; border-radius: 5px; font-size: 18px; }
   .price-scale-controls { right: 7px; bottom: 8px; gap: 6px; }
   .price-scale-controls button { width: 44px; height: 46px; border-radius: 8px; font-size: 24px; }
