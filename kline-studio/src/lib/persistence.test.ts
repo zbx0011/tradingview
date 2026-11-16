@@ -20,6 +20,30 @@ const workspace = {
 }
 
 describe('workspace price scale state', () => {
+  it('restores independent three-push levels and the overlap display preference', () => {
+    const indicators = {
+      ...workspace.indicators,
+      threePush: true,
+      threePushTimeframes: { '1m': false, '5m': true, '15m': false },
+      threePushMergeOverlaps: false,
+    }
+    expect(parseWorkspace(JSON.stringify({ ...workspace, indicatorProfileVersion: 1, indicators }))?.indicators).toMatchObject(indicators)
+    expect(parseWorkspace(JSON.stringify(workspace))?.indicators).toMatchObject({
+      threePushTimeframes: { '1m': true, '5m': true, '15m': true },
+      threePushMergeOverlaps: true,
+    })
+  })
+
+  it('enables three pushes in legacy workspaces and preserves an explicit opt-out', () => {
+    expect(parseWorkspace(JSON.stringify(workspace))?.indicators.threePush).toBe(true)
+    expect(parseWorkspace(JSON.stringify({ ...workspace, indicatorProfileVersion: 1 }))?.indicators.threePush).toBe(true)
+    expect(parseWorkspace(JSON.stringify({
+      ...workspace,
+      indicatorProfileVersion: 1,
+      indicators: { ...workspace.indicators, threePush: false },
+    }))?.indicators.threePush).toBe(false)
+  })
+
   it('migrates legacy MA workspaces to the required EMA20 profile', () => {
     expect(parseWorkspace(JSON.stringify(workspace))).toMatchObject({
       indicatorProfileVersion: 1,

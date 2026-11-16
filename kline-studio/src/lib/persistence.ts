@@ -1,5 +1,6 @@
 import type { Drawing } from './drawings'
 import type { IntervalId, SymbolId } from './market'
+import { normalizeThreePushSettings, type ThreePushSettings } from './threePushSettings'
 import {
   DECISION_REPLAY_INTERVALS,
   type DecisionPositionSizingMode, type DecisionPracticeMode, type DecisionReplayInterval,
@@ -16,7 +17,7 @@ export interface SavedWorkspace {
   priceScaleInverted?: boolean
   indicatorProfileVersion?: 1
   indicatorLegendExpanded?: boolean
-  indicators: { ma: boolean; ema: boolean; boll: boolean; volume: boolean; smc?: boolean; maPeriod: number; emaPeriod: number; bollPeriod: number; bollDeviation: number }
+  indicators: ThreePushSettings & { ma: boolean; ema: boolean; boll: boolean; volume: boolean; smc?: boolean; maPeriod: number; emaPeriod: number; bollPeriod: number; bollDeviation: number }
   drawings: Drawing[]
   /** Replay-range groups that were collapsed in the Object Tree. */
   collapsedReplayRangeLayerIds?: string[]
@@ -99,7 +100,7 @@ export function parseWorkspace(raw: string | null): SavedWorkspace | null {
     const migratedIndicators = value.indicatorProfileVersion === INDICATOR_PROFILE_VERSION
       ? value.indicators
       : { ...value.indicators, ma: false, ema: true, emaPeriod: 20 }
-    const indicators = { ...migratedIndicators, smc: migratedIndicators.smc !== false }
+    const indicators = { ...migratedIndicators, smc: migratedIndicators.smc !== false, ...normalizeThreePushSettings(migratedIndicators) }
     const collapsedReplayRangeLayerIds = Array.isArray(value.collapsedReplayRangeLayerIds)
       ? value.collapsedReplayRangeLayerIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
       : []

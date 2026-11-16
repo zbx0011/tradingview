@@ -103,7 +103,7 @@ export function IndicatorLegend({ data, candle, symbol, interval, indicators, in
     </div>
     {expanded && <div className="indicator-legend-list">
       {rows.map((row) => {
-       const visible = (row.key === 'smc' ? indicators.smc !== false : indicators[row.key]) && !indicatorsHidden
+       const visible = indicators[row.key] !== false && !indicatorsHidden
        return <div className={`indicator-legend-row${visible ? ' is-visible' : ' is-hidden'}`} data-testid={`indicator-legend-row-${row.key}`} key={row.key}>
           <button type="button" className="indicator-legend-main" onClick={onOpenSettings} title="打开指标设置"><span className="indicator-legend-name" style={{ color: row.color }}>{row.name}</span><span className="indicator-legend-detail">{row.detail}</span></button>
           <button type="button" className="indicator-legend-toggle" aria-label={`${visible ? '隐藏' : '显示'} ${row.name}`} aria-pressed={visible} title={`${visible ? '隐藏' : '显示'} ${row.name}`} onClick={() => onToggle(row.key)}>{visible ? <Eye size={17} /> : <EyeOff size={17} />}</button>

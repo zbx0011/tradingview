@@ -1,4 +1,5 @@
 import type { SymbolId } from './market'
+import { visibleThreePushTimeframes, type ThreePushSettings } from './threePushSettings'
 
 export interface ChartAlert {
   id: string
@@ -43,8 +44,8 @@ export function clampContextMenuPosition(
   }
 }
 
-export function countActiveIndicators(indicators: { ma: boolean; ema: boolean; boll: boolean; volume: boolean; smc?: boolean }) {
-  return [indicators.ma, indicators.ema, indicators.boll, indicators.volume, indicators.smc !== false].filter(Boolean).length
+export function countActiveIndicators(indicators: ThreePushSettings & { ma: boolean; ema: boolean; boll: boolean; volume: boolean; smc?: boolean }) {
+  return [indicators.ma, indicators.ema, indicators.boll, indicators.volume, indicators.smc !== false, visibleThreePushTimeframes(indicators).length > 0].filter(Boolean).length
 }
 
 function parseStoredArray<T>(raw: string | null, predicate: (value: unknown) => value is T): T[] {

@@ -18,6 +18,13 @@ import {
 } from 'lightweight-charts'
 import { bollinger, ema, sma, volumeSma } from '../lib/indicators'
 import { attachSmartMoneyOverlay } from '../lib/smartMoneyOverlay'
+import { attachThreePushOverlay } from '../lib/threePushOverlay'
+import { attachAbcdOverlay } from '../lib/abcdOverlay'
+import { attachBarCountOverlay } from '../lib/barCountOverlay'
+import { visibleBarCountSides, type BarCountSettings } from '../lib/barCountSettings'
+import { visibleThreePushTimeframes, type ThreePushSettings } from '../lib/threePushSettings'
+import { visibleAbcdTimeframes, type AbcdSettings } from '../lib/abcdSettings'
+import type { ThreePushMinuteSource } from '../lib/threePushProjection'
 import { futureTimeOffset } from '../lib/futureTradingTimeline'
 import { captureChartView, loadChartView, restoredChartRange, saveChartView } from '../lib/chartViewPersistence'
 import {
@@ -56,7 +63,7 @@ import { labelLayoutObstacle, tradeEndpointLabelLayout, type TradeLabelObstacle 
 import { chartMarkersForVisibility } from '../lib/chartMarkerVisibility'
 import type { ApprenticeActionMarker } from './AlSwingApprenticePanel'
 
-export interface IndicatorSettings {
+export interface IndicatorSettings extends ThreePushSettings, AbcdSettings, BarCountSettings {
   ma: boolean
   ema: boolean
   boll: boolean
@@ -103,6 +110,7 @@ export interface ChartSurfaceProps {
   /** Candle times hidden after a replay point: kept as empty slots so the time axis (and the layout) does not move. */
   hiddenTailTimes?: readonly number[]
   indicators: IndicatorSettings
+  threePushMinuteSource?: ThreePushMinuteSource
   priceScaleAuto: boolean
   priceScaleLog: boolean
   priceScalePercent: boolean
@@ -144,6 +152,9 @@ interface SeriesState {
   bollLower?: any
   markers?: any
   smc?: ReturnType<typeof attachSmartMoneyOverlay>
+  threePush?: ReturnType<typeof attachThreePushOverlay>
+  abcd?: ReturnType<typeof attachAbcdOverlay>
+  barCount?: ReturnType<typeof attachBarCountOverlay>
 }
 
 interface TradeConnectionSegment extends ReplayTradeConnectionSpec {
@@ -501,7 +512,7 @@ function apprenticeActionSeriesMarkers(markers: readonly ApprenticeActionMarker[
 
 export const ChartSurface = forwardRef<ChartSurfaceHandle, ChartSurfaceProps>(function ChartSurface(
   {
-    data, symbol, interval, chartType, theme, blackBarTimes, futureTradingTimes, hiddenTailTimes, indicators, priceScaleAuto, priceScaleLog, priceScalePercent, priceScaleInverted,
+    data, symbol, interval, chartType, theme, blackBarTimes, futureTradingTimes, hiddenTailTimes, indicators, threePushMinuteSource, priceScaleAuto, priceScaleLog, priceScalePercent, priceScaleInverted,
     visibleTradeLayerSourceIds = [], visibleResearchSignalSourceIds = [], showAllResearchReviews = true, exerciseSignalMarkers = [], apprenticeActionMarkers = [], apprenticeOnly = false, apprenticeFocusRange = null, decisionSignalSourceIds = [], decisionSignalAfterTime = null,
     visibleRangeLayerSourceIds = [], suppressedRangeObjectIds = [], selectedRangeObjectId = null, onSelectRangeObject,
     followLatest = false, focusLatestKey = 0, focusHistoryBars = 110, suppressAutoFocus = false, centerLatestByDefault = false, markersHidden = false, showFilledGaps = false, onHover, onPriceScaleStateChange, onViewportChange,
@@ -517,6 +528,12 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, ChartSurfaceProps>(fu
     seriesRef.current?.smc?.setShowFilledGaps(showFilledGaps)
   }, [showFilledGaps])
   const dataRef = useRef(data)
+  const threePushMinuteSourceRef = useRef(threePushMinuteSource)
+  useEffect(() => {
+    threePushMinuteSourceRef.current = threePushMinuteSource
+    seriesRef.current?.threePush?.setData(data, threePushMinuteSource)
+    seriesRef.current?.abcd?.setData(data, threePushMinuteSource)
+  }, [data, threePushMinuteSource])
   const savedViewRef = useRef(loadChartView(symbol, interval))
   const hydrationViewRef = useRef(loadChartView(symbol, interval))
   const savedViewKeyRef = useRef(`${symbol}:${interval}`)
@@ -818,11 +835,13 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, ChartSurfaceProps>(fu
     restoringViewRef.current = true
     savedViewRef.current = null
     chart.timeScale().setVisibleLogicalRange(range)
-    if (snapshot.priceRange) chart.priceScale('right').setVisibleRange(snapshot.priceRange)
+    // Restoring a manual range disables auto-scale in lightweight-charts. Honor
+    // an explicit refit (including a replay timeframe change) over the cache.
+    if (snapshot.priceRange && !priceScaleAutoRef.current) chart.priceScale('right').setVisibleRange(snapshot.priceRange)
     window.requestAnimationFrame(() => {
       if (chartRef.current !== chart) { restoringViewRef.current = false; return }
       chart.timeScale().setVisibleLogicalRange(range)
-      if (snapshot.priceRange) chart.priceScale('right').setVisibleRange(snapshot.priceRange)
+      if (snapshot.priceRange && !priceScaleAutoRef.current) chart.priceScale('right').setVisibleRange(snapshot.priceRange)
       restoringViewRef.current = false
     })
     return true
@@ -1085,7 +1104,10 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, ChartSurfaceProps>(fu
       if (!chartRef.current || length === 0) return
       const range = centeredLatestLogicalRange(length)
       const extra = Math.max(0, focusHistoryBars - 110)
-      chartRef.current.timeScale().setVisibleLogicalRange({ from: range.from - extra, to: range.to + extra })
+      const focusedRange = { from: range.from - extra, to: range.to + extra }
+      // Keep a data-effect rerun from restoring an older range before this request is painted.
+      pendingRangeRef.current = { range: focusedRange, expires: performance.now() + 600 }
+      chartRef.current.timeScale().setVisibleLogicalRange(focusedRange)
     },
     scrollToRealtime: () => { savedViewRef.current = null; hydrationViewRef.current = null; chartRef.current?.timeScale().scrollToRealTime() },
     moveVisibleRange: (bars) => {
@@ -1260,6 +1282,22 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, ChartSurfaceProps>(fu
       series.smc.setShowFilledGaps(showFilledGapsRef.current)
       series.smc.setData(dataRef.current)
       series.smc.setFutureTimes(futureTradingTimesRef.current)
+    }
+    if (indicators.threePush !== false && chartType !== 'line' && chartType !== 'area') {
+      series.threePush = attachThreePushOverlay(chart, mainSeries, {
+        timeframes: visibleThreePushTimeframes(indicators),
+        mergeOverlaps: indicators.threePushMergeOverlaps !== false,
+      })
+      series.threePush.setData(dataRef.current, threePushMinuteSourceRef.current)
+    }
+    if (visibleAbcdTimeframes(indicators).length && chartType !== 'line' && chartType !== 'area') {
+      series.abcd = attachAbcdOverlay(chart, mainSeries, { levels: visibleAbcdTimeframes(indicators) })
+      series.abcd.setData(dataRef.current, threePushMinuteSourceRef.current)
+    }
+    const barCountSides = visibleBarCountSides(indicators)
+    if ((barCountSides.high || barCountSides.low) && chartType !== 'line' && chartType !== 'area') {
+      series.barCount = attachBarCountOverlay(chart, mainSeries, barCountSides)
+      series.barCount.setData(dataRef.current)
     }
     blackBarsAppliedRef.current = blackBarTimesRef.current
     updateSeries(series, dataRef.current, chartType, indicators, { times: new Set(blackBarTimesRef.current), border: dark ? '#9aa3b5' : '#000000' }, hiddenTailRef.current)
@@ -1769,6 +1807,9 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, ChartSurfaceProps>(fu
       signalRangeSegmentsRef.current = []
       setSignalRangeSegments([])
       series.smc?.destroy()
+      series.threePush?.destroy()
+      series.abcd?.destroy()
+      series.barCount?.destroy()
       apprenticePriceLinesRef.current.forEach((line) => seriesRef.current?.main.removePriceLine(line))
       apprenticePriceLinesRef.current = []
       chart.remove()
@@ -1826,6 +1867,9 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, ChartSurfaceProps>(fu
       if (hydrationViewRef.current) savedViewRef.current = hydrationViewRef.current
       updateSeries(series, data, chartType, indicators, { times: new Set(blackBarTimesRef.current), border: blackBorderRef.current }, hiddenTailRef.current)
       series.smc?.setData(data)
+      series.threePush?.setData(data, threePushMinuteSourceRef.current)
+      series.abcd?.setData(data, threePushMinuteSourceRef.current)
+      series.barCount?.setData(data)
     }
     const restoredViewport = restoringViewRef.current || restoreVisibleViewport()
     const revealedMarkers = visibleTradeMarkers(symbol, interval, data, visibleTradeLayerSourceIds, activeTradeRef.current, tradeReferenceMarkers, decisionSignalSourceIds, decisionSignalAfterTime, markersHidden, visibleResearchSignalSourceIds, showAllResearchReviews, apprenticeActionMarkers, apprenticeOnly)

@@ -10,6 +10,15 @@ import { WindowedChartSurface as ChartSurface } from './components/WindowedChart
 import { AlSwingApprenticePanel, type ApprenticeActionMarker } from './components/AlSwingApprenticePanel'
 import { AlertDialog, DataTableDialog, ObjectTreeDialog, OrderDialog } from './components/ChartActionDialogs'
 import { IndicatorLegend } from './components/IndicatorLegend'
+import { ThreePushControls } from './components/ThreePushControls'
+import { AbcdControls } from './components/AbcdControls'
+import { BarCountControls } from './components/BarCountControls'
+import { setAllBarCounts, visibleBarCountSides } from './lib/barCountSettings'
+import { setAllAbcdTimeframes, visibleAbcdTimeframes } from './lib/abcdSettings'
+import { setAllThreePushTimeframes, visibleThreePushTimeframes } from './lib/threePushSettings'
+import type { ThreePushMinuteSource } from './lib/threePushProjection'
+import { chartBarSeconds } from './lib/smartMoney'
+import { DEFAULT_INDICATORS } from './lib/indicators'
 import { getHoverCandle, setHoverCandle, useHoverCandle } from './lib/hoverStore'
 import { ManualBarPicker, ManualPracticeAnnotations, ManualPracticeCenter, ManualPracticePanel, ManualReasonTimesDisplay, ManualReplayControls, ManualTimelineDialog, OpenTradeDialog, ReasonEditor } from './components/ManualPractice'
 import { ManualInitialRiskEditor } from './components/ManualInitialRiskEditor'
@@ -145,10 +154,6 @@ type PrivateSyncStatus = 'checking' | 'ready' | 'syncing' | 'synced' | 'received
 type PrivateSyncOperation = 'sync' | 'receive' | 'history-sync' | 'history-receive' | null
 type CodeDeployPhase = 'checking' | 'ready' | 'publishing' | 'published' | 'updating' | 'unavailable' | 'status-error' | 'error'
 
-const DEFAULT_INDICATORS: IndicatorSettings = {
-  ma: false, ema: true, boll: false, volume: true, smc: true,
-  maPeriod: 20, emaPeriod: 20, bollPeriod: 20, bollDeviation: 2,
-}
 const DEFAULT_INTERVAL: IntervalId = '5m'
 
 // The white SMC look is the new default. Workspaces saved before it existed keep
@@ -251,6 +256,8 @@ function App() {
   const [shiftMeasureActive, setShiftMeasureActive] = useState(false)
   const [quickMeasurement, setQuickMeasurement] = useState<Drawing | null>(null)
   const shiftMeasureActiveRef = useRef(false)
+  /** One Shift press measures once: after the measurement is made, Shift stays "used" until it is released. */
+  const shiftMeasureConsumedRef = useRef(false)
   const [drawingProjectionTick, refreshDrawingProjection] = useReducer((value: number) => value + 1, 0)
   const [drawingsLocked, setDrawingsLocked] = usePageState('drawingsLocked', false)
   const [drawingsHidden, setDrawingsHidden] = usePageState('drawingsHidden', false)
@@ -543,7 +550,7 @@ function App() {
     { id: 'shortcut-help', label: '键盘快捷键', detail: '查看 TradingView 快捷键清单', shortcut: 'Ctrl+/' },
     ...ALL_DRAWING_TOOLS.map((tool) => ({ id: `tool-${tool.id}`, label: tool.label, detail: `${tool.section} · ${tool.description}`, shortcut: tool.shortcut, toolId: tool.id })),
   ], [])
-  const visibleIndicators = useMemo(() => indicatorsHidden ? { ...indicators, ma: false, ema: false, boll: false, volume: false, smc: false } : indicators, [indicators, indicatorsHidden])
+  const visibleIndicators = useMemo(() => indicatorsHidden ? { ...indicators, ma: false, ema: false, boll: false, volume: false, smc: false, threePush: false, abcd: false, barCount: false } : indicators, [indicators, indicatorsHidden])
   const minuteHistory = useMemo(() => remoteMarket?.symbol === symbol ? remoteMarket.bars : decisionHistoryBySymbol[symbol] ?? null, [decisionHistoryBySymbol, remoteMarket, symbol])
   const availableDecisionHistoryBySymbol = useMemo(() => {
     const histories = { ...decisionHistoryBySymbol }
@@ -774,6 +781,30 @@ function App() {
     ? decisionData
     : replaySelecting ? baseData : (normalizedReplayCursor === null ? liveData : replayCandles(baseData, normalizedReplayCursor, chartSeconds)),
   [baseData, chartSeconds, decisionData, decisionMode, decisionOverviewData, decisionOverviewMode, liveData, manualData, normalizedReplayCursor, replaySelecting, fullReviewSession, fullReviewData])
+  const threePushMinuteSource = useMemo<ThreePushMinuteSource | undefined>(() => {
+    if (interval !== '5m' || !data.length) return undefined
+    let candles = minuteHistory
+    let endTime = Infinity
+    if (decisionOverviewMode) {
+      candles = decisionOverviewCandidate ? shapeDecisionHistory(decisionOverviewCandidate) ?? availableDecisionHistoryBySymbol[decisionOverviewCandidate.symbol] ?? null : null
+      endTime = decisionOverviewSession?.daySequence?.endTime ?? -Infinity
+    } else if (manualData) {
+      candles = nqMinutes
+      endTime = manualCutoff ?? -Infinity
+    } else if (fullReviewSession && fullReviewCandidate) {
+      candles = availableDecisionHistoryBySymbol[fullReviewCandidate.symbol] ?? null
+      endTime = fullReviewBounds(fullReviewSession, fullReviewCandidate.symbol, fullReviewCandidate.interval).to
+    } else if (decisionMode) {
+      candles = decisionMinuteHistory
+      endTime = decisionCutoff === null ? -Infinity : decisionCutoff + 60
+    } else {
+      // Frozen 5m-only evidence cannot provide real 1m swings.
+      if (apprenticeMode || researchFrozenBars.length) return undefined
+      if (!replaySelecting && normalizedReplayCursor !== null) endTime = Math.floor(normalizedReplayCursor / 60) * 60
+    }
+    if (!candles?.length || chartBarSeconds(candles) !== 60) return undefined
+    return { candles, endTime: Math.min(endTime, data[data.length - 1].time + chartSeconds) }
+  }, [apprenticeMode, availableDecisionHistoryBySymbol, chartSeconds, data, decisionCutoff, decisionMinuteHistory, decisionMode, decisionOverviewCandidate, decisionOverviewMode, decisionOverviewSession, fullReviewCandidate, fullReviewSession, interval, manualCutoff, manualData, minuteHistory, normalizedReplayCursor, nqMinutes, replaySelecting, researchFrozenBars.length])
   const returningToLatestRef = useRef(false)
   useEffect(() => {
     if (!returningToLatestRef.current || replayCursor !== null) return
@@ -2536,6 +2567,17 @@ function App() {
   }
 
   const stepReplayBack = () => {
+    // Same as the start picker: the review chart has its own replay, so ⏪ steps that one back (first press starts it one candle before the end).
+    if (manualReviewSession && !manualLossMode) {
+      const seconds = INTERVALS[interval].seconds
+      if (manualReplayEnd === null) { pickManualReplayBar(barTimeFor(manualReviewSession.endTime - 1, interval) - seconds); return }
+      const previous = manualReplayEnd - seconds
+      if (previous <= manualReviewSession.startTime) { notify('已经回到第一根K线'); return }
+      setManualReplayEnd(previous)
+      keepManualLatestVisible(barTimeFor(previous - 1, interval))
+      return
+    }
+    if (manualMode) { notify(manualLossMode ? '亏损单复盘请使用“往后一根K线”逐根揭示' : '请先结束或退出当前练习，再使用回放'); return }
     const cursor = normalizedReplayCursor ?? baseData.at(-1)!.time
     setReplayCursor(Math.max(baseData[0].time, cursor - effectiveReplayResolution))
     setReplayStartMode('bar')
@@ -2719,6 +2761,8 @@ function App() {
       }
 
       if (event.key === 'Shift' && activeTool === 'cursor') {
+        // Holding Shift repeats keydown, and a measurement already made with this press must not start another.
+        if (event.repeat || shiftMeasureConsumedRef.current) return
         shiftMeasureActiveRef.current = true
         setShiftMeasureActive(true)
         return
@@ -2872,14 +2916,31 @@ function App() {
       setShiftMeasureActive(false)
       setQuickMeasurement(null)
     }
-    const releaseMeasure = (event: KeyboardEvent) => { if (event.key === 'Shift') cancelMeasure() }
-    const cancelHiddenMeasure = () => { if (document.hidden) cancelMeasure() }
+    const releaseMeasure = (event: KeyboardEvent) => {
+      if (event.key !== 'Shift') return
+      shiftMeasureConsumedRef.current = false
+      cancelMeasure()
+    }
+    const cancelHiddenMeasure = () => { if (document.hidden) { shiftMeasureConsumedRef.current = false; cancelMeasure() } }
+    const blurMeasure = () => { shiftMeasureConsumedRef.current = false; cancelMeasure() }
+    // A lost Shift keyup (focus change, IME) must not leave measuring switched on: any pointer event without Shift ends it.
+    const guardMeasure = (event: PointerEvent) => {
+      if (!event.shiftKey) { shiftMeasureConsumedRef.current = false; cancelMeasure() }
+    }
+    // A finished measurement stays on screen until the next click.
+    const dismissMeasurement = () => {
+      if (!shiftMeasureActiveRef.current) setQuickMeasurement((current) => current ? null : current)
+    }
     window.addEventListener('keyup', releaseMeasure)
-    window.addEventListener('blur', cancelMeasure)
+    window.addEventListener('blur', blurMeasure)
+    window.addEventListener('pointermove', guardMeasure, true)
+    window.addEventListener('pointerdown', dismissMeasurement, true)
     document.addEventListener('visibilitychange', cancelHiddenMeasure)
     return () => {
       window.removeEventListener('keyup', releaseMeasure)
-      window.removeEventListener('blur', cancelMeasure)
+      window.removeEventListener('blur', blurMeasure)
+      window.removeEventListener('pointermove', guardMeasure, true)
+      window.removeEventListener('pointerdown', dismissMeasurement, true)
       document.removeEventListener('visibilitychange', cancelHiddenMeasure)
     }
   }, [])
@@ -3346,6 +3407,25 @@ function App() {
     setManualInitialRiskDraft(null)
     setManualHighlightPrice(null)
   }
+  // Switching the candle size during a review replay: the frozen price range belongs to the old candles and can leave
+  // the new ones off screen. Refit it to what is shown now, then freeze it again.
+  const manualReplayEndRef = useRef(manualReplayEnd)
+  useLayoutEffect(() => { manualReplayEndRef.current = manualReplayEnd }, [manualReplayEnd])
+  const manualReplayIntervalRef = useRef(interval)
+  const manualReplayActive = manualReplayEnd !== null
+  useEffect(() => {
+    if (manualReplayIntervalRef.current === interval) return
+    manualReplayIntervalRef.current = interval
+    if (manualReplayEndRef.current === null) return
+    // 切周期后画面可能停在回放点之后的空白位置，先拉回最新一根已显示的K线。
+    let frame = window.requestAnimationFrame(() => {
+      frame = window.requestAnimationFrame(() => chartRef.current?.focusLatest())
+    })
+    setPriceScaleAuto(true)
+    const timer = window.setTimeout(() => { if (manualReplayEndRef.current !== null) setPriceScaleAuto(false) }, 400)
+    // Switching again or leaving replay must cancel the previous refit/freeze.
+    return () => { window.cancelAnimationFrame(frame); window.clearTimeout(timer) }
+  }, [interval, manualReplayActive, setPriceScaleAuto])
   const advanceManualReplay = () => {
     if (!manualReviewSession || manualReplayEnd === null) return
     if (manualReplayEnd >= manualReviewSession.endTime) { notify('已经是最后一根K线，按 2 退出回放'); return }
@@ -3627,7 +3707,7 @@ function App() {
           syncDrawings={syncDrawings} setSyncDrawings={setSyncDrawings}
           positionsHidden={chartAnnotationsHidden} setPositionsHidden={setChartAnnotationsHidden}
           indicatorCount={activeIndicatorCount}
-          removeIndicators={() => setIndicators((current) => ({ ...current, ma: false, ema: false, boll: false, volume: false, smc: false }))}
+          removeIndicators={() => setIndicators((current) => ({ ...current, ma: false, ema: false, boll: false, volume: false, smc: false, threePush: false, abcd: false, barCount: false }))}
           notify={notify}
         />
 
@@ -3675,6 +3755,7 @@ function App() {
           >
             <ChartSurface
               ref={chartRef} data={data} symbol={symbol} interval={interval} chartType={chartType} theme={theme}
+              threePushMinuteSource={threePushMinuteSource}
               futureTradingTimes={manualMode ? manualFutureTimes : undefined}
               hiddenTailTimes={manualReplaying ? manualReplayTail : undefined}
               indicators={visibleIndicators} priceScaleAuto={apprenticeMode || priceScaleAuto} priceScaleLog={priceScaleLog}
@@ -3808,7 +3889,15 @@ function App() {
                 const y = chartRef.current?.priceToCoordinate(point.price)
                 return typeof x === 'number' && typeof y === 'number' ? { x, y } : null
               }}
-              onQuickMeasurementChange={setQuickMeasurement}
+              onQuickMeasurementChange={(drawing) => {
+                setQuickMeasurement(drawing)
+                // The measurement is made: leave Shift-measuring (the result stays) until Shift is pressed again.
+                if (drawing && shiftMeasureActiveRef.current) {
+                  shiftMeasureConsumedRef.current = true
+                  shiftMeasureActiveRef.current = false
+                  setShiftMeasureActive(false)
+                }
+              }}
               onToolComplete={() => { if (decisionOverviewMode) return; if (shouldExitDrawingMode(effectiveDrawingTool, keepDrawing)) setActiveTool('cursor') }}
               onZoomSelection={(from, to) => chartRef.current?.zoomToFraction(from, to)}
               onOpenProperties={(drawing) => { dispatchUiDrawing({ type: 'checkpoint' }); setDrawingSettingsTab('style'); setDrawingSettingsId(drawing.id) }}
@@ -4140,6 +4229,39 @@ function App() {
                 <span>{new Date(replayPointer.time * 1000).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}</span>
               </div>}
             </div>}
+            <div className="indicator-control-stack">
+            <ThreePushControls
+              value={indicators}
+              hidden={indicatorsHidden}
+              interval={interval}
+              chartType={chartType}
+              minuteSourceAvailable={threePushMinuteSource !== undefined}
+              onChange={(value) => {
+                setIndicatorsHidden(false)
+                setIndicators((current) => ({ ...current, ...value }))
+              }}
+            />
+            <AbcdControls
+              value={indicators}
+              hidden={indicatorsHidden}
+              interval={interval}
+              chartType={chartType}
+              minuteSourceAvailable={threePushMinuteSource !== undefined}
+              onChange={(value) => {
+                setIndicatorsHidden(false)
+                setIndicators((current) => ({ ...current, ...value }))
+              }}
+            />
+            <BarCountControls
+              value={indicators}
+              hidden={indicatorsHidden}
+              chartType={chartType}
+              onChange={(value) => {
+                setIndicatorsHidden(false)
+                setIndicators((current) => ({ ...current, ...value }))
+              }}
+            />
+            </div>
             <IndicatorLegend
               data={data}
               candle={data.at(-1) ?? null}
@@ -4151,7 +4273,7 @@ function App() {
               onExpandedChange={setIndicatorLegendExpanded}
               onToggle={(key) => {
                 setIndicatorsHidden(false)
-                setIndicators((current) => ({ ...current, [key]: !current[key] }))
+                setIndicators((current) => ({ ...current, [key]: current[key] === false }))
               }}
               onOpenSettings={() => setIndicatorPanelOpen(true)}
               onRefresh={() => notify('指标已重新计算')}
@@ -4283,7 +4405,7 @@ function App() {
         onApplyTemplate={loadSavedLayout}
         onResetTemplate={() => { setIndicators(DEFAULT_INDICATORS); notify('已恢复默认指标模板') }}
         onRemoveDrawings={() => { dispatchUiDrawing({ type: 'clear' }); notify('已移除全部绘图') }}
-        onRemoveIndicators={() => { setIndicators((current) => ({ ...current, ma: false, ema: false, boll: false, volume: false })); notify('已移除全部指标') }}
+        onRemoveIndicators={() => { setIndicators((current) => ({ ...current, ma: false, ema: false, boll: false, volume: false, smc: false, threePush: false, abcd: false, barCount: false })); notify('已移除全部指标') }}
         onSettings={() => setSettingsOpen(true)}
       />}
 
@@ -4619,14 +4741,17 @@ function Watchlist({ active, onSelect, onClose }: { active: SymbolId; onSelect: 
 }
 
 function IndicatorPanel({ value, onChange, onClose }: { value: IndicatorSettings; onChange: (value: IndicatorSettings) => void; onClose: () => void }) {
-  const rows: { key: 'ma' | 'ema' | 'boll' | 'volume' | 'smc'; name: string; detail: string; color: string }[] = [
+  const rows: { key: 'ma' | 'ema' | 'boll' | 'volume' | 'smc' | 'threePush' | 'abcd' | 'barCount'; name: string; detail: string; color: string }[] = [
     { key: 'ma', name: '移动平均线', detail: `MA ${value.maPeriod}`, color: '#f59e0b' },
     { key: 'ema', name: '指数移动平均', detail: `EMA ${value.emaPeriod}`, color: '#296cff' },
     { key: 'boll', name: '布林带', detail: `BOLL ${value.bollPeriod}, ${value.bollDeviation}`, color: '#9b7bff' },
     { key: 'volume', name: '成交量', detail: 'Volume + MA20', color: '#21a179' },
     { key: 'smc', name: 'LuxAlgo - Smart Money Concepts', detail: 'BOS / CHoCH、订单块、EQH/EQL、强弱高低点、溢价/折价区', color: '#089981' },
+    { key: 'threePush', name: '三推', detail: '1分/5分/15分，右上角可独立显示或隐藏各级别', color: '#296cff' },
+    { key: 'abcd', name: 'AB=CD', detail: '1分–1小时，右上角可分级别开关；红色，最新K线先画出 D', color: '#e03131' },
+    { key: 'barCount', name: '高1/2/3 低1/2/3', detail: '阿布数K线：回调里高点高于前一根 = 高n，反弹里低点低于前一根 = 低n；右上角可分开关', color: '#2b8a3e' },
   ]
-  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section className="modal indicator-modal" role="dialog" aria-modal="true" aria-label="指标设置"><div className="modal-header"><div><b>技术指标</b><small>叠加到主图的本地计算指标</small></div><button onClick={onClose} aria-label="关闭"><X size={18} /></button></div><div className="indicator-list">{rows.map((row) => <div className="indicator-row" key={row.key}><span className="indicator-color" style={{ background: row.color }} /><div><b>{row.name}</b><small>{row.detail}</small></div><label className="switch" aria-label={`${row.name}开关`} title={`${row.name}开关`}><input type="checkbox" checked={row.key === 'smc' ? value.smc !== false : value[row.key]} onChange={(event) => onChange({ ...value, [row.key]: event.target.checked })} /><span /></label></div>)}</div><div className="parameter-grid"><label>MA 周期<input type="number" min="2" max="200" value={value.maPeriod} onChange={(event) => onChange({ ...value, maPeriod: Number(event.target.value) })} /></label><label>EMA 周期<input type="number" min="2" max="200" value={value.emaPeriod} onChange={(event) => onChange({ ...value, emaPeriod: Number(event.target.value) })} /></label><label>BOLL 周期<input type="number" min="2" max="200" value={value.bollPeriod} onChange={(event) => onChange({ ...value, bollPeriod: Number(event.target.value) })} /></label><label>标准差<input type="number" step="0.1" min="0.1" max="5" value={value.bollDeviation} onChange={(event) => onChange({ ...value, bollDeviation: Number(event.target.value) })} /></label></div><div className="modal-footer"><button onClick={() => onChange(DEFAULT_INDICATORS)}>恢复指标默认</button><button className="primary" onClick={onClose}>完成</button></div></section></div>
+  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section className="modal indicator-modal" role="dialog" aria-modal="true" aria-label="指标设置"><div className="modal-header"><div><b>技术指标</b><small>叠加到主图的本地计算指标</small></div><button onClick={onClose} aria-label="关闭"><X size={18} /></button></div><div className="indicator-list">{rows.map((row) => <div className="indicator-row" key={row.key}><span className="indicator-color" style={{ background: row.color }} /><div><b>{row.name}</b><small>{row.detail}</small></div><label className="switch" aria-label={`${row.name}开关`} title={`${row.name}开关`}><input type="checkbox" checked={row.key === 'threePush' ? visibleThreePushTimeframes(value).length > 0 : row.key === 'abcd' ? visibleAbcdTimeframes(value).length > 0 : row.key === 'barCount' ? (visibleBarCountSides(value).high || visibleBarCountSides(value).low) : value[row.key] !== false} onChange={(event) => onChange(row.key === 'threePush' ? setAllThreePushTimeframes(value, event.target.checked) : row.key === 'abcd' ? setAllAbcdTimeframes(value, event.target.checked) : row.key === 'barCount' ? setAllBarCounts(value, event.target.checked) : { ...value, [row.key]: event.target.checked })} /><span /></label></div>)}</div><div className="parameter-grid"><label>MA 周期<input type="number" min="2" max="200" value={value.maPeriod} onChange={(event) => onChange({ ...value, maPeriod: Number(event.target.value) })} /></label><label>EMA 周期<input type="number" min="2" max="200" value={value.emaPeriod} onChange={(event) => onChange({ ...value, emaPeriod: Number(event.target.value) })} /></label><label>BOLL 周期<input type="number" min="2" max="200" value={value.bollPeriod} onChange={(event) => onChange({ ...value, bollPeriod: Number(event.target.value) })} /></label><label>标准差<input type="number" step="0.1" min="0.1" max="5" value={value.bollDeviation} onChange={(event) => onChange({ ...value, bollDeviation: Number(event.target.value) })} /></label></div><div className="modal-footer"><button onClick={() => onChange(DEFAULT_INDICATORS)}>恢复指标默认</button><button className="primary" onClick={onClose}>完成</button></div></section></div>
 }
 
 function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProgress, onPrivateReceive, onPrivateSync, onHistoryReceive, onHistorySync, privateSyncBusy, privateSyncOperation, privateSyncStatus, privateSyncError, codeDeployPhase, codeDeployStatus, codeDeployError, codeDeployActivity, onCodeDeployRefresh, onCodePublish, onCodeUpdate, onImportWorkspace, onRestoreLastImport, canRestoreWorkspace, onClose }: {
