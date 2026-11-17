@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react'
 import { INTERVALS, type IntervalId } from '../lib/market'
 import { ABCD_TIMEFRAMES } from '../lib/abcdChart'
 import { ABCD_COLOR } from '../lib/abcdOverlay'
-import { setAllAbcdTimeframes, toggleAbcdTimeframe, visibleAbcdTimeframes, type AbcdSettings } from '../lib/abcdSettings'
+import { ABCD_KINDS, setAllAbcdTimeframes, toggleAbcdKind, toggleAbcdTimeframe, visibleAbcdKinds, visibleAbcdTimeframes, type AbcdSettings } from '../lib/abcdSettings'
 
 interface Props {
   value: AbcdSettings
@@ -30,6 +30,11 @@ export function AbcdControls({ value, hidden, interval, chartType, minuteSourceA
         const selected = visible.includes(timeframe)
         const label = timeframe.replace('m', 'min')
         return <button type="button" key={timeframe} className={`three-push-level${selected && supported ? ' is-active' : ''}`} style={style} disabled={!supported} aria-label={`${selected ? '隐藏' : '显示'}${label} AB=CD`} aria-pressed={selected && supported} title={supported ? `${selected ? '隐藏' : '显示'} ${label} AB=CD` : `切换到${label}或更小的K线周期查看`} onClick={() => onChange(toggleAbcdTimeframe(effective, timeframe))}>{label}</button>
+      })}
+      <span className="three-push-control-divider" />
+      {ABCD_KINDS.map(({ kind, label, title }) => {
+        const selected = visibleAbcdKinds(value).includes(kind)
+        return <button type="button" key={kind} className={`three-push-level${selected && enabled ? ' is-active' : ''}`} style={style} disabled={!candles} aria-label={`${selected ? '隐藏' : '显示'}${label} AB=CD`} aria-pressed={selected && enabled} title={title} onClick={() => onChange(toggleAbcdKind(value, kind))}>{label}</button>
       })}
     </div>
   </div>

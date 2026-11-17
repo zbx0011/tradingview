@@ -20,10 +20,13 @@ import { bollinger, ema, sma, volumeSma } from '../lib/indicators'
 import { attachSmartMoneyOverlay } from '../lib/smartMoneyOverlay'
 import { attachThreePushOverlay } from '../lib/threePushOverlay'
 import { attachAbcdOverlay } from '../lib/abcdOverlay'
+import { attachMmOverlay } from '../lib/mmOverlay'
+import { attachAutoTrendlinesOverlay, type AutoTrendlinesMode } from '../lib/autoTrendlinesOverlay'
 import { attachBarCountOverlay } from '../lib/barCountOverlay'
 import { visibleBarCountSides, type BarCountSettings } from '../lib/barCountSettings'
 import { visibleThreePushTimeframes, type ThreePushSettings } from '../lib/threePushSettings'
-import { visibleAbcdTimeframes, type AbcdSettings } from '../lib/abcdSettings'
+import { visibleAbcdKinds, visibleAbcdTimeframes, type AbcdSettings } from '../lib/abcdSettings'
+import { visibleMmKinds, visibleMmTimeframes, type MmSettings } from '../lib/mmSettings'
 import type { ThreePushMinuteSource } from '../lib/threePushProjection'
 import { futureTimeOffset } from '../lib/futureTradingTimeline'
 import { captureChartView, loadChartView, restoredChartRange, saveChartView } from '../lib/chartViewPersistence'
@@ -63,12 +66,15 @@ import { labelLayoutObstacle, tradeEndpointLabelLayout, type TradeLabelObstacle 
 import { chartMarkersForVisibility } from '../lib/chartMarkerVisibility'
 import type { ApprenticeActionMarker } from './AlSwingApprenticePanel'
 
-export interface IndicatorSettings extends ThreePushSettings, AbcdSettings, BarCountSettings {
+export interface IndicatorSettings extends ThreePushSettings, AbcdSettings, MmSettings, BarCountSettings {
   ma: boolean
   ema: boolean
   boll: boolean
   /** Smart Money Concepts (LuxAlgo port) overlay. */
   smc?: boolean
+  /** Auto trendlines: the Auto Trendlines and Auto Trend Detector studies merged into one set of blue lines. */
+  autoTrendlines?: boolean
+  autoTrendlinesMode?: AutoTrendlinesMode
   volume: boolean
   maPeriod: number
   emaPeriod: number
@@ -154,6 +160,8 @@ interface SeriesState {
   smc?: ReturnType<typeof attachSmartMoneyOverlay>
   threePush?: ReturnType<typeof attachThreePushOverlay>
   abcd?: ReturnType<typeof attachAbcdOverlay>
+  mm?: ReturnType<typeof attachMmOverlay>
+  autoTrend?: ReturnType<typeof attachAutoTrendlinesOverlay>
   barCount?: ReturnType<typeof attachBarCountOverlay>
 }
 
@@ -533,6 +541,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, ChartSurfaceProps>(fu
     threePushMinuteSourceRef.current = threePushMinuteSource
     seriesRef.current?.threePush?.setData(data, threePushMinuteSource)
     seriesRef.current?.abcd?.setData(data, threePushMinuteSource)
+    seriesRef.current?.mm?.setData(data, threePushMinuteSource)
   }, [data, threePushMinuteSource])
   const savedViewRef = useRef(loadChartView(symbol, interval))
   const hydrationViewRef = useRef(loadChartView(symbol, interval))
@@ -1291,8 +1300,16 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, ChartSurfaceProps>(fu
       series.threePush.setData(dataRef.current, threePushMinuteSourceRef.current)
     }
     if (visibleAbcdTimeframes(indicators).length && chartType !== 'line' && chartType !== 'area') {
-      series.abcd = attachAbcdOverlay(chart, mainSeries, { levels: visibleAbcdTimeframes(indicators) })
+      series.abcd = attachAbcdOverlay(chart, mainSeries, { levels: visibleAbcdTimeframes(indicators), kinds: visibleAbcdKinds(indicators) })
       series.abcd.setData(dataRef.current, threePushMinuteSourceRef.current)
+    }
+    if (visibleMmTimeframes(indicators).length && chartType !== 'line' && chartType !== 'area') {
+      series.mm = attachMmOverlay(chart, mainSeries, { levels: visibleMmTimeframes(indicators), kinds: visibleMmKinds(indicators) })
+      series.mm.setData(dataRef.current, threePushMinuteSourceRef.current)
+    }
+    if (indicators.autoTrendlines === true && chartType !== 'line' && chartType !== 'area') {
+      series.autoTrend = attachAutoTrendlinesOverlay(chart, mainSeries, indicators.autoTrendlinesMode === 'recent' ? 'recent' : 'near')
+      series.autoTrend.setData(dataRef.current)
     }
     const barCountSides = visibleBarCountSides(indicators)
     if ((barCountSides.high || barCountSides.low) && chartType !== 'line' && chartType !== 'area') {
@@ -1809,6 +1826,8 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, ChartSurfaceProps>(fu
       series.smc?.destroy()
       series.threePush?.destroy()
       series.abcd?.destroy()
+      series.mm?.destroy()
+      series.autoTrend?.destroy()
       series.barCount?.destroy()
       apprenticePriceLinesRef.current.forEach((line) => seriesRef.current?.main.removePriceLine(line))
       apprenticePriceLinesRef.current = []
@@ -1869,6 +1888,8 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, ChartSurfaceProps>(fu
       series.smc?.setData(data)
       series.threePush?.setData(data, threePushMinuteSourceRef.current)
       series.abcd?.setData(data, threePushMinuteSourceRef.current)
+      series.mm?.setData(data, threePushMinuteSourceRef.current)
+      series.autoTrend?.setData(data)
       series.barCount?.setData(data)
     }
     const restoredViewport = restoringViewRef.current || restoreVisibleViewport()

@@ -201,6 +201,11 @@ button:disabled { opacity: .32; cursor: not-allowed; }
 .ohlc-line { gap: 10px; color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .ohlc-line b { color: var(--text); font-weight: 500; }
 .chart-area { min-height: 0; flex: 1; position: relative; overflow: hidden; background: var(--bg); }
+/* Covers the placeholder candles while the real history loads, so simulated prices are never mistaken for market data. */
+.market-loading-cover { position: absolute; inset: 0; z-index: 30; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; background: var(--bg); color: var(--text); font-size: 13px; text-align: center; padding: 0 16px; }
+.market-loading-cover small { color: var(--text-muted); font-size: 11px; }
+.market-loading-spinner { width: 22px; height: 22px; border: 2px solid var(--border-strong, #434d61); border-top-color: #2962ff; border-radius: 50%; animation: market-loading-spin .8s linear infinite; }
+@keyframes market-loading-spin { to { transform: rotate(360deg); } }
 .price-scale-controls { position: absolute; right: 5px; bottom: 5px; z-index: 20; display: flex; align-items: center; gap: 4px; }
 .price-scale-controls button { position: relative; width: 31px; height: 32px; display: grid; place-items: center; border: 1px solid #434752; border-radius: 6px; color: #d1d4dc; background: #131722; font-family: -apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, sans-serif; font-size: 16px; font-weight: 500; line-height: 1; }
 .price-scale-controls button:hover { color: #f0f3fa; border-color: #5d606b; background: #242832; }

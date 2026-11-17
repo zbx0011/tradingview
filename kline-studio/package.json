@@ -17,6 +17,8 @@
     "import:ranges": "node scripts/import-replay-ranges.mjs"
   },
   "dependencies": {
+    "@capacitor/android": "^7.6.10",
+    "@capacitor/core": "^7.6.10",
     "@vitejs/plugin-react": "latest",
     "lightweight-charts": "5.2.0",
     "lucide-react": "latest",
@@ -25,6 +27,7 @@
     "vite": "latest"
   },
   "devDependencies": {
+    "@capacitor/cli": "^7.6.10",
     "@eslint/js": "latest",
     "@testing-library/react": "latest",
     "@types/node": "latest",

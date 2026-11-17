@@ -34,49 +34,66 @@ describe('real market history', () => {
     }
   })
 
+  // NQ1! ships a compact binary copy that is requested before any JSON file. These tests
+  // exercise the JSON fallbacks, so the compact request is answered with a missing-file page.
+  const nqSeries = snapshotManifest.series['NQ1!'] as { file: string; preferredFile?: string; compactFile?: string; compactVersion?: string; lastTime: number }
+  const compactUrl = nqSeries.compactFile ? `/${nqSeries.compactFile}?v=${nqSeries.compactVersion ?? nqSeries.lastTime}` : null
+  const compactRequests = compactUrl ? 1 : 0
+  const htmlPage = () => new Response('<!doctype html><html>Vite fallback</html>', { headers: { 'Content-Type': 'text/html' } })
+  /** A fetch mock: the compact file is missing, every other file answers from `next()`. */
+  const mockFetch = (next: (url: string) => Response | Promise<Response>) => vi.fn(async (url: string) => (url.includes('.klb') ? htmlPage() : next(url)))
+  const jsonUrls = (calls: unknown[][]) => calls.map(([url]) => url as string).filter((url) => !url.includes('.klb'))
+
   it('falls back from an optional missing HTML page to the shipped snapshot with actual metadata', async () => {
     vi.resetModules()
     const originalCount = snapshotManifest.series['NQ1!'].count
     const { loadSnapshotCandles, getSnapshotStatus: status } = await import('./liveMarket')
-    const fetcher = vi.fn()
-      .mockResolvedValueOnce(new Response('<!doctype html><html>Vite fallback</html>', { headers: { 'Content-Type': 'text/html' } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ rows: [[60, 1, 3, 1, 2, 4], [120, 2, 4, 2, 3, 5]] })))
+    const answers = [
+      htmlPage(),
+      new Response(JSON.stringify({ rows: [[60, 1, 3, 1, 2, 4], [120, 2, 4, 2, 3, 5]] })),
+    ]
+    const fetcher = mockFetch(() => answers.shift()!)
     vi.stubGlobal('fetch', fetcher)
     const bars = await loadSnapshotCandles('NQ1!')
     expect(bars?.map((bar) => bar.time)).toEqual([60, 120])
-    expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+    expect(jsonUrls(fetcher.mock.calls)).toEqual([
       `/${snapshotManifest.series['NQ1!'].preferredFile}?v=${snapshotManifest.series['NQ1!'].lastTime}`,
       `/${snapshotManifest.series['NQ1!'].file}?v=${snapshotManifest.series['NQ1!'].lastTime}`,
     ])
+    expect(fetcher.mock.calls[0][0]).toBe(compactUrl ?? fetcher.mock.calls[0][0])
     expect(status('NQ1!')).toMatchObject({ fetchedAt: 120, detail: expect.stringContaining('2 根 1 分钟') })
     expect(await loadSnapshotCandles('NQ1!')).toBe(bars)
-    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(fetcher).toHaveBeenCalledTimes(2 + compactRequests)
     expect(snapshotManifest.series['NQ1!'].count).toBe(originalCount)
   })
 
   it('uses a valid optional extended snapshot without requesting the shipped fallback', async () => {
     vi.resetModules()
     const { loadSnapshotCandles, getSnapshotStatus: status } = await import('./liveMarket')
-    const fetcher = vi.fn(async () => new Response(JSON.stringify({ rows: [[30, 1, 3, 1, 2, 4], [90, 2, 4, 2, 3, 5], [150, 3, 5, 3, 4, 6]] })))
+    const fetcher = mockFetch(() => new Response(JSON.stringify({ rows: [[30, 1, 3, 1, 2, 4], [90, 2, 4, 2, 3, 5], [150, 3, 5, 3, 4, 6]] })))
     vi.stubGlobal('fetch', fetcher)
     expect(await loadSnapshotCandles('NQ1!')).toHaveLength(3)
     expect(status('NQ1!')).toMatchObject({ fetchedAt: 150, detail: expect.stringContaining('3 根 1 分钟') })
-    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(jsonUrls(fetcher.mock.calls)).toHaveLength(1)
+    expect(fetcher).toHaveBeenCalledTimes(1 + compactRequests)
   })
 
   it('does not cache failed or empty sources and can retry after both candidates fail', async () => {
     vi.resetModules()
     const { loadSnapshotCandles, getSnapshotCandles } = await import('./liveMarket')
-    const fetcher = vi.fn()
-      .mockResolvedValueOnce(new Response('<!doctype html>'))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ rows: [] })))
-      .mockResolvedValueOnce(new Response('{invalid-json'))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ rows: [[60, 1, 3, 1, 2, 4]] })))
+    const answers = [
+      new Response('<!doctype html>'),
+      new Response(JSON.stringify({ rows: [] })),
+      new Response('{invalid-json'),
+      new Response(JSON.stringify({ rows: [[60, 1, 3, 1, 2, 4]] })),
+    ]
+    const fetcher = mockFetch(() => answers.shift()!)
     vi.stubGlobal('fetch', fetcher)
     await expect(loadSnapshotCandles('NQ1!')).rejects.toThrow('历史数据文件没有K线')
     expect(getSnapshotCandles('NQ1!')).toBeNull()
     await expect(loadSnapshotCandles('NQ1!')).resolves.toHaveLength(1)
-    expect(fetcher).toHaveBeenCalledTimes(4)
+    expect(jsonUrls(fetcher.mock.calls)).toHaveLength(4)
+    expect(fetcher).toHaveBeenCalledTimes(4 + 2 * compactRequests)
   })
 
   it('shares the fallback request without letting one cancelled subscriber abort the others', async () => {
@@ -84,17 +101,19 @@ describe('real market history', () => {
     const { loadSnapshotCandles } = await import('./liveMarket')
     let resolveResponse!: (response: Response) => void
     const response = new Promise<Response>((resolve) => { resolveResponse = resolve })
-    const fetcher = vi.fn(() => response)
+    const fetcher = mockFetch(() => response)
     vi.stubGlobal('fetch', fetcher)
     const controller = new AbortController()
     const first = expect(loadSnapshotCandles('NQ1!', '1m', controller.signal)).rejects.toMatchObject({ name: 'AbortError' })
     const second = loadSnapshotCandles('NQ1!')
     controller.abort()
+    // Let the compact request fail first, so the JSON fallback is the pending request.
+    await vi.waitFor(() => expect(jsonUrls(fetcher.mock.calls)).toHaveLength(1))
     resolveResponse(new Response(JSON.stringify({ rows: [[60, 1, 3, 1, 2, 4]] })))
     await first
     await expect(second).resolves.toHaveLength(1)
-    expect(fetcher).toHaveBeenCalledTimes(1)
-    expect(fetcher.mock.calls[0]).toEqual([expect.any(String), { cache: 'force-cache' }])
+    expect(fetcher).toHaveBeenCalledTimes(1 + compactRequests)
+    expect(fetcher.mock.calls.at(-1)).toEqual([expect.any(String), { cache: 'force-cache' }])
   })
 
   it('parses and sorts the Bybit reverse chronological response', () => {

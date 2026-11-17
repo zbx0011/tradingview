@@ -1,6 +1,6 @@
 import type { Candle } from './market'
 import { chartBarSeconds } from './smartMoney'
-import { DEFAULT_ABCD_OPTIONS, detectAbcd, isAbcdAtTarget, isAbcdLive, type AbcdOptions, type AbcdPattern, type AbcdPoint } from './abcd'
+import { DEFAULT_ABCD_OPTIONS, detectAbcd, detectSpikeChannelAbcd, isAbcdAtTarget, isAbcdLive, type AbcdOptions, type AbcdPattern, type AbcdPoint } from './abcd'
 
 export const ABCD_TIMEFRAMES = [
   { label: '1m', seconds: 60 },
@@ -64,7 +64,7 @@ export interface AbcdChartInput {
  * patterns whose CD leg is at D (`isAbcdAtTarget`), and every pattern still in play at the last candle
  * (`isAbcdLive`), so its D can be prepared for before price gets there.
  */
-export function computeChartAbcd(input: AbcdChartInput, overrides: Partial<AbcdOptions> = {}, levels: readonly AbcdTimeframe[] = ABCD_TIMEFRAMES.map((t) => t.label)): ChartAbcd[] {
+export function computeChartAbcd(input: AbcdChartInput, overrides: Partial<AbcdOptions> = {}, levels: readonly AbcdTimeframe[] = ABCD_TIMEFRAMES.map((t) => t.label), kinds: readonly ('leg' | 'spike')[] = ['leg', 'spike']): ChartAbcd[] {
   const { candles } = input
   const seconds = chartBarSeconds(candles)
   if (!candles.length || !seconds) return []
@@ -88,7 +88,12 @@ export function computeChartAbcd(input: AbcdChartInput, overrides: Partial<AbcdO
     if (!source) continue
     let buckets = aggregate(source, timeframe.seconds)
     if (buckets.length > options.maxHistoryBars) buckets = buckets.slice(-options.maxHistoryBars)
-    const found = detectAbcd(buckets.map((b) => b.candle), options)
+    const bars = buckets.map((b) => b.candle)
+    const legs = kinds.includes('leg') ? detectAbcd(bars, options) : []
+    // A spike and channel that the ordinary detector already measured (same C, same D) is drawn once, as the ordinary one.
+    const spikes = (kinds.includes('spike') ? detectSpikeChannelAbcd(bars, { atrPeriod: options.atrPeriod, shortAtr: options.shortAtr, overAtr: options.overAtr }) : [])
+      .filter((s) => !legs.some((l) => l.direction === s.direction && l.c.index === s.c.index && Math.abs(l.d - s.d) <= 0.25 * s.atr))
+    const found = [...legs, ...spikes]
     for (const pattern of found) {
       // Every projection still in play is drawn: a larger AB=CD stays valid while a smaller one forms inside its CD leg.
       const live = isAbcdLive(pattern)

@@ -57,6 +57,8 @@ export interface ChartThreePush extends ThreePushPattern {
 export interface ThreePushChartOptions extends Partial<ThreePushOptions> {
   timeframes?: readonly ThreePushTimeframe[]
   mergeOverlaps?: boolean
+  /** Touch screens: a tap on a pattern selects it (and a tap elsewhere clears it) instead of mouse hover. */
+  tapToSelect?: boolean
 }
 
 function atrValues(candles: readonly Candle[], period: number): Float64Array {

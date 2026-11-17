@@ -55,7 +55,9 @@
       "count": 1049284,
       "firstTime": 1698969600,
       "lastTime": 1793650380,
-      "preferredFile": "data/market-snapshots/nq-c0-1m-2020-2026.json"
+      "preferredFile": "data/market-snapshots/nq-c0-1m-2020-2026.json",
+      "compactFile": "data/market-snapshots/nq-c0-1m-2020-2026.klb",
+      "compactVersion": "1793650380-2103683"
     }
   }
 }
