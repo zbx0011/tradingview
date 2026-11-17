@@ -12,9 +12,12 @@ import { AlertDialog, DataTableDialog, ObjectTreeDialog, OrderDialog } from './c
 import { IndicatorLegend } from './components/IndicatorLegend'
 import { ThreePushControls } from './components/ThreePushControls'
 import { AbcdControls } from './components/AbcdControls'
+import { MmControls } from './components/MmControls'
 import { BarCountControls } from './components/BarCountControls'
+import { TrendlineControls } from './components/TrendlineControls'
 import { setAllBarCounts, visibleBarCountSides } from './lib/barCountSettings'
 import { setAllAbcdTimeframes, visibleAbcdTimeframes } from './lib/abcdSettings'
+import { setAllMmTimeframes, visibleMmTimeframes } from './lib/mmSettings'
 import { setAllThreePushTimeframes, visibleThreePushTimeframes } from './lib/threePushSettings'
 import type { ThreePushMinuteSource } from './lib/threePushProjection'
 import { chartBarSeconds } from './lib/smartMoney'
@@ -550,7 +553,7 @@ function App() {
     { id: 'shortcut-help', label: '键盘快捷键', detail: '查看 TradingView 快捷键清单', shortcut: 'Ctrl+/' },
     ...ALL_DRAWING_TOOLS.map((tool) => ({ id: `tool-${tool.id}`, label: tool.label, detail: `${tool.section} · ${tool.description}`, shortcut: tool.shortcut, toolId: tool.id })),
   ], [])
-  const visibleIndicators = useMemo(() => indicatorsHidden ? { ...indicators, ma: false, ema: false, boll: false, volume: false, smc: false, threePush: false, abcd: false, barCount: false } : indicators, [indicators, indicatorsHidden])
+  const visibleIndicators = useMemo(() => indicatorsHidden ? { ...indicators, ma: false, ema: false, boll: false, volume: false, smc: false, autoTrendlines: false, threePush: false, abcd: false, mm: false, barCount: false } : indicators, [indicators, indicatorsHidden])
   const minuteHistory = useMemo(() => remoteMarket?.symbol === symbol ? remoteMarket.bars : decisionHistoryBySymbol[symbol] ?? null, [decisionHistoryBySymbol, remoteMarket, symbol])
   const availableDecisionHistoryBySymbol = useMemo(() => {
     const histories = { ...decisionHistoryBySymbol }
@@ -3707,7 +3710,7 @@ function App() {
           syncDrawings={syncDrawings} setSyncDrawings={setSyncDrawings}
           positionsHidden={chartAnnotationsHidden} setPositionsHidden={setChartAnnotationsHidden}
           indicatorCount={activeIndicatorCount}
-          removeIndicators={() => setIndicators((current) => ({ ...current, ma: false, ema: false, boll: false, volume: false, smc: false, threePush: false, abcd: false, barCount: false }))}
+          removeIndicators={() => setIndicators((current) => ({ ...current, ma: false, ema: false, boll: false, volume: false, smc: false, autoTrendlines: false, threePush: false, abcd: false, mm: false, barCount: false }))}
           notify={notify}
         />
 
@@ -3753,6 +3756,11 @@ function App() {
               dispatchUiDrawing({ type: 'select', id: drawing.id, additive: event.ctrlKey || event.metaKey })
             }}
           >
+            {marketLoading?.symbol === symbol && <div className="market-loading-cover" role="status" aria-live="polite">
+              <span className="market-loading-spinner" />
+              <b>{symbol} 历史行情加载中…</b>
+              <small>真实数据加载完成前不显示K线；第一次加载需要几秒，之后从本机缓存读取</small>
+            </div>}
             <ChartSurface
               ref={chartRef} data={data} symbol={symbol} interval={interval} chartType={chartType} theme={theme}
               threePushMinuteSource={threePushMinuteSource}
@@ -4252,7 +4260,27 @@ function App() {
                 setIndicators((current) => ({ ...current, ...value }))
               }}
             />
+            <MmControls
+              value={indicators}
+              hidden={indicatorsHidden}
+              interval={interval}
+              chartType={chartType}
+              minuteSourceAvailable={threePushMinuteSource !== undefined}
+              onChange={(value) => {
+                setIndicatorsHidden(false)
+                setIndicators((current) => ({ ...current, ...value }))
+              }}
+            />
             <BarCountControls
+              value={indicators}
+              hidden={indicatorsHidden}
+              chartType={chartType}
+              onChange={(value) => {
+                setIndicatorsHidden(false)
+                setIndicators((current) => ({ ...current, ...value }))
+              }}
+            />
+            <TrendlineControls
               value={indicators}
               hidden={indicatorsHidden}
               chartType={chartType}
@@ -4273,7 +4301,7 @@ function App() {
               onExpandedChange={setIndicatorLegendExpanded}
               onToggle={(key) => {
                 setIndicatorsHidden(false)
-                setIndicators((current) => ({ ...current, [key]: current[key] === false }))
+                setIndicators((current) => ({ ...current, [key]: key === 'autoTrendlines' ? current[key] !== true : current[key] === false }))
               }}
               onOpenSettings={() => setIndicatorPanelOpen(true)}
               onRefresh={() => notify('指标已重新计算')}
@@ -4405,7 +4433,7 @@ function App() {
         onApplyTemplate={loadSavedLayout}
         onResetTemplate={() => { setIndicators(DEFAULT_INDICATORS); notify('已恢复默认指标模板') }}
         onRemoveDrawings={() => { dispatchUiDrawing({ type: 'clear' }); notify('已移除全部绘图') }}
-        onRemoveIndicators={() => { setIndicators((current) => ({ ...current, ma: false, ema: false, boll: false, volume: false, smc: false, threePush: false, abcd: false, barCount: false })); notify('已移除全部指标') }}
+        onRemoveIndicators={() => { setIndicators((current) => ({ ...current, ma: false, ema: false, boll: false, volume: false, smc: false, autoTrendlines: false, threePush: false, abcd: false, mm: false, barCount: false })); notify('已移除全部指标') }}
         onSettings={() => setSettingsOpen(true)}
       />}
 
@@ -4741,17 +4769,19 @@ function Watchlist({ active, onSelect, onClose }: { active: SymbolId; onSelect: 
 }
 
 function IndicatorPanel({ value, onChange, onClose }: { value: IndicatorSettings; onChange: (value: IndicatorSettings) => void; onClose: () => void }) {
-  const rows: { key: 'ma' | 'ema' | 'boll' | 'volume' | 'smc' | 'threePush' | 'abcd' | 'barCount'; name: string; detail: string; color: string }[] = [
+  const rows: { key: 'ma' | 'ema' | 'boll' | 'volume' | 'smc' | 'autoTrendlines' | 'threePush' | 'abcd' | 'mm' | 'barCount'; name: string; detail: string; color: string }[] = [
     { key: 'ma', name: '移动平均线', detail: `MA ${value.maPeriod}`, color: '#f59e0b' },
     { key: 'ema', name: '指数移动平均', detail: `EMA ${value.emaPeriod}`, color: '#296cff' },
     { key: 'boll', name: '布林带', detail: `BOLL ${value.bollPeriod}, ${value.bollDeviation}`, color: '#9b7bff' },
     { key: 'volume', name: '成交量', detail: 'Volume + MA20', color: '#21a179' },
     { key: 'smc', name: 'LuxAlgo - Smart Money Concepts', detail: 'BOS / CHoCH、订单块、EQH/EQL、强弱高低点、溢价/折价区', color: '#089981' },
+    { key: 'autoTrendlines', name: '趋势线', detail: '自动趋势线（Auto Trendlines + Auto Trend Detector 合并）：蓝色细线；实线=已有第3个点确认，虚线=目前只有2点，已破位的变淡', color: '#2962ff' },
     { key: 'threePush', name: '三推', detail: '1分/5分/15分，右上角可独立显示或隐藏各级别', color: '#296cff' },
     { key: 'abcd', name: 'AB=CD', detail: '1分–1小时，右上角可分级别开关；红色，最新K线先画出 D', color: '#e03131' },
+    { key: 'mm', name: 'MM（Z）', detail: '被实体突破、有跟随的波段点，从突破前的波段点量过来翻一倍；实线影线、虚线实体；青色', color: '#1098ad' },
     { key: 'barCount', name: '高1/2/3 低1/2/3', detail: '阿布数K线：回调里高点高于前一根 = 高n，反弹里低点低于前一根 = 低n；右上角可分开关', color: '#2b8a3e' },
   ]
-  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section className="modal indicator-modal" role="dialog" aria-modal="true" aria-label="指标设置"><div className="modal-header"><div><b>技术指标</b><small>叠加到主图的本地计算指标</small></div><button onClick={onClose} aria-label="关闭"><X size={18} /></button></div><div className="indicator-list">{rows.map((row) => <div className="indicator-row" key={row.key}><span className="indicator-color" style={{ background: row.color }} /><div><b>{row.name}</b><small>{row.detail}</small></div><label className="switch" aria-label={`${row.name}开关`} title={`${row.name}开关`}><input type="checkbox" checked={row.key === 'threePush' ? visibleThreePushTimeframes(value).length > 0 : row.key === 'abcd' ? visibleAbcdTimeframes(value).length > 0 : row.key === 'barCount' ? (visibleBarCountSides(value).high || visibleBarCountSides(value).low) : value[row.key] !== false} onChange={(event) => onChange(row.key === 'threePush' ? setAllThreePushTimeframes(value, event.target.checked) : row.key === 'abcd' ? setAllAbcdTimeframes(value, event.target.checked) : row.key === 'barCount' ? setAllBarCounts(value, event.target.checked) : { ...value, [row.key]: event.target.checked })} /><span /></label></div>)}</div><div className="parameter-grid"><label>MA 周期<input type="number" min="2" max="200" value={value.maPeriod} onChange={(event) => onChange({ ...value, maPeriod: Number(event.target.value) })} /></label><label>EMA 周期<input type="number" min="2" max="200" value={value.emaPeriod} onChange={(event) => onChange({ ...value, emaPeriod: Number(event.target.value) })} /></label><label>BOLL 周期<input type="number" min="2" max="200" value={value.bollPeriod} onChange={(event) => onChange({ ...value, bollPeriod: Number(event.target.value) })} /></label><label>标准差<input type="number" step="0.1" min="0.1" max="5" value={value.bollDeviation} onChange={(event) => onChange({ ...value, bollDeviation: Number(event.target.value) })} /></label></div><div className="modal-footer"><button onClick={() => onChange(DEFAULT_INDICATORS)}>恢复指标默认</button><button className="primary" onClick={onClose}>完成</button></div></section></div>
+  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><section className="modal indicator-modal" role="dialog" aria-modal="true" aria-label="指标设置"><div className="modal-header"><div><b>技术指标</b><small>叠加到主图的本地计算指标</small></div><button onClick={onClose} aria-label="关闭"><X size={18} /></button></div><div className="indicator-list">{rows.map((row) => <div className="indicator-row" key={row.key}><span className="indicator-color" style={{ background: row.color }} /><div><b>{row.name}</b><small>{row.detail}</small></div><label className="switch" aria-label={`${row.name}开关`} title={`${row.name}开关`}><input type="checkbox" checked={row.key === 'threePush' ? visibleThreePushTimeframes(value).length > 0 : row.key === 'abcd' ? visibleAbcdTimeframes(value).length > 0 : row.key === 'mm' ? visibleMmTimeframes(value).length > 0 : row.key === 'barCount' ? (visibleBarCountSides(value).high || visibleBarCountSides(value).low) : row.key === 'autoTrendlines' ? value[row.key] === true : value[row.key] !== false} onChange={(event) => onChange(row.key === 'threePush' ? setAllThreePushTimeframes(value, event.target.checked) : row.key === 'abcd' ? setAllAbcdTimeframes(value, event.target.checked) : row.key === 'mm' ? setAllMmTimeframes(value, event.target.checked) : row.key === 'barCount' ? setAllBarCounts(value, event.target.checked) : { ...value, [row.key]: event.target.checked })} /><span /></label></div>)}</div><div className="parameter-grid"><label>MA 周期<input type="number" min="2" max="200" value={value.maPeriod} onChange={(event) => onChange({ ...value, maPeriod: Number(event.target.value) })} /></label><label>EMA 周期<input type="number" min="2" max="200" value={value.emaPeriod} onChange={(event) => onChange({ ...value, emaPeriod: Number(event.target.value) })} /></label><label>BOLL 周期<input type="number" min="2" max="200" value={value.bollPeriod} onChange={(event) => onChange({ ...value, bollPeriod: Number(event.target.value) })} /></label><label>标准差<input type="number" step="0.1" min="0.1" max="5" value={value.bollDeviation} onChange={(event) => onChange({ ...value, bollDeviation: Number(event.target.value) })} /></label></div><div className="modal-footer"><button onClick={() => onChange(DEFAULT_INDICATORS)}>恢复指标默认</button><button className="primary" onClick={onClose}>完成</button></div></section></div>
 }
 
 function SettingsPanel({ theme, onTheme, onReset, onExportWorkspace, onMergeProgress, onPrivateReceive, onPrivateSync, onHistoryReceive, onHistorySync, privateSyncBusy, privateSyncOperation, privateSyncStatus, privateSyncError, codeDeployPhase, codeDeployStatus, codeDeployError, codeDeployActivity, onCodeDeployRefresh, onCodePublish, onCodeUpdate, onImportWorkspace, onRestoreLastImport, canRestoreWorkspace, onClose }: {

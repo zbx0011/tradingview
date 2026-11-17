@@ -6,6 +6,8 @@ import { mergeProjectedThreePushes, projectThreePushesToChart, threePushCoordina
 /** Patterns stay faint until the pointer is on one; the hovered pattern is drawn fully opaque. */
 const IDLE_ALPHA = 0.22
 const HOVER_DISTANCE = 9
+/** A finger is less precise than a mouse pointer. */
+const TAP_DISTANCE = 22
 
 export const THREE_PUSH_COLORS: Record<ThreePushTimeframe, string> = { '1m': '#2962ff', '5m': '#ef8b22', '15m': '#a45cdb' }
 
@@ -53,7 +55,7 @@ export function attachThreePushOverlay(chart: IChartApi, series: ISeriesApi<Seri
       const box = hitBoxes[i]
       if (px >= box.x0 && px <= box.x1 && py >= box.y0 && py <= box.y1) return box.key
     }
-    let best: string | null = null, bestDistance = HOVER_DISTANCE
+    let best: string | null = null, bestDistance = options.tapToSelect ? TAP_DISTANCE : HOVER_DISTANCE
     for (const pattern of patterns) {
       let previous = xy(pattern.start)
       for (const push of pattern.pushes) {
@@ -74,7 +76,8 @@ export function attachThreePushOverlay(chart: IChartApi, series: ISeriesApi<Seri
     if (next === hoveredKey) return
     hoveredKey = next; requestUpdate()
   }
-  chart.subscribeCrosshairMove(onCrosshairMove)
+  if (options.tapToSelect) chart.subscribeClick(onCrosshairMove)
+  else chart.subscribeCrosshairMove(onCrosshairMove)
   const draw = (context: CanvasRenderingContext2D, width: number, height: number) => {
     const range = timeScale.getVisibleLogicalRange()
     if (!range) return
@@ -169,6 +172,7 @@ export function attachThreePushOverlay(chart: IChartApi, series: ISeriesApi<Seri
     destroy() {
       timeScale.unsubscribeVisibleLogicalRangeChange(onVisibleRangeChange)
       chart.unsubscribeCrosshairMove(onCrosshairMove)
+      chart.unsubscribeClick(onCrosshairMove)
       hoveredKey = null; hitBoxes = []; patterns = []; chartPatterns = []; minutePatterns = []; lastData = null; minuteSource = undefined; minuteTape = null
       try { series.detachPrimitive(primitive) } catch { /* The chart may already have removed its series. */ }
     },

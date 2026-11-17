@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#11151c" />
+    <title>K线工坊 · 逐K复盘</title>
+    <style>
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #11151c; color: #e8ecf3; font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; user-select: none; -webkit-user-select: none; touch-action: none; }
+      #app { display: flex; height: 100%; width: 100%; }
+      #chart-wrap { position: relative; flex: 1 1 auto; min-width: 0; background: #fff; }
+      #chart { position: absolute; inset: 0; }
+      #badge { position: absolute; left: 8px; top: 6px; z-index: 3; padding: 3px 8px; border-radius: 6px; background: rgba(17, 21, 28, .78); color: #fff; font-size: 12px; line-height: 1.35; pointer-events: none; }
+      #badge b { font-weight: 600; }
+      #message { position: absolute; inset: 0; z-index: 4; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(255, 255, 255, .92); color: #1b2230; font-size: 15px; text-align: center; white-space: pre-line; }
+      #message[hidden] { display: none; }
+      #side { flex: 0 0 196px; display: flex; flex-direction: column; gap: 6px; padding: 6px 8px calc(8px + env(safe-area-inset-bottom)) 8px; padding-right: calc(8px + env(safe-area-inset-right)); }
+      #intervals { display: flex; gap: 4px; }
+      #intervals button { flex: 1; height: 34px; padding: 0; white-space: nowrap; border: 1px solid #2c3442; border-radius: 8px; background: #1a202b; color: #aeb7c6; font-size: 14px; }
+      #intervals button.on { background: #2f6bff; border-color: #2f6bff; color: #fff; font-weight: 600; }
+      #new-day { height: 34px; border: 1px solid #2c3442; border-radius: 8px; background: #1a202b; color: #dfe5ee; font-size: 14px; }
+      #new-day.confirm { background: #b3261e; border-color: #b3261e; color: #fff; }
+      #next { flex: 1 1 auto; min-height: 64px; border: 0; border-radius: 12px; background: #2f6bff; color: #fff; font-size: 20px; font-weight: 700; line-height: 1.3; }
+      #toggles { display: flex; flex-direction: column; gap: 4px; }
+      .toggle-row { display: flex; flex-wrap: wrap; gap: 3px; }
+      .toggle-row button { height: 26px; padding: 0 6px; border: 1px solid #2c3442; border-radius: 6px; background: #1a202b; color: #6f7a8c; font-size: 12px; font-weight: 600; }
+      .toggle-row button.master { color: #aeb7c6; }
+      .toggle-row button.on { background: color-mix(in srgb, var(--c) 22%, #1a202b); border-color: var(--c); color: var(--c); }
+      #next:active, #next.down { background: #1f4fd0; }
+      #next.swipe { background: #b3261e; font-size: 17px; }
+      #next.done { background: #1f8f5f; font-size: 19px; }
+      #next small { display: block; margin-top: 2px; font-size: 12px; font-weight: 400; opacity: .85; }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div id="chart-wrap">
+        <div id="chart"></div>
+        <div id="badge"></div>
+        <div id="message">正在载入…</div>
+      </div>
+      <div id="side">
+        <div id="intervals">
+          <button type="button" data-seconds="60">1分</button>
+          <button type="button" data-seconds="300">5分</button>
+          <button type="button" data-seconds="900">15分</button>
+          <button type="button" data-seconds="3600">1小时</button>
+        </div>
+        <div id="toggles"></div>
+        <button type="button" id="next">下一根<small></small></button>
+      </div>
+    </div>
+    <script type="module" src="/src/mobile/main.ts"></script>
+  </body>
+</html>

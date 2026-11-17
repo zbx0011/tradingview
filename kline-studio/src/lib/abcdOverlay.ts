@@ -11,12 +11,18 @@ import { threePushCoordinate, threePushMinuteWindow, type ThreePushMinuteSource 
 const IDLE_ALPHA = 0.3
 const LIVE_ALPHA = 0.3
 const HOVER_DISTANCE = 9
+/** A finger is less precise than a mouse pointer. */
+const TAP_DISTANCE = 22
 
 export const ABCD_COLOR = '#e03131'
 
 export interface AbcdChartOptions {
   /** Levels to draw (default: all). */
   levels?: readonly AbcdTimeframe[]
+  /** Kinds to draw (default: both). */
+  kinds?: readonly ('leg' | 'spike')[]
+  /** Touch screens: a tap on a D line shows the whole pattern (and a tap elsewhere hides it) instead of mouse hover. */
+  tapToSelect?: boolean
 }
 
 /**
@@ -27,6 +33,7 @@ export interface AbcdChartOptions {
  */
 export function attachAbcdOverlay(chart: IChartApi, series: ISeriesApi<SeriesType>, options: AbcdChartOptions = {}) {
   const levels = options.levels ?? ABCD_TIMEFRAMES.map((t) => t.label)
+  const kinds = options.kinds ?? ['leg', 'spike']
   let patterns: ChartAbcd[] = []
   let lastData: readonly Candle[] | null = null
   let minuteSource: ThreePushMinuteSource | undefined
@@ -50,7 +57,7 @@ export function attachAbcdOverlay(chart: IChartApi, series: ISeriesApi<SeriesTyp
     const y = series.priceToCoordinate(p.d)
     return y === null ? raw : { x: raw.x, y }
   }
-  const keyOf = (p: ChartAbcd) => `${p.timeframe}|${p.direction}|${p.a.time}|${p.b.time}`
+  const keyOf = (p: ChartAbcd) => `${p.kind ?? 'leg'}|${p.timeframe}|${p.direction}|${p.a.time}|${p.b.time}`
   const recompute = () => {
     if (!lastData || !levels.length) { patterns = []; return }
     let minutes: { candles: readonly Candle[], endTime: number } | undefined
@@ -62,7 +69,7 @@ export function attachAbcdOverlay(chart: IChartApi, series: ISeriesApi<SeriesTyp
       windowKey = key
       minutes = { candles: minuteSource.candles.slice(window.from, window.to), endTime: minuteSource.endTime }
     }
-    patterns = computeChartAbcd({ candles: lastData, minutes }, {}, levels)
+    patterns = computeChartAbcd({ candles: lastData, minutes }, {}, levels, kinds)
   }
   const distanceToSegment = (px: number, py: number, a: { x: number, y: number }, b: { x: number, y: number }) => {
     const dx = b.x - a.x, dy = b.y - a.y, len = dx * dx + dy * dy
@@ -70,7 +77,7 @@ export function attachAbcdOverlay(chart: IChartApi, series: ISeriesApi<SeriesTyp
     return Math.hypot(px - (a.x + t * dx), py - (a.y + t * dy))
   }
   const hitTest = (px: number, py: number) => {
-    let best: string | null = null, bestDistance = HOVER_DISTANCE
+    let best: string | null = null, bestDistance = options.tapToSelect ? TAP_DISTANCE : HOVER_DISTANCE
     for (const pattern of patterns) {
       const points = [xy(pattern.a), xy(pattern.b), xy(pattern.c), pattern.live ? xy(dPoint(pattern)) : endVertex(pattern)]
       // The zigzag is only visible (and so only hoverable) once its pattern is the hovered one; at rest only the D line reacts.
@@ -103,7 +110,8 @@ export function attachAbcdOverlay(chart: IChartApi, series: ISeriesApi<SeriesTyp
     if (next === hoveredKey) return
     hoveredKey = next; requestUpdate()
   }
-  chart.subscribeCrosshairMove(onCrosshairMove)
+  if (options.tapToSelect) chart.subscribeClick(onCrosshairMove)
+  else chart.subscribeCrosshairMove(onCrosshairMove)
   const onVisibleRangeChange = () => { if (minuteSource) recompute(); requestUpdate() }
   timeScale.subscribeVisibleLogicalRangeChange(onVisibleRangeChange)
 
@@ -186,7 +194,7 @@ export function attachAbcdOverlay(chart: IChartApi, series: ISeriesApi<SeriesTyp
           // D outside the visible prices: only the nearest one above and below keeps a label, at the edge, with an arrow towards D.
           const beyond = dy < 0 ? '↑ ' : dy > height ? '↓ ' : ''
           if (beyond && pattern !== nearestAbove && pattern !== nearestBelow) continue
-          label(`${beyond}AB=CD ${pattern.timeframe} · D ${format(pattern.d)}${status}`, width - 90, dy + (up ? -8 : 16), up ? -18 : 18)
+          label(`${beyond}${pattern.kind === 'spike' ? '急速转通道 ' : ''}AB=CD ${pattern.timeframe} · D ${format(pattern.d)}${status}`, width - 90, dy + (up ? -8 : 16), up ? -18 : 18)
         }
       } else {
         // Settled at D: a short line at D across the end of the CD leg.
@@ -195,7 +203,8 @@ export function attachAbcdOverlay(chart: IChartApi, series: ISeriesApi<SeriesTyp
         const x0 = x(centre - half), x1 = x(centre + half)
         if (dy !== null && x0 !== null && x1 !== null) { context.beginPath(); context.moveTo(x0, dy); context.lineTo(x1, dy); context.stroke() }
         if (e) {
-          const text = hovered ? `AB=CD ${pattern.timeframe} · D ${format(pattern.d)} · 实体 ${format(pattern.bodyD)}` : `AB=CD ${pattern.timeframe}`
+          const name = pattern.kind === 'spike' ? '急速转通道 AB=CD' : 'AB=CD'
+          const text = hovered ? `${name} ${pattern.timeframe} · D ${format(pattern.d)} · 实体 ${format(pattern.bodyD)}` : `${name} ${pattern.timeframe}`
           label(text, e.x, e.y + (up ? -20 : 22), up ? -18 : 18)
         }
       }
@@ -221,6 +230,7 @@ export function attachAbcdOverlay(chart: IChartApi, series: ISeriesApi<SeriesTyp
     destroy() {
       timeScale.unsubscribeVisibleLogicalRangeChange(onVisibleRangeChange)
       chart.unsubscribeCrosshairMove(onCrosshairMove)
+      chart.unsubscribeClick(onCrosshairMove)
       hoveredKey = null; patterns = []; lastData = null; minuteSource = undefined
       try { series.detachPrimitive(primitive) } catch { /* The chart may already have removed its series. */ }
     },

@@ -1,6 +1,7 @@
 import snapshotManifestJson from '../data/marketSnapshotManifest.json'
 import oandaXagusdReplayJson from '../data/oandaXagusdReplay5m.json'
 import { aggregateCandles, INTERVALS, type Candle, type IntervalId, type SymbolId } from './market'
+import { decodeCompactSnapshot, gunzipIfNeeded } from './compactSnapshot'
 
 interface SnapshotManifestSeries {
   symbol: string
@@ -9,6 +10,10 @@ interface SnapshotManifestSeries {
   file: string
   /** Optional locally installed extension; the shipped file remains the fallback. */
   preferredFile?: string
+  /** Gzip-compressed binary copy of the preferred file (scripts/build-compact-snapshot.mjs), loaded first. */
+  compactFile?: string
+  /** Version of the compact file; part of the browser cache key. */
+  compactVersion?: string
   count: number
   firstTime: number
   lastTime: number
@@ -65,6 +70,9 @@ const BYBIT_KLINE_ENDPOINT = 'https://api.bybit.com/v5/market/kline'
 const XAU_MONTH_URL = `${import.meta.env.BASE_URL}data/xauusd-1m-30d.json`
 const CACHE_DB_NAME = 'kline-studio-market-v1'
 const CACHE_STORE_NAME = 'histories'
+/** Downloaded compact snapshots are kept in IndexedDB, so a page refresh does not download them again. */
+const SNAPSHOT_DB_NAME = 'kline-studio-snapshots-v1'
+const SNAPSHOT_STORE_NAME = 'files'
 export const MARKET_HISTORY_DAYS = 30
 export const MARKET_HISTORY_SECONDS = MARKET_HISTORY_DAYS * 24 * 60 * 60
 
@@ -101,6 +109,23 @@ export async function loadSnapshotCandles(symbol: SymbolId, interval: IntervalId
   let pending = snapshotLoadCache.get(symbol)
   if (!pending) {
     pending = (async () => {
+      const commit = (file: string, bars: Candle[]) => {
+        // Commit caches and metadata together, only after a complete valid load.
+        resolvedSnapshotSeries.set(symbol, { ...series, file, count: bars.length, firstTime: bars[0].time, lastTime: bars[bars.length - 1].time })
+        snapshotSourceCache.set(symbol, bars)
+        snapshotCandleCache.set(`${symbol}:1m`, bars)
+        return bars
+      }
+      const failures: string[] = []
+      // The compact binary copy first: about a tenth of the JSON download, and cached in IndexedDB after that.
+      if (series.compactFile) {
+        try {
+          const bars = await loadCompactSnapshot(series.compactFile, series.compactVersion ?? String(series.lastTime))
+          if (bars.length) return commit(series.preferredFile ?? series.file, bars)
+        } catch (error) {
+          failures.push(`${series.compactFile}: ${error instanceof Error ? error.message : '请求失败'}`)
+        }
+      }
       // Keep the shared request independent from a component's AbortSignal.
       // React development mode intentionally mounts and cleans effects twice;
       // aborting that first subscriber must not cancel the cached request used
@@ -108,7 +133,6 @@ export async function loadSnapshotCandles(symbol: SymbolId, interval: IntervalId
       // Version the URL with the manifest endpoint so a refreshed snapshot
       // cannot be masked by the browser's cache for the same compact file.
       const files = [...new Set([series.preferredFile, series.file].filter((file): file is string => Boolean(file)))]
-      const failures: string[] = []
       for (const file of files) {
         try {
           const response = await fetch(`${import.meta.env.BASE_URL}${file}?v=${series.lastTime}`, { cache: 'force-cache' })
@@ -116,12 +140,7 @@ export async function loadSnapshotCandles(symbol: SymbolId, interval: IntervalId
           if (response.headers?.get('content-type')?.toLowerCase().includes('text/html')) throw new Error('返回了网页，历史数据文件不存在或尚未加载')
           let payload: unknown
           try { payload = await response.json() } catch { throw new Error('历史数据文件不是有效 JSON') }
-          const bars = parseCompactHistory(payload)
-          // Commit caches and metadata together, only after a complete valid load.
-          resolvedSnapshotSeries.set(symbol, { ...series, file, count: bars.length, firstTime: bars[0].time, lastTime: bars[bars.length - 1].time })
-          snapshotSourceCache.set(symbol, bars)
-          snapshotCandleCache.set(`${symbol}:1m`, bars)
-          return bars
+          return commit(file, parseCompactHistory(payload))
         } catch (error) {
           failures.push(`${file}: ${error instanceof Error ? error.message : '请求失败'}`)
         }
@@ -133,6 +152,63 @@ export async function loadSnapshotCandles(symbol: SymbolId, interval: IntervalId
   await pending
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
   return getSnapshotCandles(symbol, interval)
+}
+
+function openSnapshotDb(): Promise<IDBDatabase | null> {
+  if (typeof indexedDB === 'undefined') return Promise.resolve(null)
+  return new Promise((resolve) => {
+    try {
+      const request = indexedDB.open(SNAPSHOT_DB_NAME, 1)
+      request.onupgradeneeded = () => { request.result.createObjectStore(SNAPSHOT_STORE_NAME) }
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => resolve(null)
+      request.onblocked = () => resolve(null)
+    } catch { resolve(null) }
+  })
+}
+
+async function readCachedSnapshot(key: string): Promise<ArrayBuffer | null> {
+  const db = await openSnapshotDb()
+  if (!db) return null
+  return new Promise((resolve) => {
+    try {
+      const request = db.transaction(SNAPSHOT_STORE_NAME, 'readonly').objectStore(SNAPSHOT_STORE_NAME).get(key)
+      request.onsuccess = () => { resolve(request.result instanceof ArrayBuffer ? request.result : null); db.close() }
+      request.onerror = () => { resolve(null); db.close() }
+    } catch { resolve(null); db.close() }
+  })
+}
+
+/** Keeps only the newest copy of each file: older versions are removed when a new one is stored. */
+async function writeCachedSnapshot(file: string, key: string, bytes: ArrayBuffer) {
+  const db = await openSnapshotDb()
+  if (!db) return
+  try {
+    const store = db.transaction(SNAPSHOT_STORE_NAME, 'readwrite').objectStore(SNAPSHOT_STORE_NAME)
+    const keys = store.getAllKeys()
+    keys.onsuccess = () => {
+      for (const old of keys.result) if (typeof old === 'string' && old.startsWith(`${file}?`) && old !== key) store.delete(old)
+      store.put(bytes, key)
+    }
+    store.transaction.oncomplete = () => db.close()
+    store.transaction.onerror = () => db.close()
+  } catch { db.close() }
+}
+
+/** The compact binary snapshot: from IndexedDB when this version was downloaded before, otherwise from the server. */
+async function loadCompactSnapshot(file: string, version: string): Promise<Candle[]> {
+  const key = `${file}?v=${version}`
+  const cached = await readCachedSnapshot(key)
+  if (cached) {
+    try { return decodeCompactSnapshot(await gunzipIfNeeded(cached)) } catch { /* A damaged cache entry: download again. */ }
+  }
+  const response = await fetch(`${import.meta.env.BASE_URL}${key}`, { cache: 'force-cache' })
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  if (response.headers?.get('content-type')?.toLowerCase().includes('text/html')) throw new Error('返回了网页，紧凑历史数据文件不存在')
+  const bytes = await response.arrayBuffer()
+  const bars = decodeCompactSnapshot(await gunzipIfNeeded(bytes))
+  void writeCachedSnapshot(file, key, bytes)
+  return bars
 }
 
 export function getSnapshotStatus(symbol: SymbolId): MarketDataStatus {

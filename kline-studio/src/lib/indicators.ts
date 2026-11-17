@@ -1,10 +1,11 @@
 import type { Candle } from './market'
 import { DEFAULT_THREE_PUSH_SETTINGS } from './threePushSettings'
 import { DEFAULT_ABCD_SETTINGS } from './abcdSettings'
+import { DEFAULT_MM_SETTINGS } from './mmSettings'
 import { DEFAULT_BAR_COUNT_SETTINGS } from './barCountSettings'
 
 export const DEFAULT_INDICATORS = {
-  ma: false, ema: true, boll: false, volume: true, smc: true, ...DEFAULT_THREE_PUSH_SETTINGS, ...DEFAULT_ABCD_SETTINGS, ...DEFAULT_BAR_COUNT_SETTINGS,
+  ma: false, ema: true, boll: false, volume: true, smc: true, autoTrendlines: false, ...DEFAULT_THREE_PUSH_SETTINGS, ...DEFAULT_ABCD_SETTINGS, ...DEFAULT_MM_SETTINGS, ...DEFAULT_BAR_COUNT_SETTINGS,
   maPeriod: 20, emaPeriod: 20, bollPeriod: 20, bollDeviation: 2,
 }
 

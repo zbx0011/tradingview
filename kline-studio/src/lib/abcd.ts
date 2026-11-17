@@ -78,6 +78,8 @@ export interface AbcdPattern {
   atr: number
   /** A was broken while C was still provisional: this projection never became valid. */
   abandoned?: boolean
+  /** leg = ordinary two-leg AB=CD; spike = spike and channel (急速转通道): A–B the spike, C the start of the channel. */
+  kind?: 'leg' | 'spike'
 }
 
 /** Draw only AB=CDs whose CD leg ended at D, or a running one whose extreme is at D right now. */
@@ -235,10 +237,38 @@ export function detectAbcd(candles: readonly Candle[], overrides: Partial<AbcdOp
     })
   }
 
+  /** Confirm the running extreme as a pivot; `back` / `backIndex` are the furthest price against it so far. */
+  const confirmExtreme = () => {
+    pivots.push({ index: extremeIndex, price: extreme, high: rising })
+    // The confirmed pivot is a swing high for one direction: its pullback starts forming there.
+    const side = sides[rising ? 0 : 1]
+    const f: Forming = { position: pivots.length - 1, b: side.sign * extreme, c: side.sign * back, cIndex: backIndex, pattern: null }
+    side.forming.push(f)
+    measure(side, f)
+  }
+
   for (let i = 1; i < candles.length; i += 1) {
     for (const side of sides) { follow(side, i); advance(side, i) }
-    // Zigzag: a new extreme extends the swing; a qualified move against it confirms the extreme as a pivot.
     const candle = candles[i]
+    // Price breaks the last confirmed pivot before the swing against it qualified (e.g. a one-bar spike low that
+    // reversed at once). A pivot must stay the true extreme of its leg, so it is never left above a lower low:
+    // if the running swing was big enough it becomes a pivot and the break starts the next swing,
+    // otherwise the last pivot simply moves to the break.
+    const lastPivot = pivots[pivots.length - 1]
+    if (rising ? candle.low < lastPivot.price : candle.high > lastPivot.price) {
+      const breakPrice = rising ? candle.low : candle.high
+      if (extremeIndex !== i && Math.abs(extreme - lastPivot.price) >= options.minPullbackAtr * atr[extremeIndex]) {
+        back = breakPrice; backIndex = i
+        confirmExtreme()
+        rising = !rising
+      } else {
+        lastPivot.index = i; lastPivot.price = breakPrice
+      }
+      extreme = rising ? candle.high : candle.low; extremeIndex = i
+      backBars = 0; back = rising ? Infinity : -Infinity
+      continue
+    }
+    // Zigzag: a new extreme extends the swing; a qualified move against it confirms the extreme as a pivot.
     const beyond = rising ? candle.high > extreme : candle.low < extreme
     if (beyond) {
       extreme = rising ? candle.high : candle.low; extremeIndex = i
@@ -248,17 +278,118 @@ export function detectAbcd(candles: readonly Candle[], overrides: Partial<AbcdOp
     backBars += 1
     if (rising ? candle.low < back : candle.high > back) { back = rising ? candle.low : candle.high; backIndex = i }
     if (backBars < options.minPullbackBars || Math.abs(extreme - back) < options.minPullbackAtr * atr[extremeIndex]) continue
-    pivots.push({ index: extremeIndex, price: extreme, high: rising })
-    // The confirmed pivot is a swing high for one direction: its pullback starts forming there.
-    const side = sides[rising ? 0 : 1]
-    const f: Forming = { position: pivots.length - 1, b: side.sign * extreme, c: side.sign * back, cIndex: backIndex, pattern: null }
-    side.forming.push(f)
-    measure(side, f)
+    confirmExtreme()
     // The swing now runs the other way from the pullback extreme.
     rising = !rising; extreme = back; extremeIndex = backIndex
     backBars = i - backIndex; back = rising ? Infinity : -Infinity
     for (let j = backIndex + 1; j <= i; j += 1) {
       if (rising ? candles[j].low < back : candles[j].high > back) { back = rising ? candles[j].low : candles[j].high; backIndex = j }
+    }
+  }
+  return patterns.sort((x, y) => x.b.index - y.b.index)
+}
+
+export interface SpikeChannelOptions {
+  atrPeriod: number
+  /** Each spike bar's body is at least this share of its range. */
+  minBody: number
+  /** Each spike bar's body is at least this many ATR. */
+  minBodyAtr: number
+  /** The spike, first open to last close, is at least this many ATR (ATR before the spike). */
+  minSpikeAtr: number
+  /** The pullback that starts the channel may give back at most this share of the spike. */
+  maxRetrace: number
+  /** The channel must go beyond the spike's extreme within this many bars of the spike's end. */
+  maxWaitBars: number
+  /** CD at D: within this many ATR short of D (or past it). */
+  shortAtr: number
+  /** CD running this many ATR past D is a leg through D, not a turn at D. */
+  overAtr: number
+  /** The channel is followed for at most this multiple of the A→C duration. */
+  maxDurationMultiple: number
+}
+
+export const DEFAULT_SPIKE_CHANNEL_OPTIONS: SpikeChannelOptions = {
+  atrPeriod: 20,
+  minBody: 0.5,
+  minBodyAtr: 0.5,
+  minSpikeAtr: 3,
+  maxRetrace: 0.75,
+  maxWaitBars: 60,
+  shortAtr: 0.5,
+  overAtr: 0.5,
+  maxDurationMultiple: 6,
+}
+
+/**
+ * Spike and channel AB=CD (Z：急速转通道时，用急速起点和通道起点测量 AB=CD；阿布：spike and channel 的通道常走到
+ * 急速等长的位置):
+ *   A = start of the spike (low of its first bar), B = the spike's extreme, C = start of the channel: the lowest low
+ *   after the spike until price goes beyond B. D = C + (B − A); the body version uses the bodies of the A, B, C bars.
+ * - Spike: consecutive big trend bars (body ≥ `minBody` of the range and ≥ `minBodyAtr` ATR, each closing beyond the
+ *   one before), first open to last close ≥ `minSpikeAtr` ATR (ATR before the spike).
+ * - The pullback after it may give back at most `maxRetrace` of the spike and must not break A; price must then go
+ *   beyond B within `maxWaitBars` bars, which makes C final and starts the channel.
+ * - The channel ends at D (`outcome` near: within `shortAtr` short of D or up to `overAtr` past it), when it runs
+ *   clearly past D (over), when a close breaks C, or when it expires (short).
+ */
+export function detectSpikeChannelAbcd(candles: readonly Candle[], overrides: Partial<SpikeChannelOptions> = {}): AbcdPattern[] {
+  if (candles.length < 3) return []
+  const options = { ...DEFAULT_SPIKE_CHANNEL_OPTIONS, ...overrides }
+  const atr = atrValues(candles, Math.max(1, Math.floor(options.atrPeriod)))
+  const patterns: AbcdPattern[] = []
+  for (const sign of [1, -1]) {
+    const direction = sign > 0 ? 'up' as const : 'down' as const
+    const high = (i: number) => sign > 0 ? candles[i].high : -candles[i].low
+    const low = (i: number) => sign > 0 ? candles[i].low : -candles[i].high
+    const open = (i: number) => sign * candles[i].open
+    const close = (i: number) => sign * candles[i].close
+    const bodyHigh = (i: number) => Math.max(open(i), close(i))
+    const bodyLow = (i: number) => Math.min(open(i), close(i))
+    const point = (index: number, value: number): AbcdPoint => ({ index, time: candles[index].time, price: sign * value })
+    const big = (i: number) => {
+      const body = close(i) - open(i), range = candles[i].high - candles[i].low
+      return body > 0 && body >= options.minBody * range && body >= options.minBodyAtr * atr[Math.max(0, i - 1)]
+        && (i === 0 || close(i) > close(i - 1))
+    }
+    let i = 0
+    while (i < candles.length) {
+      if (!big(i)) { i += 1; continue }
+      const first = i
+      while (i + 1 < candles.length && big(i + 1)) i += 1
+      const last = i
+      i += 1
+      const unit = atr[Math.max(0, first - 1)]
+      if (close(last) - open(first) < options.minSpikeAtr * unit) continue
+      let top = first
+      for (let k = first + 1; k <= last; k += 1) if (high(k) > high(top)) top = k
+      const a = low(first), b = high(top), size = b - a
+      // The pullback: C is the lowest low after the spike until price goes beyond B.
+      let cIndex = -1, cValue = Infinity, confirmed = -1, abandoned = false
+      for (let k = last + 1; k < candles.length; k += 1) {
+        if (high(k) > b && cIndex >= 0) { confirmed = k; break }
+        if (low(k) < cValue) { cValue = low(k); cIndex = k }
+        if (b - cValue > options.maxRetrace * size || cValue <= a || k - last >= options.maxWaitBars) { abandoned = true; break }
+      }
+      if (cIndex < 0 || abandoned) continue
+      const d = cValue + size
+      const pattern: AbcdPattern = {
+        direction, a: point(first, a), b: point(top, b), c: point(cIndex, cValue),
+        d: sign * d, bodyD: sign * (bodyLow(cIndex) + (bodyHigh(top) - bodyLow(first))),
+        e: null, confirmedIndex: confirmed, endIndex: -1, outcome: null, atr: unit, kind: 'spike',
+      }
+      patterns.push(pattern)
+      if (confirmed < 0) continue
+      const limit = confirmed + options.maxDurationMultiple * Math.max(1, cIndex - first)
+      let extreme = -Infinity, extremeIndex = confirmed
+      for (let k = confirmed; k < candles.length; k += 1) {
+        if (high(k) > extreme) { extreme = high(k); extremeIndex = k }
+        pattern.e = point(extremeIndex, extreme)
+        if (extreme > d + options.overAtr * unit) { pattern.outcome = 'over'; pattern.endIndex = k; break }
+        pattern.outcome = extreme >= d - options.shortAtr * unit ? 'near' : 'short'
+        if (pattern.outcome === 'near') { pattern.endIndex = k; break }
+        if (close(k) < cValue || k >= limit) { pattern.endIndex = k; break }
+      }
     }
   }
   return patterns.sort((x, y) => x.b.index - y.b.index)

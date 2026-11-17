@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { detectAbcd, isAbcdAtTarget, isAbcdLive } from './abcd'
+import { detectAbcd, detectSpikeChannelAbcd, isAbcdAtTarget, isAbcdLive } from './abcd'
 import { computeChartAbcd } from './abcdChart'
 import type { Candle } from './market'
 
@@ -153,5 +153,40 @@ describe('computeChartAbcd', () => {
   it('does not build levels finer than the chart without a minute tape', () => {
     const candles = walk([...base, ...run(105, 115), ...run(115, 110)], 300)
     expect(computeChartAbcd({ candles }, {}, ['1m'])).toHaveLength(0)
+  })
+})
+
+describe('detectSpikeChannelAbcd', () => {
+  // Quiet bars (ATR about 0.75), a spike 100 → 109 in three big bars, a small pullback, then a channel.
+  const quiet = Array.from({ length: 30 }, (_, i) => 100 + (i % 2 ? 0.5 : 0))
+  const build = (after: number[]) => {
+    const candles = walk([...quiet, 100])
+    const t = candles[candles.length - 1].time
+    const spike = [[100, 103], [103, 106], [106, 109]].map(([o, c], k) => ({ time: t + 60 * (k + 1), open: o, high: c + 0.25, low: o - 0.25, close: c, volume: 1 }))
+    const rest = walk([109, ...after]).slice(1).map((c, k) => ({ ...c, time: t + 60 * (k + 4) }))
+    return [...candles, ...spike, ...rest]
+  }
+  // Pullback to 107 (low 106.75), then a slow channel of 0.5 steps.
+  const pullback = [108.5, 108, 107.5, 107]
+  const channel = (to: number) => Array.from({ length: Math.round((to - 107) / 0.5) }, (_, k) => 107 + 0.5 * (k + 1))
+
+  it('measures from the spike start to the spike top, projected from the start of the channel', () => {
+    const [p] = detectSpikeChannelAbcd(build([...pullback, ...channel(110)])).filter((x) => x.direction === 'up')
+    expect(p.kind).toBe('spike')
+    expect(p.a.price).toBeCloseTo(99.75)
+    expect(p.b.price).toBeCloseTo(109.25)
+    expect(p.c.price).toBeCloseTo(106.75)
+    expect(p.d).toBeCloseTo(116.25)
+    expect(isAbcdLive(p)).toBe(true)
+  })
+
+  it('ends at D when the channel gets there', () => {
+    const [p] = detectSpikeChannelAbcd(build([...pullback, ...channel(116)])).filter((x) => x.direction === 'up')
+    expect(p.outcome).toBe('near')
+    expect(isAbcdAtTarget(p)).toBe(true)
+  })
+
+  it('is not a spike and channel when the pullback gives back most of the spike', () => {
+    expect(detectSpikeChannelAbcd(build([107, 105, 103, 101.5, 103, 105, 107, 109, 110])).filter((x) => x.direction === 'up')).toHaveLength(0)
   })
 })

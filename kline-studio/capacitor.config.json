@@ -1,0 +1,8 @@
+{
+  "appId": "com.klinestudio.app",
+  "appName": "K线工坊",
+  "webDir": "dist-mobile",
+  "android": {
+    "allowMixedContent": false
+  }
+}
