@@ -1,4 +1,5 @@
 import { runGitNetwork } from './git-network'
+import { createNpmCiRunner } from './npm-install'
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
@@ -22,6 +23,7 @@ interface CommandResult {
 interface CommandOptions {
   cwd?: string
   env?: NodeJS.ProcessEnv
+  timeoutMs?: number
 }
 
 interface RepositoryState {
@@ -51,6 +53,8 @@ function runFile(command: string, args: readonly string[], options: CommandOptio
       windowsHide: true,
       env: { ...process.env, ...options.env, GIT_TERMINAL_PROMPT: '0' },
       stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: options.timeoutMs,
+      killSignal: 'SIGKILL',
     })
     let stdout = ''
     let stderr = ''
@@ -62,7 +66,7 @@ function runFile(command: string, args: readonly string[], options: CommandOptio
     child.on('error', reject)
     child.on('close', (code) => {
       if (code === 0) resolve({ stdout, stderr })
-      else reject(new Error(`${command} ${args.join(' ')} 失败（退出码 ${code}）：${stderr.trim() || stdout.trim() || '没有错误输出'}`))
+      else reject(new Error(`${command} ${args.join(' ')} ${child.killed && options.timeoutMs ? `运行超时（${options.timeoutMs / 1000} 秒）` : `失败（退出码 ${code}）`}：${stderr.trim() || stdout.trim() || '没有错误输出'}`))
     })
   })
 }
@@ -77,10 +81,15 @@ function npmInvocation(args: readonly string[]) {
   return { command: process.execPath, args: [npmCli, ...args] }
 }
 
-async function runNpm(args: readonly string[], cwd: string) {
+async function runNpm(args: readonly string[], cwd: string, timeoutMs?: number) {
   const invocation = npmInvocation(args)
-  return runFile(invocation.command, invocation.args, { cwd })
+  return runFile(invocation.command, invocation.args, { cwd, timeoutMs })
 }
+
+const runNpmCi = createNpmCiRunner({
+  run: runNpm,
+  delay: ms => new Promise(resolve => setTimeout(resolve, ms)),
+})
 
 async function fetchRemote(repositoryRoot: string) {
   await runGitNetwork(['fetch', 'origin', EXPECTED_BRANCH], { cwd: repositoryRoot })
@@ -136,7 +145,7 @@ function assertOnlyProjectChanges(state: RepositoryState) {
 }
 
 async function validateProject(projectRoot: string) {
-  await runNpm(['ci'], projectRoot)
+  await runNpmCi(projectRoot)
   await runNpm(['test', '--', '--run'], projectRoot)
   await runNpm(['run', 'lint'], projectRoot)
   await runNpm(['run', 'build'], projectRoot)

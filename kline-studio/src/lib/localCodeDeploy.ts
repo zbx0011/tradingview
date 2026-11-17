@@ -95,7 +95,7 @@ export interface LocalCodeUpdateResult {
 }
 
 async function request<T>(action: 'status' | 'health' | 'publish-code' | 'update-code'): Promise<T> {
-  const timeoutMs = action === 'health' ? 10_000 : action === 'status' ? 60_000 : 600_000
+  const timeoutMs = action === 'health' ? 10_000 : action === 'status' ? 60_000 : 1_200_000
   const controller = new AbortController()
   let timer: ReturnType<typeof setTimeout> | undefined
   let result: { response: Response; text: string }

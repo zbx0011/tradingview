@@ -12,7 +12,9 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
 
 if (-not (Test-Path -LiteralPath (Join-Path $projectRoot 'node_modules\.bin\vite.cmd'))) {
   Write-Host 'Installing dependencies for the first run...' -ForegroundColor Cyan
-  npm ci
+  $installLogDirectory = Join-Path $env:LOCALAPPDATA 'KlineStudio\logs'
+  New-Item -ItemType Directory -Path $installLogDirectory -Force | Out-Null
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $projectRoot 'scripts\install-dependencies.ps1') -LogPath (Join-Path $installLogDirectory 'first-start-dependencies.log')
   if ($LASTEXITCODE -ne 0) {
     throw "npm ci failed with exit code $LASTEXITCODE"
   }

@@ -50,7 +50,7 @@ try {
   if ($InstallDependencies -or -not (Test-Path -LiteralPath (Join-Path $resolvedProject 'node_modules\.bin\vite.cmd'))) {
     $receipt.phase = 'installing-dependencies'
     Save-Receipt
-    & npm.cmd ci --prefer-offline --no-audit --no-fund *> (Join-Path $logDirectory 'code-update-dependencies.log')
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $resolvedProject 'scripts\install-dependencies.ps1') -LogPath (Join-Path $logDirectory 'code-update-dependencies.log')
     if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed (exit $LASTEXITCODE); see code-update-dependencies.log." }
   }
 
