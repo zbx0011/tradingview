@@ -10,7 +10,10 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
   throw 'Node.js 20+ was not found. Install it from https://nodejs.org/ and run this script again.'
 }
 
-if (-not (Test-Path -LiteralPath (Join-Path $projectRoot 'node_modules\.bin\vite.cmd'))) {
+$packageManifest = Get-Content -LiteralPath (Join-Path $projectRoot 'package.json') -Raw | ConvertFrom-Json
+$directDependencies = @($packageManifest.dependencies.PSObject.Properties.Name) + @($packageManifest.devDependencies.PSObject.Properties.Name)
+$missingDependencies = @($directDependencies | Where-Object { -not (Test-Path -LiteralPath (Join-Path $projectRoot "node_modules\$_\package.json")) })
+if ($missingDependencies.Count -gt 0 -or -not (Test-Path -LiteralPath (Join-Path $projectRoot 'node_modules\.bin\vite.cmd'))) {
   Write-Host 'Installing dependencies for the first run...' -ForegroundColor Cyan
   $installLogDirectory = Join-Path $env:LOCALAPPDATA 'KlineStudio\logs'
   New-Item -ItemType Directory -Path $installLogDirectory -Force | Out-Null
