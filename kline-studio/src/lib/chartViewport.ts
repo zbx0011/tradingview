@@ -13,6 +13,7 @@ interface ViewportProjectionSyncDecision {
 }
 
 interface DataUpdateViewportDecision {
+  dataChanged?: boolean
   focusReady: boolean
   hasVisibleRange: boolean
   followLatest: boolean
@@ -59,6 +60,7 @@ export function shouldFollowRealtime({
 }
 
 export function viewportActionAfterDataUpdate({
+  dataChanged = true,
   focusReady,
   hasVisibleRange,
   followLatest,
@@ -68,7 +70,7 @@ export function viewportActionAfterDataUpdate({
 }: DataUpdateViewportDecision): DataUpdateViewportAction {
   // Candidate switches can transiently publish an empty causal window.
   // Never ask lightweight-charts to apply a logical range with no bars.
-  if (nextLength <= 0) return 'none'
+  if (!dataChanged || nextLength <= 0) return 'none'
   if (focusReady) return 'center'
   if (shouldFollowRealtime({
     shouldFocusLatest: false,

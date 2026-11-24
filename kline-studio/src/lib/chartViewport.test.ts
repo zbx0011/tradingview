@@ -21,6 +21,17 @@ describe('chart viewport default placement', () => {
 })
 
 describe('chart viewport live-follow behavior', () => {
+  it.each([
+    { label: 'an existing historical range', focusReady: false, followLatest: false, wasAtRealtime: false, changedAction: 'preserve' },
+    { label: 'live-follow at the realtime edge', focusReady: false, followLatest: true, wasAtRealtime: true, changedAction: 'realtime' },
+    { label: 'a ready focus request', focusReady: true, followLatest: true, wasAtRealtime: true, changedAction: 'center' },
+  ])('does not reapply $label on a marker or viewport render with unchanged data', ({ focusReady, followLatest, wasAtRealtime, changedAction }) => {
+    const decision = { focusReady, followLatest, wasAtRealtime, hasVisibleRange: true, previousLength: 100, nextLength: 100 }
+    expect(viewportActionAfterDataUpdate({ ...decision, dataChanged: false })).toBe('none')
+    // Omitting the new flag keeps the existing data-update behavior.
+    expect(viewportActionAfterDataUpdate(decision)).toBe(changedAction)
+  })
+
   it('does not apply a viewport action while a decision candidate switches through empty data', () => {
     expect(viewportActionAfterDataUpdate({
       focusReady: true,

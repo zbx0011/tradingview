@@ -2,7 +2,7 @@ param([Parameter(Mandatory = $true)][string]$LogPath)
 
 $ErrorActionPreference = 'Continue'
 for ($attempt = 1; $attempt -le 2; $attempt++) {
-  & npm.cmd ci --prefer-offline --no-audit --no-fund --fetch-retries=1 --fetch-timeout=30000 *> $LogPath
+  & npm.cmd ci --include=dev --prefer-offline --no-audit --no-fund --fetch-retries=1 --fetch-timeout=30000 *> $LogPath
   $installExit = $LASTEXITCODE
   if ($installExit -eq 0) { exit 0 }
   $details = Get-Content -LiteralPath $LogPath -Raw -ErrorAction SilentlyContinue

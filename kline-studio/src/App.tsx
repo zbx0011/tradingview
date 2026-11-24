@@ -812,6 +812,9 @@ function App() {
     if (!candles?.length || chartBarSeconds(candles) !== 60) return undefined
     return { candles, endTime: Math.min(endTime, data[data.length - 1].time + chartSeconds) }
   }, [apprenticeMode, availableDecisionHistoryBySymbol, chartSeconds, data, decisionCutoff, decisionMinuteHistory, decisionMode, decisionOverviewCandidate, decisionOverviewMode, decisionOverviewSession, fullReviewCandidate, fullReviewSession, interval, manualCutoff, manualData, minuteHistory, normalizedReplayCursor, nqMinutes, replaySelecting, researchFrozenBars.length])
+  // Keep the full minute tape behind an accessor. React's development performance
+  // tracks recursively compare props and would otherwise expand millions of bars.
+  const getThreePushMinuteSource = useCallback(() => threePushMinuteSource, [threePushMinuteSource])
   const returningToLatestRef = useRef(false)
   useEffect(() => {
     if (!returningToLatestRef.current || replayCursor !== null) return
@@ -3767,7 +3770,7 @@ function App() {
             </div>}
             <ChartSurface
               ref={chartRef} data={data} symbol={symbol} interval={interval} chartType={chartType} theme={theme}
-              threePushMinuteSource={threePushMinuteSource}
+              getThreePushMinuteSource={getThreePushMinuteSource}
               futureTradingTimes={manualMode ? manualFutureTimes : undefined}
               hiddenTailTimes={manualReplaying ? manualReplayTail : undefined}
               indicators={visibleIndicators} priceScaleAuto={apprenticeMode || priceScaleAuto} priceScaleLog={priceScaleLog}

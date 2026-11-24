@@ -116,7 +116,7 @@ export interface ChartSurfaceProps {
   /** Candle times hidden after a replay point: kept as empty slots so the time axis (and the layout) does not move. */
   hiddenTailTimes?: readonly number[]
   indicators: IndicatorSettings
-  threePushMinuteSource?: ThreePushMinuteSource
+  getThreePushMinuteSource?: () => ThreePushMinuteSource | undefined
   priceScaleAuto: boolean
   priceScaleLog: boolean
   priceScalePercent: boolean
@@ -149,6 +149,8 @@ export interface ChartSurfaceProps {
 
 interface SeriesState {
   main: any
+  data: Candle[]
+  minuteSource?: ThreePushMinuteSource
   volume?: any
   volumeAverage?: any
   ma?: any
@@ -242,6 +244,7 @@ interface CachedViewportRange {
 }
 
 const viewportRangeCache = new Map<string, CachedViewportRange>()
+const EMPTY_CHART_ITEMS: readonly never[] = []
 
 function viewportRangeCacheKey(symbol: SymbolId, interval: IntervalId) {
   return `${symbol}:${interval}`
@@ -520,9 +523,9 @@ function apprenticeActionSeriesMarkers(markers: readonly ApprenticeActionMarker[
 
 export const ChartSurface = forwardRef<ChartSurfaceHandle, ChartSurfaceProps>(function ChartSurface(
   {
-    data, symbol, interval, chartType, theme, blackBarTimes, futureTradingTimes, hiddenTailTimes, indicators, threePushMinuteSource, priceScaleAuto, priceScaleLog, priceScalePercent, priceScaleInverted,
-    visibleTradeLayerSourceIds = [], visibleResearchSignalSourceIds = [], showAllResearchReviews = true, exerciseSignalMarkers = [], apprenticeActionMarkers = [], apprenticeOnly = false, apprenticeFocusRange = null, decisionSignalSourceIds = [], decisionSignalAfterTime = null,
-    visibleRangeLayerSourceIds = [], suppressedRangeObjectIds = [], selectedRangeObjectId = null, onSelectRangeObject,
+    data, symbol, interval, chartType, theme, blackBarTimes, futureTradingTimes, hiddenTailTimes, indicators, getThreePushMinuteSource, priceScaleAuto, priceScaleLog, priceScalePercent, priceScaleInverted,
+    visibleTradeLayerSourceIds = EMPTY_CHART_ITEMS, visibleResearchSignalSourceIds = EMPTY_CHART_ITEMS, showAllResearchReviews = true, exerciseSignalMarkers = EMPTY_CHART_ITEMS, apprenticeActionMarkers = EMPTY_CHART_ITEMS, apprenticeOnly = false, apprenticeFocusRange = null, decisionSignalSourceIds = EMPTY_CHART_ITEMS, decisionSignalAfterTime = null,
+    visibleRangeLayerSourceIds = EMPTY_CHART_ITEMS, suppressedRangeObjectIds = EMPTY_CHART_ITEMS, selectedRangeObjectId = null, onSelectRangeObject,
     followLatest = false, focusLatestKey = 0, focusHistoryBars = 110, suppressAutoFocus = false, centerLatestByDefault = false, markersHidden = false, showFilledGaps = false, onHover, onPriceScaleStateChange, onViewportChange,
   },
   forwardedRef,
@@ -536,13 +539,11 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, ChartSurfaceProps>(fu
     seriesRef.current?.smc?.setShowFilledGaps(showFilledGaps)
   }, [showFilledGaps])
   const dataRef = useRef(data)
+  const threePushMinuteSource = getThreePushMinuteSource?.()
   const threePushMinuteSourceRef = useRef(threePushMinuteSource)
   useEffect(() => {
     threePushMinuteSourceRef.current = threePushMinuteSource
-    seriesRef.current?.threePush?.setData(data, threePushMinuteSource)
-    seriesRef.current?.abcd?.setData(data, threePushMinuteSource)
-    seriesRef.current?.mm?.setData(data, threePushMinuteSource)
-  }, [data, threePushMinuteSource])
+  }, [threePushMinuteSource])
   const savedViewRef = useRef(loadChartView(symbol, interval))
   const hydrationViewRef = useRef(loadChartView(symbol, interval))
   const savedViewKeyRef = useRef(`${symbol}:${interval}`)
@@ -1271,7 +1272,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, ChartSurfaceProps>(fu
     }
 
     memoizeSeriesData(mainSeries)
-    const series: SeriesState = { main: mainSeries }
+    const series: SeriesState = { main: mainSeries, data: dataRef.current, minuteSource: threePushMinuteSourceRef.current }
     if (indicators.volume) {
       series.volume = chart.addSeries(HistogramSeries, { priceScaleId: 'volume', priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false })
       chart.priceScale('volume').applyOptions({ scaleMargins: { top: 0.77, bottom: 0 }, visible: false })
@@ -1881,16 +1882,21 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, ChartSurfaceProps>(fu
     // from the actual trade being entered.
     const focusReady = shouldFocusLatest && dataChanged && data.length > 0
     const wasAtRealtime = isRealtimeScrollPosition(timeScale.scrollPosition())
-    if (dataChanged) {
+    const needsDataUpdate = series.data !== data
+    if (needsDataUpdate) {
       blackBarsAppliedRef.current = blackBarTimesRef.current
       if (hydrationViewRef.current) savedViewRef.current = hydrationViewRef.current
       updateSeries(series, data, chartType, indicators, { times: new Set(blackBarTimesRef.current), border: blackBorderRef.current }, hiddenTailRef.current)
       series.smc?.setData(data)
-      series.threePush?.setData(data, threePushMinuteSourceRef.current)
-      series.abcd?.setData(data, threePushMinuteSourceRef.current)
-      series.mm?.setData(data, threePushMinuteSourceRef.current)
       series.autoTrend?.setData(data)
       series.barCount?.setData(data)
+    }
+    if (needsDataUpdate || series.minuteSource !== threePushMinuteSource) {
+      series.threePush?.setData(data, threePushMinuteSource)
+      series.abcd?.setData(data, threePushMinuteSource)
+      series.mm?.setData(data, threePushMinuteSource)
+      series.data = data
+      series.minuteSource = threePushMinuteSource
     }
     const restoredViewport = restoringViewRef.current || restoreVisibleViewport()
     const revealedMarkers = visibleTradeMarkers(symbol, interval, data, visibleTradeLayerSourceIds, activeTradeRef.current, tradeReferenceMarkers, decisionSignalSourceIds, decisionSignalAfterTime, markersHidden, visibleResearchSignalSourceIds, showAllResearchReviews, apprenticeActionMarkers, apprenticeOnly)
@@ -1912,6 +1918,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, ChartSurfaceProps>(fu
     // center. Revealing the next candle inside the same trade must preserve
     // the user's horizontal and vertical chart placement.
     const viewportAction = viewportActionAfterDataUpdate({
+      dataChanged,
       focusReady,
       hasVisibleRange: Boolean(visibleRange),
       followLatest: followLatestRef.current,
@@ -1966,7 +1973,7 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, ChartSurfaceProps>(fu
     // coordinates. An unchanged visible range does not fire a scale event,
     // so explicitly reproject once the new chart data has been painted.
     if (dataChanged) requestViewportProjectionSync()
-  }, [apprenticeActionMarkers, apprenticeFocusRange, apprenticeOnly, chartType, data, decisionSignalAfterTime, decisionSignalSourceIds, focusLatestKey, focusHistoryBars, indicators, interval, markersHidden, requestSignalRangeSync, requestTradeConnectionSync, requestViewportProjectionSync, restoreVisibleViewport, suppressAutoFocus, suppressedRangeObjectIds, symbol, tradeReferenceMarkers, visibleRangeLayerSourceIds, visibleResearchSignalSourceIds, visibleTradeLayerSourceIds, showAllResearchReviews])
+  }, [apprenticeActionMarkers, apprenticeFocusRange, apprenticeOnly, chartType, data, decisionSignalAfterTime, decisionSignalSourceIds, focusLatestKey, focusHistoryBars, indicators, interval, markersHidden, requestSignalRangeSync, requestTradeConnectionSync, requestViewportProjectionSync, restoreVisibleViewport, suppressAutoFocus, suppressedRangeObjectIds, symbol, threePushMinuteSource, tradeReferenceMarkers, visibleRangeLayerSourceIds, visibleResearchSignalSourceIds, visibleTradeLayerSourceIds, showAllResearchReviews])
 
   useEffect(() => {
     const series = seriesRef.current?.main

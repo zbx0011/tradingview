@@ -64,7 +64,7 @@ export function attachAutoTrendlinesOverlay(chart: IChartApi, series: ISeriesApi
       lastData = candles
       // The two studies are shown as one set of trendlines; a line both find (same two anchors) is drawn once.
       const seen = new Set<string>()
-      lines = [...computeAutoTrendlines(candles), ...computeAutoTrendDetector(candles).lines, ...computePivotPairLines(candles)].filter((line) => {
+      const candidates = [...computeAutoTrendlines(candles), ...computeAutoTrendDetector(candles).lines, ...computePivotPairLines(candles)].filter((line) => {
         const key = `${line.x1}:${line.x2}`
         if (seen.has(key)) return false
         seen.add(key)
@@ -82,8 +82,7 @@ export function attachAutoTrendlinesOverlay(chart: IChartApi, series: ISeriesApi
         }
         return true
       }
-      // A third touch confirms the line. A wick that pokes through and closes back (an overshoot) is a touch too;
-      // bars next to the anchors and back-to-back touching bars count once.
+      // A third touch away from the anchors confirms the line. An overshoot that closes back counts too.
       const range = new Float64Array(candles.length)
       let avg = 0
       for (let i = 0; i < candles.length; i += 1) {
@@ -92,35 +91,33 @@ export function attachAutoTrendlinesOverlay(chart: IChartApi, series: ISeriesApi
         avg = i < 14 ? (avg * i + tr) / (i + 1) : (avg * 13 + tr) / 14
         range[i] = avg
       }
-      const touchCount = (line: AutoTrendline) => {
+      const hasThirdTouch = (line: AutoTrendline) => {
         const slope = (line.y2 - line.y1) / (line.x2 - line.x1)
         const end = Math.min(candles.length - 1, Math.floor(line.endX))
-        let count = 0, lastTouch = -10
         for (let x = line.x1 + 3; x <= end; x += 1) {
           if (Math.abs(x - line.x2) <= 2) continue
           const value = line.y1 + slope * (x - line.x1), tolerance = 0.3 * range[x], c = candles[x]
           const touched = line.kind === 'resistance' ? c.high >= value - tolerance && c.close <= value + tolerance
             : line.kind === 'support' ? c.low <= value + tolerance && c.close >= value - tolerance
             : c.high >= value - tolerance && c.low <= value + tolerance
-          if (touched) { if (x - lastTouch > 3) count += 1; lastTouch = x }
+          if (touched) return true
         }
-        return count
+        return false
       }
-      for (const line of lines) line.confirmed = touchCount(line) > 0
-      {
-        const live = lines.filter((line) => line.extendRight && clean(line))
-        if (mode === 'near') {
-          // Only lines the latest candle is next to: the distance from its high-low range to the line is at most NEAR_ATR ATRs.
-          const last = candles.length - 1, bar = candles[last], tolerance = NEAR_ATR * (range[last] || 0)
-          lines = last < 0 ? [] : live.filter((line) => {
-            const value = line.y1 + (line.y2 - line.y1) / (line.x2 - line.x1) * (last - line.x1)
-            return value >= bar.low - tolerance && value <= bar.high + tolerance
-          })
-        } else {
-          const confirmed = live.filter((line) => line.confirmed).sort((p, q) => q.touches - p.touches || q.x2 - p.x2).slice(0, MAX_CONFIRMED_LINES)
-          const pending = live.filter((line) => !line.confirmed).sort((p, q) => q.x2 - p.x2).slice(0, MAX_PENDING_LINES)
-          lines = [...confirmed, ...pending]
-        }
+      const live = candidates.filter((line) => line.extendRight && clean(line))
+      if (mode === 'near') {
+        // Only lines that are within NEAR_ATR ATRs of the latest candle.
+        const last = candles.length - 1, bar = candles[last], tolerance = NEAR_ATR * (range[last] || 0)
+        lines = last < 0 ? [] : live.filter((line) => {
+          const value = line.y1 + (line.y2 - line.y1) / (line.x2 - line.x1) * (last - line.x1)
+          return value >= bar.low - tolerance && value <= bar.high + tolerance
+        })
+        for (const line of lines) line.confirmed = hasThirdTouch(line)
+      } else {
+        for (const line of live) line.confirmed = hasThirdTouch(line)
+        const confirmed = live.filter((line) => line.confirmed).sort((p, q) => q.touches - p.touches || q.x2 - p.x2).slice(0, MAX_CONFIRMED_LINES)
+        const pending = live.filter((line) => !line.confirmed).sort((p, q) => q.x2 - p.x2).slice(0, MAX_PENDING_LINES)
+        lines = [...confirmed, ...pending]
       }
       requestUpdate()
     },

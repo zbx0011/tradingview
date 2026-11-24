@@ -48,6 +48,9 @@ if ($internetSettings.ProxyEnable -eq 1 -and $internetSettings.ProxyServer) {
 }
 
 Write-Host "Kline Studio is starting at http://127.0.0.1:$Port/" -ForegroundColor Green
+# Keep the local sync/deploy middleware while using React's production runtime.
+# Development performance tracks expand large historical candle props during commits.
+$env:NODE_ENV = 'production'
 npm run dev -- --host 127.0.0.1 --port $Port --strictPort
 if ($LASTEXITCODE -ne 0) {
   throw "Kline Studio exited with code $LASTEXITCODE"

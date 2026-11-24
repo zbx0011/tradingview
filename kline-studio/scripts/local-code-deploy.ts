@@ -83,7 +83,9 @@ function npmInvocation(args: readonly string[]) {
 
 async function runNpm(args: readonly string[], cwd: string, timeoutMs?: number) {
   const invocation = npmInvocation(args)
-  return runFile(invocation.command, invocation.args, { cwd, timeoutMs })
+  // The workstation serves production React. Each build/test command still
+  // sets its own mode, and npm ci must install the validation tools.
+  return runFile(invocation.command, invocation.args, { cwd, timeoutMs, env: { NODE_ENV: undefined } })
 }
 
 const runNpmCi = createNpmCiRunner({
