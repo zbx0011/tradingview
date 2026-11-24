@@ -229,6 +229,8 @@ async function copyTextToClipboard(text: string) {
   return copied
 }
 
+const EMPTY_CHART_LAYERS: never[] = []
+
 function App() {
   const saved = useMemo(() => loadWorkspace(), [])
   const apprenticeMode = useMemo(() => new URLSearchParams(window.location.search).get('apprentice') === 'al-swing-v1', [])
@@ -592,21 +594,12 @@ function App() {
     const dataset = researchSignalDataset(visibleResearchSignalSourceIds[0])
     return mergeCandleHistory([dataset?.windows.flatMap((window) => window.bars ?? []) ?? []])
   }, [apprenticeMode, decisionMode, interval, visibleResearchSignalSourceIds])
-  const marketBaseData = useMemo(() => {
-    if (apprenticeMode && symbol === 'XAUUSD' && interval === '5m' && apprenticeBars.length > 0) return [...apprenticeBars]
-    if (minuteHistory?.length) return interval === '1m' ? minuteHistory : aggregateCandles(minuteHistory, INTERVALS[interval].seconds)
-    return generateCandles(symbol, interval, 1800)
-  }, [apprenticeBars, apprenticeMode, interval, minuteHistory, symbol])
   const apprenticeFocusRange = useMemo(() => {
     if (!apprenticeMode || apprenticeBars.length <= 557) return null
     const start = apprenticeBars[216]
     const end = apprenticeBars[557]
     return start && end ? { startTime: start.time, endTime: end.time } : null
   }, [apprenticeBars, apprenticeMode])
-  const baseData = useMemo(
-    () => researchFrozenBars.length > 0 ? mergeCandleHistory([marketBaseData, researchFrozenBars]) : marketBaseData,
-    [marketBaseData, researchFrozenBars],
-  )
   const decisionSubject = activeDecisionCandidate
   const decisionMinuteHistory = useMemo(() => {
     if (!decisionSubject) return null
@@ -649,24 +642,11 @@ function App() {
   // after a refresh or hot update while keeping any edits in local state.
   const effectiveDecisionRiskDraft = decisionRiskDraft ?? decisionRiskFallback
   const isMarketHistory = marketStatus.kind !== 'simulated'
-  const liveData = useMemo(() => {
-    if (isMarketHistory) return baseData
-    if (!live || liveTick === 0) return baseData
-    const next = baseData.map((item) => ({ ...item }))
-    const last = next.at(-1)!
-    const change = Math.sin(liveTick * 0.83) * symbolInfo.volatility * last.open * 0.75
-    last.close = Math.max(0.01, last.open + change)
-    last.high = Math.max(last.high, last.close)
-    last.low = Math.min(last.low, last.close)
-    last.volume += liveTick * 7
-    return next
-  }, [baseData, isMarketHistory, live, liveTick, symbolInfo.volatility])
   const chartSeconds = INTERVALS[interval].seconds
   const availableReplayResolutions = useMemo(() => replayResolutions(interval), [interval])
   const effectiveReplayResolution = replayAutoResolution || !availableReplayResolutions.some((item) => item.seconds === replayResolutionSeconds)
     ? chartSeconds
     : replayResolutionSeconds
-  const normalizedReplayCursor = replayCursor === null ? null : Math.min(baseData.at(-1)!.time + chartSeconds, Math.max(baseData[0].time, replayCursor))
   const decisionCutoff = useMemo(() => {
     return activeDecisionAttempt && activeDecisionCandidate
       ? intervalCutoffTime(activeDecisionAttempt.cursorTime, intervalSeconds(activeDecisionCandidate.interval))
@@ -774,6 +754,30 @@ function App() {
     const minutes = nqMinutes.slice(lowerBound(nqMinutes, from), lowerBound(nqMinutes, manualCutoff))
     return aggregateMinutes(minutes, INTERVALS[interval].seconds)
   }, [interval, manualCutoff, manualDays, manualSession, nqMinutes])
+  const marketBaseData = useMemo(() => {
+    if (apprenticeMode && symbol === 'XAUUSD' && interval === '5m' && apprenticeBars.length > 0) return [...apprenticeBars]
+    // A manual paper already has a bounded, causal candle series.
+    if (manualData?.length) return manualData
+    if (minuteHistory?.length) return interval === '1m' ? minuteHistory : aggregateCandles(minuteHistory, INTERVALS[interval].seconds)
+    return generateCandles(symbol, interval, 1800)
+  }, [apprenticeBars, apprenticeMode, interval, manualData, minuteHistory, symbol])
+  const baseData = useMemo(
+    () => researchFrozenBars.length > 0 ? mergeCandleHistory([marketBaseData, researchFrozenBars]) : marketBaseData,
+    [marketBaseData, researchFrozenBars],
+  )
+  const liveData = useMemo(() => {
+    if (isMarketHistory || manualData) return baseData
+    if (!live || liveTick === 0) return baseData
+    const next = baseData.map((item) => ({ ...item }))
+    const last = next.at(-1)!
+    const change = Math.sin(liveTick * 0.83) * symbolInfo.volatility * last.open * 0.75
+    last.close = Math.max(0.01, last.open + change)
+    last.high = Math.max(last.high, last.close)
+    last.low = Math.min(last.low, last.close)
+    last.volume += liveTick * 7
+    return next
+  }, [baseData, isMarketHistory, live, liveTick, manualData, symbolInfo.volatility])
+  const normalizedReplayCursor = replayCursor === null ? null : Math.min(baseData.at(-1)!.time + chartSeconds, Math.max(baseData[0].time, replayCursor))
   const manualLastMinute = useMemo(() => manualSession && nqMinutes && manualCutoff !== null ? lastRevealedMinute(nqMinutes, manualCutoff) : null, [manualCutoff, manualSession, nqMinutes])
   const manualPosition = manualActiveSession ? manualOpenTrade(manualActiveSession) : null
   const manualCurrentBarTime = manualLastMinute ? barTimeFor(manualLastMinute.time, interval) : null
@@ -3768,19 +3772,19 @@ function App() {
               hiddenTailTimes={manualReplaying ? manualReplayTail : undefined}
               indicators={visibleIndicators} priceScaleAuto={apprenticeMode || priceScaleAuto} priceScaleLog={priceScaleLog}
               priceScalePercent={priceScalePercent} priceScaleInverted={priceScaleInverted}
-              visibleTradeLayerSourceIds={manualMode || fullReviewSession || apprenticeMode ? [] : decisionOverviewMode ? decisionOverviewSourceIds : activeDecisionCandidate?.shapePracticeId ? decisionContextSourceIds : decisionDayMode ? decisionDayTradeSourceIds : decisionMode ? [] : visibleTradeLayerSourceIds}
-              visibleResearchSignalSourceIds={apprenticeMode || decisionMode || decisionOverviewMode ? [] : visibleResearchSignalSourceIds}
+              visibleTradeLayerSourceIds={manualMode || fullReviewSession || apprenticeMode ? EMPTY_CHART_LAYERS : decisionOverviewMode ? decisionOverviewSourceIds : activeDecisionCandidate?.shapePracticeId ? decisionContextSourceIds : decisionDayMode ? decisionDayTradeSourceIds : decisionMode ? EMPTY_CHART_LAYERS : visibleTradeLayerSourceIds}
+              visibleResearchSignalSourceIds={apprenticeMode || decisionMode || decisionOverviewMode ? EMPTY_CHART_LAYERS : visibleResearchSignalSourceIds}
               showAllResearchReviews={apprenticeMode ? false : showAllResearchReviews}
-              exerciseSignalMarkers={apprenticeMode || decisionOverviewMode ? [] : shapeExerciseMarkers}
+              exerciseSignalMarkers={apprenticeMode || decisionOverviewMode ? EMPTY_CHART_LAYERS : shapeExerciseMarkers}
               apprenticeActionMarkers={apprenticeActionMarkers}
               apprenticeOnly={apprenticeMode}
               apprenticeFocusRange={apprenticeFocusRange}
-              decisionSignalSourceIds={manualMode || fullReviewSession || apprenticeMode ? [] : decisionOverviewMode ? decisionOverviewSourceIds : decisionSignalSourceIds}
+              decisionSignalSourceIds={manualMode || fullReviewSession || apprenticeMode ? EMPTY_CHART_LAYERS : decisionOverviewMode ? decisionOverviewSourceIds : decisionSignalSourceIds}
               // Keep every signal and system execution that has already been
               // revealed. Collision handling must move the interactive labels;
               // it must never erase earlier replay context.
               decisionSignalAfterTime={null}
-              visibleRangeLayerSourceIds={manualMode || apprenticeMode || decisionOverviewMode ? [] : fullReviewSession ? fullReviewSourceIds : decisionMode ? [] : visibleRangeLayerSourceIds}
+              visibleRangeLayerSourceIds={manualMode || apprenticeMode || decisionOverviewMode ? EMPTY_CHART_LAYERS : fullReviewSession ? fullReviewSourceIds : decisionMode ? EMPTY_CHART_LAYERS : visibleRangeLayerSourceIds}
               suppressedRangeObjectIds={suppressedRangeObjectIds}
               selectedRangeObjectId={activeSelectedReplayRangeId}
               onSelectRangeObject={(id) => {
