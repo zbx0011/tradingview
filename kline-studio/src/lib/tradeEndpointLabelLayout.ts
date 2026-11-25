@@ -5,6 +5,12 @@ export interface TradeLabelObstacle {
   bottom: number
 }
 
+export interface TradeLabelViewport {
+  width: number
+  height: number
+  candleObstacles: readonly TradeLabelObstacle[]
+}
+
 export interface TradeEndpointLabelLayout {
   boxX: number
   boxY: number
@@ -58,9 +64,10 @@ export function tradeEndpointLabelLayout(
   viewportHeight: number,
   candleObstacles: readonly TradeLabelObstacle[] = [],
   reservedObstacles: readonly TradeLabelObstacle[] = [],
+  boxSize = { width: TRADE_ENDPOINT_LABEL_WIDTH, height: TRADE_ENDPOINT_LABEL_HEIGHT },
 ): TradeEndpointLabelLayout {
-  const boxWidth = Math.min(TRADE_ENDPOINT_LABEL_WIDTH, Math.max(120, viewportWidth - VIEWPORT_MARGIN * 2))
-  const boxHeight = TRADE_ENDPOINT_LABEL_HEIGHT
+  const boxWidth = Math.min(boxSize.width, Math.max(Math.min(120, boxSize.width), viewportWidth - VIEWPORT_MARGIN * 2))
+  const boxHeight = boxSize.height
   const maxX = Math.max(VIEWPORT_MARGIN, viewportWidth - boxWidth - VIEWPORT_MARGIN)
   const maxY = Math.max(VIEWPORT_MARGIN, viewportHeight - boxHeight - BOTTOM_SAFE_INSET)
   const minY = Math.min(TOP_SAFE_INSET, maxY)
@@ -79,13 +86,14 @@ export function tradeEndpointLabelLayout(
 
   xCandidates.forEach((boxX, horizontalRank) => {
     const horizontalObstacles = candleObstacles.filter((obstacle) => obstacle.right > boxX && obstacle.left < boxX + boxWidth)
+    const horizontalReservations = reservedObstacles.filter((obstacle) => obstacle.right > boxX && obstacle.left < boxX + boxWidth)
     const localTop = horizontalObstacles.length > 0 ? Math.min(...horizontalObstacles.map((obstacle) => obstacle.top)) : pointY
     const localBottom = horizontalObstacles.length > 0 ? Math.max(...horizontalObstacles.map((obstacle) => obstacle.bottom)) : pointY
     const aboveLocalCandles = localTop - boxHeight - CANDLE_CLEARANCE
     const belowLocalCandles = localBottom + CANDLE_CLEARANCE
     const abovePoint = pointY - boxHeight - POINT_GAP
     const belowPoint = pointY + POINT_GAP
-    const obstacleEdgeCandidates = horizontalObstacles.flatMap((obstacle) => [
+    const obstacleEdgeCandidates = [...horizontalObstacles, ...horizontalReservations].flatMap((obstacle) => [
       obstacle.top - boxHeight - CANDLE_CLEARANCE,
       obstacle.bottom + CANDLE_CLEARANCE,
     ])
@@ -96,8 +104,8 @@ export function tradeEndpointLabelLayout(
 
     yCandidates.forEach((boxY, verticalRank) => {
       const rectangle: TradeLabelObstacle = { left: boxX, right: boxX + boxWidth, top: boxY, bottom: boxY + boxHeight }
-      const obstacleOverlapArea = candleObstacles.reduce((total, obstacle) => total + intersectionArea(rectangle, obstacle), 0)
-      const reservedOverlapArea = reservedObstacles.reduce((total, obstacle) => total + intersectionArea(rectangle, obstacle), 0)
+      const obstacleOverlapArea = horizontalObstacles.reduce((total, obstacle) => total + intersectionArea(rectangle, obstacle), 0)
+      const reservedOverlapArea = horizontalReservations.reduce((total, obstacle) => total + intersectionArea(rectangle, obstacle), 0)
       const { edgeX, edgeY } = nearestEdge(pointX, pointY, rectangle)
       const leaderDistance = Math.hypot(pointX - edgeX, pointY - edgeY)
       const wrongVerticalSide = kind === 'entry' ? boxY >= pointY : boxY + boxHeight <= pointY

@@ -122,7 +122,7 @@ const editor = (overrides: Partial<ComponentProps<typeof ManualCandleBiasEditor>
   return { render, onSave, onCancel, onDelete }
 }
 const editBackground = (tree: ReactNode, value: string) => {
-  const input = elements(tree).find(element => element.type === 'input' && element.props['aria-label'] === '背景（必填）')!
+  const input = elements(tree).find(element => element.type === 'input' && element.props['aria-label'] === '背景（可选）')!
   ;(input.props.onChange as (event: { target: { value: string } }) => void)({ target: { value } })
 }
 class KeyEvent extends Event {
@@ -140,6 +140,15 @@ class KeyEvent extends Event {
 }
 
 describe('deleting one candle reason group', () => {
+  it('saves a candle reason and its risk plan with an empty background', () => {
+    const initialRisk = { entryPrice: 100, stopLoss: 95, takeProfit: 110 }
+    const instance = editor({ notes: [{ ...note, background: '', initialRisk }] })
+    click(button(instance.render(), '保存'))
+    expect(instance.onSave).toHaveBeenCalledWith('', expect.arrayContaining([
+      expect.objectContaining({ bias: 'long', reasons: ['原理由'], initialRisk }),
+    ]))
+  })
+
   it.each([
     { name: 'existing notes with deletion available', notes: [note], enabled: true, visible: true },
     { name: 'a new unsaved candle', notes: [], enabled: true, visible: false },

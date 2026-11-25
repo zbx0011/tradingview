@@ -68,6 +68,7 @@ import { ALL_DRAWING_TOOLS, getTool, shouldExitDrawingMode } from './lib/toolCat
 import { clearWorkspace, loadWorkspace, saveWorkspace } from './lib/persistence'
 import { usePageState, loadPageValue, savePageValue } from './lib/pageState'
 import { loadChartView } from './lib/chartViewPersistence'
+import type { TradeLabelViewport } from './lib/tradeEndpointLabelLayout'
 import { decisionExerciseNavigationDirection, isChartAnnotationVisibilityShortcut, isEditableShortcutTarget, parseIntervalShortcut, resolveHistoryShortcut, TRADINGVIEW_SHORTCUTS } from './lib/shortcuts'
 import { aggregateCandles, formatPrice, generateCandles, INTERVALS, SYMBOLS, type Candle, type IntervalId, type SymbolId } from './lib/market'
 import {
@@ -308,7 +309,8 @@ function App() {
     lockedCursorX: number | null
     alertY: Record<string, number | null>
     orderY: Record<string, number | null>
-  }>({ lockedCursorX: null, alertY: {}, orderY: {} })
+    tradeLabelViewport: TradeLabelViewport | null
+  }>({ lockedCursorX: null, alertY: {}, orderY: {}, tradeLabelViewport: null })
   const [live, setLive] = usePageState('live', false)
   const [liveTick, setLiveTick] = useState(0)
   const [replayPanelOpen, setReplayPanelOpen] = usePageState('replayPanelOpen', false)
@@ -1336,7 +1338,8 @@ function App() {
   // its visible logical range as key 1 reveals each candle, matching ordinary
   // custom practice and preventing horizontal/vertical layout jumps.
 
-  // Layout effect: alert / order lines and the locked cursor must move in the same
+  const showManualTradeLabels = Boolean(manualSession?.trades.length) && !chartAnnotationsHidden && !manualLossHideDetails
+  // Layout effect: chart labels, price lines and the locked cursor must move in the same
   // frame as the candles, not one frame later.
   useLayoutEffect(() => {
     const chart = chartRef.current
@@ -1353,8 +1356,9 @@ function App() {
       lockedCursorX: lockedCursorTime === null ? null : chart.timeToCoordinate(lockedCursorTime),
       alertY,
       orderY,
+      tradeLabelViewport: showManualTradeLabels ? chart.getTradeLabelViewport() : null,
     })
-  }, [chartAlerts, data, decisionCurrentCandle, decisionMode, drawingProjectionTick, lockedCursorTime, manualMode, manualInitialRiskDraft, manualDialog, interval, paperOrders, symbol])
+  }, [chartAlerts, data, decisionCurrentCandle, decisionMode, drawingProjectionTick, lockedCursorTime, manualMode, manualInitialRiskDraft, manualDialog, interval, paperOrders, showManualTradeLabels, symbol])
 
   useEffect(() => {
     if (!live) return
@@ -3477,7 +3481,8 @@ function App() {
       trades: session.trades.map((trade) => trade.id === manualPosition.id ? { ...trade, [field]: value } : trade),
     }))
   }
-  useManualPracticeKeys(Boolean(manualActiveSession) || manualLoading || manualReplaying, {
+  // The confirmation card owns 1/2/3 while it is visible.
+  useManualPracticeKeys((Boolean(manualActiveSession) || manualLoading || manualReplaying) && !(manualDialog?.type === 'open' && manualRisk), {
     blocked: Boolean(manualDialog) || Boolean(manualInitialRiskDraft) || manualPicking || (!manualActiveSession && !manualReplaying),
     advance: manualReplaying ? advanceManualReplay : advanceManual,
     key2: () => {
@@ -3621,7 +3626,7 @@ function App() {
         cancelledOrders: session.cancelledOrders?.map(order => {
           if (order.id !== item.cancelledOrder!.id) return order
           const changed = context !== order.background || counterEvidence !== (order.unsupportedReasons ?? '') || JSON.stringify(cleaned) !== JSON.stringify(order.reasons)
-          return changed ? { ...order, background: context, reasons: cleaned, unsupportedReasons: counterEvidence, updatedAt: savedAt, reasonTimes: recordManualReasonTimes(order.reasonTimes, savedAt) } : order
+          return changed ? { ...order, background: context, reasons: cleaned, unsupportedReasons: counterEvidence, updatedAt: savedAt, reasonTimes: recordManualReasonTimes(order.reasonTimes, savedAt, !order.background && order.reasons.length === 0 && !order.unsupportedReasons) } : order
         }),
       }
       if (!item.trade) return session
@@ -3929,8 +3934,9 @@ function App() {
               hideLevels={manualDialog?.type === 'note' || Boolean(manualInitialRiskDraft) || Boolean(manualActiveSession && ((manualDialog?.type === 'open' && manualRisk) || (manualPosition && manualPosition.stopLoss !== null && manualPosition.takeProfit !== null)))}
               toX={(time) => chartRef.current?.timeToCoordinate(time) ?? null}
               toY={(price) => chartRef.current?.priceToCoordinate(price) ?? null}
+              tradeLabelViewport={contextOverlayPositions.tradeLabelViewport}
               onOpenBar={openManualBarReason}
-              barRange={(barTime) => { for (let i = data.length - 1; i >= 0; i -= 1) { if (data[i].time === barTime) return { high: data[i].high, low: data[i].low }; if (data[i].time < barTime) break } return null }}
+              barRange={(barTime) => { const candle = data[lowerBound(data, barTime)]; return candle?.time === barTime ? candle : null }}
             />}
             {manualActiveSession && manualPicking && manualCurrentBarTime !== null && <ManualBarPicker
               interval={interval}
@@ -4603,7 +4609,6 @@ function App() {
       />}
       {manualDialog?.type === 'open' && manualRisk && <OpenTradeDialog
         persistenceId={`${manualSession?.id}:open:${manualDialog.price}:${manualDialog.side}`}
-        withoutReasons={Boolean(manualActiveSession?.topic)}
         side={manualDialog.side}
         price={manualRisk.entryPrice}
         orderKind={manualOpenOrderKind}
@@ -4622,6 +4627,7 @@ function App() {
           setManualRisk(null)
           if (!manualActiveSession || !manualLastMinute || manualPosition || manualActiveSession.pendingOrder) return
           const savedAt = clockNow()
+          const reasonTimes = background || reasons.length || unsupportedReasons ? recordManualReasonTimes(undefined, savedAt, true) : undefined
           const tradeId = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}`
           if (kind) {
             updateManualSession(manualActiveSession.id, (session) => ({
@@ -4632,7 +4638,7 @@ function App() {
                 initialRisk: { entryPrice: risk.entryPrice, stopLoss: risk.stopLoss, takeProfit: risk.takeProfit },
                 stopLoss: risk.stopLoss, takeProfit: risk.takeProfit, quantity: risk.quantity,
                 background, reasons, unsupportedReasons, createdTime: manualLastMinute.time, interval,
-                reasonTimes: recordManualReasonTimes(undefined, savedAt, true),
+                reasonTimes,
               },
             }))
             notify(`已挂${dialog.side === 'long' ? '多' : '空'}单${kind === 'stop' ? '（追单）' : '（挂单）'} @ ${risk.entryPrice.toFixed(2)}，价格触到后成交`)
@@ -4646,7 +4652,7 @@ function App() {
               initialRisk: { entryPrice: risk.entryPrice, stopLoss: risk.stopLoss, takeProfit: risk.takeProfit },
                 stopLoss: risk.stopLoss, takeProfit: risk.takeProfit, quantity: risk.quantity,
               exitTime: null, exitPrice: null, exitKind: null, background, reasons, unsupportedReasons, exitReasons: [],
-              reasonTimes: recordManualReasonTimes(undefined, savedAt, true),
+              reasonTimes,
             }],
           }))
         }}
@@ -4688,10 +4694,8 @@ function App() {
         title={manualDialog.item.kind === 'entry' ? '编辑做单理由' : manualDialog.item.kind === 'exit' ? '编辑平仓理由' : manualDialog.item.kind === 'cancelled-order' ? '编辑已取消挂单理由' : manualDialog.item.kind === 'should-trade' ? '编辑应该开单理由' : '编辑未开单理由'}
         subtitle={manualDialog.item.title}
         initial={manualDialog.item.reasons}
-        required={manualDialog.item.kind === 'entry' || manualDialog.item.kind === 'cancelled-order'}
         unsupportedReasons={manualDialog.item.kind === 'entry' || manualDialog.item.kind === 'cancelled-order' ? { initial: manualDialog.item.unsupportedReasons ?? '' } : null}
         background={manualDialog.item.background !== null ? { initial: manualDialog.item.background } : null}
-        allowClear={manualDialog.item.kind === 'no-trade' || manualDialog.item.kind === 'should-trade'}
         onCancel={() => setManualDialog(null)}
         onSave={(reasons, background, unsupportedReasons) => { const item = manualDialog.item; setManualDialog(null); saveManualEdit(item, reasons, background, unsupportedReasons) }}
       ><ManualReasonTimesDisplay times={manualItemReasonTimes(manualDialog.item)} /></ReasonEditor>}

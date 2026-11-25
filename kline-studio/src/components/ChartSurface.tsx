@@ -62,7 +62,7 @@ import {
 } from '../lib/researchSignalRegistry'
 import { hasReplayRangeDataset, shouldRenderReplayRangeSpec, toReplayRangeSpecs, type ReplayRangeSpec } from '../lib/replayRangeRegistry'
 import { extractReasonCandleIndexes, resolveTradeCandleReferences } from '../lib/tradeCandleReferences'
-import { labelLayoutObstacle, tradeEndpointLabelLayout, type TradeLabelObstacle } from '../lib/tradeEndpointLabelLayout'
+import { labelLayoutObstacle, tradeEndpointLabelLayout, type TradeLabelObstacle, type TradeLabelViewport } from '../lib/tradeEndpointLabelLayout'
 import { chartMarkersForVisibility } from '../lib/chartMarkerVisibility'
 import type { ApprenticeActionMarker } from './AlSwingApprenticePanel'
 
@@ -87,6 +87,7 @@ export interface ChartSurfaceHandle {
   setVisibleLogicalRange: (range: { from: number; to: number }) => void
   fitContent: () => void
   plotSize: () => { width: number; height: number } | null
+  getTradeLabelViewport: () => TradeLabelViewport | null
   showDuration: (seconds: number | null) => void
   showTimeRange: (from: number, to: number) => void
   zoomToFraction: (from: number, to: number) => void
@@ -172,6 +173,41 @@ interface TradeConnectionSegment extends ReplayTradeConnectionSpec {
   y1: number
   x2: number
   y2: number
+}
+
+function visibleCandleLabelObstacles(
+  chart: IChartApi, series: SeriesState, data: readonly Candle[], width: number, height: number,
+): TradeLabelObstacle[] {
+  const scale = chart.timeScale()
+  const range = scale.getVisibleLogicalRange()
+  if (!range || width <= 0 || height <= 0) return []
+  const obstacles: TradeLabelObstacle[] = series.volume ? [{ left: 0, right: width, top: height * 0.7, bottom: height }] : []
+  const spacing = Number(scale.options().barSpacing)
+  const halfWidth = Math.max(3, Number.isFinite(spacing) ? spacing / 2 + 1 : 5)
+  const first = Math.max(0, Math.floor(range.from) - 2)
+  const last = Math.min(data.length - 1, Math.ceil(range.to) + 2)
+  let previousColumn: number | null = null
+  for (let index = first; index <= last; index += 1) {
+    const candle = data[index]
+    const x = scale.timeToCoordinate(candle.time as UTCTimestamp)
+    const highY: number | null = series.main.priceToCoordinate(candle.high)
+    const lowY: number | null = series.main.priceToCoordinate(candle.low)
+    if (x === null || highY === null || lowY === null || ![x, highY, lowY].every(Number.isFinite)) continue
+    const bounds = { left: x - halfWidth, right: x + halfWidth, top: Math.min(highY, lowY) - 3, bottom: Math.max(highY, lowY) + 3 }
+    if (bounds.right < 0 || bounds.left > width || bounds.bottom < 0 || bounds.top > height) continue
+    // Merge close candles so zooming out cannot produce thousands of candidate positions.
+    const column = Math.floor(x / 5)
+    if (column === previousColumn) {
+      const previous = obstacles[obstacles.length - 1]
+      previous.right = bounds.right
+      previous.top = Math.min(previous.top, bounds.top)
+      previous.bottom = Math.max(previous.bottom, bounds.bottom)
+    } else {
+      previousColumn = column
+      obstacles.push(bounds)
+    }
+  }
+  return obstacles
 }
 
 function sameTradeLabelObstacles(left: readonly TradeLabelObstacle[], right: readonly TradeLabelObstacle[]) {
@@ -667,31 +703,9 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, ChartSurfaceProps>(fu
     const revealedThrough = dataRef.current.at(-1)?.time
     const specs = toReplayTradeConnectionSpecs(symbolRef.current, intervalRef.current, visibleTradeLayerSourceIdsRef.current, revealedThrough)
     const timeScale = chart.timeScale()
-    const nextLabelObstacles: TradeLabelObstacle[] = []
-    const visibleLogicalRange = timeScale.getVisibleLogicalRange()
-    if (activeTradeRef.current && visibleLogicalRange && viewportWidth > 0 && viewportHeight > 0) {
-      const firstIndex = Math.max(0, Math.floor(visibleLogicalRange.from) - 2)
-      const lastIndex = Math.min(dataRef.current.length - 1, Math.ceil(visibleLogicalRange.to) + 2)
-      const barSpacing = Number(timeScale.options().barSpacing)
-      const halfCandleWidth = Math.max(3, Math.min(12, Number.isFinite(barSpacing) ? barSpacing * 0.46 : 5))
-      if (series.volume) {
-        nextLabelObstacles.push({ left: 0, right: viewportWidth, top: viewportHeight * 0.7, bottom: viewportHeight })
-      }
-      for (let index = firstIndex; index <= lastIndex; index += 1) {
-        const candle = dataRef.current[index]
-        if (!candle) continue
-        const x = timeScale.timeToCoordinate(candle.time as UTCTimestamp)
-        const highY = series.main.priceToCoordinate(candle.high)
-        const lowY = series.main.priceToCoordinate(candle.low)
-        if (typeof x !== 'number' || !Number.isFinite(x) || typeof highY !== 'number' || !Number.isFinite(highY) || typeof lowY !== 'number' || !Number.isFinite(lowY)) continue
-        const top = Math.min(highY, lowY) - 3
-        const bottom = Math.max(highY, lowY) + 3
-        if (x + halfCandleWidth < 0 || x - halfCandleWidth > viewportWidth) continue
-        if (bottom >= 0 && top <= viewportHeight) {
-          nextLabelObstacles.push({ left: x - halfCandleWidth, right: x + halfCandleWidth, top, bottom })
-        }
-      }
-    }
+    const nextLabelObstacles = activeTradeRef.current
+      ? visibleCandleLabelObstacles(chart, series, series.data, viewportWidth, viewportHeight)
+      : []
     setTradeLabelObstacles((previous) => sameTradeLabelObstacles(previous, nextLabelObstacles) ? previous : nextLabelObstacles)
     const nextSegments: TradeConnectionSegment[] = []
     for (const spec of specs) {
@@ -1001,6 +1015,17 @@ export const ChartSurface = forwardRef<ChartSurfaceHandle, ChartSurfaceProps>(fu
       const container = containerRef.current
       if (!chart || !container) return null
       return { width: chart.timeScale().width(), height: Math.max(0, container.clientHeight - chart.timeScale().height()) }
+    },
+    getTradeLabelViewport: () => {
+      const chart = chartRef.current
+      const series = seriesRef.current
+      const container = containerRef.current
+      if (!chart || !series || !container) return null
+      const scale = chart.timeScale()
+      const width = scale.width()
+      const height = container.clientHeight - scale.height()
+      if (width <= 0 || height <= 0) return null
+      return { width, height, candleObstacles: visibleCandleLabelObstacles(chart, series, series.data, width, height) }
     },
     fitContent: () => { savedViewRef.current = null; hydrationViewRef.current = null; chartRef.current?.timeScale().fitContent() },
     showDuration: (seconds) => {

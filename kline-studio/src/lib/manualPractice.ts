@@ -43,9 +43,9 @@ export interface ManualTrade {
   exitTime: number | null
   exitPrice: number | null
   exitKind: ManualExitKind | null
-  /** 背景 — market context at entry; mandatory. */
+  /** 背景 — optional market context at entry. */
   background: string
-  /** 做单理由 — mandatory, at least one. */
+  /** 做单理由 — optional supporting reasons. */
   reasons: string[]
   /** 不支持理由 — optional multiline counter-evidence recorded at entry. */
   unsupportedReasons?: string
@@ -67,7 +67,7 @@ export interface ManualBarNote {
   kind: 'no-trade' | 'should-trade'
   /** Direction of the trade that should have been taken (should-trade only). */
   side?: ManualSide
-  /** 背景 — market context for this candle; mandatory when a note is saved. */
+  /** 背景 — optional market context for this candle. */
   background: string
   reasons: string[]
   /** Preference order for this candle: 0 is the strongest inclination. */
@@ -861,7 +861,7 @@ export function sessionSummary(session: ManualPracticeSession) {
     shouldTradeNotes: new Set(session.notes.filter((note) => note.kind === 'should-trade').map(note => `${note.barTime}:${note.interval}`)).size,
     // Multiple reasons/directional alternatives on the same candle count once.
     reasonCount: new Set(manualTimeline(session)
-      .filter(item => item.reasons.some(reason => reason.trim()) || Boolean(item.background?.trim()))
+      .filter(item => item.reasons.some(reason => reason.trim()) || Boolean(item.background?.trim() || item.unsupportedReasons?.trim()))
       .map(item => item.time)).size,
   }
 }

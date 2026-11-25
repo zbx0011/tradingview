@@ -4,6 +4,8 @@ import { INTERVALS, type IntervalId } from '../lib/market'
 import { loadPanelState, savePanelState, usePanelDraft } from '../lib/panelDraft'
 import { bringFloatingCardToFront, registerFloatingCard } from '../lib/floatingCards'
 import { formatManualPracticeTime, manualPracticeTimeIso } from '../lib/manualPracticeTime'
+import { useManualPracticeKeys } from './useManualPracticeKeys'
+import { labelLayoutObstacle, tradeEndpointLabelLayout, type TradeLabelObstacle, type TradeLabelViewport } from '../lib/tradeEndpointLabelLayout'
 import {
   barTimeFor,
   manualLossStats,
@@ -307,7 +309,7 @@ const validReasonDraft = (value: unknown): value is ReasonDraft => {
   return Boolean(draft && Array.isArray(draft.rows) && draft.rows.length > 0 && draft.rows.every(row => typeof row === 'string') && typeof draft.unsupported === 'string')
 }
 
-export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initial = [], required = false, background = null, unsupportedReasons = null, allowClear = false, preserveDraftOnCancel = false, confirmLabel = '保存', tone = 'neutral', draftRef, persistenceId, children, onSave, onCancel }: {
+export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initial = [], background = null, unsupportedReasons = null, orderShortcuts = false, preserveDraftOnCancel = false, confirmLabel = '保存', tone = 'neutral', draftRef, persistenceId, children, onSave, onCancel }: {
   cardId?: string
   persistenceId?: string
   /** Lets the parent read the unsaved text (e.g. to keep it when the record type is switched). */
@@ -315,14 +317,12 @@ export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initia
   title: string
   subtitle?: ReactNode
   initial?: readonly string[]
-  /** At least one reason is mandatory. */
-  required?: boolean
-  /** Adds a mandatory 背景 row above the numbered reasons. */
+  /** Adds an optional 背景 row above the numbered reasons. */
   background?: { initial: string } | null
   /** Optional factors against taking this trade. */
   unsupportedReasons?: { initial: string } | null
-  /** Saving with every field empty removes the record instead of complaining. */
-  allowClear?: boolean
+  /** Show the optional reason fields on demand and enable order confirmation keys. */
+  orderShortcuts?: boolean
   /** Cancelling an unsubmitted order keeps its typed reasons for reopening the same setup. */
   preserveDraftOnCancel?: boolean
   confirmLabel?: string
@@ -338,6 +338,7 @@ export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initia
     unsupported: unsupportedReasons?.initial ?? '',
   }), validReasonDraft)
   const rows = editorDraft.rows
+  const [reasonsOpen, setReasonsOpen] = useState(!orderShortcuts)
   const setRows = (update: (current: string[]) => string[]) => setEditorDraft(current => ({ ...current, rows: update(current.rows) }))
   const unsupportedDraft = editorDraft.unsupported
   // Keep the persisted multiline string compatible with old trades and drafts,
@@ -357,13 +358,12 @@ export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initia
     if (input) input.setSelectionRange(input.value.length, input.value.length)
   })
   const cancel = () => { if (!preserveDraftOnCancel) discardDraft(); onCancel() }
-  const [error, setError] = useState('')
   useEffect(() => {
     if (draftRef) draftRef.current = () => ({ reasons: rows.slice(offset).map((row) => row.trim()).filter(Boolean), background: background ? rows[0].trim() : '' })
   })
   const inputRefs = useRef<Array<HTMLInputElement | null>>([])
   // Start in 背景 when it is empty, otherwise on the last reason.
-  const pendingFocusRef = useRef<number | null>(background && !background.initial.trim() ? 0 : offset + Math.max(0, initial.length - 1))
+  const pendingFocusRef = useRef<number | null>(orderShortcuts ? null : background && !background.initial.trim() ? 0 : offset + Math.max(0, initial.length - 1))
 
   useEffect(() => {
     const index = pendingFocusRef.current
@@ -382,21 +382,14 @@ export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initia
   }
 
   const save = () => {
-    const context = background ? rows[0].trim() : ''
-    const reasons = rows.slice(offset).map((row) => row.trim()).filter(Boolean)
-    if (allowClear && !context && reasons.length === 0) { discardDraft(); onSave([], '', ''); return }
-    if (background && !context) {
-      setError('背景是必填项，请先写下当前的背景')
-      focusRow(0)
-      return
-    }
-    if (required && reasons.length === 0) {
-      setError('开仓必须至少填写一条做单理由')
-      focusRow(offset)
-      return
-    }
-    if (onSave(reasons, context, unsupportedReasons ? unsupportedRows.map(row => row.trim()).filter(Boolean).join('\n') : '') !== false) discardDraft()
+    const context = reasonsOpen && background ? rows[0].trim() : ''
+    const reasons = reasonsOpen ? rows.slice(offset).map((row) => row.trim()).filter(Boolean) : []
+    const counterEvidence = reasonsOpen && unsupportedReasons ? unsupportedRows.map(row => row.trim()).filter(Boolean).join('\n') : ''
+    if (onSave(reasons, context, counterEvidence) !== false) discardDraft()
   }
+
+  const showReasons = () => { setReasonsOpen(true); focusRow(offset) }
+  useManualPracticeKeys(orderShortcuts, { advance: save, key2: cancel, key3: showReasons, noRepeat: true })
 
   const goNext = (index: number) => {
     if (index < rows.length - 1) { focusRow(index + 1); return }
@@ -447,6 +440,7 @@ export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initia
       return
     }
     if (event.key === 'Enter' || event.key === 'Tab') {
+      if (orderShortcuts && event.key === 'Tab' && index === unsupportedRows.length - 1 && !unsupportedRows[index].trim()) return
       event.preventDefault()
       if (index < unsupportedRows.length - 1) unsupportedRefs.current[index + 1]?.focus()
       else if (unsupportedRows[index].trim()) addUnsupportedRow()
@@ -470,17 +464,18 @@ export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initia
     className="mp-editor"
     tone={tone}
     ariaLabel={title}
-    title={<>{title}{(required || background) && <em className="mp-required">必填</em>}</>}
+    title={title}
     icon={<NotebookPen size={14} />}
     defaultStyle={{ left: 64, bottom: 56, width: 440 }}
     minWidth={320}
     minHeight={180}
     onClose={cancel}
     closeLabel="取消"
-    onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancel() } }}
+    onKeyDown={(event) => { if (event.key === 'Escape' && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); event.stopPropagation(); cancel() } }}
   >
       {subtitle && <p className="mp-editor-subtitle">{subtitle}</p>}
       {children}
+      {reasonsOpen && <>
       <ol className="mp-reason-rows">
         {rows.map((row, index) => {
           const isBackground = Boolean(background) && index === 0
@@ -490,10 +485,9 @@ export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initia
             <input
               ref={(element) => { inputRefs.current[index] = element }}
               value={row}
-              placeholder={isBackground ? '必填：当前背景，如趋势方向、关键位置、时段、消息…' : number === 1 ? '一条只写一个理由，按 Tab 写下一条' : '下一条理由'}
-              aria-label={isBackground ? '背景（必填）' : `理由 ${number}`}
-              aria-required={isBackground || undefined}
-              onChange={(event) => { const value = event.target.value; setError(''); setRows((current) => current.map((item, rowIndex) => rowIndex === index ? value : item)) }}
+              placeholder={isBackground ? '当前背景（可选），如趋势方向、关键位置、时段、消息…' : number === 1 ? '一条只写一个理由，按 Tab 写下一条' : '下一条理由'}
+              aria-label={isBackground ? '背景（可选）' : `理由 ${number}`}
+              onChange={(event) => { const value = event.target.value; setRows((current) => current.map((item, rowIndex) => rowIndex === index ? value : item)) }}
               onKeyDown={(event) => handleKeyDown(event, index)}
             />
             {!isBackground && reasonRowCount > 1 && <button type="button" tabIndex={-1} aria-label={`删除理由 ${number}`} onClick={() => removeRow(index)}><Trash2 size={14} /></button>}
@@ -515,11 +509,12 @@ export function ReasonEditor({ cardId = 'reason-editor', title, subtitle, initia
         </li>)}</ol>
         <button type="button" className="mp-add-row" tabIndex={-1} aria-label="添加不支持理由" onClick={addUnsupportedRow}><Plus size={14} />添加一条</button>
       </section>}
-      {error && <p className="mp-editor-error" role="alert">{error}</p>}
+      </>}
       <footer>
-        <span className="mp-editor-hint"><kbd>Tab</kbd>/<kbd>Enter</kbd> 下一条 · <kbd>Shift+Tab</kbd> 上一条 · <kbd>Ctrl+Enter</kbd> 保存 · <kbd>Esc</kbd> 取消</span>
-        <button type="button" className="mp-secondary" onClick={cancel}>取消</button>
-        <button type="button" className={`mp-primary tone-${tone}`} onClick={save}>{confirmLabel}</button>
+        {reasonsOpen && <span className="mp-editor-hint"><kbd>Tab</kbd>/<kbd>Enter</kbd> 下一条 · <kbd>Shift+Tab</kbd> 上一条 · <kbd>Ctrl+Enter</kbd> {orderShortcuts ? '确认' : '保存'} · <kbd>Esc</kbd> 取消</span>}
+        {orderShortcuts && <button type="button" className="mp-secondary mp-reason-action" aria-expanded={reasonsOpen} aria-keyshortcuts="3" onClick={showReasons}><kbd>3</kbd> 填写理由</button>}
+        <button type="button" className="mp-secondary" aria-keyshortcuts={orderShortcuts ? '2' : undefined} onClick={cancel}>{orderShortcuts ? <><kbd>2</kbd> 取消交易</> : '取消'}</button>
+        <button type="button" className={`mp-primary tone-${tone}`} aria-keyshortcuts={orderShortcuts ? '1' : undefined} autoFocus={orderShortcuts} onClick={save}>{orderShortcuts && <><kbd>1</kbd> </>}{confirmLabel}</button>
       </footer>
   </FloatingCard>
 }
@@ -583,7 +578,7 @@ export function ManualPracticeCenter({ store, days, loading, onStart, onStartLos
               <li><kbd>`</kbd> 记录本根K线不做单理由（中文输入法下是 <kbd>·</kbd> 键）</li>
               <li><kbd>Tab</kbd> 隐藏 / 显示开平仓标记和画线</li>
             </ul>
-            <p className="mp-muted">开仓时必须填写做单理由；不开仓的K线可以随时按 <kbd>·</kbd> 记录理由。一条只写一个理由，在输入框里按 <kbd>Tab</kbd> 切到下一条。</p>
+            <p className="mp-muted">挂单确认时按 <kbd>1</kbd> 确认、<kbd>2</kbd> 取消、<kbd>3</kbd> 填写理由（选填）。不开仓的K线可以按 <kbd>·</kbd> 补记理由。</p>
           </div>
           <div className="mp-start-action">
             <div className="mp-start-modes" role="group" aria-label="选择出卷模式">
@@ -882,13 +877,11 @@ function RiskInput({ label, value, onCommit }: { label: string; value: number | 
 }
 
 /* ------------------------------------------------------------------ */
-/* Open-position dialog: side, optional stop/target, mandatory reasons */
+/* Open-position dialog: risk levels and optional reasons */
 /* ------------------------------------------------------------------ */
 
-export function OpenTradeDialog({ side, price, orderKind = null, quantity, stopLoss, takeProfit, initialBackground = '', persistenceId, withoutReasons = false, onStopLoss, onTakeProfit, onConfirm, onCancel }: {
+export function OpenTradeDialog({ side, price, orderKind = null, quantity, stopLoss, takeProfit, initialBackground = '', persistenceId, onStopLoss, onTakeProfit, onConfirm, onCancel }: {
   persistenceId?: string
-  /** 专题练习: just confirm the order, no reasons to write. */
-  withoutReasons?: boolean
   initialBackground?: string
   side: ManualSide
   /** Entry price: the close for a market fill, or the dragged order price. */
@@ -914,45 +907,12 @@ export function OpenTradeDialog({ side, price, orderKind = null, quantity, stopL
     return true
   }
   const confirmLabel = orderKind ? (long ? '确认多单挂单' : '确认空单挂单') : (long ? '确认做多' : '确认做空')
-  if (withoutReasons) {
-    const confirm = () => { if (validRisk()) onConfirm([], '', '') }
-    return <FloatingCard
-      id="open-trade"
-      className="mp-editor"
-      tone={long ? 'long' : 'short'}
-      ariaLabel="确认开单"
-      title={`${long ? '做多' : '做空'}${orderKind === 'stop' ? '追单' : orderKind === 'limit' ? '挂单' : ''} ${quantity} 手 @ ${price.toFixed(2)}`}
-      icon={<NotebookPen size={14} />}
-      defaultStyle={{ left: 64, bottom: 56, width: 440 }}
-      minWidth={320}
-      minHeight={150}
-      onClose={onCancel}
-      closeLabel="取消"
-      onKeyDown={(event) => {
-        if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onCancel() }
-        else if (event.key === 'Enter' && !(event.target instanceof HTMLInputElement)) { event.preventDefault(); event.stopPropagation(); confirm() }
-      }}
-    >
-      <p className="mp-editor-subtitle">{orderKind ? '追单（stop 入场）：价格突破开仓线才成交。' : '按当前K线收盘价成交。'}拖动图上的开仓、止损、止盈线调整（每点 $20）。专题练习不用写理由。</p>
-      <div className="mp-open-risk">
-        <PriceField label="止损价" value={stopLoss} hint={usdText(stopLoss)} onCommit={(value) => { setRiskError(''); onStopLoss(value) }} />
-        <PriceField label="止盈价" value={takeProfit} hint={usdText(takeProfit)} onCommit={(value) => { setRiskError(''); onTakeProfit(value) }} />
-        {riskError && <p className="mp-editor-error" role="alert">{riskError}</p>}
-      </div>
-      <footer>
-        <span className="mp-editor-hint"><kbd>Enter</kbd> 确认 · <kbd>Esc</kbd> 取消</span>
-        <button type="button" className="mp-secondary" onClick={onCancel}>取消</button>
-        {/* Focused so Enter confirms right away. */}
-        <button type="button" className="mp-primary" autoFocus onClick={confirm}>{confirmLabel}</button>
-      </footer>
-    </FloatingCard>
-  }
   return <ReasonEditor
     cardId="open-trade"
     persistenceId={persistenceId}
-    title={`${long ? '做多' : '做空'}${orderKind === 'stop' ? '追单' : orderKind === 'limit' ? '挂单' : ''} ${quantity} 手 @ ${price.toFixed(2)} · 做单理由`}
+    title={`${long ? '做多' : '做空'}${orderKind === 'stop' ? '追单' : orderKind === 'limit' ? '挂单' : ''} ${quantity} 手 @ ${price.toFixed(2)}`}
     subtitle={orderKind ? '追单（stop 入场）：价格突破开仓线才成交，成交后才开始判断止损 / 止盈（每点 $20）。拖动图上的开仓、止损、止盈线调整；手数在开仓线上加减。' : '按当前K线收盘价成交（每点 $20）。拖动止损 / 止盈线调整风险，手数在开仓线上加减。'}
-    required
+    orderShortcuts
     tone={long ? 'long' : 'short'}
     confirmLabel={confirmLabel}
     onCancel={onCancel}
@@ -992,7 +952,11 @@ function PriceField({ label, value, hint, onCommit }: { label: string; value: nu
 /* Chart annotations                                                   */
 /* ------------------------------------------------------------------ */
 
-export function ManualPracticeAnnotations({ session, interval, hidden, toX, toY, highlightItem = null, highlightTime = null, highlightPrice = null, hideLevels = false, clipAfterBar = null, barRange, onOpenBar }: {
+const MANUAL_EXECUTION_LABEL_SIZE = { width: 50, height: 26 }
+const MANUAL_MARKER_RADIUS = 11
+const MANUAL_EXECUTION_LABEL_MAX_DISTANCE = 100
+
+export function ManualPracticeAnnotations({ session, interval, hidden, toX, toY, tradeLabelViewport = null, highlightItem = null, highlightTime = null, highlightPrice = null, hideLevels = false, clipAfterBar = null, barRange, onOpenBar }: {
   session: ManualPracticeSession
   /** Clicking a number opens that candle's reason for editing. */
   onOpenBar?: (barTime: number) => void
@@ -1004,6 +968,7 @@ export function ManualPracticeAnnotations({ session, interval, hidden, toX, toY,
   hidden: boolean
   toX: (time: number) => number | null
   toY: (price: number) => number | null
+  tradeLabelViewport?: TradeLabelViewport | null
   highlightItem?: ManualTimelineItem | null
   highlightTime?: number | null
   /** Price to ring on the highlighted candle (entry / exit fills). */
@@ -1036,6 +1001,45 @@ export function ManualPracticeAnnotations({ session, interval, hidden, toX, toY,
     const previousX = clipAfterBar.previous === null ? null : toX(clipAfterBar.previous)
     clipRightX = lastX === null ? 0 : lastX + (previousX !== null && lastX > previousX ? (lastX - previousX) / 2 : 3)
   }
+  const tradeProjections = session.trades.filter(trade => isBarRevealed(trade.entryTime)).map(trade => {
+    const entryX = snap(trade.entryTime)
+    const entryY = toY(trade.entryPrice)
+    const range = barRange?.(barTimeFor(trade.entryTime, interval)) ?? null
+    const arrowY = range ? toY(trade.side === 'long' ? range.low : range.high) : entryY
+    const arrowTop = arrowY === null ? null : arrowY + (trade.side === 'long' ? 5 : -5)
+    // Wait for the exit candle before drawing its marker, text or trade path.
+    const exitRevealed = trade.exitTime !== null && isBarRevealed(trade.exitTime)
+    const exitX = exitRevealed ? snap(trade.exitTime!) : null
+    const exitY = exitRevealed && trade.exitPrice !== null ? toY(trade.exitPrice) : null
+    const points = exitRevealed ? tradePoints(trade) : null
+    const arrowCenter = arrowTop === null ? null : arrowTop + (trade.side === 'long' ? MANUAL_MARKER_RADIUS : -MANUAL_MARKER_RADIUS)
+    return { trade, entryX, entryY, arrowTop, arrowCenter, exitX, exitY, loss: points !== null && points < 0 }
+  })
+  const labelWidth = tradeLabelViewport ? Math.min(clipRightX ?? tradeLabelViewport.width, tradeLabelViewport.width) : 0
+  const reserved: TradeLabelObstacle[] = []
+  const isVisiblePoint = (x: number, y: number) => Boolean(tradeLabelViewport && x >= 0 && x <= labelWidth && y >= 0 && y <= tradeLabelViewport.height)
+  const reserveMarker = (x: number | null, y: number | null) => {
+    if (x === null || y === null || !isVisiblePoint(x, y)) return
+    const radius = MANUAL_MARKER_RADIUS + 2
+    reserved.push({ left: x - radius, right: x + radius, top: y - radius, bottom: y + radius })
+  }
+  for (const { entryX, arrowCenter, exitX, exitY } of tradeProjections) {
+    reserveMarker(entryX, arrowCenter)
+    reserveMarker(exitX, exitY)
+  }
+  const executionLabel = (kind: 'entry' | 'exit', x: number, y: number, text: string, tone: string) => {
+    if (!tradeLabelViewport || !isVisiblePoint(x, y) || labelWidth < MANUAL_EXECUTION_LABEL_SIZE.width + 16) return null
+    const { height, candleObstacles } = tradeLabelViewport
+    const layout = tradeEndpointLabelLayout(x, y, kind, labelWidth, height, candleObstacles, reserved, MANUAL_EXECUTION_LABEL_SIZE)
+    const { boxX, boxY, boxWidth, boxHeight, edgeX, edgeY } = layout
+    if (layout.obstacleOverlapArea > 0 || layout.reservedOverlapArea > 0 || boxY + boxHeight > height
+      || Math.hypot(x - edgeX, y - edgeY) > MANUAL_EXECUTION_LABEL_MAX_DISTANCE) return null
+    reserved.push(labelLayoutObstacle(layout))
+    return <div className={`mp-execution-note ${tone}`}>
+      <svg className="mp-execution-leader"><line x1={x} y1={y} x2={edgeX} y2={edgeY} /></svg>
+      <b className="mp-execution-label" data-testid={`manual-${kind}-label`} style={{ left: boxX, top: boxY, width: boxWidth, height: boxHeight }}>{text}</b>
+    </div>
+  }
   return <div className="mp-annotations" aria-hidden="true" style={clipRightX === null ? undefined : { clipPath: `inset(0px calc(100% - ${Math.max(0, clipRightX)}px) 0px 0px)` }}>
     {!position && !hideLevels && highlightItem && isBarRevealed(highlightItem.time) && manualItemRisk(highlightItem) && (() => {
       const plan = manualItemRisk(highlightItem)!
@@ -1056,26 +1060,20 @@ export function ManualPracticeAnnotations({ session, interval, hidden, toX, toY,
       {line(position.stopLoss, 'stop', '止损')}
       {line(position.takeProfit, 'target', '止盈')}
     </>}
-    {session.trades.map((trade) => {
-      if (!isBarRevealed(trade.entryTime)) return null
-      const entryX = snap(trade.entryTime)
-      const entryY = toY(trade.entryPrice)
-      // The arrow hugs the outside of the entry candle (above the high for shorts, below the low for longs).
-      const range = barRange?.(barTimeFor(trade.entryTime, interval)) ?? null
-      const arrowY = range ? toY(trade.side === 'long' ? range.low : range.high) : entryY
-      const arrowTop = arrowY === null ? null : arrowY + (trade.side === 'long' ? 5 : -5)
-      // Cropping a future exit still leaks its direction and price through the
-      // visible half of the dashed connection. Wait for the exit candle itself.
-      const exitRevealed = trade.exitTime !== null && isBarRevealed(trade.exitTime)
-      const exitX = exitRevealed ? snap(trade.exitTime!) : null
-      const exitY = exitRevealed && trade.exitPrice !== null ? toY(trade.exitPrice) : null
-      const points = exitRevealed ? tradePoints(trade) : null
+    {tradeProjections.map(({ trade, entryX, entryY, arrowTop, arrowCenter, exitX, exitY, loss }) => {
+      const long = trade.side === 'long'
+      const entryText = long ? '开多' : '开空'
+      const exitText = long ? '平多' : '平空'
       return <div key={trade.id}>
-        {entryX !== null && arrowTop !== null && <span className={`mp-marker entry side-${trade.side}`} style={{ left: entryX, top: arrowTop }} title={trade.reasons.join('\n')}>{trade.side === 'long' ? '▲' : '▼'}<b className="mp-execution-label">{trade.side === 'long' ? '开多' : '开空'}</b></span>}
-        {exitX !== null && exitY !== null && <>
-          <span className={`mp-marker exit${points !== null && points < 0 ? ' loss' : ''}`} style={{ left: exitX, top: exitY }} title={exitLabel(trade)}>●<b className="mp-execution-label">{trade.side === 'long' ? '平多' : '平空'}</b></span>
+        {entryX !== null && arrowTop !== null && arrowCenter !== null && <>
+          <span className={`mp-marker entry side-${trade.side}`} style={{ left: entryX, top: arrowTop }} title={[entryText, ...trade.reasons].join('\n')}>{long ? '▲' : '▼'}</span>
+          {executionLabel('entry', entryX, arrowCenter, entryText, `entry-${trade.side}`)}
         </>}
-        {entryX !== null && entryY !== null && exitX !== null && exitY !== null && <svg className="mp-trade-path"><line x1={entryX} y1={entryY} x2={exitX} y2={exitY} className={points !== null && points < 0 ? 'loss' : 'win'} /></svg>}
+        {exitX !== null && exitY !== null && <>
+          <span className={`mp-marker exit${loss ? ' loss' : ''}`} style={{ left: exitX, top: exitY }} title={`${exitText} · ${exitLabel(trade)}`}>●</span>
+          {executionLabel('exit', exitX, exitY, exitText, loss ? 'loss' : 'exit')}
+        </>}
+        {entryX !== null && entryY !== null && exitX !== null && exitY !== null && <svg className="mp-trade-path"><line x1={entryX} y1={entryY} x2={exitX} y2={exitY} className={loss ? 'loss' : 'win'} /></svg>}
       </div>
     })}
     {[...seqBars.entries()].map(([bar, info]) => {

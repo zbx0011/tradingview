@@ -655,6 +655,22 @@ describe('decision replay components', () => {
     expect(markup).toContain('-$200.00')
   })
 
+  it.each(['long', 'short'] as const)('shows signed points beside the %s order amounts', (side) => {
+    const entryPrice = 11405.75
+    const direction = side === 'long' ? 1 : -1
+    const markup = renderToStaticMarkup(<DecisionRiskOverlay
+      symbol="NQ1!" precision={2} side={side} entryPrice={entryPrice}
+      stopLoss={entryPrice - direction * 34.25} takeProfit={entryPrice + direction * 34.25}
+      stopLossMode="touch" amountForExit={(exit) => direction * (exit - entryPrice) * 40}
+      toPrice={(y) => y} toY={(price) => price}
+    />)
+
+    expect(markup).toContain('止盈金额 · <strong>+34.25 点</strong>')
+    expect(markup).toContain('止损金额 · <strong>-34.25 点</strong>')
+    expect(markup).toContain('+$1,370.00')
+    expect(markup).toContain('-$1,370.00')
+  })
+
   it('defaults the red-line selector to close mode and identifies touch as per-trade only', () => {
     const props = {
       candidate: candidate(), entryPrice: 100, stopLoss: 95, takeProfit: 105,

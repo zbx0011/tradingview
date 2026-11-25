@@ -194,7 +194,6 @@ export function ManualCandleBiasEditor({ subtitle, notes, initialBias, initialBa
       }
       entries.push({ bias, reasons: rows, ...(plan ? { initialRisk: plan } : {}) })
     }
-    if (!background.trim() && entries.some(e => e.reasons.length || e.initialRisk)) { setError('请填写背景'); return }
     discardDraft()
     onSave(background.trim(), entries)
   }
@@ -227,7 +226,7 @@ export function ManualCandleBiasEditor({ subtitle, notes, initialBias, initialBa
     }}>
     <div className="mp-bias-form" inert={deleteConfirm}>
     <p className="mp-editor-subtitle">{subtitle}</p>
-    <label className="mp-bias-background">背景<input aria-label="背景（必填）" value={background} onChange={e => { setBackground(e.target.value); setError('') }} /></label>
+    <label className="mp-bias-background">背景<input aria-label="背景（可选）" placeholder="选填" value={background} onChange={e => { setBackground(e.target.value); setError('') }} /></label>
     <p className="mp-bias-hint">越靠上越偏向；每条理由独立编号，Enter / Tab 添加下一条。</p>
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
       {(['long', 'short'] as const).map(side => <button key={side} type="button" className={activeSide === side ? 'mp-primary' : 'mp-secondary'} onClick={() => activateSide(side)}>{labels[side]}价格线</button>)}

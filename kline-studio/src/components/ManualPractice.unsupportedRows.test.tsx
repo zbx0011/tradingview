@@ -1,11 +1,11 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ManualTimelineDialog, ReasonEditor } from './ManualPractice'
+import { ManualTimelineDialog, OpenTradeDialog, ReasonEditor } from './ManualPractice'
 import type { ManualPracticeSession } from '../lib/manualPractice'
 
 const noop = () => undefined
 const renderEditor = (unsupported: string | null, persistenceId?: string) => renderToStaticMarkup(<ReasonEditor
-  title="开仓理由" initial={['顺势突破']} required background={{ initial: '上升趋势' }}
+  title="开仓理由" initial={['顺势突破']} background={{ initial: '上升趋势' }}
   unsupportedReasons={unsupported === null ? null : { initial: unsupported }}
   persistenceId={persistenceId} onSave={noop} onCancel={noop}
 />)
@@ -56,15 +56,17 @@ describe('numbered optional unsupported reasons', () => {
     expect(markup).toContain('aria-label="理由 1"')
   })
 
-  it('keeps the mandatory background and existing supporting reason separate', () => {
+  it('keeps the optional background and existing supporting reason separate', () => {
     const markup = renderEditor('逆势风险\n阻力临近')
     const inputs = markup.match(/<input\b[^>]*>/g) ?? []
-    const background = inputs.find(input => input.includes('aria-label="背景（必填）"'))
+    const background = inputs.find(input => input.includes('aria-label="背景（可选）"'))
     const reason = inputs.find(input => input.includes('aria-label="理由 1"'))
     expect(background).toContain('value="上升趋势"')
-    expect(background).toContain('aria-required="true"')
+    expect(background).not.toContain('aria-required="true"')
+    expect(background).not.toMatch(/\srequired(?:=|\s|\/?>)/)
     expect(reason).toContain('value="顺势突破"')
-    expect(markup).toContain('mp-required')
+    expect(markup).not.toContain('mp-required')
+    expect(markup).not.toContain('必填')
     expect(markup).not.toContain('aria-label="理由 2"')
   })
 
@@ -83,6 +85,35 @@ describe('numbered optional unsupported reasons', () => {
     expect(inputs[1]).toContain('value="草稿风险二"')
     expect(markup).toContain('value="草稿背景"')
     expect(markup).toContain('value="草稿做单理由"')
+  })
+})
+
+describe('optional reasons on the initial order confirmation', () => {
+  it('starts collapsed with only stop and target inputs and the numbered confirm, cancel and reason actions', () => {
+    const markup = renderToStaticMarkup(<OpenTradeDialog side="short" price={100} orderKind="limit"
+      quantity={2} stopLoss={105} takeProfit={90} initialBackground="已有背景，不应自动展开理由"
+      persistenceId="optional-order-confirmation" onStopLoss={noop} onTakeProfit={noop} onConfirm={noop} onCancel={noop}
+    />)
+    const inputs = markup.match(/<input\b[^>]*>/g) ?? []
+    expect(inputs).toHaveLength(2)
+    expect(inputs[0]).toContain('value="105.00"')
+    expect(inputs[1]).toContain('value="90.00"')
+    expect(markup).toContain('止损价')
+    expect(markup).toContain('止盈价')
+    const buttons = [...markup.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)]
+      .map(match => ({ attributes: match[1], text: match[2].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() }))
+    for (const [shortcut, label] of [['1', '确认空单挂单'], ['2', '取消交易'], ['3', '填写理由']]) {
+      const button = buttons.find(candidate => candidate.text === `${shortcut} ${label}`)
+      expect(button, `${shortcut} ${label}`).toBeDefined()
+      expect(button!.attributes).toContain(`aria-keyshortcuts="${shortcut}"`)
+    }
+    expect(markup).not.toContain('aria-label="理由 1"')
+    expect(markup).not.toMatch(/aria-label="背景（(?:可选|必填)）"/)
+    expect(markup).not.toContain('aria-label="不支持理由 1"')
+    expect(markup).not.toContain('mp-reason-rows')
+    expect(markup).not.toContain('<textarea')
+    expect(markup).not.toContain('aria-required="true"')
+    expect(markup).not.toContain('必填')
   })
 })
 

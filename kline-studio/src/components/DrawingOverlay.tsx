@@ -10,6 +10,7 @@ import { calculateFibLevelGeometry, layoutFibLabels } from '../lib/fibLayout'
 import { formatPrice, INTERVALS, type Candle, type IntervalId, type SymbolId } from '../lib/market'
 import { drawingIsRevealed } from '../lib/drawingReplay'
 import { projectAbCd } from '../lib/abcdProjection'
+import { atrValues, DEFAULT_ABCD_OPTIONS } from '../lib/abcd'
 import {
   calculatePositionMetrics, calculatePositionMetricsFromLevels, createDefaultPositionPoints, formatPositionNumber,
   resolvePositionGeometry, updatePositionPoints,
@@ -205,6 +206,32 @@ export function DrawingOverlay({
   const px = (point: DrawingPoint) => {
     const projected = projectNormalizedPoint(point)
     return { x: projected.x * viewportWidth, y: projected.y * viewportHeight }
+  }
+
+  const latestCandle = candles.at(-1)
+  const plotWidth = Math.min(viewportWidth, plotSize?.width ?? viewportWidth)
+  const plotHeight = Math.min(viewportHeight, plotSize?.height ?? viewportHeight)
+  const nearbyAbcdTargets = new Map<string, { drawing: Drawing; price: number; y: number }>()
+  if (!hidden && latestCandle) {
+    const revealedEnd = latestCandle.time + INTERVALS[interval].seconds
+    const candidates = revealedDrawings.filter(drawing => {
+      const cTime = drawing.points[2]?.time
+      return (drawing.behavior ?? getTool(drawing.tool).behavior) === 'abc-projection'
+        && !drawing.hiddenOnChart && isVisibleOnInterval(drawing.visibility, interval)
+        && cTime !== undefined && cTime >= candles[0].time && cTime < revealedEnd
+    })
+    if (candidates.length > 0) {
+      const { atrPeriod, shortAtr } = DEFAULT_ABCD_OPTIONS
+      const atr = atrValues(candles.slice(-4 * atrPeriod), atrPeriod).at(-1) ?? 0
+      for (const drawing of candidates) {
+        const price = projectAbCd(drawing.points)?.price
+        if (price === undefined) continue
+        const touched = latestCandle.low <= price && price <= latestCandle.high
+        if (!touched && Math.abs(latestCandle.close - price) > shortAtr * atr) continue
+        const y = onProjectPoint({ time: latestCandle.time, price })?.y
+        if (y !== undefined && y >= 0 && y <= plotHeight) nearbyAbcdTargets.set(drawing.id, { drawing, price, y })
+      }
+    }
   }
 
   const commitDraft = (drawing: Drawing) => {
@@ -1036,7 +1063,7 @@ export function DrawingOverlay({
           <line data-abcd-leg="CD" x1={c.x} y1={c.y} x2={d.x} y2={d.y} {...common} strokeDasharray="7 4" />
           <polyline data-testid="abcd-hit-target" points={[first, points[1], c, d].map(p => `${p.x},${p.y}`).join(' ')} fill="none" stroke="transparent" strokeWidth="14" vectorEffect="non-scaling-stroke" pointerEvents={isDraft ? 'none' : 'stroke'} />
           <circle cx={d.x} cy={d.y} r="4" fill="none" stroke={drawing.color} strokeWidth="1.5" pointerEvents="none" />
-          <text data-abcd-label="D" x={d.x + 8} y={d.y - 9} {...textStyle(12)} pointerEvents="none">D{Number.isFinite(target?.price) ? ` ${formatPrice(target!.price!, symbol)}` : ''} · AB=CD</text>
+          {(isDraft || !nearbyAbcdTargets.has(drawing.id)) && <text data-abcd-label="D" x={d.x + 8} y={d.y - 9} {...textStyle(12)} pointerEvents="none">D{Number.isFinite(target?.price) ? ` ${formatPrice(target!.price!, symbol)}` : ''} · AB=CD</text>}
         </>}
         {points.slice(0, 3).map((p, index) => <text key={index} data-abcd-label={['A', 'B', 'C'][index]} x={p.x - 6} y={p.y - 10} textAnchor="middle" {...textStyle(12)} pointerEvents="none">{['A', 'B', 'C'][index]}</text>)}
       </g>
@@ -1468,6 +1495,15 @@ export function DrawingOverlay({
           {revealedDrawings.filter((drawing) => drawing.tool !== 'measure' && !revealClip.ids.has(drawing.id)).map((drawing) => renderDrawing(drawing))}
         </>
         : revealedDrawings.filter((drawing) => drawing.tool !== 'measure').map((drawing) => renderDrawing(drawing))}
+      {/* A reached target stays readable even when replay clips its projected endpoint. */}
+      {Array.from(nearbyAbcdTargets.values(), ({ drawing, price, y }) => {
+        const right = Math.max(0, plotWidth - 12)
+        const fontSize = drawing.fontSize ?? 12
+        return <g key={drawing.id} data-testid="abcd-near-target" pointerEvents="none">
+          <line x1={Math.max(0, right - 48)} x2={right} y1={y} y2={y} stroke={drawing.color} strokeWidth="1.5" strokeDasharray="5 3" strokeOpacity={drawing.opacity ?? 1} />
+          <text data-abcd-label="D" x={right} y={y >= fontSize + 9 ? y - 7 : y + fontSize + 7} textAnchor="end" fill={drawing.textColor ?? drawing.color} fontSize={fontSize} fontWeight={drawing.bold ? 700 : 400} fontStyle={drawing.italic ? 'italic' : 'normal'}>D {formatPrice(price, symbol)} · AB=CD</text>
+        </g>
+      })}
       {quickMeasurement && renderDrawing(quickMeasurement, false, true)}
       {draft && renderDrawing(draft, true)}
       </svg>
